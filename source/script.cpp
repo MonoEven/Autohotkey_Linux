@@ -1530,7 +1530,7 @@ bool Script::IsFunctionDefinition(LPTSTR aBuf, LPTSTR aNextBuf)
 	LPTSTR next_token = omit_leading_whitespace(param_end + 1);
 	return *next_token == 0 && *aNextBuf == '{' // Brace on next line.
 		|| *next_token == '{' && next_token[1] == 0 // Brace on same line.
-		|| *next_token == '=' && next_token[1] == '>' && !is_export; // Fn() => expr
+		|| *next_token == '=' && next_token[1] == '>'; // Fn() => expr
 }
 
 
