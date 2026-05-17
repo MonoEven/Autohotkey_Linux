@@ -655,7 +655,7 @@ enum enum_act {
 , ACT_END_MODULE // Used with AddLine(), but excluded from the "named" range below so that the function is preferred.
 // ================================================================================
 // Named actions recognized by ConvertActionType:
-, ACT_STATIC, ACT_EXPORT, ACT_GLOBAL, ACT_LOCAL
+, ACT_STATIC, ACT_GLOBAL, ACT_LOCAL
 , ACT_IF
 , ACT_ELSE
 , ACT_LOOP, ACT_LOOP_FILE, ACT_LOOP_REG, ACT_LOOP_READ, ACT_LOOP_PARSE

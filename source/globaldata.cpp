@@ -251,7 +251,6 @@ Action g_act[] =
 	, {_T(";end"), 0, 0} // ACT_END_MODULE
 
 	, {_T("Static"), 1, 1} // ACT_STATIC - executes once and then the Line is removed.
-	, {_T("Export"), 1, 1} // ACT_EXPORT - used only at load time.
 	, {_T("Global"), 1, 1} // ACT_GLOBAL - used only at load time.
 	, {_T("Local"), 1, 1} // ACT_LOCAL - used only at load time.
 
