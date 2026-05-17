@@ -4305,22 +4305,10 @@ ResultType Script::ParseAndAddLine(LPTSTR aLineText, ActionTypeType aActionType)
 		// For v2, the interpretation of a control flow keyword shouldn't be affected by whatever
 		// operator follows it, so this is done before checking for assignments or other operators.
 		if (IS_SPACE_OR_TAB(*end_marker) || *end_marker == '(' || !*end_marker || *end_marker == '{')
-		{
 			aActionType = ConvertActionType(action_name);
-			if (!aActionType)
-			{
-				// For backward-compatibility with v2.0, this isn't recognized by ConvertActionType:
-				if (!_tcsicmp(action_name, _T("Export")) && !_tcsnicmp(action_args, _T("Global"), 6)
-					&& IS_SPACE_OR_TAB(action_args[6]))
-				{
-					aActionType = ACT_EXPORT;
-					action_args = omit_leading_whitespace(action_args + 7);
-				}
-			}
-			else if (*end_marker == '{' && !(aActionType == ACT_ELSE || aActionType == ACT_LOOP
-				|| aActionType == ACT_SWITCH || aActionType >= ACT_TRY && aActionType <= ACT_FINALLY))
-				aActionType = ACT_INVALID; // Not an action for which "xxx{" is valid.
-		}
+		if (*end_marker == '{' && !(aActionType == ACT_ELSE || aActionType == ACT_LOOP
+			|| aActionType == ACT_SWITCH || aActionType >= ACT_TRY && aActionType <= ACT_FINALLY))
+			aActionType = ACT_INVALID; // Not an action for which "xxx{" is valid.
 	}
 	else
 	{
