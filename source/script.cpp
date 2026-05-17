@@ -4718,8 +4718,7 @@ ResultType Script::ParseAndAddLine(LPTSTR aLineText, ActionTypeType aActionType)
 				//  - Declaring a built-in variable as local or static.
 				// But permit the following:
 				//  - Exact duplicate declarations, such as for two different code paths.
-				//  - Declarations which differ only by the presence of "Export".
-				if ((var->Scope() & ~VAR_EXPORTED) != (declare_type & ~VAR_EXPORTED))
+				if (var->Scope() != declare_type)
 					return ConflictingDeclarationError(Var::DeclarationType(declare_type), var);
 			}
 			else
