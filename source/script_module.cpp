@@ -182,6 +182,8 @@ Var *Script::FindImportedVar(LPCTSTR aVarName)
 
 Var *ScriptModule::FindImportedVar(LPCTSTR aVarName)
 {
+	if (*aVarName == '_')
+		return nullptr;
 	for (auto imp = mImports; imp; imp = imp->next)
 	{
 		if (imp->wildcard && imp->mod) // mod can be null during DerefInclude().
@@ -261,8 +263,8 @@ Var *ScriptModule::AddNewImportVar(LPTSTR aVarName, Var *aAliasFor, IObject *aMo
 		return nullptr;
 	}
 	var->SetImport(aModule, aAliasFor);
-	if (aExport)
-		var->Scope() |= VAR_EXPORTED;
+	if (!aExport)
+		var->Scope() |= VAR_IMPORTED;
 	return var;
 }
 
@@ -382,7 +384,7 @@ ResultType Script::ResolveImports(ScriptImport &imp, ScriptModule *aDirectiveLis
 	if (imp.var_name)
 	{
 		// Do not reuse mSelf or a previous Var created by an import even if mod_name == var_name,
-		// since the exported status of the Var (VAR_EXPORTED) shouldn't propagate between modules.
+		// since the alias should be marked with VAR_IMPORTED to exclude it from wildcard export.
 		auto var = mCurrentModule->AddNewImportVar(imp.var_name, imp.mod->mSelf, imp.mod, imp.is_export);
 		if (!var)
 			return FAIL;

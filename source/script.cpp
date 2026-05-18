@@ -6646,7 +6646,7 @@ Object *Script::FindClass(LPCTSTR aClassName, size_t aClassNameLength)
 		key = cp + 1; cp = _tcschr(key, '.');
 		*cp = '\0';
 		base_var = mod->mVars.Find(key);
-		if (!base_var || !base_var->IsExported())
+		if (!base_var)
 			return nullptr;
 	}
 
@@ -7414,11 +7414,11 @@ Var *Script::FindOrAddBuiltInVar(LPCTSTR aVarName, bool aAllowNonVirtual, Result
 	if (auto biv = GetBuiltInVar(aVarName))
 	{
 		if (auto name = SimpleHeap::Malloc(aVarName))
-			var = new Var(name, biv, VAR_DECLARE_GLOBAL | VAR_EXPORTED);
+			var = new Var(name, biv, VAR_DECLARE_GLOBAL);
 	}
 	else if (aAllowNonVirtual && (func = GetBuiltInFunc(aVarName)))
 	{
-		var = new Var(const_cast<LPTSTR>(func->mName), VAR_DECLARE_GLOBAL | VAR_EXPORTED);
+		var = new Var(const_cast<LPTSTR>(func->mName), VAR_DECLARE_GLOBAL);
 	}
 	else
 		return nullptr;
