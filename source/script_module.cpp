@@ -565,7 +565,7 @@ ResultType Script::FindModuleFileIndex(LPCTSTR aName, FileIndexType &aFileIndex,
 	if (!*aName)
 	{
 		aFileIndex = mCurrentModule->IsFileModule() ? mCurrentModule->mSelfFileIndex : mCurrentModule->mOuterFileIndex;
-		return OK;
+		return aFileIndex != ABSOLUTE_MAX_SOURCE_FILES ? OK : CONDITION_FALSE; // Check aFileIndex in case of #Module AHK.
 	}
 
 	if (*aName == '*') // *Resource name or stdin.

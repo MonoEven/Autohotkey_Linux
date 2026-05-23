@@ -1442,6 +1442,10 @@ UINT Script::LoadFromFile(LPCTSTR aFileSpec)
 	}
 #endif
 
+	// Place the default module at the beginning of the list in case #Import is used in #Module AHK.
+	ASSERT(mDefaultModule.mPrev == nullptr);
+	mDefaultModule.mPrev = &mBuiltinModule;
+
 	if (!CloseCurrentModule() || !ResolveImports())
 		return LOADING_FAILED;
 
@@ -1453,6 +1457,9 @@ UINT Script::LoadFromFile(LPCTSTR aFileSpec)
 		// module since built-in functions are usually called very often and early.
 		mBuiltinModule.mPrev = mLastModule;
 		mLastModule = &mBuiltinModule;
+		// Ensure the list isn't circular:
+		ASSERT(mDefaultModule.mPrev == &mBuiltinModule);
+		mDefaultModule.mPrev = nullptr;
 	}
 
 	// Preparse all expressions and resolve all variable references.  The outer-most scope
