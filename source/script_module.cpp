@@ -383,9 +383,7 @@ ResultType Script::ResolveImports(ScriptImport &imp, ScriptModule *aDirectiveLis
 
 	if (imp.var_name)
 	{
-		// Do not reuse mSelf or a previous Var created by an import even if mod_name == var_name,
-		// since the alias should be marked with VAR_IMPORTED to exclude it from wildcard export.
-		auto var = mCurrentModule->AddNewImportVar(imp.var_name, imp.mod->mSelf, imp.mod, imp.is_export);
+		auto var = mCurrentModule->AddNewImportVar(imp.var_name, nullptr, imp.mod, imp.is_export);
 		if (!var)
 			return FAIL;
 	}
