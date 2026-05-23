@@ -1510,17 +1510,9 @@ bool Script::IsFunctionDefinition(LPTSTR aBuf, LPTSTR aNextBuf)
 {
 	LPTSTR action_start = aBuf;
 	LPTSTR action_end = find_identifier_end(aBuf);
-	bool is_default_export = false;
-	bool is_export = false;
-	if (IS_SPACE_OR_TAB(*action_end) && action_end - action_start == 6) // Allow modifier keywords.
-	{
-		is_export = !_tcsnicmp(aBuf, _T("Export"), 6);
-		if (is_export || !_tcsnicmp(aBuf, _T("Static"), 6))
-			action_start = omit_leading_whitespace(action_end);
-		if (is_default_export = is_export && !_tcsnicmp(action_start, _T("Default"), 7) && IS_SPACE_OR_TAB(action_start[7]))
-			action_start = omit_leading_whitespace(action_start + 8);
-		action_end = find_identifier_end(action_start);
-	}
+	// Allow the "static" keyword for preventing a nested function from becoming a closure.
+	if (IS_SPACE_OR_TAB(*action_end) && !_tcsnicmp(aBuf, _T("Static"), 6))
+		action_end = find_identifier_end(action_start = omit_leading_whitespace(action_end));
 	// Can't be a function definition or call without an open-parenthesis as first char found by the above.
 	// action_end points at the first character which is not usable in an identifier, such as a space, tab
 	// colon or other operator symbol.  As a result, it can't be:
@@ -1530,17 +1522,14 @@ bool Script::IsFunctionDefinition(LPTSTR aBuf, LPTSTR aNextBuf)
 	// The only things it could be other than a function call or function definition are:
 	// Single-line hotkey such as KeyName::MsgBox.  But (:: is the only valid hotkey where *action_end == '(',
 	// and that's handled by excluding action_end == aBuf.
-	if (*action_end != '(' || action_end == action_start && !is_default_export)
+	if (*action_end != '(' || action_end == action_start)
 		return false;
 	// Is it a control flow statement, such as "if(condition)"?
-	if (action_start == aBuf && (g->CurrentFunc || !g_script.mClassObjectCount))
-	{
-		*action_end = '\0';
-		bool is_control_flow = ConvertActionType(aBuf);
-		*action_end = '(';
-		if (is_control_flow)
-			return false;
-	}
+	*action_end = '\0';
+	bool is_control_flow = ConvertActionType(aBuf);
+	*action_end = '(';
+	if (is_control_flow && (g->CurrentFunc || !g_script.mClassObjectCount))
+		return false;
 	// It's not control flow.
 	LPTSTR param_end = action_end + FindExprDelim(action_end, ')', 1);
 	if (*param_end != ')')
@@ -1548,28 +1537,13 @@ bool Script::IsFunctionDefinition(LPTSTR aBuf, LPTSTR aNextBuf)
 	LPTSTR next_token = omit_leading_whitespace(param_end + 1);
 	return *next_token == 0 && *aNextBuf == '{' // Brace on next line.
 		|| *next_token == '{' && next_token[1] == 0 // Brace on same line.
-		|| *next_token == '=' && next_token[1] == '>' && !is_export; // Fn() => expr
+		|| *next_token == '=' && next_token[1] == '>'; // Fn() => expr
 }
 
 
 
-inline LPTSTR IsClassDefinition(LPTSTR aBuf, TCHAR *aExport, bool &aStruct)
+inline LPTSTR IsClassDefinition(LPTSTR aBuf, bool &aStruct)
 {
-	if (aExport) // Export is permitted.
-	{
-		*aExport = 0; // No export.
-		if (!_tcsnicmp(aBuf, _T("Export"), 6) && IS_SPACE_OR_TAB(aBuf[6]))
-		{
-			aBuf = omit_leading_whitespace(aBuf + 7);
-			if (!_tcsnicmp(aBuf, _T("Default"), 7) && IS_SPACE_OR_TAB(aBuf[7]))
-			{
-				aBuf = omit_leading_whitespace(aBuf + 8);
-				*aExport = 'D'; // Default export.
-			}
-			else
-				*aExport = 'E'; // Non-default export.
-		}
-	}
 	if (aStruct = !_tcsnicmp(aBuf, _T("Struct"), 6) && IS_SPACE_OR_TAB(aBuf[6]))
 		aBuf += 7;
 	else if (!_tcsnicmp(aBuf, _T("Class"), 5) && IS_SPACE_OR_TAB(aBuf[5]))
@@ -2365,15 +2339,14 @@ process_completed_line:
 		}
 
 		// Handle this first so that GetLineContExpr() doesn't need to detect it for OTB exclusion:
-		TCHAR class_export_type = 0;
 		bool is_struct_class;
-		if (LPTSTR class_name = IsClassDefinition(buf, mClassObjectCount ? nullptr : &class_export_type, is_struct_class))
+		if (LPTSTR class_name = IsClassDefinition(buf, is_struct_class))
 		{
 			if (ClassHasOpenBrace(buf, buf_length, next_buf, next_buf_length))
 			{
 				if (g->CurrentFunc)
 					return ScriptError(_T("Functions cannot contain classes."), buf);
-				if (!DefineClass(class_name, class_export_type, is_struct_class))
+				if (!DefineClass(class_name, is_struct_class))
 					return FAIL;
 				goto continue_main_loop;
 			}
@@ -4312,22 +4285,10 @@ ResultType Script::ParseAndAddLine(LPTSTR aLineText, ActionTypeType aActionType)
 		// For v2, the interpretation of a control flow keyword shouldn't be affected by whatever
 		// operator follows it, so this is done before checking for assignments or other operators.
 		if (IS_SPACE_OR_TAB(*end_marker) || *end_marker == '(' || !*end_marker || *end_marker == '{')
-		{
 			aActionType = ConvertActionType(action_name);
-			if (!aActionType)
-			{
-				// For backward-compatibility with v2.0, this isn't recognized by ConvertActionType:
-				if (!_tcsicmp(action_name, _T("Export")) && !_tcsnicmp(action_args, _T("Global"), 6)
-					&& IS_SPACE_OR_TAB(action_args[6]))
-				{
-					aActionType = ACT_EXPORT;
-					action_args = omit_leading_whitespace(action_args + 7);
-				}
-			}
-			else if (*end_marker == '{' && !(aActionType == ACT_ELSE || aActionType == ACT_LOOP
-				|| aActionType == ACT_SWITCH || aActionType >= ACT_TRY && aActionType <= ACT_FINALLY))
-				aActionType = ACT_INVALID; // Not an action for which "xxx{" is valid.
-		}
+		if (*end_marker == '{' && !(aActionType == ACT_ELSE || aActionType == ACT_LOOP
+			|| aActionType == ACT_SWITCH || aActionType >= ACT_TRY && aActionType <= ACT_FINALLY))
+			aActionType = ACT_INVALID; // Not an action for which "xxx{" is valid.
 	}
 	else
 	{
@@ -4682,7 +4643,6 @@ ResultType Script::ParseAndAddLine(LPTSTR aLineText, ActionTypeType aActionType)
 		{
 		case ACT_STATIC: declare_type = VAR_DECLARE_STATIC; break;
 		case ACT_LOCAL: declare_type = VAR_DECLARE_LOCAL; break;
-		case ACT_EXPORT: declare_type = VAR_DECLARE_GLOBAL | VAR_EXPORTED; break;
 		default: declare_type = VAR_DECLARE_GLOBAL; break;
 		}
 
@@ -4765,16 +4725,11 @@ ResultType Script::ParseAndAddLine(LPTSTR aLineText, ActionTypeType aActionType)
 				//  - Declaring a built-in variable as local or static.
 				// But permit the following:
 				//  - Exact duplicate declarations, such as for two different code paths.
-				//  - Declarations which differ only by the presence of "Export".
-				if ((var->Scope() & ~VAR_EXPORTED) != (declare_type & ~VAR_EXPORTED))
+				if (var->Scope() != declare_type)
 					return ConflictingDeclarationError(Var::DeclarationType(declare_type), var);
 			}
 			else
-			{
 				var = global_var;
-			}
-			if (declare_type & VAR_EXPORTED)
-				var->Scope() |= VAR_EXPORTED; // Mightn't be set if var was already defined.
 
 			item_end = omit_leading_whitespace(item_end); // Move up to the next comma, assignment-op, or '\0'.
 			if (*item_end && *item_end != ',')
@@ -6191,7 +6146,7 @@ ResultType Script::DefineFunc(LPTSTR aBuf, bool aStatic, FuncDefType aIsInExpres
 
 
 
-ResultType Script::DefineClass(LPTSTR aBuf, TCHAR aExport, bool aStruct)
+ResultType Script::DefineClass(LPTSTR aBuf, bool aStruct)
 {
 	if (mClassObjectCount == MAX_NESTED_CLASSES)
 		return ScriptError(_T("This class definition is nested too deep."), aBuf);
@@ -6237,8 +6192,6 @@ ResultType Script::DefineClass(LPTSTR aBuf, TCHAR aExport, bool aStruct)
 	}
 	else // Top-level class definition.
 	{
-		if (aExport == 'D' && mCurrentModule->mSelf)
-			return ScriptError(ERR_DUPLICATE_DECLARATION, aBuf);
 		*mClassName = '\0'; // Init.
 		VarList *varlist = GlobalVars();
 		int insert_pos;
@@ -6250,10 +6203,6 @@ ResultType Script::DefineClass(LPTSTR aBuf, TCHAR aExport, bool aStruct)
 		}
 		else if (  !(class_var = AddVar(class_name, class_name_length, varlist, insert_pos, VAR_DECLARE_GLOBAL))  )
 			return FAIL;
-		if (aExport == 'E')
-			class_var->Scope() |= VAR_EXPORTED;
-		if (aExport == 'D')
-			mCurrentModule->mSelf = class_var;
 	}
 	
 	size_t length = _tcslen(mClassName), extra_length = class_name_length + 1; // +1 for '.'
@@ -6704,7 +6653,7 @@ Object *Script::FindClass(LPCTSTR aClassName, size_t aClassNameLength)
 		key = cp + 1; cp = _tcschr(key, '.');
 		*cp = '\0';
 		base_var = mod->mVars.Find(key);
-		if (!base_var || !base_var->IsExported())
+		if (!base_var)
 			return nullptr;
 	}
 
@@ -6933,29 +6882,17 @@ UserFunc *Script::AddFunc(LPCTSTR aFuncName, size_t aFuncNameLength, FuncDefType
 // Returns the address of the new function or NULL on failure.
 // The caller must already have verified that this isn't a duplicate function.
 {
-	bool is_static = !_tcsnicmp(aFuncName, _T("Static"), 6) && IS_SPACE_OR_TAB(aFuncName[6]); // Valid only for nested functions (for methods, it is handled by caller).
-	bool is_export = !_tcsnicmp(aFuncName, _T("Export"), 6) && IS_SPACE_OR_TAB(aFuncName[6]); // Valid only for global functions (for methods, it already errored out).
-	bool is_default_export = false;
-	if (is_static || is_export)
+	bool is_static = !_tcsnicmp(aFuncName, _T("Static"), 6) && IS_SPACE_OR_TAB(aFuncName[6]);
+	if (is_static)
 	{
-		if (is_static == !g->CurrentFunc)
+		if (aClassObject || !g->CurrentFunc)
 		{
 			ScriptError(ERR_INVALID_FUNCDECL, aFuncName); // Uses a generic message to minimize code size.
 			return nullptr;
 		}
 		size_t n;
 		for (n = 7; IS_SPACE_OR_TAB(aFuncName[n]); ++n);
-		if (is_default_export = is_export && !_tcsnicmp(aFuncName + n, _T("Default"), 7) && IS_SPACE_OR_TAB(aFuncName[n + 7]))
-		{
-			if (mCurrentModule->mSelf)
-			{
-				ScriptError(ERR_DUPLICATE_DECLARATION, aFuncName);
-				return nullptr;
-			}
-			is_export = false; // For "export default internalname() =>", don't export internalname.
-			for (n += 8; IS_SPACE_OR_TAB(aFuncName[n]); ++n);
-		}
-		if (aFuncNameLength >= n) // Checked for maintainability; should always be true.
+		if (aFuncNameLength > n) // Checked for maintainability; should always be true.
 		{
 			aFuncNameLength -= n;
 			aFuncName += n;
@@ -7034,13 +6971,8 @@ UserFunc *Script::AddFunc(LPCTSTR aFuncName, size_t aFuncNameLength, FuncDefType
 	{
 		if (is_static)
 			the_new_func->mIsStatic = true;
-		auto var = AddFuncVar(the_new_func);
-		if (!var)
+		if (!AddFuncVar(the_new_func))
 			return nullptr;
-		if (is_export)
-			var->Scope() |= VAR_EXPORTED;
-		if (is_default_export)
-			mCurrentModule->mSelf = var;
 	}
 
 	return AddFuncToList(the_new_func);
@@ -7489,11 +7421,11 @@ Var *Script::FindOrAddBuiltInVar(LPCTSTR aVarName, bool aAllowNonVirtual, Result
 	if (auto biv = GetBuiltInVar(aVarName))
 	{
 		if (auto name = SimpleHeap::Malloc(aVarName))
-			var = new Var(name, biv, VAR_DECLARE_GLOBAL | VAR_EXPORTED);
+			var = new Var(name, biv, VAR_DECLARE_GLOBAL);
 	}
 	else if (aAllowNonVirtual && (func = GetBuiltInFunc(aVarName)))
 	{
-		var = new Var(const_cast<LPTSTR>(func->mName), VAR_DECLARE_GLOBAL | VAR_EXPORTED);
+		var = new Var(const_cast<LPTSTR>(func->mName), VAR_DECLARE_GLOBAL);
 	}
 	else
 		return nullptr;

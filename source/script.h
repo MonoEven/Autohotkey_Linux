@@ -2366,7 +2366,7 @@ public:
 	Var *AddFuncVar(UserFunc *aFunc);
 	UserFunc *AddFuncToList(UserFunc *aFunc);
 
-	ResultType DefineClass(LPTSTR aBuf, TCHAR aExport, bool aStruct);
+	ResultType DefineClass(LPTSTR aBuf, bool aStruct);
 	UserFunc *DefineClassInit(bool aStatic);
 	ResultType DefineClassVars(LPTSTR aBuf, bool aStatic);
 	ResultType DefineClassVarInit(LPTSTR aBuf, bool aStatic, Object *aObject, ActionTypeType aActionType = ACT_INVALID);

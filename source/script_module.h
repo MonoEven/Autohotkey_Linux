@@ -30,7 +30,6 @@ public:
 	ScriptImport *mImports = nullptr;
 	ScriptModule *mPrev = nullptr;
 	VarList mVars;
-	Var *mSelf = nullptr;
 	UnresolvedBaseClass *mUnresolvedBaseClass = nullptr;
 	FileIndexType *mFiles = nullptr, mFilesCount = 0, mFilesCountMax = 0;
 	LineNumberType mDirectiveLineNumber = 0;

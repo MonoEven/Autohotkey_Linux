@@ -653,7 +653,6 @@ enum enum_act {
 , ACT_BLOCK_BEGIN, ACT_BLOCK_END
 , ACT_HOTKEY_IF // Must be before ACT_FIRST_COMMAND.
 , ACT_END_MODULE // Used with AddLine(), but excluded from the "named" range below so that the function is preferred.
-, ACT_EXPORT
 // ================================================================================
 // Named actions recognized by ConvertActionType:
 , ACT_STATIC, ACT_GLOBAL, ACT_LOCAL
@@ -681,7 +680,7 @@ enum enum_act {
 #define ACT_IS_LINE_PARENT(ActionType) (ACT_IS_IF(ActionType) || ActionType == ACT_ELSE \
 	|| ACT_IS_LOOP(ActionType) || (ActionType >= ACT_TRY && ActionType <= ACT_FINALLY) \
 	|| ActionType == ACT_SWITCH)
-#define ACT_IS_VAR_DECL(ActionType) ((ActionType) <= ACT_LOCAL && (ActionType) >= ACT_EXPORT)
+#define ACT_IS_VAR_DECL(ActionType) ((ActionType) <= ACT_LOCAL && (ActionType) >= ACT_STATIC)
 // The following groups of action types do not need ExpandArgs() called by ExecUntil(),
 // for one of the following reasons: 1) action has no args, 2) action's args are
 // always fully resolved at load time, 3) action is never executed by ExecUntil(),
