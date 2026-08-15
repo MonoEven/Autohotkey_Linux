@@ -17,7 +17,6 @@ void name##_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValu
 LINUX_BIF_STUB(BIF_Abs)
 LINUX_BIF_STUB(BIF_ASinACos)
 LINUX_BIF_STUB(BIF_ATan)
-LINUX_BIF_STUB(BIF_Base)
 LINUX_BIF_STUB(BIF_CaretGetPos)
 LINUX_BIF_STUB(BIF_Chr)
 LINUX_BIF_STUB(BIF_Click)
@@ -35,19 +34,11 @@ LINUX_BIF_STUB(BIF_Exp)
 LINUX_BIF_STUB(BIF_FloorCeil)
 LINUX_BIF_STUB(BIF_Format)
 LINUX_BIF_STUB(BIF_FormatTime)
-LINUX_BIF_STUB(BIF_GetMethod)
-LINUX_BIF_STUB(BIF_HasBase)
-LINUX_BIF_STUB(BIF_HasProp)
 LINUX_BIF_STUB(BIF_InStr)
-LINUX_BIF_STUB(BIF_IsObject)
 LINUX_BIF_STUB(BIF_MinMax)
 LINUX_BIF_STUB(BIF_Mod)
 LINUX_BIF_STUB(BIF_NumGet)
 LINUX_BIF_STUB(BIF_NumPut)
-LINUX_BIF_STUB(BIF_ObjAddRefRelease)
-LINUX_BIF_STUB(BIF_ObjBindMethod)
-LINUX_BIF_STUB(BIF_ObjPtr)
-LINUX_BIF_STUB(BIF_ObjXXX)
 LINUX_BIF_STUB(BIF_Ord)
 LINUX_BIF_STUB(BIF_Random)
 LINUX_BIF_STUB(BIF_Reg)
@@ -152,6 +143,24 @@ LINUX_BIV_STUB(BIV_UserName_ComputerName)
 LINUX_BIV_STUB(BIV_WinDir)
 LINUX_BIV_STUB_RW(BIV_WorkingDir)
 LINUX_BIV_STUB_RW(BIV_xDelay)
+
+// Minimal MsgBox built-in for the Linux console port.  It prints the first
+// argument and returns "OK" so scripts can continue.
+BIF_DECL(BIF_MsgBox)
+{
+	TCHAR buf[4096];
+	buf[0] = L'\0';
+	LPTSTR text = buf;
+	if (aParamCount > 0)
+	{
+		size_t len = 0;
+		LPTSTR str = TokenToString(*aParam[0], buf, &len);
+		if (str)
+			text = str;
+	}
+	std::printf("%ls\n", text ? text : L"");
+	aResultToken.SetValue(_T("OK"));
+}
 
 // Keep the preprocessor namespace clean.
 #undef LINUX_BIF_STUB

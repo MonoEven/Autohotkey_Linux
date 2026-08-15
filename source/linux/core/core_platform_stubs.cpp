@@ -57,9 +57,6 @@ BIF_DECL(ComObjArray_Call) { (void)aParam; (void)aParamCount; }
 
 // --- object/runtime ---
 Object *Object::DefineMetadataMembers(Object *aObj, LPCTSTR, ObjectMemberMd *, int) { return aObj; }
-bool Object::HasBase(ExprTokenType &, IObject *) { return false; }
-BIF_DECL(Op_Array) { (void)aParam; (void)aParamCount; }
-BIF_DECL(Op_Object) { (void)aParam; (void)aParamCount; }
 LPCTSTR RegExMatch(LPCTSTR, LPCTSTR) { return _T(""); }
 void RegExMatchObject::Invoke(ResultToken &, int, int, ExprTokenType *aParam[], int) { (void)aParam; }
 LPTSTR GetExitReasonString(ExitReasons) { return _T(""); }

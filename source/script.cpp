@@ -84,6 +84,7 @@ FuncEntry g_BIF[] =
 	BIFn(Max, 1, NA, BIF_MinMax),
 	BIFn(Min, 1, NA, BIF_MinMax),
 	BIF1(Mod, 2, 2),
+	BIF1(MsgBox, 0, 3),
 	BIF1(NumGet, 2, 3),
 	BIF1(NumPut, 3, NA),
 	BIFn(ObjAddRef, 1, 1, BIF_ObjAddRefRelease),

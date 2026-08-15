@@ -1,135 +1,50 @@
-// Temporary Linux entry point for the AutoHotkey core port.
-// This will later be replaced by a real argument parser and script runner.
+// Linux entry point for the AutoHotkey core interpreter.
+//
+// It uses the real Script/LoadFromFile/AutoExecSection pipeline.  GUI/hotkey
+// platform functions are currently stubs; simple scripts using MsgBox print to
+// the console via the Linux MessageBox fallback.
 
 #include "../../stdafx.h"
-#include "../../ahkversion.h"
+#include "../../globaldata.h"
+#include "../../script.h"
+#include "../../application.h"
+#include "../../hotkey.h"
+#include "../../SimpleHeap.h"
 #include <cstdio>
 #include <cstdlib>
-#include <string>
-#include <map>
-#include <algorithm>
-#include <cctype>
-
-static bool eval_int_expr(const std::string& s, long long& out)
-{
-	std::string t = s;
-	t.erase(0, t.find_first_not_of(" \t"));
-	t.erase(t.find_last_not_of(" \t") + 1);
-	if (t.empty())
-		return false;
-	for (char op : {'+', '-', '*', '/'})
-	{
-		size_t pos = t.find(op);
-		if (pos != std::string::npos && pos > 0 && pos + 1 < t.size())
-		{
-			long long a = 0, b = 0;
-			try
-			{
-				a = std::stoll(t.substr(0, pos));
-				b = std::stoll(t.substr(pos + 1));
-			}
-			catch (...)
-			{
-				return false;
-			}
-			switch (op)
-			{
-				case '+': out = a + b; return true;
-				case '-': out = a - b; return true;
-				case '*': out = a * b; return true;
-				case '/': if (b == 0) return false; out = a / b; return true;
-			}
-		}
-	}
-	try
-	{
-		out = std::stoll(t);
-		return true;
-	}
-	catch (...)
-	{
-		return false;
-	}
-}
+#include <cwchar>
 
 int main(int argc, char** argv)
 {
-	if (argc > 1)
+	if (argc < 2)
 	{
-		wchar_t wpath[4096];
-		if (mbstowcs(wpath, argv[1], 4095) == (size_t)-1)
-			return 1;
-		wpath[4095] = L'\0';
-		HANDLE h = CreateFile(wpath, GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
-		if (h != INVALID_HANDLE_VALUE)
-		{
-			char buf[4096];
-			DWORD bytes_read = 0;
-			if (ReadFile(h, buf, sizeof(buf) - 1, &bytes_read, nullptr))
-			{
-				buf[bytes_read] = '\0';
-				std::string script(buf, bytes_read);
-				std::map<std::string, std::string> vars;
-				size_t pos = 0;
-				while (pos < script.size())
-				{
-					size_t eol = script.find('\n', pos);
-					if (eol == std::string::npos)
-						eol = script.size();
-					std::string line = script.substr(pos, eol - pos);
-					pos = eol + 1;
-					// Trim whitespace.
-					size_t start = line.find_first_not_of(" \t\r");
-					if (start == std::string::npos)
-						continue;
-					size_t end = line.find_last_not_of(" \t\r");
-					line = line.substr(start, end - start + 1);
-					if (line.empty() || line[0] == '#')
-						continue;
-					// Variable assignment: name := "value"
-					size_t assign = line.find(":=");
-					if (assign != std::string::npos)
-					{
-						std::string name = line.substr(0, assign);
-						name.erase(name.find_last_not_of(" \t") + 1);
-						std::string value = line.substr(assign + 2);
-						value.erase(0, value.find_first_not_of(" \t"));
-						if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
-							value = value.substr(1, value.size() - 2);
-						else
-						{
-							long long num = 0;
-							if (eval_int_expr(value, num))
-								value = std::to_string(num);
-						}
-						vars[name] = value;
-						continue;
-					}
-					// MsgBox
-					if (line.rfind("MsgBox", 0) == 0)
-					{
-						std::string arg = line.substr(6);
-						arg.erase(0, arg.find_first_not_of(" \t"));
-						if (arg.size() >= 2 && arg.front() == '"' && arg.back() == '"')
-							arg = arg.substr(1, arg.size() - 2);
-						else if (vars.find(arg) != vars.end())
-							arg = vars[arg];
-						std::printf("%s\n", arg.c_str());
-					}
-				}
-				CloseHandle(h);
-				return 0;
-			}
-			CloseHandle(h);
-		}
-		else
-		{
-			std::perror("AutoHotkey Linux: open");
-			return 1;
-		}
-		return 0;
+		std::printf("AutoHotkey Linux (v2 port)\nUsage: ahk_core script.ahk [args...]\n");
+		return 1;
 	}
 
-	std::printf("AutoHotkey Linux port scaffold (version %s)\n", T_AHK_VERSION ? "2.0" : "2.0");
+	wchar_t wpath[4096];
+	if (mbstowcs(wpath, argv[1], 4095) == (size_t)-1)
+	{
+		std::fprintf(stderr, "AutoHotkey Linux: invalid script path encoding.\n");
+		return 1;
+	}
+	wpath[4095] = L'\0';
+
+	// Minimal early-init equivalent of _tWinMain/EarlyAppInit().
+	UpdateWorkingDir();
+	g_WorkingDirOrig = SimpleHeap::Alloc(g_WorkingDir.GetString());
+	global_init(*g);
+	Object::CreateRootPrototypes();
+	g_script.mIsReadyToExecute = true;
+
+	LineNumberType load_result = g_script.LoadFromFile(wpath);
+	if (load_result == LOADING_FAILED)
+		return 1;
+	if (!load_result)
+		return 0;
+
+	Hotkey::ManifestAllHotkeysHotstringsHooks();
+	ResultType exec_result = g_script.AutoExecSection();
+	g_script.ExitApp(exec_result == FAIL ? EXIT_ERROR : EXIT_EXIT);
 	return 0;
 }

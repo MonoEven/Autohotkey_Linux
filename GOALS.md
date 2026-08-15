@@ -18,7 +18,7 @@
 ### M2：核心解释器可在 Linux 编译
 - [x] 核心模块（script/var/util/TextIO/error 等）通过 Linux 编译
 - [x] 提供 Linux 命令行入口 `main()`，替代 `_tWinMain`（临时 stub）
-- [ ] 能解析并执行不依赖 GUI/热键的脚本
+- [x] 能解析并执行不依赖 GUI/热键的脚本（MsgBox/变量赋值/算术表达式已可运行）
 - [ ] 建立基础 CI 编译检查
 
 ### M3：平台抽象与 X11 后端
@@ -72,5 +72,8 @@ M2：核心解释器 Linux 编译。
 - [x] 新增 BIF_*/BIV_* 桩，使核心解释器可链接
 - [x] 修复 glibc 宽字符格式化（%s→%ls）与 GetFileAttributes/SetDllDirectory/MessageBox 等 Linux 兼容
 - [x] 修复 LoadIncludedFile 中 continue 跳过 buffer swap 导致的死循环，真实 LoadFromFile 已能读取 .ahk
-- [ ] 真实 AutoExecSection 仍需继续移植（当前简单脚本会因对象模型桩不完整而报错/崩溃）
+- [x] 定义 _WIN64 修正 64 位 Linux 结构体布局，真实 AutoExecSection 已可运行简单 MsgBox/赋值脚本
+- [x] 链接 script_object_bif.cpp，接入真实 Object::HasBase/Op_Array/Op_Object 等对象内建函数
+- [x] 新增 BIF_MsgBox 控制台实现，MsgBox "Hi" 可输出到终端
+- [ ] 复杂 GUI/热键/内置函数仍需继续移植
 - [ ] 逐文件修复编译错误

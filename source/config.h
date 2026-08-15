@@ -1,5 +1,13 @@
 #pragma once
 // This file defines some macros for compile-time configurations.
+
+// The upstream source uses _WIN64 to select 64-bit struct layouts (pointers are 8 bytes).
+// On 64-bit Linux we must enable the same layout for ABI compatibility.
+#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
+#ifndef _WIN64
+#define _WIN64
+#endif
+#endif
 // (Like many projects on *nix that using autotools.)
 
 #if defined(WIN32) && !defined(_WIN64)

@@ -11,6 +11,7 @@ add_library(ahk_core_objects STATIC
     ../../script2.cpp
     ../../script_expression.cpp
     ../../script_object.cpp
+    ../../script_object_bif.cpp
     ../../error.cpp
     ../../hotkey.cpp
     ../../os_version.cpp

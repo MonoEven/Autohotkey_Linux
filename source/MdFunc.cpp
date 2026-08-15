@@ -17,13 +17,13 @@ struct MdFuncEntry
 
 
 #define md_mode decl
-#include "lib\functions.h"
+#include "lib/functions.h"
 #undef md_mode
 
 MdFuncEntry sMdFunc[]
 {
 	#define md_mode data
-	#include "lib\functions.h"
+	#include "lib/functions.h"
 	#undef md_mode
 };
 
