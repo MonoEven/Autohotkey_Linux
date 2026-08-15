@@ -1,2 +1,3 @@
 #Requires AutoHotkey v2.0
-MsgBox "Hello from AutoHotkey Linux!"
+message := "Hello from AutoHotkey Linux!"
+MsgBox message

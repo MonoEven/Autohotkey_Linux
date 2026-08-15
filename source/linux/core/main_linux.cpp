@@ -5,6 +5,9 @@
 #include "../../ahkversion.h"
 #include <cstdio>
 #include <cstdlib>
+#include <string>
+#include <map>
+#include <algorithm>
 
 int main(int argc, char** argv)
 {
@@ -22,20 +25,51 @@ int main(int argc, char** argv)
 			if (ReadFile(h, buf, sizeof(buf) - 1, &bytes_read, nullptr))
 			{
 				buf[bytes_read] = '\0';
-				// Minimal .ahk execution: handle MsgBox "..." for the sample script.
-				if (const char* msg = std::strstr(buf, "MsgBox"))
+				std::string script(buf, bytes_read);
+				std::map<std::string, std::string> vars;
+				size_t pos = 0;
+				while (pos < script.size())
 				{
-					if (const char* q1 = std::strchr(msg, '"'))
+					size_t eol = script.find('\n', pos);
+					if (eol == std::string::npos)
+						eol = script.size();
+					std::string line = script.substr(pos, eol - pos);
+					pos = eol + 1;
+					// Trim whitespace.
+					size_t start = line.find_first_not_of(" \t\r");
+					if (start == std::string::npos)
+						continue;
+					size_t end = line.find_last_not_of(" \t\r");
+					line = line.substr(start, end - start + 1);
+					if (line.empty() || line[0] == '#')
+						continue;
+					// Variable assignment: name := "value"
+					size_t assign = line.find(":=");
+					if (assign != std::string::npos)
 					{
-						if (const char* q2 = std::strchr(q1 + 1, '"'))
-						{
-							std::printf("%.*s\n", (int)(q2 - q1 - 1), q1 + 1);
-							CloseHandle(h);
-							return 0;
-						}
+						std::string name = line.substr(0, assign);
+						name.erase(name.find_last_not_of(" \t") + 1);
+						std::string value = line.substr(assign + 2);
+						value.erase(0, value.find_first_not_of(" \t"));
+						if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
+							value = value.substr(1, value.size() - 2);
+						vars[name] = value;
+						continue;
+					}
+					// MsgBox
+					if (line.rfind("MsgBox", 0) == 0)
+					{
+						std::string arg = line.substr(6);
+						arg.erase(0, arg.find_first_not_of(" \t"));
+						if (arg.size() >= 2 && arg.front() == '"' && arg.back() == '"')
+							arg = arg.substr(1, arg.size() - 2);
+						else if (vars.find(arg) != vars.end())
+							arg = vars[arg];
+						std::printf("%s\n", arg.c_str());
 					}
 				}
-				std::printf("AutoHotkey Linux: no executable statement found in script.\n");
+				CloseHandle(h);
+				return 0;
 			}
 			CloseHandle(h);
 		}
