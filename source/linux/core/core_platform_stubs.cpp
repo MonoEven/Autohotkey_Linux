@@ -282,8 +282,16 @@ void *GetDllProcAddress(LPCTSTR, HMODULE *) { return nullptr; }
 DWORD GetProcessName(DWORD, LPTSTR aBuf, DWORD aBufSize, bool) { if (aBuf && aBufSize) aBuf[0] = 0; return 0; }
 
 // --- script ---
-LPTSTR Script::CurrentFile() { return _T(""); }
-LineNumberType Script::CurrentLine() { return 0; }
+LineNumberType Script::CurrentLine()
+{
+	// Mirrors lib/vars.cpp: the line number of the line currently executing.
+	return mCurrLine ? mCurrLine->mLineNumber : mCombinedLineNumber;
+}
+LPTSTR Script::CurrentFile()
+{
+	// Mirrors lib/vars.cpp: the file of the line currently executing.
+	return Line::sSourceFile[mCurrLine ? mCurrLine->mFileIndex : mCurrFileIndex];
+}
 ResultType Script::DoRunAs(LPTSTR, LPCTSTR, bool, WORD, PROCESS_INFORMATION &, bool &aSuccess, HANDLE &, DWORD &) { aSuccess = false; return FAIL; }
 UserMenu *Script::FindMenu(HMENU) { return nullptr; }
 

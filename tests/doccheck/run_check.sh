@@ -21,7 +21,13 @@ for ahk in assert_*.ahk; do
     echo "SKIP: $base (no expect file)"
     continue
   fi
-  DISPLAY= timeout 60 "$BIN" "$ahk" > "out/${base}.txt" 2>&1
+  # Some suites need script arguments (e.g. assert_general checks A_Args);
+  # run those with args instead of the plain invocation.
+  case "$base" in
+    assert_general) extra=("one" "two") ;;
+    *) extra=() ;;
+  esac
+  DISPLAY= timeout 60 "$BIN" "$ahk" "${extra[@]}" > "out/${base}.txt" 2>&1
   rc=$?
   if [ $rc -ne 0 ]; then
     fail=$((fail+1))

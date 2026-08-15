@@ -65,6 +65,44 @@ int main(int argc, char** argv)
 		g_script.mFileName = SimpleHeap::Alloc(filename_marker);
 	}
 
+	// A_AhkPath: the executable's own path (Script::Init normally fills mOurEXE).
+	{
+		char narrow[4096];
+		ssize_t n = readlink("/proc/self/exe", narrow, sizeof(narrow) - 1);
+		if (n > 0)
+		{
+			narrow[n] = '\0';
+			wchar_t wide[4096];
+			if (mbstowcs(wide, narrow, 4095) != (size_t)-1)
+			{
+				wide[4095] = L'\0';
+				g_script.mOurEXE = SimpleHeap::Alloc(wide);
+				LPTSTR slash = _tcsrchr(wide, '/');
+				if (slash)
+					g_script.mOurEXEDir = SimpleHeap::Alloc(wide, (size_t)(slash - wide));
+			}
+		}
+	}
+
+	// A_Args: the command-line parameters after the script path (mirrors
+	// _tWinMain in AutoHotkey.cpp).
+	if (Var *var = g_script.FindOrAddVar(_T("A_Args"), 6, VAR_DECLARE_GLOBAL))
+	{
+		TCHAR *wide_args[256];
+		int wide_count = 0;
+		for (int i = 2; i < argc && wide_count < 255; ++i)
+		{
+			wchar_t *wa = (wchar_t *)malloc((strlen(argv[i]) + 1) * sizeof(wchar_t));
+			mbstowcs(wa, argv[i], strlen(argv[i]) + 1);
+			wide_args[wide_count++] = wa;
+		}
+		auto args = Array::FromArgV(wide_args, wide_count);
+		for (int i = 0; i < wide_count; ++i)
+			free(wide_args[i]);
+		if (args)
+			var->AssignSkipAddRef(args);
+	}
+
 	LineNumberType load_result = g_script.LoadFromFile(wpath);
 	if (load_result == LOADING_FAILED)
 		return 1;

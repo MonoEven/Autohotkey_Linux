@@ -61,6 +61,34 @@ A_Clipboard := "dc-clip"
 MsgBox "Clipboard=" A_Clipboard
 A_Clipboard := ""
 
+; --- Environment / built-in variables (v2 docs) ---
+; (Placed before the Critical() call below: A_IsCritical reflects the peek
+; frequency when the current thread is critical, which Critical() enables.)
+MsgBox "A_Args_count=" A_Args.Length
+MsgBox "A_Args_1=" A_Args[1]
+MsgBox "A_Args_2=" A_Args[2]
+MsgBox "A_LastError=" (A_LastError = 0)
+A_LastError := 42
+MsgBox "A_LastError_set=" (A_LastError = 42)
+MsgBox "A_IsPaused=" A_IsPaused
+MsgBox "A_IsSuspended=" A_IsSuspended
+MsgBox "A_IsCritical=" A_IsCritical
+MsgBox "A_LineNumber_gt=" (A_LineNumber > 0)
+MsgBox "A_LineFile_nn=" (A_LineFile != "")
+MsgBox "A_ComputerName_nn=" (A_ComputerName != "")
+MsgBox "A_UserName_nn=" (A_UserName != "")
+MsgBox "A_OSVersion_nn=" (A_OSVersion != "")
+MsgBox "A_Language_hex=" (RegExMatch(A_Language, "^[0-9A-F]{4}$") = 1)
+MsgBox "A_MyDocuments_nn=" (A_MyDocuments != "")
+MsgBox "A_AhkPath_nn=" (A_AhkPath != "")
+MsgBox "A_ScriptHwnd=" (A_ScriptHwnd = 0)
+MsgBox "A_EventInfo=" (A_EventInfo = 0)
+dc_args_func()
+dc_args_func()
+{
+    MsgBox "A_ThisFunc=" (A_ThisFunc = "dc_args_func")
+}
+
 ; ListLines / Critical / Thread (state functions)
 MsgBox "ListLines_ret=" (ListLines() >= 0)
 MsgBox "Critical_ret=" (Critical() >= 0)

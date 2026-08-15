@@ -9,6 +9,8 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <map>
+#include <sys/stat.h>
 
 // Real implementations from window.cpp / script2.cpp (declared here because
 // they have no header declaration on the Windows build either).
@@ -37,7 +39,6 @@ LINUX_BIF_STUB(BIF_ComObjQuery)
 LINUX_BIF_STUB(BIF_ComObjType)
 LINUX_BIF_STUB(BIF_ComObjValue)
 LINUX_BIF_STUB(BIF_DllCall)
-LINUX_BIF_STUB(BIF_Reg)
 LINUX_BIF_STUB(BIF_Sound)
 
 // WinExist/WinActive: no X11 window backend yet, so no window ever matches.
@@ -49,7 +50,6 @@ BIF_DECL(BIF_WinExistActive)
 	aResultToken.SetValue(_T(""));
 }
 
-LINUX_BIV_STUB(BIV_AhkPath)
 LINUX_BIV_STUB_RW(BIV_AllowMainWindow)
 LINUX_BIV_STUB_RW(BIV_CoordMode)
 LINUX_BIV_STUB(BIV_Cursor)
@@ -57,21 +57,100 @@ LINUX_BIV_STUB_RW(BIV_DefaultMouseSpeed)
 LINUX_BIV_STUB_RW(BIV_DetectHiddenText)
 LINUX_BIV_STUB_RW(BIV_DetectHiddenWindows)
 LINUX_BIV_STUB(BIV_EndChar)
-LINUX_BIV_STUB_RW(BIV_EventInfo)
 LINUX_BIV_STUB_RW(BIV_FileEncoding)
 LINUX_BIV_STUB_RW(BIV_Hotkey)
 LINUX_BIV_STUB(BIV_IconFile)
 LINUX_BIV_STUB_RW(BIV_IconHidden)
 LINUX_BIV_STUB(BIV_IconNumber)
 LINUX_BIV_STUB_RW(BIV_IconTip)
-LINUX_BIV_STUB(BIV_IsCritical)
-LINUX_BIV_STUB(BIV_IsPaused)
-LINUX_BIV_STUB(BIV_IsSuspended)
-LINUX_BIV_STUB(BIV_Language)
-LINUX_BIV_STUB_RW(BIV_LastError)
-LINUX_BIV_STUB(BIV_LineFile)
-LINUX_BIV_STUB(BIV_LineNumber)
 LINUX_BIV_STUB_RW(BIV_ListLines)
+
+// --- Built-in variables with real doc semantics on Linux ---
+
+BIV_DECL_R(BIV_EventInfo)
+{
+	aResultToken.SetValue((__int64)(g ? g->EventInfo : 0));
+}
+void BIV_EventInfo_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
+{
+	(void)aResultToken; (void)aVarName;
+	if (g)
+		g->EventInfo = (EventInfoType)TokenToInt64(aValue);
+}
+
+BIV_DECL_R(BIV_IsCritical)
+{
+	// Docs: 0 if not critical, otherwise the peek frequency (as in lib/vars.cpp).
+	if (g && g->ThreadIsCritical)
+		aResultToken.SetValue((__int64)g->PeekFrequency);
+	else
+		aResultToken.SetValue((__int64)0);
+}
+
+BIV_DECL_R(BIV_IsPaused)
+{
+	// Docs: 1 if the thread beneath the current thread is paused (lib/vars.cpp logic).
+	aResultToken.SetValue((__int64)(g > g_array && g[-1].IsPaused));
+}
+
+BIV_DECL_R(BIV_IsSuspended)
+{
+	aResultToken.SetValue((__int64)(g_IsSuspended ? 1 : 0));
+}
+
+BIV_DECL_R(BIV_Language)
+{
+	// Docs: a four-digit hexadecimal language identifier.  Best-effort mapping
+	// of the LANG environment's language code to a Windows LCID.
+	const char *lang = std::getenv("LANG");
+	unsigned lcid = 0x0409; // en-US default.
+	if (lang)
+	{
+		if (!strncasecmp(lang, "zh", 2)) lcid = 0x0804;
+		else if (!strncasecmp(lang, "ja", 2)) lcid = 0x0411;
+		else if (!strncasecmp(lang, "de", 2)) lcid = 0x0407;
+		else if (!strncasecmp(lang, "fr", 2)) lcid = 0x040C;
+		else if (!strncasecmp(lang, "es", 2)) lcid = 0x040A;
+		else if (!strncasecmp(lang, "ru", 2)) lcid = 0x0419;
+		else if (!strncasecmp(lang, "ko", 2)) lcid = 0x0412;
+		else if (!strncasecmp(lang, "it", 2)) lcid = 0x0410;
+		else if (!strncasecmp(lang, "pt", 2)) lcid = 0x0416;
+		else if (!strncasecmp(lang, "nl", 2)) lcid = 0x0413;
+		else if (!strncasecmp(lang, "pl", 2)) lcid = 0x0415;
+		else if (!strncasecmp(lang, "tr", 2)) lcid = 0x041F;
+		else if (!strncasecmp(lang, "sv", 2)) lcid = 0x041D;
+		else if (!strncasecmp(lang, "fi", 2)) lcid = 0x040B;
+		else if (!strncasecmp(lang, "cs", 2)) lcid = 0x0405;
+	}
+	TCHAR buf[16];
+	_stprintf(buf, _T("%04X"), lcid);
+	LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((_tcslen(buf) + 1) * sizeof(TCHAR));
+	_tcscpy(persistent, buf);
+	aResultToken.SetValue(persistent);
+}
+
+BIV_DECL_R(BIV_LastError)
+{
+	aResultToken.SetValue((__int64)(g ? g->LastError : 0));
+}
+void BIV_LastError_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
+{
+	(void)aResultToken; (void)aVarName;
+	if (g)
+	{
+		g->LastError = (DWORD)TokenToInt64(aValue);
+		SetLastError(g->LastError);
+	}
+}
+
+BIV_DECL_R(BIV_LineFile)
+{
+	aResultToken.SetValue(g_script.CurrentFile());
+}
+BIV_DECL_R(BIV_LineNumber)
+{
+	aResultToken.SetValue((__int64)g_script.CurrentLine());
+}
 // --- Loop Files built-in variables (mirrors lib/vars.cpp implementations) ---
 
 static void LinuxFixLoopFilePath(LPTSTR aBuf, LPTSTR aPattern)
@@ -249,18 +328,43 @@ LINUX_BIV_STUB(BIV_LoopRegName)
 LINUX_BIV_STUB(BIV_LoopRegTimeModified)
 LINUX_BIV_STUB(BIV_LoopRegType)
 LINUX_BIV_STUB_RW(BIV_MenuMaskKey)
-LINUX_BIV_STUB(BIV_MyDocuments)
+BIV_DECL_R(BIV_MyDocuments)
+{
+	// Docs: full path of the user's Documents folder.  Use the XDG convention
+	// (~/Documents), falling back to the home directory.
+	const char *home = std::getenv("HOME");
+	std::string path = home && *home ? home : "/tmp";
+	std::string docs = path + "/Documents";
+	struct stat st;
+	if (stat(docs.c_str(), &st) != 0 || !S_ISDIR(st.st_mode))
+		docs = path;
+	wchar_t buf[4096];
+	if (mbstowcs(buf, docs.c_str(), 4095) == (size_t)-1)
+		buf[0] = L'\0';
+	buf[4095] = L'\0';
+	LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((_tcslen(buf) + 1) * sizeof(TCHAR));
+	_tcscpy(persistent, buf);
+	aResultToken.SetValue(persistent);
+}
+BIV_DECL_R(BIV_ScriptHwnd)
+{
+	// Docs: the HWND of the script's main window.  The Linux port has no main
+	// window, so this is always 0.
+	aResultToken.SetValue((__int64)0);
+}
+BIV_DECL_R(BIV_ThisFunc)
+{
+	aResultToken.SetValue(g && g->CurrentFunc ? g->CurrentFunc->mName : _T(""));
+}
 LINUX_BIV_STUB(BIV_PriorHotkey)
 LINUX_BIV_STUB(BIV_PriorKey)
 LINUX_BIV_STUB_RW(BIV_RegView)
 LINUX_BIV_STUB(BIV_ScreenDPI)
 LINUX_BIV_STUB(BIV_ScreenWidth_Height)
-LINUX_BIV_STUB(BIV_ScriptHwnd)
 LINUX_BIV_STUB_RW(BIV_SendLevel)
 LINUX_BIV_STUB_RW(BIV_SendMode)
 LINUX_BIV_STUB(BIV_SpecialFolderPath)
 LINUX_BIV_STUB_RW(BIV_StoreCapsLockMode)
-LINUX_BIV_STUB(BIV_ThisFunc)
 LINUX_BIV_STUB(BIV_ThisHotkey)
 LINUX_BIV_STUB(BIV_TimeIdle)
 LINUX_BIV_STUB(BIV_TimeSincePriorHotkey)
@@ -305,7 +409,6 @@ BIV_DECL_R(BIV_InitialWorkingDir) { aResultToken.SetValue(g_WorkingDirOrig ? g_W
 BIV_DECL_R(BIV_Is64bitOS) { aResultToken.SetValue((__int64)(sizeof(void*) == 8 ? 1 : 0)); }
 BIV_DECL_R(BIV_IsAdmin) { aResultToken.SetValue((__int64)0); }
 BIV_DECL_R(BIV_IsCompiled) { aResultToken.SetValue((__int64)0); }
-BIV_DECL_R(BIV_OSVersion) { aResultToken.SetValue(_T("Linux")); }
 BIV_DECL_R(BIV_PtrSize) { aResultToken.SetValue((__int64)sizeof(void*)); }
 BIV_DECL_R(BIV_ScriptDir) { aResultToken.SetValue(g_script.mFileDir ? g_script.mFileDir : _T("")); }
 BIV_DECL_R(BIV_ScriptFullPath) { aResultToken.SetValue(g_script.mFileSpec ? g_script.mFileSpec : _T("")); }
@@ -314,21 +417,577 @@ void BIV_ScriptName_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenTyp
 BIV_DECL_R(BIV_Space_Tab) { aResultToken.SetValue(_tcsicmp(aVarName, _T("Tab")) == 0 ? _T("\t") : _T(" ")); }
 BIV_DECL_R(BIV_Temp) { aResultToken.SetValue(_T("/tmp")); }
 BIV_DECL_R(BIV_TickCount) { aResultToken.SetValue((__int64)GetTickCount()); }
+
+BIV_DECL_R(BIV_AhkPath)
+{
+	// Docs: the full path of the AutoHotkey executable (/proc/self/exe).
+	char narrow[4096];
+	ssize_t n = readlink("/proc/self/exe", narrow, sizeof(narrow) - 1);
+	if (n <= 0)
+	{
+		aResultToken.SetValue(_T(""));
+		return;
+	}
+	narrow[n] = '\0';
+	wchar_t wide[4096];
+	if (mbstowcs(wide, narrow, 4095) == (size_t)-1)
+		wide[0] = L'\0';
+	wide[4095] = L'\0';
+	LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((_tcslen(wide) + 1) * sizeof(TCHAR));
+	_tcscpy(persistent, wide);
+	aResultToken.SetValue(persistent);
+}
+
+BIV_DECL_R(BIV_OSVersion)
+{
+	// Docs: the OS version.  Report the kernel release (e.g. "6.8.0-31-generic").
+	struct utsname uts;
+	if (uname(&uts) == 0)
+	{
+		wchar_t wide[512];
+		if (mbstowcs(wide, uts.release, 511) == (size_t)-1)
+			wide[0] = L'\0';
+		wide[511] = L'\0';
+		LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((_tcslen(wide) + 1) * sizeof(TCHAR));
+		_tcscpy(persistent, wide);
+		aResultToken.SetValue(persistent);
+	}
+	else
+		aResultToken.SetValue(_T("Linux"));
+}
+
 BIV_DECL_R(BIV_UserName_ComputerName)
 {
-	const char *user = std::getenv("USER");
-	if (!user)
-		user = "user";
+	// Docs: A_UserName = the account name; A_ComputerName = the network name.
 	wchar_t buf[256];
-	size_t n = mbstowcs(buf, user, 255);
-	if (n == (size_t)-1)
-		n = 0;
-	buf[n] = L'\0';
-	LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((n + 1) * sizeof(TCHAR));
-	tmemcpy(persistent, buf, n + 1);
-	aResultToken.SetValue(persistent, n);
+	buf[0] = L'\0';
+	if (aVarName[10]) // A_Computer[N]ame (index 10 is 'N').
+	{
+		char narrow[256];
+		if (gethostname(narrow, sizeof(narrow)) == 0)
+			mbstowcs(buf, narrow, 255);
+	}
+	else
+	{
+		const char *user = std::getenv("USER");
+		if (!user)
+			user = std::getenv("LOGNAME");
+		if (user)
+			mbstowcs(buf, user, 255);
+	}
+	buf[255] = L'\0';
+	LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((_tcslen(buf) + 1) * sizeof(TCHAR));
+	_tcscpy(persistent, buf);
+	aResultToken.SetValue(persistent);
 }
 BIV_DECL_R(BIV_WinDir) { aResultToken.SetValue(_T("/usr")); }
+
+// ---------------------------------------------------------------------------
+// Registry functions (RegRead/RegWrite/RegDelete/RegDeleteKey/RegCreateKey)
+// on a Linux file-backed store.
+//
+// There is no Windows registry on Linux; this port keeps a virtual registry
+// in an INI-like text file at $XDG_CONFIG_HOME/autohotkey-registry.txt
+// (default ~/.config/autohotkey-registry.txt).  Each key is a section:
+//   [HKEY_CURRENT_USER\Software\MyApp]
+//   @=REG_SZ:default value        (@ is the "(Default)" value)
+//   Name=REG_DWORD:42
+// Values are stored as "TYPE:data"; backslash, newline, CR and '=' inside the
+// data are backslash-escaped.  REG_DWORD is a decimal number, REG_BINARY is
+// uppercase hex, REG_MULTI_SZ components are separated by newlines.
+// ---------------------------------------------------------------------------
+
+static std::string LinuxRegStorePath()
+{
+	const char *xdg = getenv("XDG_CONFIG_HOME");
+	const char *home = getenv("HOME");
+	std::string dir;
+	if (xdg && *xdg)
+		dir = xdg;
+	else if (home && *home)
+		dir = std::string(home) + "/.config";
+	else
+		dir = "/tmp";
+	return dir + "/autohotkey-registry.txt";
+}
+
+static std::string LinuxRegEscape(const std::string &s)
+{
+	std::string out;
+	for (char c : s)
+	{
+		switch (c)
+		{
+		case '\\': out += "\\\\"; break;
+		case '\n': out += "\\n"; break;
+		case '\r': out += "\\r"; break;
+		case '=': out += "\\="; break;
+		default: out += c; break;
+		}
+	}
+	return out;
+}
+
+static void LinuxRegUnescape(const std::string &s, std::string &out)
+{
+	out.clear();
+	for (size_t i = 0; i < s.size(); ++i)
+	{
+		if (s[i] != '\\' || i + 1 >= s.size())
+		{
+			out += s[i];
+			continue;
+		}
+		switch (s[++i])
+		{
+		case '\\': out += '\\'; break;
+		case 'n': out += '\n'; break;
+		case 'r': out += '\r'; break;
+		case '=': out += '='; break;
+		default: out += s[i]; break;
+		}
+	}
+}
+
+// Normalize the root prefix (HKCU -> HKEY_CURRENT_USER etc.); false if invalid.
+static bool LinuxRegNormalizeKey(const std::string &aKey, std::string &aOut)
+{
+	aOut = aKey;
+	if (aKey.empty())
+		return false;
+	static const char *const roots[][2] = {
+		{ "HKEY_LOCAL_MACHINE", "HKEY_LOCAL_MACHINE" },
+		{ "HKEY_USERS", "HKEY_USERS" },
+		{ "HKEY_CURRENT_USER", "HKEY_CURRENT_USER" },
+		{ "HKEY_CLASSES_ROOT", "HKEY_CLASSES_ROOT" },
+		{ "HKEY_CURRENT_CONFIG", "HKEY_CURRENT_CONFIG" },
+		{ "HKLM", "HKEY_LOCAL_MACHINE" },
+		{ "HKU", "HKEY_USERS" },
+		{ "HKCU", "HKEY_CURRENT_USER" },
+		{ "HKCR", "HKEY_CLASSES_ROOT" },
+		{ "HKCC", "HKEY_CURRENT_CONFIG" },
+	};
+	size_t slash = aKey.find('\\');
+	std::string root = aKey.substr(0, slash == std::string::npos ? aKey.size() : slash);
+	for (auto &r : roots)
+	{
+		size_t rlen = strlen(r[0]);
+		if (root.size() == rlen && !strncasecmp(root.c_str(), r[0], rlen))
+		{
+			aOut = r[1];
+			if (slash != std::string::npos)
+				aOut += aKey.substr(slash);
+			return true;
+		}
+	}
+	return false;
+}
+
+typedef std::map<std::string, std::pair<std::string, std::string>> LinuxRegSection; // name -> (type, value)
+typedef std::map<std::string, LinuxRegSection> LinuxRegStore;
+
+static bool LinuxRegLoad(LinuxRegStore &aStore)
+{
+	std::ifstream f(LinuxRegStorePath());
+	if (!f)
+		return true; // No store file yet == empty registry.
+	std::string line, section;
+	while (std::getline(f, line))
+	{
+		if (!line.empty() && line.back() == '\r')
+			line.pop_back();
+		if (line.empty())
+			continue;
+		if (line[0] == '[')
+		{
+			size_t end = line.find(']');
+			if (end == std::string::npos)
+				continue;
+			section = line.substr(1, end - 1);
+			continue;
+		}
+		size_t eq = line.find('=');
+		if (eq == std::string::npos)
+			continue;
+		std::string name = line.substr(0, eq);
+		std::string rest = line.substr(eq + 1);
+		size_t colon = rest.find(':');
+		if (colon == std::string::npos)
+			continue;
+		std::string value;
+		LinuxRegUnescape(rest.substr(colon + 1), value);
+		aStore[section][name] = std::make_pair(rest.substr(0, colon), value);
+	}
+	return true;
+}
+
+static bool LinuxRegSave(const LinuxRegStore &aStore)
+{
+	std::string path = LinuxRegStorePath();
+	size_t slash = path.find_last_of('/');
+	if (slash != std::string::npos)
+	{
+		std::string dir = path.substr(0, slash);
+		struct stat st;
+		if (stat(dir.c_str(), &st) != 0)
+			mkdir(dir.c_str(), 0700);
+	}
+	std::ofstream f(path, std::ios::trunc);
+	if (!f)
+		return false;
+	for (auto &sec : aStore)
+	{
+		if (sec.second.empty())
+			continue;
+		f << "[" << sec.first << "]\n";
+		for (auto &ent : sec.second)
+			f << ent.first << "=" << ent.second.first << ":" << LinuxRegEscape(ent.second.second) << "\n";
+	}
+	return true;
+}
+
+static void LinuxRegSetLastError(DWORD aError)
+{
+	if (g)
+		g->LastError = aError;
+	SetLastError(aError);
+}
+
+BIF_DECL(BIF_Reg)
+{
+	// RegRead(KeyName, ValueName, Default) / RegWrite(Value, ValueType,
+	// KeyName, ValueName) / RegCreateKey(KeyName) / RegDelete(KeyName,
+	// ValueName) / RegDeleteKey(KeyName).  The loop-based forms (KeyName
+	// omitted) require a registry loop, which the Linux port does not have.
+	if (g)
+		g->LastError = 0;
+
+	switch (_f_callee_id)
+	{
+	case FID_RegCreateKey:
+	{
+		if (ParamIndexIsOmitted(0))
+			break;
+		TCHAR key_buf[1024];
+		LPTSTR key_wide = ParamIndexToString(0, key_buf);
+		char key_narrow[1024];
+		if (wcstombs(key_narrow, key_wide, sizeof(key_narrow)) == (size_t)-1)
+			break;
+		std::string key;
+		if (!LinuxRegNormalizeKey(key_narrow, key))
+		{
+			LinuxRegSetLastError(87);
+			aResultToken.Error(_T("Invalid root key."), _T(""), ErrorPrototype::OS);
+			break;
+		}
+		LinuxRegStore store;
+		LinuxRegLoad(store);
+		store[key]; // Ensure the section exists.
+		LinuxRegSave(store);
+		break;
+	}
+
+	case FID_RegRead:
+	{
+		if (ParamIndexIsOmitted(0))
+			break;
+		TCHAR key_buf[1024];
+		LPTSTR key_wide = ParamIndexToString(0, key_buf);
+		char key_narrow[1024];
+		if (wcstombs(key_narrow, key_wide, sizeof(key_narrow)) == (size_t)-1)
+			break;
+		std::string key;
+		if (!LinuxRegNormalizeKey(key_narrow, key))
+		{
+			LinuxRegSetLastError(87);
+			aResultToken.Error(_T("Invalid root key."), _T(""), ErrorPrototype::OS);
+			break;
+		}
+		std::string value_name = "@"; // Docs: omitted ValueName reads the default value.
+		if (!ParamIndexIsOmitted(1))
+		{
+			TCHAR vn_buf[256];
+			LPTSTR vn_wide = ParamIndexToString(1, vn_buf);
+			char vn_narrow[256];
+			if (wcstombs(vn_narrow, vn_wide, sizeof(vn_narrow)) == (size_t)-1)
+				break;
+			value_name = vn_narrow;
+		}
+		LinuxRegStore store;
+		LinuxRegLoad(store);
+		auto sec_it = store.find(key);
+		bool found = sec_it != store.end();
+		std::string type, value;
+		if (found)
+		{
+			auto ent_it = sec_it->second.find(value_name);
+			found = ent_it != sec_it->second.end();
+			if (found)
+			{
+				type = ent_it->second.first;
+				value = ent_it->second.second;
+			}
+		}
+		if (!found)
+		{
+			// Docs: Default is returned if provided, otherwise OSError.
+			if (aParamCount > 2 && !ParamIndexIsOmitted(2))
+			{
+				aResultToken.CopyValueFrom(*aParam[2]);
+				break;
+			}
+			LinuxRegSetLastError(2);
+			aResultToken.Error(_T("Requested registry key or value does not exist."), _T(""), ErrorPrototype::OS);
+			break;
+		}
+		if (!strcasecmp(type.c_str(), "REG_DWORD"))
+		{
+			aResultToken.SetValue((__int64)strtoull(value.c_str(), nullptr, 10)); // Docs: positive decimal.
+		}
+		else if (!strcasecmp(type.c_str(), "REG_BINARY"))
+		{
+			// Docs: read as a string of hex characters.
+			LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((value.size() + 1) * sizeof(TCHAR));
+			for (size_t i = 0; i < value.size(); ++i)
+				persistent[i] = (TCHAR)(unsigned char)value[i];
+			persistent[value.size()] = 0;
+			aResultToken.SetValue(persistent, value.size());
+		}
+		else
+		{
+			// REG_SZ / REG_EXPAND_SZ / REG_MULTI_SZ: the value contains real
+			// newlines between multi-sz components.
+			LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((value.size() + 1) * sizeof(TCHAR));
+			for (size_t i = 0; i < value.size(); ++i)
+				persistent[i] = (TCHAR)(unsigned char)value[i];
+			persistent[value.size()] = 0;
+			aResultToken.SetValue(persistent, value.size());
+		}
+		break;
+	}
+
+	case FID_RegWrite:
+	{
+		if (aParamCount < 3 || ParamIndexIsOmitted(2)) // ValueType, KeyName required without a loop.
+			break;
+		TCHAR key_buf[1024];
+		LPTSTR key_wide = ParamIndexToString(2, key_buf);
+		char key_narrow[1024];
+		if (wcstombs(key_narrow, key_wide, sizeof(key_narrow)) == (size_t)-1)
+			break;
+		std::string key;
+		if (!LinuxRegNormalizeKey(key_narrow, key))
+		{
+			LinuxRegSetLastError(87);
+			aResultToken.Error(_T("Invalid root key."), _T(""), ErrorPrototype::OS);
+			break;
+		}
+		std::string value_name = "@";
+		if (aParamCount > 3 && !ParamIndexIsOmitted(3))
+		{
+			TCHAR vn_buf[256];
+			LPTSTR vn_wide = ParamIndexToString(3, vn_buf);
+			char vn_narrow[256];
+			if (wcstombs(vn_narrow, vn_wide, sizeof(vn_narrow)) == (size_t)-1)
+				break;
+			value_name = vn_narrow;
+		}
+		TCHAR type_buf[32];
+		LPTSTR type_wide = ParamIndexToString(1, type_buf);
+		char type_narrow[32];
+		if (wcstombs(type_narrow, type_wide, sizeof(type_narrow)) == (size_t)-1)
+			break;
+		std::string type = type_narrow;
+		std::string value;
+		__int64 bytes_written = 0;
+		if (!strcasecmp(type.c_str(), "REG_DWORD"))
+		{
+			if (!TokenIsNumeric(*aParam[0]))
+			{
+				LinuxRegSetLastError(87);
+				aResultToken.Error(_T("REG_DWORD requires a numeric value."), _T(""), ErrorPrototype::OS);
+				break;
+			}
+			__int64 n = TokenToInt64(*aParam[0]);
+			if (n < 0)
+				n &= 0xFFFFFFFF; // Docs: stored as a positive decimal.
+			value = std::to_string(n);
+			bytes_written = 4;
+		}
+		else if (!strcasecmp(type.c_str(), "REG_BINARY"))
+		{
+			// Value: a Buffer-like object or a string of hex digits.
+			std::string hex;
+			if (IObject *obj = TokenToObject(*aParam[0]))
+			{
+				ResultToken rt;
+				size_t ptr, size;
+				GetBufferObjectPtr(rt, obj, ptr, size);
+				if (rt.Exited() || !ptr)
+				{
+					LinuxRegSetLastError(87);
+					aResultToken.Error(_T("Invalid buffer for REG_BINARY."), _T(""), ErrorPrototype::OS);
+					break;
+				}
+				static const char digits[] = "0123456789ABCDEF";
+				unsigned char *data = (unsigned char *)ptr;
+				for (size_t i = 0; i < size; ++i)
+				{
+					hex += digits[data[i] >> 4];
+					hex += digits[data[i] & 0xF];
+				}
+				bytes_written = (__int64)size;
+			}
+			else
+			{
+				TCHAR val_buf[16384];
+				size_t val_len = 0;
+				LPTSTR val_wide = ParamIndexToString(0, val_buf, &val_len);
+				char val_narrow[32768];
+				size_t n = wcstombs(val_narrow, val_wide, sizeof(val_narrow) - 1);
+				if (n == (size_t)-1)
+					break;
+				val_narrow[n] = 0;
+				for (char *p = val_narrow; *p; ++p)
+					if (*p != ' ' && *p != ',')
+						hex += *p;
+				if (hex.size() % 2)
+				{
+					LinuxRegSetLastError(87);
+					aResultToken.Error(_T("Invalid hex string for REG_BINARY."), _T(""), ErrorPrototype::OS);
+					break;
+				}
+				bytes_written = (__int64)(hex.size() / 2);
+			}
+			value = hex;
+		}
+		else if (!strcasecmp(type.c_str(), "REG_MULTI_SZ"))
+		{
+			TCHAR val_buf[16384];
+			size_t val_len = 0;
+			LPTSTR val_wide = ParamIndexToString(0, val_buf, &val_len);
+			char val_narrow[32768];
+			size_t n = wcstombs(val_narrow, val_wide, sizeof(val_narrow) - 1);
+			if (n == (size_t)-1)
+				break;
+			val_narrow[n] = 0;
+			value = val_narrow; // Components are separated by real newlines.
+			bytes_written = 0;
+			size_t start = 0;
+			for (size_t i = 0; i <= value.size(); ++i)
+				if (i == value.size() || value[i] == '\n')
+				{
+					bytes_written += (__int64)(i - start + 1) * 2;
+					start = i + 1;
+				}
+		}
+		else if (!strcasecmp(type.c_str(), "REG_SZ") || !strcasecmp(type.c_str(), "REG_EXPAND_SZ"))
+		{
+			TCHAR val_buf[16384];
+			size_t val_len = 0;
+			LPTSTR val_wide = ParamIndexToString(0, val_buf, &val_len);
+			char val_narrow[32768];
+			size_t n = wcstombs(val_narrow, val_wide, sizeof(val_narrow) - 1);
+			if (n == (size_t)-1)
+				break;
+			val_narrow[n] = 0;
+			value = val_narrow;
+			bytes_written = (__int64)(value.size() + 1) * 2;
+		}
+		else
+		{
+			LinuxRegSetLastError(87);
+			aResultToken.Error(_T("Unsupported registry value type."), _T(""), ErrorPrototype::OS);
+			break;
+		}
+		LinuxRegStore store;
+		LinuxRegLoad(store);
+		store[key][value_name] = std::make_pair(type, value);
+		LinuxRegSave(store);
+		aResultToken.SetValue(bytes_written);
+		break;
+	}
+
+	case FID_RegDelete:
+	{
+		if (ParamIndexIsOmitted(0))
+			break;
+		TCHAR key_buf[1024];
+		LPTSTR key_wide = ParamIndexToString(0, key_buf);
+		char key_narrow[1024];
+		if (wcstombs(key_narrow, key_wide, sizeof(key_narrow)) == (size_t)-1)
+			break;
+		std::string key;
+		if (!LinuxRegNormalizeKey(key_narrow, key))
+		{
+			LinuxRegSetLastError(87);
+			aResultToken.Error(_T("Invalid root key."), _T(""), ErrorPrototype::OS);
+			break;
+		}
+		std::string value_name = "@"; // Docs: omitted ValueName deletes the default value.
+		if (!ParamIndexIsOmitted(1))
+		{
+			TCHAR vn_buf[256];
+			LPTSTR vn_wide = ParamIndexToString(1, vn_buf);
+			char vn_narrow[256];
+			if (wcstombs(vn_narrow, vn_wide, sizeof(vn_narrow)) == (size_t)-1)
+				break;
+			value_name = vn_narrow;
+		}
+		LinuxRegStore store;
+		LinuxRegLoad(store);
+		auto sec_it = store.find(key);
+		if (sec_it == store.end() || sec_it->second.erase(value_name) == 0)
+		{
+			LinuxRegSetLastError(2);
+			aResultToken.Error(_T("Requested registry value does not exist."), _T(""), ErrorPrototype::OS);
+			break;
+		}
+		LinuxRegSave(store);
+		break;
+	}
+
+	case FID_RegDeleteKey:
+	{
+		if (ParamIndexIsOmitted(0))
+			break;
+		TCHAR key_buf[1024];
+		LPTSTR key_wide = ParamIndexToString(0, key_buf);
+		char key_narrow[1024];
+		if (wcstombs(key_narrow, key_wide, sizeof(key_narrow)) == (size_t)-1)
+			break;
+		std::string key;
+		if (!LinuxRegNormalizeKey(key_narrow, key))
+		{
+			LinuxRegSetLastError(87);
+			aResultToken.Error(_T("Invalid root key."), _T(""), ErrorPrototype::OS);
+			break;
+		}
+		LinuxRegStore store;
+		LinuxRegLoad(store);
+		std::string prefix = key + "\\";
+		bool deleted_any = store.erase(key) > 0;
+		for (auto it = store.begin(); it != store.end();)
+		{
+			if (it->first.compare(0, prefix.size(), prefix) == 0)
+			{
+				it = store.erase(it);
+				deleted_any = true;
+			}
+			else
+				++it;
+		}
+		if (!deleted_any)
+		{
+			LinuxRegSetLastError(2);
+			aResultToken.Error(_T("Requested registry key does not exist."), _T(""), ErrorPrototype::OS);
+			break;
+		}
+		LinuxRegSave(store);
+		break;
+	}
+	}
+}
 void BIV_WorkingDir(ResultToken &aResultToken, LPTSTR aVarName) { (void)aVarName; aResultToken.SetValue(g_WorkingDir.GetString()); }
 void BIV_WorkingDir_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
 {

@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **264 / 264 断言通过** (普通构建与 ASan 构建均通过;25 项 headless 回归测试亦全部通过)
+- **结果**: **302 / 302 断言通过** (普通构建与 ASan 构建均通过;25 项 headless 回归测试亦全部通过)
 
 ---
 
@@ -31,7 +31,8 @@
 | 通用/环境/进程/驱动器/INI/剪贴板 | `assert_general.ahk` | 31 |
 | 二进制互操作 (NumGet/NumPut/StrGet/StrPut/Buffer) | `assert_interop.ahk` | 20 |
 | 正则 (RegExMatch/RegExReplace/~= 运算符/命名子组) | `assert_regex.ahk` | 22 |
-| **合计** | | **264** |
+| 注册表 (RegRead/RegWrite/RegDelete/RegDeleteKey/RegCreateKey) | `assert_registry.ahk` | 19 |
+| **合计** | | **302** |
 
 复现命令:
 
@@ -136,6 +137,21 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 ### 2.18 校验中修正的断言预期(本轮)
 - `~=` 运算符返回匹配位置(与 RegExMatch 相同),而非布尔值——按文档修正断言。
 
+### 2.19 A_* 环境变量批量接入(本轮)
+- **现象**: `A_LastError/A_IsPaused/A_IsSuspended/A_IsCritical/A_LineNumber/A_LineFile/A_ComputerName/A_UserName/A_OSVersion/A_Language/A_MyDocuments/A_AhkPath/A_Args/A_EventInfo/A_ThisFunc/A_ScriptHwnd` 均为空桩或恒值。
+- **修复**: 按 lib/vars.cpp 原语义实现:
+  - `A_Args`: main_linux 启动时用 `Array::FromArgV` 填充(脚本路径后的参数);
+  - `A_LastError`(含赋值)、`A_EventInfo`(含赋值)、`A_IsPaused`(`g[-1].IsPaused`)、`A_IsSuspended`、`A_IsCritical`(peek 频率);
+  - `A_LineNumber/A_LineFile`: `Script::CurrentLine/CurrentFile` 桩改为真实实现;
+  - `A_ComputerName`(gethostname)/`A_UserName`(USER)/`A_OSVersion`(uname release)/`A_Language`(LANG→LCID 映射)/`A_MyDocuments`(XDG ~/Documents)/`A_AhkPath`(/proc/self/exe);
+  - 返回值统一使用 `SimpleHeap` 持久内存(修复了局部栈缓冲在 BIV 返回后失效导致读值错乱的问题)。
+- run_check.sh 支持为指定套件追加命令行参数(assert_general 以 `one two` 运行以校验 A_Args)。
+
+### 2.20 注册表模块(Linux 文件虚拟注册表,本轮)
+- **现象**: RegRead/RegWrite/RegDelete/RegDeleteKey/RegCreateKey 均为 no-op 桩。
+- **设计**: Linux 无注册表,移植版以 `$XDG_CONFIG_HOME/autohotkey-registry.txt`(默认 `~/.config/...`)存放虚拟注册表:INI 风格 `[键路径]` 节 + `名称=类型:值` 行(`@` 为默认值),值内反斜杠/换行/`=` 转义;REG_DWORD 存十进制、REG_BINARY 存大写十六进制、REG_MULTI_SZ 以换行分隔。
+- **语义对照文档实现**: 根键全称/缩写(HKCU/HKLM/...)规范化;ValueName 省略读写默认值;RegRead 缺值有 Default 返回 Default、无则抛 OSError(LastError=2);REG_DWORD 读为正十进制、REG_BINARY 读为十六进制串、REG_MULTI_SZ 读为 `\n` 结尾组件;RegWrite 返回写入字节数;RegDelete 删命名值、缺值抛错;RegDeleteKey 递归删除键与子键;非法根键/类型抛 OSError;REG_BINARY 支持 Buffer 输入。
+
 ---
 
 ## 3. 测试预期修正(文档语义确认,非移植缺陷)
@@ -170,17 +186,18 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 | 文件元数据 (FileGet/SetTime、FileGetSize、FileGet/SetAttrib、Loop Files) | ✅ 并入 assert_file | 本轮实现 FindFirstFile/futimens/chmod + Loop Files 变量 |
 | 二进制互操作 (NumGet/NumPut/StrGet/StrPut/Buffer) | ✅ 20/20 | 本轮接入 lib/interop.cpp 并修复 vtable/编码转换 |
 | 正则 (RegExMatch/RegExReplace/~=、命名子组、回引用、UTF) | ✅ 22/22 | 本轮接入捆绑 PCRE1(16 位)并修复单元宽度错位 |
+| 注册表 (RegRead/RegWrite/RegDelete/RegDeleteKey/RegCreateKey) | ✅ 19/19 | 文件虚拟注册表,参数语义/返回值/错误行为对照文档 |
 | 日期时间 (DateAdd/Diff/FormatTime/A_Now/A_YYYY 等) | ✅ 33/33 | 与文档 TimeUnits/Format 语义一致 |
-| 通用 (Env/WorkingDir/Sleep/MsgBox/Process/Run/RunWait/Drive/Ini/Clipboard/GetKeyName/A_* 变量) | ✅ 31/31 | 路径函数与键名表修复后全绿 |
-| 未实现模块 (GUI/GuiCtrl/COM/DllCall/注册表/窗口管理/热键系统/剪贴板监听等 172 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
+| 通用 (Env/WorkingDir/Sleep/MsgBox/Process/Run/RunWait/Drive/Ini/Clipboard/GetKeyName/A_* 变量) | ✅ 50/50 | 本轮补齐 A_Args/A_LastError/A_Is*/A_Line*/A_ComputerName/A_UserName/A_OSVersion/A_Language/A_MyDocuments/A_AhkPath 等 |
+| 未实现模块 (GUI/GuiCtrl/COM/DllCall/窗口管理/热键系统/剪贴板监听等 172 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
 
 ## 5. 回归与构建验证
 
 ```
 普通构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh PASS=264 FAIL=0
+          tests/doccheck/run_check.sh PASS=302 FAIL=0
 ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh PASS=264 FAIL=0
+          tests/doccheck/run_check.sh PASS=302 FAIL=0
 ```
 
 ## 6. 本轮改动文件
@@ -201,4 +218,7 @@ ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
 - `source/lib/regex.cpp`(本轮加入构建):RegExMatch/RegExReplace 全功能 + Linux UTF-16 转换层
 - `source/lib_pcre/pcre/pcre.h`:Linux 下 `PCRE_UCHAR16` 修正为 `unsigned short`
 - `CMakeLists.txt`(根):启用 C 语言
-- `tests/doccheck/*`:断言脚本与期望值按文档修正,新增 assert_interop、assert_regex 套件,worklist 重新生成(149 IMPL / 172 NOT_IMPL)
+- `source/linux/core/core_builtin_stubs.cpp`:A_* 环境变量真实实现;`BIF_Reg` 文件虚拟注册表
+- `source/linux/core/core_platform_stubs.cpp`:`Script::CurrentLine/CurrentFile` 真实实现
+- `source/linux/core/main_linux.cpp`:`A_Args` 启动填充、`mOurEXE`(/proc/self/exe)
+- `tests/doccheck/*`:断言脚本与期望值按文档修正,新增 assert_interop、assert_regex、assert_registry 套件,run_check.sh 支持按套件传参,worklist 重新生成(154 IMPL / 172 NOT_IMPL)
