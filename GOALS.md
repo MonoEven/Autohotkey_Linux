@@ -16,7 +16,7 @@
 - [x] 提供 Linux 下可用的 `stdafx.h` / Win32 兼容层（初版）
 
 ### M2：核心解释器可在 Linux 编译
-- [ ] 核心模块（script/var/util/TextIO/error 等）通过 Linux 编译
+- [x] 核心模块（script/var/util/TextIO/error 等）通过 Linux 编译
 - [x] 提供 Linux 命令行入口 `main()`，替代 `_tWinMain`（临时 stub）
 - [ ] 能解析并执行不依赖 GUI/热键的脚本
 - [ ] 建立基础 CI 编译检查
@@ -65,4 +65,7 @@ M2：核心解释器 Linux 编译。
 - [x] script2.cpp 已能在 Linux 下编译（链接仍需更多核心模块）
 - [x] hotkey.cpp 已能在 Linux 下编译（链接仍需更多核心模块）
 - [x] window.cpp 已能在 Linux 下编译（链接仍需更多核心模块）
+- [x] script_expression.cpp 已能在 Linux 下编译（修复 GCC goto 跨初始化问题）
+- [x] os_version.cpp 已能在 Linux 下编译（新增 GetVersionExW 兼容实现）
+- [x] 新增 ahk_core_objects 静态库，集中编译 script/script2/script_expression/script_object/error/hotkey/os_version/var/window 核心源文件
 - [ ] 逐文件修复编译错误

@@ -24,6 +24,7 @@
 #include <wchar.h>
 #include <wctype.h>
 #include <ctype.h>
+#include <sys/utsname.h>
 
 using std::min;
 using std::max;
@@ -175,6 +176,29 @@ struct OSVERSIONINFOW
 	DWORD dwPlatformId;
 	wchar_t szCSDVersion[128];
 };
+
+inline BOOL GetVersionExW(OSVERSIONINFOW *aInfo)
+{
+	if (!aInfo)
+		return 0;
+	struct utsname uts;
+	if (uname(&uts) != 0)
+	{
+		aInfo->dwMajorVersion = 0;
+		aInfo->dwMinorVersion = 0;
+		aInfo->dwBuildNumber = 0;
+	}
+	else
+	{
+		aInfo->dwMajorVersion = 6;
+		aInfo->dwMinorVersion = 8;
+		aInfo->dwBuildNumber = 0;
+	}
+	aInfo->dwPlatformId = 2;
+	aInfo->dwOSVersionInfoSize = sizeof(OSVERSIONINFOW);
+	aInfo->szCSDVersion[0] = L'\0';
+	return 1;
+}
 
 struct KBDLLHOOKSTRUCT
 {

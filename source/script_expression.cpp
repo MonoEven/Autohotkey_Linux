@@ -640,8 +640,9 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 		// Get the first operand for this operator (for non-unary operators, this is the right-side operand):
 		if (!stack_count) // Prevent stack underflow.  An expression such as -*3 causes this.
 			goto abort_with_exception;
-		ExprTokenType &right = *STACK_POP;
-		if (right.symbol == SYM_MISSING)
+		ExprTokenType *right;
+		right = STACK_POP;
+		if ((*right).symbol == SYM_MISSING)
 		{
 			if (this_token.symbol == SYM_OR_MAYBE) // SYM_MISSING is to ?? what False is to ||.
 				continue; // Continue on to evaluate the right branch.
@@ -673,7 +674,7 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 
 		default:
 			// If the operand is still generic/undetermined, find out whether it is a string, integer, or float:
-			right_is_pure_number = TokenIsPureNumeric(right, right_is_number); // If it's SYM_VAR, it can be the clipboard in this case, but it works even then.
+			right_is_pure_number = TokenIsPureNumeric((*right), right_is_number); // If it's SYM_VAR, it can be the clipboard in this case, but it works even then.
 		}
 
 		// IF THIS IS A UNARY OPERATOR, we now have the single operand needed to perform the operation.
@@ -686,7 +687,7 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 		case SYM_OR:
 		case SYM_IFF_THEN:
 			// this_token is the left branch of an AND/OR or the condition of a ternary op.  Check for short-circuit.
-			left_branch_is_true = TokenToBOOL(right);
+			left_branch_is_true = TokenToBOOL((*right));
 
 			if (left_branch_is_true == (this_token.symbol == SYM_OR))
 			{
@@ -699,7 +700,7 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 				{
 					// This will be the final result of this AND/OR because it's right branch was
 					// discarded above without having been evaluated nor any of its functions called:
-					this_token.CopyValueFrom(right);
+					this_token.CopyValueFrom((*right));
 					// Any SYM_OBJECT on our stack was already put into to_free[], so if this is SYM_OBJECT,
 					// there's no need to do anything; we actually MUST NOT AddRef() unless we also put it
 					// into to_free[].
@@ -717,18 +718,18 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 
 		case SYM_LOWNOT:  // The operator-word "not".
 		case SYM_HIGHNOT: // The symbol '!'. Both NOTs are equivalent at this stage because precedence was already acted upon by infix-to-postfix.
-			this_token.SetValue(!TokenToBOOL(right)); // Result is always one or zero.
+			this_token.SetValue(!TokenToBOOL((*right))); // Result is always one or zero.
 			break;
 
 		case SYM_NEGATIVE:  // Unary-minus.
 			if (right_is_number == PURE_INTEGER)
-				this_token.value_int64 = -TokenToInt64(right);
+				this_token.value_int64 = -TokenToInt64((*right));
 			else if (right_is_number == PURE_FLOAT)
-				this_token.value_double = -TokenToDouble(right, FALSE); // Pass FALSE for aCheckForHex since PURE_FLOAT is never hex.
+				this_token.value_double = -TokenToDouble((*right), FALSE); // Pass FALSE for aCheckForHex since PURE_FLOAT is never hex.
 			else // String.  Seems best to consider the application of unary minus to a string to be a failure.
 			{
 				error_info = _T("Number");
-				error_value = &right;
+				error_value = &(*right);
 				goto type_mismatch;
 			}
 			// Since above didn't "break":
@@ -737,22 +738,22 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 
 		case SYM_POSITIVE: // Added in v2 for symmetry with SYM_NEGATIVE; i.e. if -x produces NaN, so should +x.
 			if (right_is_number)
-				TokenToDoubleOrInt64(right, this_token);
+				TokenToDoubleOrInt64((*right), this_token);
 			else
 			{
 				error_info = _T("Number");
-				error_value = &right;
+				error_value = &(*right);
 				goto type_mismatch; // For consistency with unary minus (see above).
 			}
 			break;
 
 		case SYM_REF:
-			if (right.symbol != SYM_VAR) // Syntax error?
+			if ((*right).symbol != SYM_VAR) // Syntax error?
 				goto abort_with_exception;
 			if (this_token.var_usage != VARREF_READ // Creating a VarRef can be avoided.
-				&& !(right.var->IsAlias() && right.var->IsObject())) // It doesn't already have a VarRef.
+				&& !((*right).var->IsAlias() && (*right).var->IsObject())) // It doesn't already have a VarRef.
 			{
-				Var *target_var = right.var->ResolveAlias();
+				Var *target_var = (*right).var->ResolveAlias();
 				if (!target_var->IsNonStaticLocal()
 					|| !this_token.object // Being passed to a built-in function.
 					|| !((UserFunc *)this_token.object)->mInstances)
@@ -763,8 +764,8 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 					goto push_this_token;
 				}
 			}
-			ASSERT(right.var->Type() == VAR_NORMAL);
-			this_token.SetValue(right.var->GetRef());
+			ASSERT((*right).var->Type() == VAR_NORMAL);
+			this_token.SetValue((*right).var->GetRef());
 			if (!this_token.object)
 				goto outofmem;
 			to_free[to_free_count++] = &this_token;
@@ -774,13 +775,13 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 		case SYM_POST_DECREMENT: // += and -= at load-time or during the tokenizing phase higher above because 
 		case SYM_PRE_INCREMENT:  // it might introduce precedence problems, plus the post-inc/dec's nature is
 		case SYM_PRE_DECREMENT:  // unique among all the operators in that it pushes an operand before the evaluation.
-			if (right.symbol != SYM_VAR) // Syntax error.
+			if ((*right).symbol != SYM_VAR) // Syntax error.
 				goto abort_with_exception;
 			is_pre_op = SYM_INCREMENT_OR_DECREMENT_IS_PRE(this_token.symbol); // Store this early because its symbol will soon be overwritten.
 			if (right_is_number == PURE_NOT_NUMERIC) // Not numeric: invalid operation.
 			{
 				error_info = _T("Number");
-				error_value = &right;
+				error_value = &(*right);
 				goto type_mismatch;
 			}
 
@@ -796,13 +797,13 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 			delta = (this_token.symbol == SYM_POST_INCREMENT || this_token.symbol == SYM_PRE_INCREMENT) ? 1 : -1;
 			if (right_is_number == PURE_INTEGER)
 			{
-				this_token.value_int64 = TokenToInt64(right);
-				right.var->Assign(this_token.value_int64 + delta);
+				this_token.value_int64 = TokenToInt64((*right));
+				(*right).var->Assign(this_token.value_int64 + delta);
 			}
 			else // right_is_number must be PURE_FLOAT because it's the only remaining alternative.
 			{
-				this_token.value_double = TokenToDouble(right, FALSE); // Pass FALSE for aCheckForHex since PURE_FLOAT is never hex.
-				right.var->Assign(this_token.value_double + delta);
+				this_token.value_double = TokenToDouble((*right), FALSE); // Pass FALSE for aCheckForHex since PURE_FLOAT is never hex.
+				(*right).var->Assign(this_token.value_double + delta);
 			}
 			if (is_pre_op)
 			{
@@ -822,9 +823,9 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 				//    it also allows ++++x to work.
 				// 2) Backward compatibility: Some existing scripts probably already rely on the fact that
 				//    ++x and --x produce an lvalue (though it's undocumented).
-				if (right.var->Type() == VAR_NORMAL)
+				if ((*right).var->Type() == VAR_NORMAL)
 				{
-					this_token.SetVar(right.var);
+					this_token.SetVar((*right).var);
 				}
 				else // VAR_VIRTUAL, which is allowed in only when it's the lvalue of an assignment or inc/dec.
 				{
@@ -846,11 +847,11 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 			if (right_is_number != PURE_INTEGER) // String.  Seems best to consider the application of '*' or '~' to a non-numeric string to be a failure.
 			{
 				error_info = _T("Number");
-				error_value = &right;
+				error_value = &(*right);
 				goto type_mismatch;
 			}
 			// Since above didn't "goto": right_is_number is PURE_INTEGER.
-			right_int64 = TokenToInt64(right); // The slight performance reduction of calling TokenToInt64() is done for brevity.
+			right_int64 = TokenToInt64((*right)); // The slight performance reduction of calling TokenToInt64() is done for brevity.
 			
 			// Note that it is not legal to perform ~, &, |, or ^ on doubles.  
 			// Treat it as a 64-bit signed value, since no other aspects of the program
@@ -875,10 +876,10 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 				switch(this_token.symbol)
 				{
 				case SYM_ASSIGN: // Listed first for performance (it's probably the most common because things like ++ and += aren't expressions when they're by themselves on a line).
-					if (!left.var->Assign(right)) // left.var can be VAR_VIRTUAL in this case.
+					if (!left.var->Assign((*right))) // left.var can be VAR_VIRTUAL in this case.
 						goto abort;
 					if (left.var->Type() != VAR_NORMAL) // VAR_VIRTUAL should not yield SYM_VAR (as some sections of the code wouldn't handle it correctly).
-						this_token.CopyValueFrom(right); // Doing it this way is more maintainable than other methods, and is unlikely to perform much worse.
+						this_token.CopyValueFrom((*right)); // Doing it this way is more maintainable than other methods, and is unlikely to perform much worse.
 					else
 						this_token.SetVar(left.var);
 					goto push_this_token;
@@ -921,7 +922,7 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 				case SYM_EQUALCASE:
 				case SYM_NOTEQUAL:
 				case SYM_NOTEQUALCASE:
-					IObject *right_obj = TokenToObject(right);
+					IObject *right_obj = TokenToObject((*right));
 					IObject *left_obj = TokenToObject(left);
 					// To support a future "implicit default value" feature, both operands must be objects.
 					// Otherwise, an object operand will be treated as its default value, currently always "".
@@ -941,7 +942,7 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 				// Above check has ensured that at least one of them is a string.  But the other
 				// one might be a number such as in 5+10="15", in which 5+10 would be a numerical
 				// result being compared to the raw string literal "15".
-				right_string = TokenToString(right, right_buf, &right_length);
+				right_string = TokenToString((*right), right_buf, &right_length);
 				left_string = TokenToString(left, left_buf, &left_length);
 				result_symbol = SYM_INTEGER; // Set default.  Boolean results are treated as integers.
 				switch(this_token.symbol)
@@ -967,10 +968,10 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 						error_value = &left;
 						goto type_mismatch; // Treat this as an error, especially to catch `new classname`.
 					}
-					if (TokenToObject(right))
+					if (TokenToObject((*right)))
 					{
 						error_info = _T("String");
-						error_value = &right;
+						error_value = &(*right);
 						goto type_mismatch; // Treat this as an error, especially to catch `new classname`.
 					}
 					// Even if the left or right is "", must copy the result to temporary memory, at least
@@ -1111,7 +1112,7 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 
 				case SYM_IS:
 				{
-					if (Object *right_obj = dynamic_cast<Object *>(TokenToObject(right)))
+					if (Object *right_obj = dynamic_cast<Object *>(TokenToObject((*right))))
 					{
 						if (IObject *prototype = right_obj->GetOwnPropObj(_T("Prototype")))
 						{
@@ -1121,14 +1122,14 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 					}
 					// Since "break" was not used, "right" is not a valid type object.
 					error_info = _T("Class");
-					error_value = &right;
+					error_value = &(*right);
 					goto type_mismatch;
 				}
 
 				default:
 					// All other operators do not support non-numeric operands.
 					error_info = _T("Number");
-					error_value = right_is_number ? &left : &right; // Must use right_is_number since if it's false, left_is_number wasn't set.
+					error_value = right_is_number ? &left : &(*right); // Must use right_is_number since if it's false, left_is_number wasn't set.
 					goto type_mismatch;
 				}
 				this_token.symbol = result_symbol; // Must be done only after the switch() above.
@@ -1137,7 +1138,7 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 			else if (right_is_number == PURE_INTEGER && left_is_number == PURE_INTEGER && this_token.symbol != SYM_DIVIDE)
 			{
 				// Because both are integers and the operation isn't division, the result is integer.
-				right_int64 = TokenToInt64(right); // It can't be SYM_STRING because in here, both right and
+				right_int64 = TokenToInt64((*right)); // It can't be SYM_STRING because in here, both right and
 				left_int64 = TokenToInt64(left);    // left are known to be numbers (otherwise an earlier "else if" would have executed instead of this one).
 				result_symbol = SYM_INTEGER; // Set default.
 				switch(this_token.symbol)
@@ -1213,7 +1214,7 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 
 			else // Since one or both operands are floating point (or this is the division of two integers), the result will be floating point.
 			{
-				right_double = TokenToDouble(right, TRUE); // Pass TRUE for aCheckForHex in case one of them is an integer to
+				right_double = TokenToDouble((*right), TRUE); // Pass TRUE for aCheckForHex in case one of them is an integer to
 				left_double = TokenToDouble(left, TRUE);   // be converted to a float for the purpose of this calculation.
 				result_symbol = IS_RELATIONAL_OPERATOR(this_token.symbol) ? SYM_INTEGER : SYM_FLOAT; // Set default. v1.0.47.01: Changed relational operators to yield integers vs. floats because it's more intuitive and traditional (might also make relational operators perform better).
 				switch(this_token.symbol)
@@ -1257,7 +1258,7 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 					if (IS_INTEGER_OPERATOR(this_token.symbol))
 					{
 						error_info = _T("Integer");
-						error_value = left_is_number == PURE_INTEGER ? &right : &left;
+						error_value = left_is_number == PURE_INTEGER ? &(*right) : &left;
 						goto type_mismatch; // floats are not supported for the integer operators.
 					}
 					// this is should not be reachable.
@@ -1291,7 +1292,8 @@ push_this_token:
 	if (stack_count != 1) // Even for multi-statement expressions, the stack should have only one item left on it:
 		goto abort_with_exception; // the overall result.  Any conditions that cause this *should* be detected at load time.
 
-	ExprTokenType &result_token = *stack[0];  // For performance and convenience.  Even for multi-statement, the bottommost item on the stack is the final result so that things like var1:=1,var2:=2 work.
+	ExprTokenType *result_token;
+	result_token = stack[0];  // For performance and convenience.  Even for multi-statement, the bottommost item on the stack is the final result so that things like var1:=1,var2:=2 work.
 
 	// Although ACT_EXPRESSION was already checked higher above for function calls, there are other ways besides
 	// an isolated function call to have ACT_EXPRESSION.  For example: var&=3 (where &= is an operator that lacks
@@ -1307,12 +1309,12 @@ push_this_token:
 	{
 		// v1.0.45: Take a shortcut, which in the case of SYM_STRING/OPERAND/VAR avoids one memcpy
 		// (into the deref buffer).  In some cases, this also saves from having to expand the deref buffer.
-		if (!output_var->Assign(result_token))
+		if (!output_var->Assign((*result_token)))
 			goto abort;
 		goto normal_end_skip_output_var; // result_to_return is left at its default of "", though its value doesn't matter as long as it isn't NULL.
 	}
 
-	if (result_token.symbol == SYM_MISSING) // No valid cases permit this as a final result except those already handled above.  Some sections below might not handle it.
+	if ((*result_token).symbol == SYM_MISSING) // No valid cases permit this as a final result except those already handled above.  Some sections below might not handle it.
 		goto abort_with_exception;
 
 	if (mActionType == ACT_IF || mActionType == ACT_WHILE || mActionType == ACT_UNTIL)
@@ -1320,27 +1322,27 @@ push_this_token:
 		// This is an optimization that improves the speed of ACT_IF by up to 50% (ACT_WHILE is
 		// probably improved by only up-to-15%). Simple expressions like "if (x < y)" see the biggest
 		// speedup.
-		result_to_return = TokenToBOOL(result_token) ? _T("1") : _T(""); // Return "" vs. "0" for FALSE for consistency with "goto abnormal_end" (which bypasses this section).
+		result_to_return = TokenToBOOL((*result_token)) ? _T("1") : _T(""); // Return "" vs. "0" for FALSE for consistency with "goto abnormal_end" (which bypasses this section).
 		goto normal_end_skip_output_var; // ACT_IF never has an output_var.
 	}
 	
 	if (aResultToken)
 	{
-		switch (result_token.symbol)
+		switch ((*result_token).symbol)
 		{
 		case SYM_INTEGER:
 		case SYM_FLOAT:
 		case SYM_OBJECT:
 			// Return numeric or object result as-is.
-			aResultToken->symbol = result_token.symbol;
-			aResultToken->value_int64 = result_token.value_int64; // Union copy.
-			if (result_token.symbol == SYM_OBJECT)
-				result_token.object->AddRef();
+			aResultToken->symbol = (*result_token).symbol;
+			aResultToken->value_int64 = (*result_token).value_int64; // Union copy.
+			if ((*result_token).symbol == SYM_OBJECT)
+				(*result_token).object->AddRef();
 			goto normal_end_skip_output_var; // result_to_return is left at its default of "".
 		case SYM_VAR:
-			if (result_token.var->IsPureNumericOrObject())
+			if ((*result_token).var->IsPureNumericOrObject())
 			{
-				result_token.var->ToToken(*aResultToken);
+				(*result_token).var->ToToken(*aResultToken);
 				goto normal_end_skip_output_var; // result_to_return is left at its default of "".
 			}
 			// The following "optimizations" are avoided because of hidden complexity, most notably
@@ -1351,10 +1353,10 @@ push_this_token:
 			//  - Return a static or global variable's string directly.
 			break;
 		case SYM_STRING:
-			if (to_free_count && to_free[to_free_count - 1] == &result_token)
+			if (to_free_count && to_free[to_free_count - 1] == &(*result_token))
 			{
 				// Pass this mem item back to caller instead of freeing it when we return.
-				aResultToken->AcceptMem(result_to_return = result_token.marker, result_token.marker_length);
+				aResultToken->AcceptMem(result_to_return = (*result_token).marker, (*result_token).marker_length);
 				--to_free_count;
 				goto normal_end_skip_output_var;
 			}
@@ -1366,17 +1368,17 @@ push_this_token:
 	// Store the result of the expression in the deref buffer for the caller.
 	//
 	result_to_return = aTarget; // Set default.
-	switch (result_token.symbol)
+	switch ((*result_token).symbol)
 	{
 	case SYM_INTEGER:
 		// SYM_INTEGER and SYM_FLOAT will fit into our deref buffer because an earlier stage has already ensured
 		// that the buffer is large enough to hold at least one number.  But a string/generic might not fit if it's
 		// a concatenation and/or a large string returned from a called function.
-		aTarget += _tcslen(ITOA64(result_token.value_int64, aTarget)) + 1; // Store in hex or decimal format, as appropriate.
+		aTarget += _tcslen(ITOA64((*result_token).value_int64, aTarget)) + 1; // Store in hex or decimal format, as appropriate.
 		// Above: +1 because that's what callers want; i.e. the position after the terminator.
 		goto normal_end_skip_output_var; // output_var was already checked higher above, so no need to consider it again.
 	case SYM_FLOAT:
-		aTarget += FTOA(result_token.value_double, aTarget, MAX_NUMBER_SIZE) + 1; // +1 because that's what callers want; i.e. the position after the terminator.
+		aTarget += FTOA((*result_token).value_double, aTarget, MAX_NUMBER_SIZE) + 1; // +1 because that's what callers want; i.e. the position after the terminator.
 		goto normal_end_skip_output_var; // output_var was already checked higher above, so no need to consider it again.
 	default:
 		// At this stage, we know the result has to go into our deref buffer because if a way existed to
@@ -1387,15 +1389,15 @@ push_this_token:
 		// 2) In a called function's deref buffer, namely sDerefBuf, which will be deleted by our caller
 		//    shortly after we return to it.
 		// 3) In an area of memory we alloc'd for lack of any better place to put it.
-		if (result_token.symbol == SYM_VAR)
+		if ((*result_token).symbol == SYM_VAR)
 		{
-			result = result_token.var->Contents();
-			result_length = result_token.var->Length();
+			result = (*result_token).var->Contents();
+			result_length = (*result_token).var->Length();
 		}
 		else
 		{
-			result = result_token.marker;
-			result_length = result_token.marker_length; // At this stage, marker_length should always be valid, not -1.
+			result = (*result_token).marker;
+			result_length = (*result_token).marker_length; // At this stage, marker_length should always be valid, not -1.
 		}
 		result_size = result_length + 1;
 
@@ -1485,7 +1487,7 @@ push_this_token:
 		// At this point we aren't capable of returning an object, otherwise above would have
 		// already returned.  So in other words, the caller wants a string, not an object.
 		error_info = _T("String");
-		error_value = &result_token;
+		error_value = &(*result_token);
 		goto type_mismatch;
 	} // switch (result_token.symbol)
 
@@ -1903,7 +1905,8 @@ bool UserFunc::Call(ResultToken &aResultToken, ExprTokenType *aParam[], int aPar
 			}
 		}
 
-		int default_expr = mParamCount;
+		int default_expr;
+		default_expr = mParamCount;
 		for (j = 0; j < mParamCount; ++j) // For each formal parameter.
 		{
 			FuncParam &this_formal_param = mParam[j]; // For performance and convenience.
@@ -2024,7 +2027,8 @@ bool UserFunc::Call(ResultToken &aResultToken, ExprTokenType *aParam[], int aPar
 
 		DEBUGGER_STACK_PUSH(&recurse)
 
-		ResultType result = OK;
+		ResultType result;
+		result = OK;
 		// Execute any default initializers that weren't simple constants.  This is not done in
 		// the loop above for two reasons:
 		//  1) It needs to be after DEBUGGER_STACK_PUSH (which isn't moved because it probably
@@ -2299,7 +2303,8 @@ ResultType Line::ExpandArgs(ResultToken *aResultTokens)
 	// that all the other sections don't need to check mArgc anymore.
 	// Benchmarks show that it doesn't help performance to try to tweak this with a pre-check such as
 	// "if (mArgc < max_params)":
-	int max_params = g_act[mActionType].MaxParams; // Resolve once for performance.
+	int max_params;
+	max_params = g_act[mActionType].MaxParams; // Resolve once for performance.
 	for (i = mArgc; i < max_params; ++i) // START AT mArgc.  For performance, this only does the actual max args for THIS command, not MAX_ARGS.
 		sArgDeref[i] = _T("");
 
@@ -2399,5 +2404,3 @@ VarSizeType Line::GetExpandedArgSize()
 
 	return space_needed;
 }
-
-
