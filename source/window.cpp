@@ -1,4 +1,4 @@
-﻿/*
+/*
 AutoHotkey
 
 Copyright 2003-2009 Chris Mallett (support@autohotkey.com)
@@ -1012,7 +1012,16 @@ int MsgBox(LPCTSTR aText, UINT uType, LPCTSTR aTitle, double aTimeout, HWND aOwn
 	POST_AHK_DIALOG((DWORD)(aTimeout * 1000))
 
 	++g_nMessageBoxes;  // This value will also be used as the Timer ID if there's a timeout.
+#ifdef __linux__
+	// Linux port: the compat MessageBox has its own event loop and needs to
+	// know the timeout (the Windows WM_TIMER mechanism does not exist here).
+	extern double g_LinuxMsgBoxTimeout;
+	g_LinuxMsgBoxTimeout = aTimeout;
+#endif
 	int result = MessageBox(aOwner, text, title, uType);
+#ifdef __linux__
+	g_LinuxMsgBoxTimeout = 0;
+#endif
 	--g_nMessageBoxes;
 	// Above's use of aOwner: MsgBox, FileSelect, and other dialogs seem to consider aOwner to be NULL
 	// when aOwner is minimized or hidden.

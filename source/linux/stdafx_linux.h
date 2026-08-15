@@ -13,12 +13,15 @@
 #include <cstddef>
 #include <cstring>
 #include <string>
+#include <vector>
+#include <map>
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cwchar>
 #include <cstdarg>
 #include <ctime>
+#include <csignal>
 #include <alloca.h>
 #include <strings.h>
 #include <wchar.h>
@@ -26,6 +29,8 @@
 #include <ctype.h>
 #include <sys/utsname.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <filesystem>
 
 using std::min;
@@ -531,6 +536,23 @@ typedef DWORD LCID;
 #define TIME_NOSECONDS   0x00000002
 #define _totupper towupper
 
+inline void GetSystemTime(SYSTEMTIME *st)
+{
+	if (!st)
+		return;
+	time_t t = time(nullptr);
+	struct tm tmv;
+	gmtime_r(&t, &tmv);
+	st->wYear = (WORD)(tmv.tm_year + 1900);
+	st->wMonth = (WORD)(tmv.tm_mon + 1);
+	st->wDayOfWeek = (WORD)tmv.tm_wday;
+	st->wDay = (WORD)tmv.tm_mday;
+	st->wHour = (WORD)tmv.tm_hour;
+	st->wMinute = (WORD)tmv.tm_min;
+	st->wSecond = (WORD)tmv.tm_sec;
+	st->wMilliseconds = 0;
+}
+
 inline void GetLocalTime(SYSTEMTIME *st)
 {
 	if (!st)
@@ -548,18 +570,120 @@ inline void GetLocalTime(SYSTEMTIME *st)
 	st->wMilliseconds = 0;
 }
 
-inline int GetDateFormat(LCID, DWORD, const SYSTEMTIME *, LPCTSTR, LPTSTR aBuf, int aBufSize)
+// Translate a Windows date/time format string to strftime codes and format it.
+// aTime: NULL means the current local time, otherwise the given wall-clock
+// values (the day-of-week is recomputed).  aFlags selects the default format
+// when aFormat is NULL/blank (DATE_SHORTDATE/DATE_LONGDATE/DATE_YEARMONTH,
+// TIME_NOSECONDS).
+static inline int LinuxFormatDateTime(LPTSTR aBuf, int aBufSize, const SYSTEMTIME *aTime, LPCTSTR aFormat, DWORD aFlags, bool aIsTime)
 {
-	if (aBuf && aBufSize > 0)
-		aBuf[0] = L'\0';
-	return 0;
+	if (!aBuf || aBufSize <= 0)
+		return 0;
+	struct tm tmv;
+	memset(&tmv, 0, sizeof(tmv));
+	if (aTime)
+	{
+		tmv.tm_year = aTime->wYear - 1900;
+		tmv.tm_mon = aTime->wMonth - 1;
+		tmv.tm_mday = aTime->wDay;
+		tmv.tm_hour = aTime->wHour;
+		tmv.tm_min = aTime->wMinute;
+		tmv.tm_sec = aTime->wSecond;
+		// Normalize so strftime's %a/%A derive the correct weekday.
+		time_t t = timegm(&tmv);
+		if (t == (time_t)-1)
+		{
+			aBuf[0] = L'\0';
+			return 0;
+		}
+		struct tm t2;
+		gmtime_r(&t, &t2);
+		tmv = t2;
+	}
+	else
+	{
+		time_t now = time(nullptr);
+		struct tm t2;
+		localtime_r(&now, &t2);
+		tmv = t2;
+	}
+
+	std::wstring fmt;
+	if (!aFormat || !*aFormat)
+	{
+		if (aIsTime)
+			fmt = (aFlags & TIME_NOSECONDS) ? L"%H:%M" : L"%H:%M:%S";
+		else if (aFlags & DATE_LONGDATE)
+			fmt = L"%A, %B %-d, %Y";
+		else if (aFlags & DATE_YEARMONTH)
+			fmt = L"%B %Y";
+		else
+			fmt = L"%-m/%-d/%Y"; // Short date default.
+	}
+	else
+	{
+		// Translate the Windows format.  Single-quoted sections are literal
+		// text; repeated letters select the strftime width (d/dd -> %d,
+		// ddd -> %a, dddd -> %A, ...).
+		bool in_quotes = false;
+		for (const wchar_t *p = aFormat; *p; ++p)
+		{
+			wchar_t c = *p;
+			if (c == L'\'')
+			{
+				in_quotes = !in_quotes;
+				continue; // Drop the quote marks themselves.
+			}
+			if (in_quotes)
+			{
+				fmt += c;
+				continue;
+			}
+			size_t run = 1;
+			while (p[run] == c)
+				++run;
+			switch (c)
+			{
+			case L'd': // day of week / day of month
+				if (run >= 4) fmt += L"%A";
+				else if (run == 3) fmt += L"%a";
+				else fmt += run == 2 ? L"%d" : L"%-d";
+				break;
+			case L'M': // month
+				if (run >= 4) fmt += L"%B";
+				else if (run == 3) fmt += L"%b";
+				else fmt += run == 2 ? L"%m" : L"%-m";
+				break;
+			case L'y': // year
+				fmt += run >= 3 ? L"%Y" : L"%y";
+				break;
+			case L'g': // era (ignored)
+				break;
+			case L'H': fmt += run == 2 ? L"%H" : L"%-H"; break; // 24-hour
+			case L'h': fmt += run == 2 ? L"%I" : L"%-I"; break; // 12-hour
+			case L'm': fmt += run == 2 ? L"%M" : L"%-M"; break; // minute
+			case L's': fmt += run == 2 ? L"%S" : L"%-S"; break; // second
+			case L't': fmt += L"%p"; break; // AM/PM
+			default:
+				fmt += c;
+				break;
+			}
+			p += run - 1;
+		}
+	}
+	size_t n = wcsftime(aBuf, (size_t)aBufSize, fmt.c_str(), &tmv);
+	aBuf[aBufSize - 1] = L'\0';
+	return (int)n;
 }
 
-inline int GetTimeFormat(LCID, DWORD, const SYSTEMTIME *, LPCTSTR, LPTSTR aBuf, int aBufSize)
+inline int GetDateFormat(LCID, DWORD aFlags, const SYSTEMTIME *aTime, LPCTSTR aFormat, LPTSTR aBuf, int aBufSize)
 {
-	if (aBuf && aBufSize > 0)
-		aBuf[0] = L'\0';
-	return 0;
+	return LinuxFormatDateTime(aBuf, aBufSize, aTime, aFormat, aFlags, false);
+}
+
+inline int GetTimeFormat(LCID, DWORD aFlags, const SYSTEMTIME *aTime, LPCTSTR aFormat, LPTSTR aBuf, int aBufSize)
+{
+	return LinuxFormatDateTime(aBuf, aBufSize, aTime, aFormat, aFlags, true);
 }
 
 // Implemented further below, where _vsntprintf is defined.
@@ -999,8 +1123,7 @@ inline HANDLE GetStdHandle(DWORD aStdHandle)
 	return nullptr;
 }
 
-inline HANDLE CreateFile(LPCTSTR aFileName, DWORD aAccess, DWORD, void*, DWORD aCreation, DWORD, HANDLE)
-{
+inline HANDLE CreateFile(LPCTSTR aFileName, DWORD aAccess, DWORD, void*, DWORD aCreation, DWORD, HANDLE){
 	if (!aFileName)
 		return INVALID_HANDLE_VALUE;
 	char path[4096];
@@ -1025,11 +1148,29 @@ inline HANDLE CreateFile(LPCTSTR aFileName, DWORD aAccess, DWORD, void*, DWORD a
 	return (HANDLE)f;
 }
 
+// Process handles are encoded as (pid << 3) | 1 so that they can be told
+// apart from FILE* handles (which are 8-byte aligned and never have the low
+// bit set) used by the compat CreateFile/CloseHandle pair.
+inline HANDLE LinuxPidToHandle(pid_t aPid)
+{
+	return (HANDLE)(((intptr_t)aPid << 3) | 1);
+}
+inline bool LinuxIsProcessHandle(HANDLE h)
+{
+	return h && h != INVALID_HANDLE_VALUE && (((intptr_t)h) & 1) != 0;
+}
+inline pid_t LinuxHandleToPid(HANDLE h)
+{
+	return (pid_t)(((intptr_t)h) >> 3);
+}
+
 inline BOOL CloseHandle(HANDLE hFile)
 {
-	if (hFile && hFile != INVALID_HANDLE_VALUE)
-		return fclose((FILE*)hFile) == 0;
-	return TRUE;
+	if (!hFile || hFile == INVALID_HANDLE_VALUE)
+		return TRUE;
+	if (LinuxIsProcessHandle(hFile))
+		return TRUE; // Process handles need no cleanup on Linux.
+	return fclose((FILE*)hFile) == 0;
 }
 
 inline BOOL ReadFile(HANDLE hFile, LPVOID lpBuffer, DWORD nNumberOfBytesToRead, DWORD* lpNumberOfBytesRead, void*)
@@ -1297,6 +1438,8 @@ inline DWORD GetFileAttributes(LPCTSTR aPath)
 	struct stat st;
 	if (stat(buf, &st) != 0)
 		return (DWORD)-1;
+	if (S_ISDIR(st.st_mode))
+		return 0x10; // FILE_ATTRIBUTE_DIRECTORY
 	return 0x80; // FILE_ATTRIBUTE_NORMAL
 }
 inline DWORD GetFileSize(HANDLE, DWORD*)
@@ -2090,14 +2233,15 @@ inline BOOL ReadProcessMemory(HANDLE, const void*, void*, SIZE_T, SIZE_T*)
 {
 	return FALSE;
 }
-inline int MessageBox(HWND, LPCTSTR aText, LPCTSTR aTitle, UINT)
+// X11 GUI helpers (defined in source/linux/gui/x11_gui.cpp).
+// g_LinuxMsgBoxTimeout is set by Script::MsgBox() (window.cpp) so that the
+// compat MessageBox can honour the T<seconds> option; 0 = no timeout.
+extern double g_LinuxMsgBoxTimeout;
+int LinuxMessageBox(HWND aOwner, LPCTSTR aText, LPCTSTR aTitle, UINT aType, double aTimeout = 0);
+
+inline int MessageBox(HWND aOwner, LPCTSTR aText, LPCTSTR aTitle, UINT aType)
 {
-	// Linux console fallback: print the message instead of showing a GUI dialog.
-	if (aText)
-		std::printf("%ls\n", aText);
-	else
-		std::printf("Press OK to continue.\n");
-	return 1; // IDOK
+	return LinuxMessageBox(aOwner, aText, aTitle, aType, g_LinuxMsgBoxTimeout);
 }
 inline DWORD GetCurrentProcessId()
 {
@@ -2184,13 +2328,227 @@ struct SHELLEXECUTEINFO
 	HANDLE hProcess;
 };
 
-inline BOOL CreateProcess(LPCTSTR, LPTSTR, void*, void*, BOOL, DWORD, void*, LPCTSTR, STARTUPINFO*, PROCESS_INFORMATION*)
+// ---------------------------------------------------------------------------
+// Process creation (POSIX fork/exec).  A process handle is the pid stored in
+// the HANDLE pointer so that GetProcessId/WaitForSingleObject/GetExitCodeProcess
+// work with the Windows-style code in the interpreter.
+// ---------------------------------------------------------------------------
+
+#ifndef LINUX_MAX_CMDLINE
+#define LINUX_MAX_CMDLINE 16385
+#endif
+
+inline BOOL CreateProcess(LPCTSTR lpApplicationName, LPTSTR lpCommandLine, void*, void*, BOOL, DWORD, void*, LPCTSTR lpCurrentDirectory, STARTUPINFO*, PROCESS_INFORMATION* lppi)
 {
-	return FALSE;
+	if (!lppi)
+		return FALSE;
+	lppi->hProcess = nullptr;
+	lppi->hThread = nullptr;
+	lppi->dwProcessId = 0;
+	lppi->dwThreadId = 0;
+
+	// Use the application name if given, otherwise parse the command line.
+	LPCWSTR cmd = lpApplicationName ? lpApplicationName : (lpCommandLine ? lpCommandLine : L"");
+	if (!*cmd)
+		return FALSE;
+
+	// Parse into argv (Windows-style: quotes group, everything else splits on
+	// whitespace).  We treat backslash-escaped quotes simply: a quote toggles
+	// in-quote state.
+	std::vector<std::string> args;
+	{
+		char narrow[LINUX_MAX_CMDLINE];
+		size_t n = wcstombs(narrow, cmd, sizeof(narrow) - 1);
+		if (n == (size_t)-1)
+			return FALSE;
+		narrow[n] = '\0';
+		std::string cur;
+		bool in_quotes = false;
+		for (const char *p = narrow; *p; ++p)
+		{
+			if (*p == '"')
+			{
+				in_quotes = !in_quotes;
+				continue;
+			}
+			if (*p == ' ' || *p == '\t')
+			{
+				if (in_quotes)
+					cur += *p;
+				else if (!cur.empty())
+				{
+					args.push_back(cur);
+					cur.clear();
+				}
+				continue;
+			}
+			cur += *p;
+		}
+		if (!cur.empty())
+			args.push_back(cur);
+	}
+	if (args.empty())
+		return FALSE;
+
+	pid_t pid = fork();
+	if (pid < 0)
+		return FALSE;
+	if (pid == 0)
+	{
+		// Child.
+		if (lpCurrentDirectory && *lpCurrentDirectory)
+		{
+			char cwd[4096];
+			if (wcstombs(cwd, lpCurrentDirectory, sizeof(cwd)) != (size_t)-1)
+				chdir(cwd);
+		}
+		// Restore default signal dispositions in the child.
+		signal(SIGPIPE, SIG_DFL);
+		std::vector<char*> argv;
+		for (auto &a : args)
+			argv.push_back(const_cast<char*>(a.c_str()));
+		argv.push_back(nullptr);
+		execvp(argv[0], argv.data());
+		// Fallback: hand unknown targets (URLs, documents) to xdg-open.
+		execlp("xdg-open", "xdg-open", argv[0], (char*)nullptr);
+		_exit(127);
+	}
+	// Parent.
+	lppi->hProcess = LinuxPidToHandle(pid);
+	lppi->dwProcessId = (DWORD)pid;
+	return TRUE;
 }
-inline BOOL ShellExecuteEx(SHELLEXECUTEINFO*)
+
+inline DWORD GetProcessId(HANDLE hProcess)
 {
-	return FALSE;
+	return hProcess ? (DWORD)LinuxHandleToPid(hProcess) : 0;
+}
+
+#define WAIT_OBJECT_0 0
+#define WAIT_TIMEOUT 258
+#define WAIT_FAILED 0xFFFFFFFF
+#ifndef INFINITE
+#define INFINITE 0xFFFFFFFF
+#endif
+
+// Reaped exit statuses keyed by pid, so that WaitForSingleObject can reap a
+// child and GetExitCodeProcess can still report its exit code afterwards.
+inline std::map<pid_t, int>& LinuxReapedStatuses()
+{
+	static std::map<pid_t, int> sStatuses;
+	return sStatuses;
+}
+
+inline DWORD WaitForSingleObject(HANDLE hProcess, DWORD aMs)
+{
+	if (!hProcess || !LinuxIsProcessHandle(hProcess))
+		return WAIT_FAILED;
+	pid_t pid = LinuxHandleToPid(hProcess);
+
+	auto reap_if_done = [&]() -> bool
+	{
+		int status;
+		pid_t r = waitpid(pid, &status, WNOHANG);
+		if (r == pid)
+		{
+			LinuxReapedStatuses()[pid] = status;
+			return true;
+		}
+		if (r < 0 && errno == ECHILD)
+			return true; // Already reaped (or never existed).
+		return false;
+	};
+
+	if (aMs == 0)
+		return reap_if_done() ? WAIT_OBJECT_0 : WAIT_TIMEOUT;
+
+	DWORD waited = 0;
+	if (aMs == INFINITE)
+	{
+		for (;;)
+		{
+			if (reap_if_done())
+				return WAIT_OBJECT_0;
+			struct timespec ts = {0, 10000000}; // 10 ms
+			nanosleep(&ts, nullptr);
+		}
+	}
+	while (waited < aMs)
+	{
+		if (reap_if_done())
+			return WAIT_OBJECT_0;
+		struct timespec ts = {0, 10000000}; // 10 ms
+		nanosleep(&ts, nullptr);
+		waited += 10;
+	}
+	return reap_if_done() ? WAIT_OBJECT_0 : WAIT_TIMEOUT;
+}
+
+inline BOOL GetExitCodeProcess(HANDLE hProcess, DWORD *aExitCode)
+{
+	if (!hProcess || !aExitCode || !LinuxIsProcessHandle(hProcess))
+		return FALSE;
+	pid_t pid = LinuxHandleToPid(hProcess);
+	int status = 0;
+	auto &statuses = LinuxReapedStatuses();
+	auto it = statuses.find(pid);
+	if (it != statuses.end())
+	{
+		status = it->second;
+		statuses.erase(it);
+	}
+	else
+	{
+		pid_t r = waitpid(pid, &status, WNOHANG);
+		if (r != pid)
+			return FALSE;
+	}
+	if (WIFEXITED(status))
+		*aExitCode = (DWORD)WEXITSTATUS(status);
+	else if (WIFSIGNALED(status))
+		*aExitCode = (DWORD)(128 + WTERMSIG(status));
+	else
+		*aExitCode = 0;
+	return TRUE;
+}
+
+inline BOOL TerminateProcess(HANDLE hProcess, UINT)
+{
+	if (!hProcess || !LinuxIsProcessHandle(hProcess))
+		return FALSE;
+	pid_t pid = LinuxHandleToPid(hProcess);
+	return kill(pid, SIGTERM) == 0;
+}
+
+inline BOOL ShellExecuteEx(SHELLEXECUTEINFO* aSei)
+{
+	if (!aSei)
+		return FALSE;
+	// Open the file/URL with the system's default handler.
+	pid_t pid = fork();
+	if (pid < 0)
+		return FALSE;
+	if (pid == 0)
+	{
+		if (aSei->lpDirectory && *aSei->lpDirectory)
+		{
+			char cwd[4096];
+			if (wcstombs(cwd, aSei->lpDirectory, sizeof(cwd)) != (size_t)-1)
+				chdir(cwd);
+		}
+		char file[LINUX_MAX_CMDLINE];
+		size_t n = wcstombs(file, aSei->lpFile ? aSei->lpFile : L"", sizeof(file) - 1);
+		if (n == (size_t)-1)
+			_exit(127);
+		file[n] = '\0';
+		execlp("xdg-open", "xdg-open", file, (char*)nullptr);
+		// Fallbacks for systems without xdg-open.
+		execlp("sensible-browser", "sensible-browser", file, (char*)nullptr);
+		_exit(127);
+	}
+	aSei->hProcess = LinuxPidToHandle(pid);
+	aSei->hInstApp = (HINSTANCE)(intptr_t)42; // Non-zero: success indicator.
+	return TRUE;
 }
 // More script2.cpp stubs: notify icon fields, window messages, tooltips, monitors.
 #define NIF_INFO 0x00000010
@@ -2426,13 +2784,13 @@ inline UINT joyGetPosEx(UINT, JOYINFOEX*)
 	return JOYERR_NOERROR;
 }
 
-inline BOOL IsCharAlphaNumeric(TCHAR)
+inline BOOL IsCharAlphaNumeric(TCHAR c)
 {
-	return FALSE;
+	return iswalnum((wchar_t)c) != 0;
 }
-inline BOOL IsCharLower(TCHAR)
+inline BOOL IsCharLower(TCHAR c)
 {
-	return FALSE;
+	return iswlower((wchar_t)c) != 0;
 }
 #define MAXINT_PTR INTPTR_MAX
 // File dialog COM stubs for script2.cpp.

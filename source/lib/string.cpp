@@ -1,4 +1,4 @@
-﻿/*
+/*
 AutoHotkey
 
 Copyright 2003-2009 Chris Mallett (support@autohotkey.com)
@@ -637,6 +637,7 @@ ResultType SplitPath(LPCTSTR aFileSpec, Var *output_var_name, Var *output_var_di
 		}
 
 		if (   !(name_delimiter = _tcsrchr(aFileSpec, '\\'))   ) // No backslash.
+			if (   !(name_delimiter = _tcsrchr(aFileSpec, '/'))   ) // Linux port: also split on forward slashes.
 			if (   !(name_delimiter = _tcsrchr(aFileSpec, ':'))   ) // No colon.
 				name_delimiter = NULL; // Indicate that there is no directory.
 

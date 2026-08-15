@@ -17,7 +17,20 @@
 #include "../../globaldata.h"
 #include "../../abi.h"
 #include "../../script_func_impl.h"
+#include "../gui/x11_gui.h"
 #include <cstdlib>
+#include <cstring>
+#include <cstdio>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <list>
+#include <map>
+#include <dirent.h>
+#include <sys/statvfs.h>
+#include <sys/resource.h>
+#include <unistd.h>
 
 // ---------------------------------------------------------------------------
 // Declarations of native implementations from already-linked translation
@@ -97,6 +110,9 @@ static void LinuxCopyStrRet(ResultToken &aResultToken, StrRet &aRet)
 	else
 		aResultToken.SetValue(_T(""));
 }
+
+// Set the result token to a narrow UTF-8 string (defined further below).
+static void LinuxSetPersistentStrResult(ResultToken &aResultToken, const char *aUtf8);
 
 // ---------------------------------------------------------------------------
 // Wrappers
@@ -468,19 +484,787 @@ BIF_DECL(BIF_Linux_DirMove)
 		FResultToError(aResultToken, aParam, aParamCount, fr, 0);
 }
 
+// Run: launch Target (via Script::ActionExec -> POSIX CreateProcess/xdg-open).
+// The optional 4th parameter is an output var which receives the PID.
+BIF_DECL(BIF_Linux_Run)
+{
+	TCHAR target_buf[LINE_SIZE];
+	target_buf[0] = L'\0';
+	LPTSTR target = aParamCount > 0 ? TokenToString(*aParam[0], target_buf, nullptr) : nullptr;
+	TCHAR wd_buf[4096], opt_buf[64];
+	optl<StrArg> wd = (aParamCount > 1 && !ParamIndexIsOmitted(1))
+		? LinuxOptStr(aParam, aParamCount, 1, wd_buf, sizeof(wd_buf)) : optl<StrArg>(nullptr);
+	optl<StrArg> opts = (aParamCount > 2 && !ParamIndexIsOmitted(2))
+		? LinuxOptStr(aParam, aParamCount, 2, opt_buf, sizeof(opt_buf)) : optl<StrArg>(nullptr);
+
+	HANDLE hprocess = nullptr;
+	ResultType result = g_script.ActionExec(target, nullptr, wd.value_or_null(), true
+		, opts.value_or_null(), &hprocess, true, true);
+	if (hprocess)
+	{
+		if (aParamCount > 3)
+		{
+			Var *out_var = TokenToOutputVar(*aParam[3]);
+			if (out_var)
+				out_var->Assign((__int64)GetProcessId(hprocess));
+		}
+		CloseHandle(hprocess);
+	}
+	if (result != OK)
+	{
+		aResultToken.SetExitResult(FAIL);
+		return;
+	}
+	aResultToken.SetValue((__int64)0);
+}
+// InputBox: X11 input dialog when a display is available, stdin otherwise.
+// Returns an object with .Value and .Result properties (per the v2 docs).
+BIF_DECL(BIF_Linux_InputBox)
+{
+	TCHAR prompt_buf[4096], title_buf[1024], def_buf[4096];
+	prompt_buf[0] = L'\0'; title_buf[0] = L'\0'; def_buf[0] = L'\0';
+	LPTSTR prompt = aParamCount > 0 ? TokenToString(*aParam[0], prompt_buf, nullptr) : nullptr;
+	LPTSTR title = aParamCount > 1 ? TokenToString(*aParam[1], title_buf, nullptr) : nullptr;
+	LPTSTR def = aParamCount > 3 ? TokenToString(*aParam[3], def_buf, nullptr) : nullptr;
+	wchar_t value_buf[8192];
+	bool confirmed = LinuxInputBox(prompt ? prompt : L"", title ? title : L"AutoHotkey"
+		, def ? def : L"", value_buf, _countof(value_buf));
+
+	Object *obj = Object::Create();
+	if (!obj)
+	{
+		aResultToken.SetValue(_T(""));
+		return;
+	}
+	size_t vlen = wcslen(value_buf);
+	LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((vlen + 1) * sizeof(TCHAR));
+	tmemcpy(persistent, value_buf, vlen + 1);
+	obj->SetOwnProp(_T("Value"), persistent);
+	obj->SetOwnProp(_T("Result"), confirmed ? _T("OK") : _T("Cancel"));
+	aResultToken.SetValue(obj);
+}
+
+// ---------------------------------------------------------------------------
+// Process functions (kill() + /proc based)
+// ---------------------------------------------------------------------------
+
+static std::string LinuxNarrowOf(ExprTokenType *aParam[], int aParamCount, int aIndex, char *aBuf, size_t aBufSize)
+{
+	aBuf[0] = '\0';
+	if (aIndex >= aParamCount)
+		return std::string();
+	TCHAR wbuf[512];
+	wbuf[0] = L'\0';
+	LPTSTR s = TokenToString(*aParam[aIndex], wbuf, nullptr);
+	if (!s)
+		s = wbuf;
+	if (!s)
+		return std::string();
+	wcstombs(aBuf, s, aBufSize);
+	aBuf[aBufSize - 1] = '\0';
+	return std::string(aBuf);
+}
+
+// Returns true if the pid exists and is not a zombie (dead-but-unreaped).
+static bool LinuxProcessAlive(pid_t aPid)
+{
+	if (aPid <= 0 || kill(aPid, 0) != 0)
+		return false;
+	// A zombie still responds to kill(pid, 0); check its state in /proc.
+	char path[64];
+	snprintf(path, sizeof(path), "/proc/%d/stat", (int)aPid);
+	std::ifstream f(path);
+	if (!f)
+		return false;
+	std::string stat;
+	std::getline(f, stat);
+	size_t close_paren = stat.rfind(')');
+	if (close_paren == std::string::npos || close_paren + 2 >= stat.size())
+		return false;
+	char state = stat[close_paren + 2]; // After ") ".
+	return state != 'Z' && state != 'X';
+}
+
+// Returns the pid of the process matching aNameOrPid, or 0.
+static pid_t LinuxFindProcess(const char *aNameOrPid)
+{
+	if (!aNameOrPid || !*aNameOrPid)
+		return 0;
+	if (isdigit((unsigned char)aNameOrPid[0]))
+	{
+		pid_t pid = (pid_t)atol(aNameOrPid);
+		if (LinuxProcessAlive(pid))
+			return pid;
+		return 0;
+	}
+	std::string wanted(aNameOrPid);
+	// Strip any path to compare against the process name.
+	size_t slash = wanted.find_last_of('/');
+	if (slash != std::string::npos)
+		wanted = wanted.substr(slash + 1);
+	DIR *dir = opendir("/proc");
+	if (!dir)
+		return 0;
+	pid_t found = 0;
+	while (struct dirent *ent = readdir(dir))
+	{
+		if (!isdigit((unsigned char)ent->d_name[0]))
+			continue;
+		std::string path = std::string("/proc/") + ent->d_name + "/comm";
+		std::ifstream f(path.c_str());
+		if (!f)
+			continue;
+		std::string name;
+		std::getline(f, name);
+		if (!name.empty() && name.back() == '\n')
+			name.pop_back();
+		if (name == wanted)
+		{
+			pid_t candidate = (pid_t)atol(ent->d_name);
+			if (LinuxProcessAlive(candidate))
+			{
+				found = candidate;
+				break;
+			}
+		}
+	}
+	closedir(dir);
+	return found;
+}
+
+static void LinuxSetResultPid(ResultToken &aResultToken, pid_t aPid)
+{
+	aResultToken.SetValue((__int64)aPid);
+}
+
+BIF_DECL(BIF_Linux_ProcessExist)
+{
+	pid_t pid = 0;
+	if (aParamCount > 0 && !ParamIndexIsOmitted(0))
+	{
+		char name_buf[512];
+		pid = LinuxFindProcess(LinuxNarrowOf(aParam, aParamCount, 0, name_buf, sizeof(name_buf)).c_str());
+	}
+	else
+		pid = getpid(); // Docs: omitting the parameter means the script's own PID.
+	LinuxSetResultPid(aResultToken, pid);
+}
+
+BIF_DECL(BIF_Linux_ProcessClose)
+{
+	char name_buf[512];
+	std::string target = LinuxNarrowOf(aParam, aParamCount, 0, name_buf, sizeof(name_buf));
+	pid_t pid = LinuxFindProcess(target.c_str());
+	if (pid > 0)
+		kill(pid, SIGTERM);
+	LinuxSetResultPid(aResultToken, pid);
+}
+
+BIF_DECL(BIF_Linux_ProcessWait)
+{
+	char name_buf[512];
+	std::string target = LinuxNarrowOf(aParam, aParamCount, 0, name_buf, sizeof(name_buf));
+	double timeout = aParamCount > 1 ? TokenToDouble(*aParam[1]) : 0;
+	double waited = 0;
+	pid_t pid = 0;
+	for (;;)
+	{
+		pid = LinuxFindProcess(target.c_str());
+		if (pid)
+			break;
+		if (timeout > 0 && waited >= timeout)
+			break;
+		ScriptSleep(50);
+		waited += 0.05;
+	}
+	LinuxSetResultPid(aResultToken, pid);
+}
+
+BIF_DECL(BIF_Linux_ProcessWaitClose)
+{
+	char name_buf[512];
+	std::string target = LinuxNarrowOf(aParam, aParamCount, 0, name_buf, sizeof(name_buf));
+	double timeout = aParamCount > 1 ? TokenToDouble(*aParam[1]) : 0;
+	double waited = 0;
+	pid_t pid = 0;
+	for (;;)
+	{
+		pid = LinuxFindProcess(target.c_str());
+		if (!pid)
+			break;
+		if (timeout > 0 && waited >= timeout)
+			break;
+		ScriptSleep(50);
+		waited += 0.05;
+	}
+	LinuxSetResultPid(aResultToken, pid);
+}
+
+BIF_DECL(BIF_Linux_ProcessSetPriority)
+{
+	TCHAR prio_wide[64];
+	prio_wide[0] = L'\0';
+	LPTSTR prio_s = TokenToString(*aParam[0], prio_wide, nullptr);
+	if (!prio_s)
+		prio_s = prio_wide;
+	int nice = 0;
+	if (!_tcsicmp(prio_s, _T("Low"))) nice = 19;
+	else if (!_tcsicmp(prio_s, _T("BelowNormal"))) nice = 10;
+	else if (!_tcsicmp(prio_s, _T("Normal"))) nice = 0;
+	else if (!_tcsicmp(prio_s, _T("AboveNormal"))) nice = -5;
+	else if (!_tcsicmp(prio_s, _T("High"))) nice = -11;
+	else if (!_tcsicmp(prio_s, _T("Realtime"))) nice = -20;
+	char name_buf[512];
+	pid_t pid = LinuxFindProcess(LinuxNarrowOf(aParam, aParamCount, 1, name_buf, sizeof(name_buf)).c_str());
+	if (pid > 0)
+		setpriority(PRIO_PROCESS, (id_t)pid, nice);
+	LinuxSetResultPid(aResultToken, pid);
+}
+
+// ---------------------------------------------------------------------------
+// Drive functions (statvfs + /proc/mounts based)
+// ---------------------------------------------------------------------------
+
+struct LinuxMountInfo
+{
+	std::string device;
+	std::string mount_point;
+	std::string fstype;
+};
+
+static std::vector<LinuxMountInfo> LinuxMounts()
+{
+	std::vector<LinuxMountInfo> mounts;
+	std::ifstream f("/proc/mounts");
+	std::string line;
+	while (std::getline(f, line))
+	{
+		// device mount_point fstype options dump pass
+		std::istringstream ss(line);
+		LinuxMountInfo mi;
+		ss >> mi.device >> mi.mount_point >> mi.fstype;
+		if (!mi.mount_point.empty())
+			mounts.push_back(mi);
+	}
+	return mounts;
+}
+
+static std::string LinuxMountOf(const std::vector<LinuxMountInfo> &aMounts, const std::string &aPath)
+{
+	std::string best;
+	for (auto &m : aMounts)
+		if (aPath == m.mount_point || (aPath.size() > m.mount_point.size()
+			&& aPath.compare(0, m.mount_point.size(), m.mount_point) == 0
+			&& (m.mount_point == "/" || aPath[m.mount_point.size()] == '/')))
+			if (m.mount_point.size() > best.size())
+				best = m.mount_point;
+	return best;
+}
+
+BIF_DECL(BIF_Linux_DriveGetType)
+{
+	char path_buf[4096];
+	std::string path = LinuxNarrowOf(aParam, aParamCount, 0, path_buf, sizeof(path_buf));
+	if (path.empty())
+		path = "/";
+	std::string result = "";
+	auto mounts = LinuxMounts();
+	std::string mp = LinuxMountOf(mounts, path);
+	for (auto &m : mounts)
+	{
+		if (m.mount_point != mp)
+			continue;
+		if (m.fstype == "tmpfs" || m.fstype == "ramfs")
+			result = "RAMDisk";
+		else if (m.fstype == "nfs" || m.fstype == "nfs4" || m.fstype == "cifs" || m.fstype == "smb3")
+			result = "Network";
+		else if (m.device.rfind("/dev/sr", 0) == 0 || m.fstype == "iso9660" || m.fstype == "udf")
+			result = "CDROM";
+		else if (m.device.rfind("/dev/sd", 0) == 0 || m.device.rfind("/dev/nvme", 0) == 0
+			|| m.device.rfind("/dev/vd", 0) == 0 || m.device.rfind("/dev/mmc", 0) == 0)
+			result = "Fixed";
+		else if (m.device.rfind("/dev/fd", 0) == 0)
+			result = "Removable";
+		else
+			result = "Fixed";
+		break;
+	}
+	// No mount found for the path: check statvfs works at all.
+	if (result.empty())
+	{
+		struct statvfs sv;
+		if (statvfs(path.c_str(), &sv) == 0)
+			result = "Fixed";
+	}
+	LinuxSetPersistentStrResult(aResultToken, result.c_str());
+}
+
+BIF_DECL(BIF_Linux_DriveGetList)
+{
+	char type_buf[64];
+	std::string type = LinuxNarrowOf(aParam, aParamCount, 0, type_buf, sizeof(type_buf));
+	auto mounts = LinuxMounts();
+	std::string list;
+	for (auto &m : mounts)
+	{
+		bool skip_virtual = m.fstype == "proc" || m.fstype == "sysfs" || m.fstype == "devpts"
+			|| m.fstype == "cgroup" || m.fstype == "cgroup2" || m.fstype == "overlay"
+			|| m.fstype == "mqueue" || m.fstype == "securityfs" || m.fstype == "debugfs"
+			|| m.fstype == "pstore" || m.fstype == "tracefs" || m.fstype == "fusectl"
+			|| m.fstype == "configfs" || m.fstype == "bpf" || m.fstype == "binfmt_misc"
+			|| m.fstype == "hugetlbfs" || m.fstype == "autofs";
+		if (skip_virtual)
+			continue;
+		if (type.empty())
+			list += m.mount_point + "\n";
+		else
+		{
+			// Match against the AHK drive type names.
+			std::string t;
+			if (m.fstype == "tmpfs" || m.fstype == "ramfs") t = "RAMDisk";
+			else if (m.fstype == "nfs" || m.fstype == "nfs4" || m.fstype == "cifs") t = "Network";
+			else if (m.device.rfind("/dev/sr", 0) == 0) t = "CDROM";
+			else if (m.device.rfind("/dev/fd", 0) == 0) t = "Removable";
+			else if (m.device.rfind("/dev/", 0) == 0) t = "Fixed";
+			else t = "Fixed";
+			if (t == type)
+				list += m.mount_point + "\n";
+		}
+	}
+	LinuxSetPersistentStrResult(aResultToken, list.c_str());
+}
+
+BIF_DECL(BIF_Linux_DriveGetSpaceFree)
+{
+	char path_buf[4096];
+	std::string path = LinuxNarrowOf(aParam, aParamCount, 0, path_buf, sizeof(path_buf));
+	if (path.empty())
+		path = "/";
+	struct statvfs sv;
+	__int64 result = 0;
+	if (statvfs(path.c_str(), &sv) == 0)
+		result = (__int64)sv.f_bavail * (__int64)sv.f_frsize;
+	aResultToken.SetValue(result);
+}
+
+BIF_DECL(BIF_Linux_DriveGetCapacity)
+{
+	char path_buf[4096];
+	std::string path = LinuxNarrowOf(aParam, aParamCount, 0, path_buf, sizeof(path_buf));
+	if (path.empty())
+		path = "/";
+	struct statvfs sv;
+	__int64 result = 0;
+	if (statvfs(path.c_str(), &sv) == 0)
+		result = (__int64)sv.f_blocks * (__int64)sv.f_frsize;
+	aResultToken.SetValue(result);
+}
+
+BIF_DECL(BIF_Linux_DriveGetFilesystem)
+{
+	char path_buf[4096];
+	std::string path = LinuxNarrowOf(aParam, aParamCount, 0, path_buf, sizeof(path_buf));
+	if (path.empty())
+		path = "/";
+	auto mounts = LinuxMounts();
+	std::string mp = LinuxMountOf(mounts, path);
+	std::string fs = "";
+	for (auto &m : mounts)
+		if (m.mount_point == mp)
+		{
+			fs = m.fstype;
+			break;
+		}
+	LinuxSetPersistentStrResult(aResultToken, fs.c_str());
+}
+
+BIF_DECL(BIF_Linux_DriveGetStatus)
+{
+	char path_buf[4096];
+	std::string path = LinuxNarrowOf(aParam, aParamCount, 0, path_buf, sizeof(path_buf));
+	if (path.empty())
+		path = "/";
+	struct statvfs sv;
+	std::string status = statvfs(path.c_str(), &sv) == 0 ? "Ready" : "NotReady";
+	LinuxSetPersistentStrResult(aResultToken, status.c_str());
+}
+
+BIF_DECL(BIF_Linux_DriveGetLabel) { LinuxSetPersistentStrResult(aResultToken, ""); }
+BIF_DECL(BIF_Linux_DriveGetSerial) { aResultToken.SetValue((__int64)0); }
+BIF_DECL(BIF_Linux_DriveGetStatusCD) { LinuxSetPersistentStrResult(aResultToken, ""); }
+
+// ---------------------------------------------------------------------------
+// SoundBeep: terminal bell with display (X11) fallback
+// ---------------------------------------------------------------------------
+
+BIF_DECL(BIF_Linux_SoundBeep)
+{
+	int frequency = aParamCount > 0 ? (int)TokenToInt64(*aParam[0]) : 523;
+	int duration = aParamCount > 1 ? (int)TokenToInt64(*aParam[1]) : 150;
+	(void)frequency;
+	if (LinuxHasDisplay())
+	{
+		extern void LinuxXBell();
+		LinuxXBell();
+	}
+	else
+	{
+		std::printf("\a");
+		std::fflush(stdout);
+	}
+	if (duration > 0)
+		ScriptSleep(duration);
+	aResultToken.SetValue((__int64)0);
+}
+
+// ---------------------------------------------------------------------------
+// A_Clipboard: process-internal clipboard (X11 selection integration later)
+// ---------------------------------------------------------------------------
+
+static std::wstring &LinuxClipboardStorage()
+{
+	static std::wstring sClipboard;
+	return sClipboard;
+}
+
+void BIV_Clipboard(ResultToken &aResultToken, LPTSTR aVarName)
+{
+	(void)aVarName;
+	const std::wstring &c = LinuxClipboardStorage();
+	LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((c.size() + 1) * sizeof(TCHAR));
+	tmemcpy(persistent, c.c_str(), c.size() + 1);
+	aResultToken.SetValue(persistent, c.size());
+}
+
+void BIV_Clipboard_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
+{
+	(void)aResultToken; (void)aVarName;
+	TCHAR buf[65536];
+	buf[0] = L'\0';
+	size_t len = 0;
+	LPTSTR s = TokenToString(aValue, buf, &len);
+	if (!s)
+		s = buf;
+	LinuxClipboardStorage().assign(s ? s : L"");
+}
+
+BIF_DECL(BIF_Linux_ClipWait)
+{
+	double timeout = aParamCount > 0 ? TokenToDouble(*aParam[0]) : 0;
+	double waited = 0;
+	bool non_empty = !LinuxClipboardStorage().empty();
+	while (!non_empty && (timeout <= 0 || waited < timeout))
+	{
+		ScriptSleep(50);
+		waited += 0.05;
+		non_empty = !LinuxClipboardStorage().empty();
+	}
+	aResultToken.SetValue(non_empty ? 1 : 0);
+}
+
+// ---------------------------------------------------------------------------
+// INI functions (simple UTF-8 INI parser)
+// ---------------------------------------------------------------------------
+
+static bool LinuxReadFileUtf8(const char *aPath, std::string &aOut)
+{
+	std::ifstream f(aPath, std::ios::binary);
+	if (!f)
+		return false;
+	std::ostringstream ss;
+	ss << f.rdbuf();
+	aOut = ss.str();
+	return true;
+}
+
+static void LinuxSetResultUtf8(ResultToken &aResultToken, const std::string &aUtf8)
+{
+	std::wstring w;
+	size_t i = 0;
+	if (aUtf8.size() >= 3 && (unsigned char)aUtf8[0] == 0xEF && (unsigned char)aUtf8[1] == 0xBB && (unsigned char)aUtf8[2] == 0xBF)
+		i = 3;
+	while (i < aUtf8.size())
+	{
+		unsigned char c = (unsigned char)aUtf8[i];
+		if (c < 0x80) { w += (wchar_t)c; ++i; }
+		else if ((c & 0xE0) == 0xC0 && i + 1 < aUtf8.size()) { w += (wchar_t)(((c & 0x1F) << 6) | ((unsigned char)aUtf8[i+1] & 0x3F)); i += 2; }
+		else if ((c & 0xF0) == 0xE0 && i + 2 < aUtf8.size()) { w += (wchar_t)(((c & 0x0F) << 12) | (((unsigned char)aUtf8[i+1] & 0x3F) << 6) | ((unsigned char)aUtf8[i+2] & 0x3F)); i += 3; }
+		else if ((c & 0xF8) == 0xF0 && i + 3 < aUtf8.size()) { w += (wchar_t)(((c & 0x07) << 18) | (((unsigned char)aUtf8[i+1] & 0x3F) << 12) | (((unsigned char)aUtf8[i+2] & 0x3F) << 6) | ((unsigned char)aUtf8[i+3] & 0x3F)); i += 4; }
+		else { w += L'?'; ++i; }
+	}
+	LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((w.size() + 1) * sizeof(TCHAR));
+	tmemcpy(persistent, w.c_str(), w.size() + 1);
+	aResultToken.SetValue(persistent, w.size());
+}
+
+static std::string LinuxWideToNarrow(const wchar_t *aIn)
+{
+	if (!aIn)
+		return std::string();
+	char buf[8192];
+	size_t n = wcstombs(buf, aIn, sizeof(buf) - 1);
+	if (n == (size_t)-1)
+		return std::string();
+	buf[n] = '\0';
+	return std::string(buf);
+}
+
+BIF_DECL(BIF_Linux_IniRead)
+{
+	char path_buf[4096];
+	std::string path = LinuxNarrowOf(aParam, aParamCount, 0, path_buf, sizeof(path_buf));
+	TCHAR section_buf[512], key_buf[512], def_buf[4096];
+	section_buf[0] = key_buf[0] = def_buf[0] = L'\0';
+	LPTSTR section = aParamCount > 1 ? TokenToString(*aParam[1], section_buf, nullptr) : nullptr;
+	LPTSTR key = aParamCount > 2 ? TokenToString(*aParam[2], key_buf, nullptr) : nullptr;
+	LPTSTR def = aParamCount > 3 ? TokenToString(*aParam[3], def_buf, nullptr) : nullptr;
+	if (!def)
+		def = def_buf;
+	std::string content;
+	if (!LinuxReadFileUtf8(path.c_str(), content))
+	{
+		LinuxSetResultUtf8(aResultToken, "");
+		return;
+	}
+	std::string want_section = section ? LinuxWideToNarrow(section) : "";
+	std::string want_key = key ? LinuxWideToNarrow(key) : "";
+	std::string result;
+	bool in_section = want_section.empty();
+	std::istringstream ss(content);
+	std::string line;
+	while (std::getline(ss, line))
+	{
+		if (!line.empty() && (line.back() == '\r'))
+			line.pop_back();
+		std::string trimmed = line;
+		size_t b = trimmed.find_first_not_of(" \t");
+		if (b == std::string::npos)
+			continue;
+		trimmed = trimmed.substr(b);
+		if (!trimmed.empty() && trimmed[0] == ';')
+			continue;
+		if (!trimmed.empty() && trimmed[0] == '[')
+		{
+			size_t e = trimmed.find(']');
+			in_section = e != std::string::npos && trimmed.substr(1, e - 1) == want_section;
+			continue;
+		}
+		if (!in_section)
+			continue;
+		size_t eq = trimmed.find('=');
+		if (eq == std::string::npos)
+			continue;
+		std::string k = trimmed.substr(0, eq);
+		size_t ke = k.find_last_not_of(" \t");
+		if (ke != std::string::npos)
+			k = k.substr(0, ke + 1);
+		if (k != want_key)
+			continue;
+		std::string v = trimmed.substr(eq + 1);
+		size_t vb = v.find_first_not_of(" \t");
+		if (vb != std::string::npos)
+			v = v.substr(vb);
+		result = v;
+		break;
+	}
+	if (result.empty() && def && *def)
+		LinuxSetResultUtf8(aResultToken, LinuxWideToNarrow(def));
+	else
+		LinuxSetResultUtf8(aResultToken, result);
+}
+
+BIF_DECL(BIF_Linux_IniWrite)
+{
+	char path_buf[4096];
+	std::string path = LinuxNarrowOf(aParam, aParamCount, 1, path_buf, sizeof(path_buf));
+	TCHAR value_buf[4096], section_buf[512], key_buf[512];
+	value_buf[0] = section_buf[0] = key_buf[0] = L'\0';
+	LPTSTR value = TokenToString(*aParam[0], value_buf, nullptr);
+	LPTSTR section = aParamCount > 2 ? TokenToString(*aParam[2], section_buf, nullptr) : nullptr;
+	LPTSTR key = aParamCount > 3 ? TokenToString(*aParam[3], key_buf, nullptr) : nullptr;
+	std::string want_section = section ? LinuxWideToNarrow(section) : "";
+	std::string want_key = key ? LinuxWideToNarrow(key) : "";
+	std::string new_value = value ? LinuxWideToNarrow(value) : "";
+
+	std::string content;
+	std::vector<std::string> lines;
+	if (LinuxReadFileUtf8(path.c_str(), content))
+	{
+		std::istringstream ss(content);
+		std::string line;
+		while (std::getline(ss, line))
+			lines.push_back(line);
+	}
+
+	bool in_section = want_section.empty();
+	bool replaced = false;
+	std::vector<std::string> out;
+	for (auto &line : lines)
+	{
+		std::string trimmed = line;
+		size_t b = trimmed.find_first_not_of(" \t");
+		if (b == std::string::npos)
+			b = 0;
+		trimmed = trimmed.substr(b);
+		if (!trimmed.empty() && trimmed[0] == '[')
+		{
+			size_t e = trimmed.find(']');
+			in_section = e != std::string::npos && trimmed.substr(1, e - 1) == want_section;
+		}
+		else if (in_section)
+		{
+			size_t eq = trimmed.find('=');
+			if (eq != std::string::npos)
+			{
+				std::string k = trimmed.substr(0, eq);
+				size_t ke = k.find_last_not_of(" \t");
+				if (ke != std::string::npos)
+					k = k.substr(0, ke + 1);
+				if (k == want_key)
+				{
+					std::string indent = line.substr(0, line.find_first_not_of(" \t"));
+					out.push_back(indent + want_key + "=" + new_value);
+					replaced = true;
+					continue;
+				}
+			}
+		}
+		out.push_back(line);
+	}
+	if (!replaced)
+	{
+		if (!in_section)
+		{
+			if (!out.empty() && !out.back().empty())
+				out.push_back("");
+			out.push_back("[" + want_section + "]");
+		}
+		out.push_back(want_key + "=" + new_value);
+	}
+	std::ofstream f(path.c_str(), std::ios::binary | std::ios::trunc);
+	if (f)
+	{
+		for (auto &line : out)
+			f << line << "\n";
+	}
+	aResultToken.SetValue((__int64)0);
+}
+
+BIF_DECL(BIF_Linux_IniDelete)
+{
+	char path_buf[4096];
+	std::string path = LinuxNarrowOf(aParam, aParamCount, 0, path_buf, sizeof(path_buf));
+	TCHAR section_buf[512], key_buf[512];
+	section_buf[0] = key_buf[0] = L'\0';
+	LPTSTR section = aParamCount > 1 ? TokenToString(*aParam[1], section_buf, nullptr) : nullptr;
+	LPTSTR key = aParamCount > 2 ? TokenToString(*aParam[2], key_buf, nullptr) : nullptr;
+	std::string want_section = section ? LinuxWideToNarrow(section) : "";
+	std::string want_key = key ? LinuxWideToNarrow(key) : "";
+
+	std::string content;
+	std::vector<std::string> lines;
+	if (!LinuxReadFileUtf8(path.c_str(), content))
+	{
+		aResultToken.SetValue((__int64)0);
+		return;
+	}
+	{
+		std::istringstream ss(content);
+		std::string line;
+		while (std::getline(ss, line))
+			lines.push_back(line);
+	}
+	bool in_section = false;
+	bool skip_until_section_end = false;
+	std::vector<std::string> out;
+	for (auto &line : lines)
+	{
+		std::string trimmed = line;
+		size_t b = trimmed.find_first_not_of(" \t");
+		if (b == std::string::npos)
+			b = 0;
+		trimmed = trimmed.substr(b);
+		if (!trimmed.empty() && trimmed[0] == '[')
+		{
+			size_t e = trimmed.find(']');
+			std::string sec = e != std::string::npos ? trimmed.substr(1, e - 1) : "";
+			if (sec == want_section)
+			{
+				if (want_key.empty())
+				{
+					skip_until_section_end = true; // Delete the whole section.
+					continue;
+				}
+				in_section = true;
+			}
+			else
+			{
+				skip_until_section_end = false;
+				in_section = false;
+			}
+		}
+		else if (skip_until_section_end)
+			continue;
+		else if (in_section)
+		{
+			size_t eq = trimmed.find('=');
+			if (eq != std::string::npos)
+			{
+				std::string k = trimmed.substr(0, eq);
+				size_t ke = k.find_last_not_of(" \t");
+				if (ke != std::string::npos)
+					k = k.substr(0, ke + 1);
+				if (k == want_key)
+					continue; // Delete this key line.
+			}
+		}
+		out.push_back(line);
+	}
+	std::ofstream f(path.c_str(), std::ios::binary | std::ios::trunc);
+	if (f)
+	{
+		for (auto &line : out)
+			f << line << "\n";
+	}
+	aResultToken.SetValue((__int64)0);
+}
+
 // ---------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------
+
+// Set the result token to a narrow UTF-8 string (converted to wide, copied to
+// SimpleHeap so the caller can keep it).
+static void LinuxSetPersistentStrResult(ResultToken &aResultToken, const char *aUtf8)
+{
+	if (!aUtf8)
+		aUtf8 = "";
+	std::wstring w;
+	size_t i = 0;
+	while (aUtf8[i])
+	{
+		unsigned char c = (unsigned char)aUtf8[i];
+		if (c < 0x80) { w += (wchar_t)c; ++i; }
+		else if ((c & 0xE0) == 0xC0 && aUtf8[i+1]) { w += (wchar_t)(((c & 0x1F) << 6) | ((unsigned char)aUtf8[i+1] & 0x3F)); i += 2; }
+		else if ((c & 0xF0) == 0xE0 && aUtf8[i+1] && aUtf8[i+2]) { w += (wchar_t)(((c & 0x0F) << 12) | (((unsigned char)aUtf8[i+1] & 0x3F) << 6) | ((unsigned char)aUtf8[i+2] & 0x3F)); i += 3; }
+		else if ((c & 0xF8) == 0xF0 && aUtf8[i+1] && aUtf8[i+2] && aUtf8[i+3]) { w += (wchar_t)(((c & 0x07) << 18) | (((unsigned char)aUtf8[i+1] & 0x3F) << 12) | (((unsigned char)aUtf8[i+2] & 0x3F) << 6) | ((unsigned char)aUtf8[i+3] & 0x3F)); i += 4; }
+		else { w += L'?'; ++i; }
+	}
+	LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((w.size() + 1) * sizeof(TCHAR));
+	tmemcpy(persistent, w.c_str(), w.size() + 1);
+	aResultToken.SetValue(persistent, w.size());
+}
 
 struct LinuxMdFuncEntry
 {
 	LPCTSTR name;
 	BuiltInFunctionType bif;
 	UCHAR min_params, max_params;
+	UCHAR output_vars[MAX_FUNC_OUTPUT_VAR]; // 1-based param indices that are output vars.
 };
 
-#define LMD_IMPL(name, fn, minp, maxp) { _T(#name), fn, minp, maxp }
-#define LMD_NI(name, minp, maxp) { _T(#name), BIF_Linux_NotImplemented, minp, maxp }
+#define LMD_IMPL(name, fn, minp, maxp, ...) { _T(#name), fn, minp, maxp, {__VA_ARGS__} }
+#define LMD_NI(name, minp, maxp, ...) { _T(#name), BIF_Linux_NotImplemented, minp, maxp, {__VA_ARGS__} }
 
 // All functions registered via lib/functions.h on Windows.  Entries marked
 // LMD_IMPL are wired to a real implementation; the rest (LMD_NI) produce a
@@ -489,7 +1273,7 @@ struct LinuxMdFuncEntry
 static LinuxMdFuncEntry sLinuxMdFuncs[] =
 {
 	LMD_NI(BlockInput, 1, 1),
-	LMD_NI(ClipWait, 0, 2),
+	LMD_IMPL(ClipWait, BIF_Linux_ClipWait, 0, 2),
 	LMD_NI(ControlAddItem, 5, 5),
 	LMD_NI(ControlChooseIndex, 5, 5),
 	LMD_NI(ControlChooseString, 5, 5),
@@ -533,15 +1317,15 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_NI(DirSelect, 0, 3),
 	LMD_NI(Download, 2, 2),
 	LMD_NI(DriveEject, 0, 1),
-	LMD_NI(DriveGetCapacity, 1, 1),
-	LMD_NI(DriveGetFilesystem, 1, 1),
-	LMD_NI(DriveGetLabel, 1, 1),
-	LMD_NI(DriveGetList, 0, 1),
-	LMD_NI(DriveGetSerial, 1, 1),
-	LMD_NI(DriveGetSpaceFree, 1, 1),
-	LMD_NI(DriveGetStatus, 1, 1),
-	LMD_NI(DriveGetStatusCD, 0, 1),
-	LMD_NI(DriveGetType, 1, 1),
+	LMD_IMPL(DriveGetCapacity, BIF_Linux_DriveGetCapacity, 1, 1),
+	LMD_IMPL(DriveGetFilesystem, BIF_Linux_DriveGetFilesystem, 1, 1),
+	LMD_IMPL(DriveGetLabel, BIF_Linux_DriveGetLabel, 1, 1),
+	LMD_IMPL(DriveGetList, BIF_Linux_DriveGetList, 0, 1),
+	LMD_IMPL(DriveGetSerial, BIF_Linux_DriveGetSerial, 1, 1),
+	LMD_IMPL(DriveGetSpaceFree, BIF_Linux_DriveGetSpaceFree, 1, 1),
+	LMD_IMPL(DriveGetStatus, BIF_Linux_DriveGetStatus, 1, 1),
+	LMD_IMPL(DriveGetStatusCD, BIF_Linux_DriveGetStatusCD, 0, 1),
+	LMD_IMPL(DriveGetType, BIF_Linux_DriveGetType, 1, 1),
 	LMD_NI(DriveLock, 1, 1),
 	LMD_NI(DriveRetract, 0, 1),
 	LMD_NI(DriveSetLabel, 1, 2),
@@ -593,10 +1377,10 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_NI(IL_Create, 0, 3),
 	LMD_NI(IL_Destroy, 1, 1),
 	LMD_NI(ImageSearch, 7, 7),
-	LMD_NI(IniDelete, 2, 3),
-	LMD_NI(IniRead, 1, 4),
-	LMD_NI(IniWrite, 3, 4),
-	LMD_NI(InputBox, 0, 4),
+	LMD_IMPL(IniDelete, BIF_Linux_IniDelete, 2, 3),
+	LMD_IMPL(IniRead, BIF_Linux_IniRead, 1, 4),
+	LMD_IMPL(IniWrite, BIF_Linux_IniWrite, 3, 4),
+	LMD_IMPL(InputBox, BIF_Linux_InputBox, 0, 4),
 	LMD_NI(InstallKeybdHook, 0, 2),
 	LMD_NI(InstallMouseHook, 0, 2),
 	LMD_IMPL(IsLabel, BIF_Linux_IsLabel, 1, 1),
@@ -628,16 +1412,16 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_NI(PixelGetColor, 2, 3),
 	LMD_NI(PixelSearch, 7, 8),
 	LMD_NI(PostMessage, 2, 8),
-	LMD_NI(ProcessClose, 1, 1),
-	LMD_NI(ProcessExist, 0, 1),
+	LMD_IMPL(ProcessClose, BIF_Linux_ProcessClose, 1, 1),
+	LMD_IMPL(ProcessExist, BIF_Linux_ProcessExist, 0, 1),
 	LMD_NI(ProcessGetName, 0, 1),
 	LMD_NI(ProcessGetParent, 0, 1),
 	LMD_NI(ProcessGetPath, 0, 1),
-	LMD_NI(ProcessSetPriority, 1, 2),
-	LMD_NI(ProcessWait, 1, 2),
-	LMD_NI(ProcessWaitClose, 1, 2),
+	LMD_IMPL(ProcessSetPriority, BIF_Linux_ProcessSetPriority, 1, 2),
+	LMD_IMPL(ProcessWait, BIF_Linux_ProcessWait, 1, 2),
+	LMD_IMPL(ProcessWaitClose, BIF_Linux_ProcessWaitClose, 1, 2),
 	LMD_IMPL(Reload, BIF_Linux_Reload, 0, 0),
-	LMD_NI(Run, 1, 3),
+	LMD_IMPL(Run, BIF_Linux_Run, 1, 4, 4),
 	LMD_NI(RunAs, 0, 3),
 	LMD_NI(Send, 1, 1),
 	LMD_NI(SendEvent, 1, 1),
@@ -662,7 +1446,7 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(SetWorkingDir, BIF_Linux_SetWorkingDir, 1, 1),
 	LMD_NI(Shutdown, 1, 1),
 	LMD_IMPL(Sleep, BIF_Linux_Sleep, 1, 1),
-	LMD_NI(SoundBeep, 0, 2),
+	LMD_IMPL(SoundBeep, BIF_Linux_SoundBeep, 0, 2),
 	LMD_NI(SoundPlay, 1, 2),
 	LMD_NI(StatusBarGetText, 0, 5),
 	LMD_NI(StatusBarWait, 0, 8),
@@ -725,13 +1509,30 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 #undef LMD_IMPL
 #undef LMD_NI
 
+static BuiltInFunc *LinuxMakeBuiltInFunc(const LinuxMdFuncEntry &aEntry)
+{
+	// BuiltInFunc stores mOutputVars BY POINTER, so the FuncEntry must live in
+	// stable storage (upstream g_BIF entries are static globals).  A std::list
+	// never invalidates references to its elements.
+	static std::list<FuncEntry> sEntries;
+	sEntries.emplace_back();
+	FuncEntry &fe = sEntries.back();
+	fe.mName = aEntry.name;
+	fe.mBIF = aEntry.bif;
+	fe.mMinParams = aEntry.min_params;
+	fe.mMaxParams = aEntry.max_params;
+	fe.mID = 0;
+	for (int i = 0; i < MAX_FUNC_OUTPUT_VAR; ++i)
+		fe.mOutputVars[i] = aEntry.output_vars[i];
+	return new BuiltInFunc(fe);
+}
+
 Func *Script::GetBuiltInMdFunc(LPTSTR aFuncName)
 {
 	// Linear search: the table is small and this is only consulted at load
 	// time for names not found in g_BIF.
 	for (int i = 0; i < _countof(sLinuxMdFuncs); ++i)
 		if (!_tcsicmp(aFuncName, sLinuxMdFuncs[i].name))
-			return new BuiltInFunc(sLinuxMdFuncs[i].name, sLinuxMdFuncs[i].bif
-				, sLinuxMdFuncs[i].min_params, sLinuxMdFuncs[i].max_params);
+			return LinuxMakeBuiltInFunc(sLinuxMdFuncs[i]);
 	return nullptr;
 }

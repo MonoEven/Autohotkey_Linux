@@ -87,5 +87,19 @@ M2：核心解释器 Linux 编译。
 - [x] 实现 SystemTimeToFileTime/FileTimeToSystemTime/FileTimeToLocalFileTime/LocalFileTimeToFileTime/GetSystemTimeAsFileTime，DateAdd/DateDiff/FormatTime 日期计算正确
 - [x] 修复 main_linux 退出码：LoadFromFile 后恢复 mIsReadyToExecute，成功脚本 exit 0，失败脚本 exit 2
 - [x] 建立回归测试 `tests/run_tests.sh`（17 项，常规构建与 ASan 构建全部通过）
+
+### 本轮（模块级验证 + GUI 双模式）
+- [x] 对照 v2 官方文档建立模块验证矩阵 `MODULE_MATRIX.md`，每个模块有对应 .ahk 验证
+- [x] 真实 X11 GUI 层（`source/linux/gui/x11_gui.cpp`，纯 Xlib）：MsgBox 对话框（标题/按钮集/默认按钮/Enter/Esc/T<秒>超时）、InputBox 输入框；无 DISPLAY（headless）自动回退控制台/stdin —— 有画面/无画面两种模式均验证通过
+- [x] 真实 POSIX 进程创建：`CreateProcess`（fork/execvp）+ `ShellExecuteEx`（xdg-open），Run/RunWait/&PID 输出参数/退出码全部可用；WSL 下可启动 .exe（互操作）
+- [x] 日期/时间内置变量：A_Now/A_NowUTC/A_YYYY/A_MM/A_DD/A_Hour/A_Min/A_Sec/A_MSec/A_YDay/A_YWeek/A_WDay/A_MMM/A_MMMM/A_DDD/A_DDDD 等全部实现
+- [x] FormatTime 完整实现（Windows 格式串 → strftime 翻译，含单引号字面量/键名 LongDate/ShortDate/Time/YWeek/YDay）；修复 IsCharAlphaNumeric 恒假导致格式串整体被引号包裹的问题
+- [x] Process 模块：ProcessExist/ProcessWait/ProcessWaitClose/ProcessClose/ProcessSetPriority（kill + /proc，排除僵尸进程）
+- [x] Drive 模块：DriveGetType/GetList/GetCapacity/GetSpaceFree/GetFilesystem/GetStatus（statvfs + /proc/mounts）
+- [x] A_Clipboard 进程内剪贴板 + ClipWait
+- [x] IniRead/IniWrite/IniDelete（UTF-8 INI 解析，支持默认值/改值/删键/删节）
+- [x] SoundBeep（X11 Bell/终端响铃）；SplitPath 支持正斜杠；WinExist/WinActive 按文档返回空串
+- [x] 修复 BuiltInFunc::mOutputVars 指针悬垂（mdFunc 表 FuncEntry 改稳定存储）
+- [x] 回归套件扩充至 25 项（headless）+ GUI 套件 6 项（有画面），常规与 ASan 构建全部通过
 - [ ] 复杂 GUI/热键/其余内置函数仍需继续移植
 - [ ] 逐文件修复编译错误

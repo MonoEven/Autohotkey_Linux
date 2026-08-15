@@ -4,9 +4,17 @@
 #include "../../stdafx.h"
 #include "../../script.h"
 #include "../../globaldata.h"
+#include "../../script_func_impl.h"
+#include "../../window.h" // For MsgBox() and dialog size constants.
 #include <fstream>
 #include <string>
 #include <vector>
+
+// Real implementations from window.cpp / script2.cpp (declared here because
+// they have no header declaration on the Windows build either).
+ResultType MsgBoxParseOptions(LPCTSTR aOptions, int &aType, double &aTimeout, HWND &aOwner);
+LPTSTR MsgBoxResultString(int aResult);
+void ScriptSleep(int aDelay);
 
 #define LINUX_BIF_STUB(name) \
 void name(BIF_DECL_PARAMS) { (void)aParam; (void)aParamCount; }
@@ -33,18 +41,23 @@ LINUX_BIF_STUB(BIF_NumGet)
 LINUX_BIF_STUB(BIF_NumPut)
 LINUX_BIF_STUB(BIF_Reg)
 LINUX_BIF_STUB(BIF_RegEx)
-LINUX_BIF_STUB(BIF_RunWait)
 LINUX_BIF_STUB(BIF_Sound)
 LINUX_BIF_STUB(BIF_StrGetPut)
 LINUX_BIF_STUB(BIF_StrPtr)
-LINUX_BIF_STUB(BIF_WinExistActive)
+
+// WinExist/WinActive: no X11 window backend yet, so no window ever matches.
+// Per the docs both return an empty string when no window is found.
+BIF_DECL(BIF_WinExistActive)
+{
+	(void)aParam;
+	(void)aParamCount;
+	aResultToken.SetValue(_T(""));
+}
 
 LINUX_BIV_STUB(BIV_AhkPath)
 LINUX_BIV_STUB_RW(BIV_AllowMainWindow)
-LINUX_BIV_STUB_RW(BIV_Clipboard)
 LINUX_BIV_STUB_RW(BIV_CoordMode)
 LINUX_BIV_STUB(BIV_Cursor)
-LINUX_BIV_STUB(BIV_DateTime)
 LINUX_BIV_STUB_RW(BIV_DefaultMouseSpeed)
 LINUX_BIV_STUB_RW(BIV_DetectHiddenText)
 LINUX_BIV_STUB_RW(BIV_DetectHiddenWindows)
@@ -78,9 +91,7 @@ LINUX_BIV_STUB(BIV_LoopRegName)
 LINUX_BIV_STUB(BIV_LoopRegTimeModified)
 LINUX_BIV_STUB(BIV_LoopRegType)
 LINUX_BIV_STUB_RW(BIV_MenuMaskKey)
-LINUX_BIV_STUB(BIV_MMM_DDD)
 LINUX_BIV_STUB(BIV_MyDocuments)
-LINUX_BIV_STUB(BIV_Now)
 LINUX_BIV_STUB(BIV_PriorHotkey)
 LINUX_BIV_STUB(BIV_PriorKey)
 LINUX_BIV_STUB_RW(BIV_RegView)
@@ -101,22 +112,32 @@ LINUX_BIV_STUB(BIV_TitleMatchModeSpeed)
 LINUX_BIV_STUB(BIV_TrayMenu)
 LINUX_BIV_STUB_RW(BIV_xDelay)
 
-// Minimal MsgBox built-in for the Linux console port.  It prints the first
-// argument and returns "OK" so scripts can continue.
+// MsgBox built-in.  Uses the real MsgBox machinery from window.cpp/script2.cpp
+// (options/title/timeout parsing, button result strings); the compat
+// MessageBox underneath shows a real X11 dialog when a display is available
+// and falls back to printing to the console when headless.
 BIF_DECL(BIF_MsgBox)
 {
-	TCHAR buf[4096];
-	buf[0] = L'\0';
-	LPTSTR text = buf;
-	if (aParamCount > 0)
+	TCHAR text_buf[MSGBOX_TEXT_SIZE];
+	text_buf[0] = L'\0';
+	LPTSTR text = aParamCount > 0 ? TokenToString(*aParam[0], text_buf, nullptr) : nullptr;
+	TCHAR title_buf[DIALOG_TITLE_SIZE];
+	title_buf[0] = L'\0';
+	LPTSTR title = aParamCount > 1 ? TokenToString(*aParam[1], title_buf, nullptr) : nullptr;
+	TCHAR options_buf[256];
+	options_buf[0] = L'\0';
+	LPTSTR options = aParamCount > 2 ? TokenToString(*aParam[2], options_buf, nullptr) : nullptr;
+	int type = 0;
+	double timeout = 0;
+	HWND owner = nullptr;
+	if (options && !MsgBoxParseOptions(options, type, timeout, owner))
 	{
-		size_t len = 0;
-		LPTSTR str = TokenToString(*aParam[0], buf, &len);
-		if (str)
-			text = str;
+		aResultToken.Error(_T("Invalid MsgBox options."));
+		return;
 	}
-	std::printf("%ls\n", text ? text : L"");
-	aResultToken.SetValue(_T("OK"));
+	int result = MsgBox(text, type, title, timeout, owner);
+	LPTSTR result_string = MsgBoxResultString(result);
+	aResultToken.SetValue(result_string ? result_string : _T(""));
 }
 
 // A small set of built-in variables implemented for the Linux console port.
@@ -191,6 +212,170 @@ void BIV_LoopReadLine(ResultToken &aResultToken, LPTSTR aVarName)
 {
 	(void)aVarName;
 	aResultToken.SetValue(g->mLoopReadFile && g->mLoopReadFile->mCurrentLine ? g->mLoopReadFile->mCurrentLine : _T(""));
+}
+
+// --- date/time built-in variables ---
+// Mirrors GetDateTimeBIV() in lib/vars.cpp using the real local-time state.
+static void LinuxGetDateTimeBIV(LPTSTR aBuf, LPTSTR aVarName)
+{
+	if (!aBuf)
+		return;
+	aVarName += 2; // Skip past "A_".
+
+	// Refresh the cached time only if it's been a certain number of
+	// milliseconds since the last fetch, keeping the A_* time variables in
+	// sync with one another when used consecutively.
+	static DWORD sLastUpdate = 0;
+	static SYSTEMTIME sST = {0};
+	BOOL is_msec = !_tcsicmp(aVarName, _T("MSec"));
+	DWORD now_tick = GetTickCount();
+	if (is_msec || now_tick - sLastUpdate > 50 || !sST.wYear)
+	{
+		GetLocalTime(&sST);
+		sLastUpdate = now_tick;
+	}
+
+	if (is_msec)
+	{
+		_stprintf(aBuf, _T("%03d"), sST.wMilliseconds);
+		return;
+	}
+
+	TCHAR second_letter = ctoupper(aVarName[1]);
+	switch (ctoupper(aVarName[0]))
+	{
+	case 'Y':
+		switch (second_letter)
+		{
+		case 'D': // A_YDay
+			_stprintf(aBuf, _T("%d"), GetYDay(sST.wMonth, sST.wDay, IS_LEAP_YEAR(sST.wYear)));
+			break;
+		case 'W': // A_YWeek
+			GetISOWeekNumber(aBuf, sST.wYear
+				, GetYDay(sST.wMonth, sST.wDay, IS_LEAP_YEAR(sST.wYear))
+				, sST.wDayOfWeek);
+			break;
+		default: // A_Year / A_YYYY
+			_stprintf(aBuf, _T("%d"), sST.wYear);
+			break;
+		}
+		break;
+	case 'M':
+		switch (second_letter)
+		{
+		case 'D': // A_MDay (synonymous with A_DD)
+			_stprintf(aBuf, _T("%02d"), sST.wDay);
+			break;
+		case 'I': // A_Min
+			_stprintf(aBuf, _T("%02d"), sST.wMinute);
+			break;
+		default: // A_MM and A_Mon
+			_stprintf(aBuf, _T("%02d"), sST.wMonth);
+			break;
+		}
+		break;
+	case 'D': // A_DD
+		_stprintf(aBuf, _T("%02d"), sST.wDay);
+		break;
+	case 'W': // A_WDay
+		_stprintf(aBuf, _T("%d"), sST.wDayOfWeek + 1);
+		break;
+	case 'H': // A_Hour
+		_stprintf(aBuf, _T("%02d"), sST.wHour);
+		break;
+	case 'S': // A_Sec
+		_stprintf(aBuf, _T("%02d"), sST.wSecond);
+		break;
+	default:
+		aBuf[0] = L'\0';
+		break;
+	}
+}
+
+void BIV_DateTime(ResultToken &aResultToken, LPTSTR aVarName)
+{
+	LinuxGetDateTimeBIV(aResultToken.buf, aVarName);
+	aResultToken.ReturnPtr(aResultToken.buf);
+}
+
+static void LinuxSetPersistentString(ResultToken &aResultToken, LPTSTR aString); // Defined below.
+
+void BIV_MMM_DDD(ResultToken &aResultToken, LPTSTR aVarName)
+{
+	// A_MMM/A_MMMM/A_DDD/A_DDDD (English names; locale-aware month/day
+	// formatting can be added later via strftime).
+	static const wchar_t *months_short[] = {L"Jan", L"Feb", L"Mar", L"Apr", L"May", L"Jun"
+		, L"Jul", L"Aug", L"Sep", L"Oct", L"Nov", L"Dec"};
+	static const wchar_t *months_full[] = {L"January", L"February", L"March", L"April", L"May", L"June"
+		, L"July", L"August", L"September", L"October", L"November", L"December"};
+	static const wchar_t *days_short[] = {L"Sun", L"Mon", L"Tue", L"Wed", L"Thu", L"Fri", L"Sat"};
+	static const wchar_t *days_full[] = {L"Sunday", L"Monday", L"Tuesday", L"Wednesday"
+		, L"Thursday", L"Friday", L"Saturday"};
+	SYSTEMTIME st;
+	GetLocalTime(&st);
+	const wchar_t *result = L"";
+	if (ctoupper(aVarName[2]) == 'M')
+		result = aVarName[5] ? months_full[st.wMonth - 1] : months_short[st.wMonth - 1];
+	else
+		result = aVarName[5] ? days_full[st.wDayOfWeek] : days_short[st.wDayOfWeek];
+	LinuxSetPersistentString(aResultToken, const_cast<LPTSTR>(result));
+}
+
+void BIV_Now(ResultToken &aResultToken, LPTSTR aVarName)
+{
+	SYSTEMTIME st;
+	if (aVarName[5]) // A_NowUTC
+		GetSystemTime(&st);
+	else
+		GetLocalTime(&st);
+	SystemTimeToYYYYMMDD(aResultToken.buf, st);
+	aResultToken.ReturnPtr(aResultToken.buf);
+}
+
+// RunWait: launch a process and wait for it to finish, returning its exit code.
+// The OutputVarPID parameter is assigned before waiting (per the docs).
+BIF_DECL(BIF_RunWait)
+{
+	TCHAR target_buf[LINE_SIZE];
+	target_buf[0] = L'\0';
+	LPTSTR target = aParamCount > 0 ? TokenToString(*aParam[0], target_buf, nullptr) : nullptr;
+	TCHAR wd_buf[4096];
+	wd_buf[0] = L'\0';
+	LPTSTR wd = aParamCount > 1 ? TokenToString(*aParam[1], wd_buf, nullptr) : nullptr;
+	TCHAR opt_buf[64];
+	opt_buf[0] = L'\0';
+	LPTSTR opts = aParamCount > 2 ? TokenToString(*aParam[2], opt_buf, nullptr) : nullptr;
+	Var *output_var = ParamIndexToOutputVar(3);
+	if (output_var)
+		output_var->Assign();
+
+	HANDLE running_process = nullptr;
+	if (!g_script.ActionExec(target, nullptr, wd, true, opts, &running_process, true, true))
+	{
+		aResultToken.SetExitResult(FAIL);
+		return;
+	}
+
+	// For the output var to be useful, it must be assigned before we wait:
+	if (output_var && running_process)
+		output_var->Assign((__int64)GetProcessId(running_process));
+
+	if (!running_process) // Nothing to wait for.
+	{
+		aResultToken.SetValue((__int64)0);
+		return;
+	}
+
+	for (;;)
+	{
+		if (WaitForSingleObject(running_process, 0) != WAIT_TIMEOUT)
+			break;
+		ScriptSleep(10);
+	}
+	DWORD exit_code = 0;
+	GetExitCodeProcess(running_process, &exit_code);
+	CloseHandle(running_process);
+	aResultToken.SetValue((__int64)(int)exit_code);
 }
 
 // Minimal file built-in functions for the Linux console port.

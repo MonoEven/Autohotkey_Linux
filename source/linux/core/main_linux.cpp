@@ -13,9 +13,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cwchar>
+#include <clocale>
 
 int main(int argc, char** argv)
 {
+	// Honour the environment locale so that wcstombs/mbstowcs can convert
+	// non-ASCII text (UTF-8) instead of failing in the default "C" locale.
+	setlocale(LC_CTYPE, "");
+
 	if (argc < 2)
 	{
 		std::printf("AutoHotkey Linux (v2 port)\nUsage: ahk_core script.ahk [args...]\n");
