@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **242 / 242 断言通过** (普通构建与 ASan 构建均通过;25 项 headless 回归测试亦全部通过)
+- **结果**: **264 / 264 断言通过** (普通构建与 ASan 构建均通过;25 项 headless 回归测试亦全部通过)
 
 ---
 
@@ -30,7 +30,8 @@
 | 日期时间 | `assert_datetime.ahk` | 33 |
 | 通用/环境/进程/驱动器/INI/剪贴板 | `assert_general.ahk` | 31 |
 | 二进制互操作 (NumGet/NumPut/StrGet/StrPut/Buffer) | `assert_interop.ahk` | 20 |
-| **合计** | | **242** |
+| 正则 (RegExMatch/RegExReplace/~= 运算符/命名子组) | `assert_regex.ahk` | 22 |
+| **合计** | | **264** |
 
 复现命令:
 
@@ -123,6 +124,18 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 - **根因**: glibc `wcstombs` 在 C.UTF-8 下拒绝代理对。
 - **修复**: `WideToNarrow` 改为手写 UTF-8 编码(支持代理对)。
 
+### 2.17 RegExMatch/RegExReplace 整体接入(本轮)
+- **现象**: 两个函数为 no-op 桩;`~=` 运算符不可用。
+- **根因**: `lib/regex.cpp` 及其捆绑的 PCRE1 库未编入 Linux 构建;且捆绑头把 `PCRE_UCHAR16` 定义为 `wchar_t`(Windows 上为 16 位、Linux 上为 32 位),与引擎内部的 16 位单元完全错位。
+- **修复**:
+  1. CMake 启用 C 语言,新增 `ahk_pcre16` 静态库(18 个 `pcre16_*.c`,`-DHAVE_CONFIG_H`);
+  2. `lib_pcre/pcre/pcre.h` 在非 Windows 平台把 `PCRE_UCHAR16` 定义为 `unsigned short`(16 位);
+  3. `regex.cpp` 增加 Linux UTF-16 转换层:模式/主语转为 UTF-16 并维护 unit↔wchar 双向偏移映射,匹配偏移回映射到 wchar 位置;命名子组名表按 16 位单元解析并转换为宽字符副本(副本在对象复制完成后释放,避免与堆复用冲突);
+  4. 修复 C++ 硬错误(goto 越过初始化、const 字符串返回)。
+
+### 2.18 校验中修正的断言预期(本轮)
+- `~=` 运算符返回匹配位置(与 RegExMatch 相同),而非布尔值——按文档修正断言。
+
 ---
 
 ## 3. 测试预期修正(文档语义确认,非移植缺陷)
@@ -156,17 +169,18 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 | 文件 (FileOpen/File对象方法/FileRead/Append/Delete/DirCreate/Delete/Copy/Move) | ✅ 31/31 | 本轮补齐 File 类成员注册 |
 | 文件元数据 (FileGet/SetTime、FileGetSize、FileGet/SetAttrib、Loop Files) | ✅ 并入 assert_file | 本轮实现 FindFirstFile/futimens/chmod + Loop Files 变量 |
 | 二进制互操作 (NumGet/NumPut/StrGet/StrPut/Buffer) | ✅ 20/20 | 本轮接入 lib/interop.cpp 并修复 vtable/编码转换 |
+| 正则 (RegExMatch/RegExReplace/~=、命名子组、回引用、UTF) | ✅ 22/22 | 本轮接入捆绑 PCRE1(16 位)并修复单元宽度错位 |
 | 日期时间 (DateAdd/Diff/FormatTime/A_Now/A_YYYY 等) | ✅ 33/33 | 与文档 TimeUnits/Format 语义一致 |
 | 通用 (Env/WorkingDir/Sleep/MsgBox/Process/Run/RunWait/Drive/Ini/Clipboard/GetKeyName/A_* 变量) | ✅ 31/31 | 路径函数与键名表修复后全绿 |
-| 未实现模块 (GUI/GuiCtrl/COM/DllCall/RegEx/注册表/窗口管理/热键系统/剪贴板监听等 172 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
+| 未实现模块 (GUI/GuiCtrl/COM/DllCall/注册表/窗口管理/热键系统/剪贴板监听等 172 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
 
 ## 5. 回归与构建验证
 
 ```
 普通构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh PASS=242 FAIL=0
+          tests/doccheck/run_check.sh PASS=264 FAIL=0
 ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh PASS=242 FAIL=0
+          tests/doccheck/run_check.sh PASS=264 FAIL=0
 ```
 
 ## 6. 本轮改动文件
@@ -183,5 +197,8 @@ ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
 - `source/linux/core/core_builtin_stubs.cpp`:`FileExist/DirExist` 属性字母语义;Loop Files 9 个内置变量真实实现
 - `source/linux/core/core_mdfunc_linux.cpp`:文件元数据 5 函数包装;`LMD_NI → LMD_IMPL`
 - `source/linux/gui/x11_gui.cpp`:`WideToNarrow` 支持代理对
-- `source/linux/core/CMakeLists.txt`:加入 `core_file_linux.cpp`、`lib/interop.cpp`
-- `tests/doccheck/*`:断言脚本与期望值按文档修正,新增 assert_interop 套件,worklist 重新生成(147 IMPL / 172 NOT_IMPL)
+- `source/linux/core/CMakeLists.txt`:加入 `core_file_linux.cpp`、`lib/interop.cpp`、`ahk_pcre16`(捆绑 PCRE1)
+- `source/lib/regex.cpp`(本轮加入构建):RegExMatch/RegExReplace 全功能 + Linux UTF-16 转换层
+- `source/lib_pcre/pcre/pcre.h`:Linux 下 `PCRE_UCHAR16` 修正为 `unsigned short`
+- `CMakeLists.txt`(根):启用 C 语言
+- `tests/doccheck/*`:断言脚本与期望值按文档修正,新增 assert_interop、assert_regex 套件,worklist 重新生成(149 IMPL / 172 NOT_IMPL)

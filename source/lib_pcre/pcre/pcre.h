@@ -1,4 +1,4 @@
-﻿/*************************************************
+/*************************************************
 *       Perl-Compatible Regular Expressions      *
 *************************************************/
 
@@ -285,7 +285,13 @@ typedef struct real_pcre16_jit_stack pcre16_jit_stack;
 a 16 bit wide signed data type. Otherwise it can be a dummy data type since
 pcre16 functions are not implemented. There is a check for this in pcre_internal.h. */
 #ifndef PCRE_UCHAR16
+#ifdef _WIN32
+// AutoHotkey: wchar_t is 16-bit on Windows, so the API can use it directly.
 #define PCRE_UCHAR16 wchar_t
+#else
+// Linux port: wchar_t is 32-bit there, which the 16-bit engine cannot use.
+#define PCRE_UCHAR16 unsigned short
+#endif
 #endif
 
 #ifndef PCRE_SPTR16

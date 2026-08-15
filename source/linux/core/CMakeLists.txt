@@ -3,6 +3,31 @@
 # This target is intentionally small at first.  Source files are added one by
 # one as they are made compatible with the Linux shim.
 
+# Bundled PCRE1 (16-bit) used by lib/regex.cpp (RegExMatch/RegExReplace).
+set(PCRE16_SOURCES
+    ../../lib_pcre/pcre/pcre16_chartables.c
+    ../../lib_pcre/pcre/pcre16_compile.c
+    ../../lib_pcre/pcre/pcre16_config.c
+    ../../lib_pcre/pcre/pcre16_exec.c
+    ../../lib_pcre/pcre/pcre16_fullinfo.c
+    ../../lib_pcre/pcre/pcre16_get.c
+    ../../lib_pcre/pcre/pcre16_globals.c
+    ../../lib_pcre/pcre/pcre16_jit_compile.c
+    ../../lib_pcre/pcre/pcre16_newline.c
+    ../../lib_pcre/pcre/pcre16_ord2utf16.c
+    ../../lib_pcre/pcre/pcre16_refcount.c
+    ../../lib_pcre/pcre/pcre16_string_utils.c
+    ../../lib_pcre/pcre/pcre16_study.c
+    ../../lib_pcre/pcre/pcre16_tables.c
+    ../../lib_pcre/pcre/pcre16_ucd.c
+    ../../lib_pcre/pcre/pcre16_valid_utf16.c
+    ../../lib_pcre/pcre/pcre16_version.c
+    ../../lib_pcre/pcre/pcre16_xclass.c
+)
+add_library(ahk_pcre16 STATIC ${PCRE16_SOURCES})
+target_compile_options(ahk_pcre16 PRIVATE -w -DHAVE_CONFIG_H)
+set_target_properties(ahk_pcre16 PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # Core interpreter sources that compile on Linux.  They are not linked into
 # the minimal runner yet because many built-in functions/GUI symbols still need
 # Linux implementations or stubs.
@@ -16,6 +41,7 @@ add_library(ahk_core_objects STATIC
     ../../lib/string.cpp
     ../../lib/file.cpp
     ../../lib/interop.cpp
+    ../../lib/regex.cpp
     ../../error.cpp
     ../../hotkey.cpp
     ../../os_version.cpp
@@ -55,4 +81,4 @@ target_include_directories(ahk_core PRIVATE
 target_compile_options(ahk_core PRIVATE -fpermissive -Wno-jump-misses-init)
 
 find_package(X11 REQUIRED)
-target_link_libraries(ahk_core PRIVATE X11::X11)
+target_link_libraries(ahk_core PRIVATE X11::X11 ahk_pcre16)

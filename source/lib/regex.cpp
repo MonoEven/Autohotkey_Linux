@@ -1,4 +1,4 @@
-﻿/*
+/*
 AutoHotkey
 
 Copyright 2003-2009 Chris Mallett (support@autohotkey.com)
@@ -23,6 +23,75 @@ GNU General Public License for more details.
 
 #include "script_func_impl.h"
 
+#ifdef __linux__
+#include <vector>
+
+// AHK's wchar_t is 4 bytes (UTF-32) on Linux but the bundled PCRE1 library is
+// the 16-bit variant (its API type PCRE_UCHAR16 is unsigned short on Linux;
+// see the patch in lib_pcre/pcre/pcre.h).  Convert every string handed to
+// PCRE to UTF-16 and map match offsets back to wchar positions.  AHK strings
+// may encode astral characters either as a single wchar (from mbstowcs) or as
+// a Windows-style surrogate pair (BIF_Chr); both forms are handled here.
+//
+// aWcharOfUnit[unit] = wchar index that unit belongs to (sentinel entry at
+//                       index units.size()).
+// aUnitOfWchar[wchar] = unit index where that wchar starts (sentinel entry at
+//                       index wide_len = total unit count).
+static int LinuxWideToUtf16Map(LPCTSTR aWide, int aWideLen, std::vector<PCRE_UCHAR16> &aUnits
+	, std::vector<int> &aWcharOfUnit, std::vector<int> &aUnitOfWchar)
+{
+	aUnits.clear();
+	aWcharOfUnit.clear();
+	aUnitOfWchar.clear();
+	aUnitOfWchar.resize(aWideLen);
+	for (int i = 0; i < aWideLen; ++i)
+	{
+		unsigned int cp = (unsigned int)aWide[i];
+		size_t unit_start = aUnits.size();
+		aUnitOfWchar[i] = (int)unit_start;
+		if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < aWideLen
+			&& (unsigned int)aWide[i + 1] >= 0xDC00 && (unsigned int)aWide[i + 1] <= 0xDFFF)
+		{
+			// Windows-style surrogate pair stored as two wchars.
+			aUnits.push_back((PCRE_UCHAR16)cp);
+			aUnits.push_back((PCRE_UCHAR16)aWide[i + 1]);
+			aUnitOfWchar[i + 1] = (int)unit_start + 1;
+			aWcharOfUnit.push_back(i);
+			aWcharOfUnit.push_back(i + 1);
+			++i;
+		}
+		else if (cp >= 0x10000)
+		{
+			// A single wchar holding an astral code point.
+			cp -= 0x10000;
+			aUnits.push_back((PCRE_UCHAR16)(0xD800 + (int)(cp >> 10)));
+			aUnits.push_back((PCRE_UCHAR16)(0xDC00 + (int)(cp & 0x3FF)));
+			aWcharOfUnit.push_back(i);
+			aWcharOfUnit.push_back(i);
+		}
+		else
+		{
+			aUnits.push_back((PCRE_UCHAR16)cp);
+			aWcharOfUnit.push_back(i);
+		}
+	}
+	aWcharOfUnit.push_back(aWideLen);
+	aUnitOfWchar.push_back((int)aUnits.size());
+	int unit_count = (int)aUnits.size();
+	aUnits.push_back(0); // PCRE requires a null-terminated pattern/subject.
+	return unit_count;
+}
+
+// Compile a wide pattern via a UTF-16 copy.
+static pcret *LinuxPcre16Compile(LPCTSTR aPattern, int aOptions, int *aErrorCode, LPCSTR *aErrorMsg, int *aErrorOffset)
+{
+	std::vector<PCRE_UCHAR16> units;
+	std::vector<int> wchar_of_unit, unit_of_wchar;
+	LinuxWideToUtf16Map(aPattern, (int)_tcslen(aPattern), units, wchar_of_unit, unit_of_wchar);
+	return pcret_compile2(units.data(), aOptions, aErrorCode, aErrorMsg, aErrorOffset, NULL);
+}
+#endif // __linux__
+
 
 
 ResultType RegExCreateMatchArray(LPCTSTR haystack, pcret *re, pcret_extra *extra, int *offset, int pattern_count, int captured_pattern_count, IObject *&match_object)
@@ -32,6 +101,9 @@ ResultType RegExCreateMatchArray(LPCTSTR haystack, pcret *re, pcret_extra *extra
 	bool allow_dupe_subpat_names = false; // Set default.
 	LPCTSTR name_table;
 	int name_count, name_entry_size;
+#ifdef __linux__
+	LPTSTR *name_copies = NULL; // Wide copies of the 16-bit name table entries (freed below).
+#endif
 	if (   !pcret_fullinfo(re, extra, PCRE_INFO_NAMECOUNT, &name_count) // Success. Fix for v1.0.45.01: Don't check captured_pattern_count>=0 because PCRE_ERROR_NOMATCH can still have named patterns!
 		&& name_count // There's at least one named subpattern.  Relies on short-circuit boolean order.
 		&& !pcret_fullinfo(re, extra, PCRE_INFO_NAMETABLE, &name_table) // Success.
@@ -46,6 +118,27 @@ ResultType RegExCreateMatchArray(LPCTSTR haystack, pcret *re, pcret_extra *extra
 		size_t subpat_array_size = pattern_count * sizeof(LPCSTR);
 		subpat_name = (LPCTSTR *)_alloca(subpat_array_size); // See other use of _alloca() above for reasons why it's used.
 		ZeroMemory(subpat_name, subpat_array_size); // Set default for each index to be "no name corresponds to this subpattern number".
+#ifdef __linux__
+		// PCRE's name table stores 16-bit units (unsigned short); convert each
+		// name to a wide copy.  RegExMatchObject::Create() duplicates the names
+		// before we return, so the copies are freed after that call.
+		const unsigned short *name_entry = (const unsigned short *)name_table;
+		name_copies = (LPTSTR *)_alloca(name_count * sizeof(LPTSTR));
+		for (int i = 0; i < name_count; ++i, name_entry += name_entry_size)
+		{
+			int subpat_number = name_entry[0];
+			int name_len = 0;
+			while (name_entry[1 + name_len])
+				++name_len;
+			LPTSTR name_wide = (LPTSTR)tmalloc((name_len + 1) * sizeof(TCHAR));
+			for (int j = 0; j <= name_len; ++j)
+				name_wide[j] = (TCHAR)name_entry[1 + j];
+			name_copies[i] = name_wide;
+			if (subpat_number < pattern_count)
+				subpat_name[subpat_number] = name_wide;
+		}
+		// (the copies are freed below, after RegExMatchObject::Create)
+#else
 		for (int i = 0; i < name_count; ++i, name_table += name_entry_size)
 		{
 			// Below converts first two bytes of each name-table entry into the pattern number (it might be
@@ -59,12 +152,21 @@ ResultType RegExCreateMatchArray(LPCTSTR haystack, pcret *re, pcret_extra *extra
 			// It seems the worst than could happen if it is numeric is that it would overlap/overwrite some of
 			// the numerically-indexed elements in the output-array.  Seems pretty harmless given the rarity.
 		}
+#endif
 	}
 	//else one of the pcre_fullinfo() calls may have failed.  The PCRE docs indicate that this realistically never
 	// happens unless bad inputs were given.  So due to rarity, just leave subpat_name==NULL; i.e. "no named subpatterns".
 
 	LPTSTR mark = (extra->flags & PCRE_EXTRA_MARK) ? (LPTSTR)*extra->mark : NULL;
+#ifdef __linux__
+	ResultType create_result = RegExMatchObject::Create(haystack, offset, subpat_name, pattern_count, captured_pattern_count, mark, match_object);
+	if (name_copies)
+		for (int i = 0; i < name_count; ++i)
+			free(name_copies[i]);
+	return create_result;
+#else
 	return RegExMatchObject::Create(haystack, offset, subpat_name, pattern_count, captured_pattern_count, mark, match_object);
+#endif
 }
 
 
@@ -182,7 +284,7 @@ void RegExMatchObject::Invoke(ResultToken &aResultToken, int aID, int aFlags, Ex
 	switch (aID)
 	{
 	case M_Count: _o_return(mPatternCount - 1);
-	case M_Mark: _o_return(mMark ? mMark : _T(""));
+	case M_Mark: _o_return_p((LPTSTR)(mMark ? mMark : _T("")));
 	case M___Enum: _o_return(new IndexEnumerator(this, ParamIndexToOptionalInt(0, 0)
 		, static_cast<IndexEnumerator::Callback>(&RegExMatchObject::GetEnumItem)));
 	}
@@ -227,7 +329,7 @@ void RegExMatchObject::Invoke(ResultToken &aResultToken, int aID, int aFlags, Ex
 	case M_Value: _o_return(mHaystack - mHaystackStart + mOffset[p*2], mOffset[p*2+1]);
 	case M_Pos: _o_return(mOffset[2*p] + 1);
 	case M_Len: _o_return(mOffset[2*p + 1]);
-	case M_Name: _o_return((mPatternName && mPatternName[p]) ? mPatternName[p] : _T(""));
+	case M_Name: _o_return_p((LPTSTR)((mPatternName && mPatternName[p]) ? mPatternName[p] : _T("")));
 	}
 }
 
@@ -240,6 +342,10 @@ struct RegExCalloutData // L14: Used by BIF_RegEx to pass necessary info to RegE
 	int pattern_count; // to save calling pcre_fullinfo unnecessarily for each callout
 	pcret_extra *extra;
 	ResultToken *result_token;
+#ifdef __linux__
+	LPTSTR linux_haystack;              // wide haystack (match object uses wchar positions)
+	const std::vector<int> *linux_wchar_of_unit; // unit -> wchar offset map
+#endif
 };
 
 int RegExCallout(pcret_callout_block *cb)
@@ -295,15 +401,39 @@ int RegExCallout(pcret_callout_block *cb)
 	// Since matching is still in progress, these *should* be -1.
 	// For maintainability and peace of mind, save them anyway:
 	int offset[] = { cb->offset_vector[0], cb->offset_vector[1] };
-		
+#ifdef __linux__
+	// PCRE reports positions in UTF-16 units; map them (and the offset vector)
+	// to wchar positions for the match object and the script-visible values.
+	std::vector<int> saved_offsets;
+	int saved_start = cb->start_match, saved_current = cb->current_position;
+	LPCTSTR linux_subject = cd.linux_haystack;
+	if (cd.linux_wchar_of_unit)
+	{
+		saved_offsets.assign(cb->offset_vector, cb->offset_vector + cd.pattern_count * 2);
+		for (int i = 0; i < cd.pattern_count * 2; ++i)
+			if (cb->offset_vector[i] >= 0)
+				cb->offset_vector[i] = (*cd.linux_wchar_of_unit)[cb->offset_vector[i]];
+		cb->start_match = (*cd.linux_wchar_of_unit)[cb->start_match];
+		cb->current_position = (*cd.linux_wchar_of_unit)[cb->current_position];
+	}
+#endif
+
 	// Temporarily set these for use by the function below:
 	cb->offset_vector[0] = cb->start_match;
 	cb->offset_vector[1] = cb->current_position;
 	if (cd.extra->flags & PCRE_EXTRA_MARK)
+#ifdef __linux__
+		*cd.extra->mark = (unsigned short *)cb->mark;
+#else
 		*cd.extra->mark = UorA(wchar_t *, UCHAR *) cb->mark;
+#endif
 	
 	IObject *match_object;
+#ifdef __linux__
+	if (!RegExCreateMatchArray(linux_subject, cd.re, cd.extra, cb->offset_vector, cd.pattern_count, cb->capture_top, match_object))
+#else
 	if (!RegExCreateMatchArray(cb->subject, cd.re, cd.extra, cb->offset_vector, cd.pattern_count, cb->capture_top, match_object))
+#endif
 	{
 		cd.result_token->MemoryError();
 		return PCRE_ERROR_CALLOUT; // Abort.
@@ -312,6 +442,14 @@ int RegExCallout(pcret_callout_block *cb)
 	// Restore to former offsets (probably -1):
 	cb->offset_vector[0] = offset[0];
 	cb->offset_vector[1] = offset[1];
+#ifdef __linux__
+	if (!saved_offsets.empty())
+	{
+		std::copy(saved_offsets.begin(), saved_offsets.end(), cb->offset_vector);
+		cb->start_match = saved_start;
+		cb->current_position = saved_current;
+	}
+#endif
 	
 	// Make all string positions one-based. UPDATE: offset_vector cannot be modified, so for consistency don't do this:
 	//++cb->pattern_position;
@@ -323,7 +461,11 @@ int RegExCallout(pcret_callout_block *cb)
 		match_object,
 		cb->callout_number,
 		cb->start_match + 1, // FoundPos (distinct from Match.Pos, which hasn't been set yet)
+#ifdef __linux__
+		const_cast<LPTSTR>(linux_subject), // Haystack
+#else
 		const_cast<LPTSTR>(cb->subject), // Haystack
+#endif
 		cd.re_text // NeedleRegEx
 	};
 	__int64 number_to_return;
@@ -559,7 +701,11 @@ break_both:
 	pcret *re_compiled;
 
 	// COMPILE THE REGEX.
+#ifdef __linux__
+	if (   !(re_compiled = LinuxPcre16Compile(pat, pcre_options, &error_code, (LPCSTR *)&error_msg, &error_offset))   )
+#else
 	if (   !(re_compiled = pcret_compile2(pat, pcre_options, &error_code, &error_msg, &error_offset, NULL))   )
+#endif
 	{
 		if (aResultToken) // A non-NULL value indicates our caller is RegExMatch() or RegExReplace() in a script.
 		{
@@ -599,6 +745,9 @@ break_both:
 
 	// ADD THE NEWLY-COMPILED REGEX TO THE CACHE.
 	// An earlier stage has set insert_pos to be the desired insert-position in the cache.
+	// Linux port: wrapped in braces so the `goto match_found/error` targets below do
+	// not jump across the initialization of this_entry (a hard error in C++).
+	{
 	pcre_cache_entry &this_entry = sCache[insert_pos]; // For performance and convenience.
 	if (this_entry.re_compiled) // An existing cache item is being overwritten, so free it's attributes.
 	{
@@ -629,6 +778,7 @@ break_both:
 
 	LeaveCriticalSection(&g_CriticalRegExCache);
 	return re_compiled; // Indicate success.
+	}
 
 match_found: // RegEx was found in the cache at position sLastFound, so return the cached info back to the caller.
 	aExtra = sCache[sLastFound].extra;
@@ -662,19 +812,34 @@ LPCTSTR RegExMatch(LPCTSTR aHaystack, LPCTSTR aNeedleRegEx)
 	int offset[RXM_INT_COUNT];
 
 	// Execute the regex.
+#ifdef __linux__
+	std::vector<PCRE_UCHAR16> hay16;
+	std::vector<int> wchar_of_unit, unit_of_wchar;
+	int hay16len = LinuxWideToUtf16Map(aHaystack, (int)_tcslen(aHaystack), hay16, wchar_of_unit, unit_of_wchar);
+	int captured_pattern_count = pcret_exec(re, extra, hay16.data(), hay16len, 0, 0, offset, RXM_INT_COUNT);
+#else
 	int captured_pattern_count = pcret_exec(re, extra, aHaystack, (int)_tcslen(aHaystack), 0, 0, offset, RXM_INT_COUNT);
+#endif
 	if (captured_pattern_count < 0) // PCRE_ERROR_NOMATCH or some kind of error.
 		return NULL;
 
 	// Otherwise, captured_pattern_count>=0 (it's 0 when offset[] was too small; but that's harmless in this case).
+#ifdef __linux__
+	return aHaystack + wchar_of_unit[offset[0]]; // Return the position of the entire-pattern match.
+#else
 	return aHaystack + offset[0]; // Return the position of the entire-pattern match.
+#endif
 }
 
 
 
 void RegExReplace(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount
 	, pcret *aRE, pcret_extra *aExtra, LPTSTR aHaystack, int aHaystackLength
-	, int aStartingOffset, int aOffset[], int aNumberOfIntsInOffset)
+	, int aStartingOffset, int aOffset[], int aNumberOfIntsInOffset
+#ifdef __linux__
+	, const std::vector<PCRE_UCHAR16> &aLinuxHay16, const std::vector<int> &aLinuxWcharOfUnit, const std::vector<int> &aLinuxUnitOfWchar
+#endif
+	)
 {
 	// If an output variable was provided for the count, resolve it early in case of early goto.
 	// Fix for v1.0.47.05: In the unlikely event that output_var_count is the same script-variable as
@@ -737,9 +902,19 @@ void RegExReplace(ResultToken &aResultToken, ExprTokenType *aParam[], int aParam
 		;; haystack_pos = aHaystack + aStartingOffset) // See comment above.
 	{
 		// Execute the expression to find the next match.
+#ifdef __linux__
+		captured_pattern_count = (limit == 0) ? PCRE_ERROR_NOMATCH // Only when limit is exactly 0 are we done replacing.  All negative values are "replace all".
+			: pcret_exec(aRE, aExtra, aLinuxHay16.data(), aLinuxUnitOfWchar[aHaystackLength]
+				, aLinuxUnitOfWchar[aStartingOffset], empty_string_is_not_a_match, aOffset, aNumberOfIntsInOffset);
+		if (captured_pattern_count > 0)
+			for (int i = 0; i < captured_pattern_count * 2; ++i)
+				if (aOffset[i] >= 0)
+					aOffset[i] = aLinuxWcharOfUnit[aOffset[i]];
+#else
 		captured_pattern_count = (limit == 0) ? PCRE_ERROR_NOMATCH // Only when limit is exactly 0 are we done replacing.  All negative values are "replace all".
 			: pcret_exec(aRE, aExtra, aHaystack, aHaystackLength, aStartingOffset
 				, empty_string_is_not_a_match, aOffset, aNumberOfIntsInOffset);
+#endif
 
 		if (captured_pattern_count == PCRE_ERROR_NOMATCH)
 		{
@@ -935,7 +1110,18 @@ void RegExReplace(ResultToken &aResultToken, ExprTokenType *aParam[], int aParam
 								if (IsNumeric(substring_name, true, false, true)) // Seems best to allow floating point such as 1.0 because it will then get truncated to an integer.  It seems to rare that anyone would want to use floats as names.
 									ref_num = _ttoi(substring_name); // Uses _ttoi() vs. ATOI to avoid potential overlap with non-numeric names such as ${0x5}, which should probably be considered a name not a number?  In other words, seems best not to make some names that start with numbers "special" just because they happen to be hex numbers.
 								else // For simplicity, no checking is done to ensure it consists of the "32 alphanumeric characters and underscores".  Let pcre_get_stringnumber() figure that out for us.
+#ifdef __linux__
+								{
+									PCRE_UCHAR16 name16[33];
+									int i;
+									for (i = 0; i < 32 && substring_name[i]; ++i)
+										name16[i] = (PCRE_UCHAR16)substring_name[i];
+									name16[i] = 0;
+									ref_num = pcret_get_first_set(aRE, name16, aOffset); // Returns a negative on failure, which when stored in ref_num is relied upon as an indicator.
+								}
+#else
 									ref_num = pcret_get_first_set(aRE, substring_name, aOffset); // Returns a negative on failure, which when stored in ref_num is relied upon as an indicator.
+#endif
 							}
 							//else it's too long, so it seems best (debatable) to treat it as a unmatched/unfound name, i.e. "".
 							src = closing_brace; // Set things up for the next iteration to resume at the char after "${..}"
@@ -1100,6 +1286,14 @@ BIF_DECL(BIF_RegEx)
 	LPTSTR haystack = ParamIndexToString(0, haystack_buf, &temp_length); // Caller has already ensured that at least two actual parameters are present.
 	int haystack_length = (int)temp_length;
 
+#ifdef __linux__
+	// Convert the haystack to UTF-16 for PCRE and build unit<->wchar offset maps.
+	std::vector<PCRE_UCHAR16> linux_hay16;
+	std::vector<int> linux_wchar_of_unit, linux_unit_of_wchar;
+	int linux_hay16_len = LinuxWideToUtf16Map(haystack, haystack_length, linux_hay16
+		, linux_wchar_of_unit, linux_unit_of_wchar);
+#endif
+
 	int param_index = mode_is_replace ? 5 : 3;
 	int starting_offset;
 	if (ParamIndexIsOmitted(param_index))
@@ -1154,19 +1348,40 @@ BIF_DECL(BIF_RegEx)
 	// callout_data.extra is used by RegExCallout, which only receives a pointer to callout_data.
 	callout_data.extra = extra;
 	// extra->mark is used by PCRE to return the NAME of a (*MARK:NAME), if encountered.
+#ifdef __linux__
+	extra->mark = (unsigned short **)&mark;
+#else
 	extra->mark = UorA(wchar_t **, UCHAR **) &mark;
+#endif
+#ifdef __linux__
+	callout_data.linux_haystack = haystack;
+	callout_data.linux_wchar_of_unit = &linux_wchar_of_unit;
+#endif
 
 	if (mode_is_replace) // Handle RegExReplace() completely then return.
 	{
 		RegExReplace(aResultToken, aParam, aParamCount, re, extra, haystack, haystack_length
-			, starting_offset, offset, number_of_ints_in_offset);
+			, starting_offset, offset, number_of_ints_in_offset
+#ifdef __linux__
+			, linux_hay16, linux_wchar_of_unit, linux_unit_of_wchar
+#endif
+			);
 		return;
 	}
 	// OTHERWISE, THIS IS RegExMatch() not RegExReplace().
 
 	// EXECUTE THE REGEX.
+#ifdef __linux__
+	int captured_pattern_count = pcret_exec(re, extra, linux_hay16.data(), linux_hay16_len
+		, linux_unit_of_wchar[starting_offset], 0, offset, number_of_ints_in_offset);
+	if (captured_pattern_count > 0)
+		for (int i = 0; i < captured_pattern_count * 2; ++i)
+			if (offset[i] >= 0)
+				offset[i] = linux_wchar_of_unit[offset[i]];
+#else
 	int captured_pattern_count = pcret_exec(re, extra, haystack, haystack_length
 		, starting_offset, 0, offset, number_of_ints_in_offset);
+#endif
 
 	int match_offset = 0; // Set default for no match/error cases below.
 

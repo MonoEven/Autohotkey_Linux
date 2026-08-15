@@ -38,7 +38,6 @@ LINUX_BIF_STUB(BIF_ComObjType)
 LINUX_BIF_STUB(BIF_ComObjValue)
 LINUX_BIF_STUB(BIF_DllCall)
 LINUX_BIF_STUB(BIF_Reg)
-LINUX_BIF_STUB(BIF_RegEx)
 LINUX_BIF_STUB(BIF_Sound)
 
 // WinExist/WinActive: no X11 window backend yet, so no window ever matches.

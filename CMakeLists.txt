@@ -6,7 +6,7 @@
 # are still in progress.
 
 cmake_minimum_required(VERSION 3.16)
-project(AutoHotkey_Linux LANGUAGES CXX)
+project(AutoHotkey_Linux LANGUAGES C CXX) # C for the bundled PCRE1 library.
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

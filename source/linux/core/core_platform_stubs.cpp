@@ -277,8 +277,6 @@ Object *Object::DefineMetadataMembers(Object *aObj, LPCTSTR aClassName, ObjectMe
 	}
 	return aObj;
 }
-LPCTSTR RegExMatch(LPCTSTR, LPCTSTR) { return _T(""); }
-void RegExMatchObject::Invoke(ResultToken &, int, int, ExprTokenType *aParam[], int) { (void)aParam; }
 LPTSTR GetExitReasonString(ExitReasons) { return _T(""); }
 void *GetDllProcAddress(LPCTSTR, HMODULE *) { return nullptr; }
 DWORD GetProcessName(DWORD, LPTSTR aBuf, DWORD aBufSize, bool) { if (aBuf && aBufSize) aBuf[0] = 0; return 0; }
