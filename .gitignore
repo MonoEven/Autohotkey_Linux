@@ -1,5 +1,7 @@
 temp/
 bin*/
+build/
+build*/
 ipch/
 .vs/
 *.suo
