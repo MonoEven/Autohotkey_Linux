@@ -1,8 +1,11 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "TextIO.h"
 #include "script.h"
 #include "script_object.h"
 #include "script_func_impl.h"
+#ifdef __linux__
+#include "linux/core/core_file_linux.h"
+#endif
 EXTERN_SCRIPT;
 
 UINT g_ACP = GetACP(); // Requires a reboot to change.
@@ -974,6 +977,12 @@ class FileObject : public Object
 	
 public:
 	static FileObject *Open(LPCTSTR aFileSpec, DWORD aFlags, UINT aCodePage);
+
+#ifdef __linux__
+	// Linux port: lets core_file_linux.cpp register the File methods without
+	// the DynaCall machinery used by MdFunc on Windows.
+	friend void ::DefineFileClassLinux();
+#endif
 };
 
 
@@ -1020,6 +1029,58 @@ void DefineFileClass()
 		, FileObject::sMembers, _countof(FileObject::sMembers));
 	Object::CreateClass(_T("File"), Object::sClass, FileObject::sPrototype, nullptr);
 }
+
+#ifdef __linux__
+
+// Linux port: fill the member-function-pointer table used by the BIF wrappers
+// in core_file_linux.cpp.  Must be defined here because FileObject is only
+// visible in this translation unit.
+FileMemberTable g_file_members = {};
+
+void DefineFileClassLinux()
+{
+	g_file_members.Close = static_cast<FResult (Object::*)()>(&FileObject::Close);
+	g_file_members.Read = static_cast<FResult (Object::*)(optl<UINT>, StrRet &)>(&FileObject::Read);
+	g_file_members.Write = static_cast<FResult (Object::*)(ExprTokenType &, UINT &)>(&FileObject::Write);
+	g_file_members.ReadLine = static_cast<FResult (Object::*)(StrRet &)>(&FileObject::ReadLine);
+	g_file_members.WriteLine = static_cast<FResult (Object::*)(ExprTokenType *, UINT &)>(&FileObject::WriteLine);
+	g_file_members.Seek = static_cast<FResult (Object::*)(__int64, optl<int>, BOOL &)>(&FileObject::Seek);
+	g_file_members.RawRead = static_cast<FResult (Object::*)(ExprTokenType &, optl<UINT>, UINT &)>(&FileObject::RawRead);
+	g_file_members.RawWrite = static_cast<FResult (Object::*)(ExprTokenType &, optl<UINT>, UINT &)>(&FileObject::RawWrite);
+	g_file_members.ReadChar = static_cast<FResult (Object::*)(INT8 &)>(&FileObject::ReadChar);
+	g_file_members.ReadInt = static_cast<FResult (Object::*)(int &)>(&FileObject::ReadInt);
+	g_file_members.ReadInt64 = static_cast<FResult (Object::*)(__int64 &)>(&FileObject::ReadInt64);
+	g_file_members.ReadShort = static_cast<FResult (Object::*)(INT16 &)>(&FileObject::ReadShort);
+	g_file_members.ReadUChar = static_cast<FResult (Object::*)(UINT8 &)>(&FileObject::ReadUChar);
+	g_file_members.ReadUInt = static_cast<FResult (Object::*)(UINT &)>(&FileObject::ReadUInt);
+	g_file_members.ReadUShort = static_cast<FResult (Object::*)(UINT16 &)>(&FileObject::ReadUShort);
+	g_file_members.ReadDouble = static_cast<FResult (Object::*)(double &)>(&FileObject::ReadDouble);
+	g_file_members.ReadFloat = static_cast<FResult (Object::*)(float &)>(&FileObject::ReadFloat);
+	g_file_members.WriteChar = static_cast<FResult (Object::*)(INT8, UINT &)>(&FileObject::WriteChar);
+	g_file_members.WriteInt = static_cast<FResult (Object::*)(int, UINT &)>(&FileObject::WriteInt);
+	g_file_members.WriteInt64 = static_cast<FResult (Object::*)(__int64, UINT &)>(&FileObject::WriteInt64);
+	g_file_members.WriteShort = static_cast<FResult (Object::*)(INT16, UINT &)>(&FileObject::WriteShort);
+	g_file_members.WriteUChar = static_cast<FResult (Object::*)(UINT8, UINT &)>(&FileObject::WriteUChar);
+	g_file_members.WriteUInt = static_cast<FResult (Object::*)(UINT, UINT &)>(&FileObject::WriteUInt);
+	g_file_members.WriteUShort = static_cast<FResult (Object::*)(UINT16, UINT &)>(&FileObject::WriteUShort);
+	g_file_members.WriteDouble = static_cast<FResult (Object::*)(double, UINT &)>(&FileObject::WriteDouble);
+	g_file_members.WriteFloat = static_cast<FResult (Object::*)(float, UINT &)>(&FileObject::WriteFloat);
+	g_file_members.get_AtEOF = static_cast<FResult (Object::*)(BOOL &)>(&FileObject::get_AtEOF);
+	g_file_members.get_Handle = static_cast<FResult (Object::*)(UINT_PTR &)>(&FileObject::get_Handle);
+	g_file_members.get_Length = static_cast<FResult (Object::*)(__int64 &)>(&FileObject::get_Length);
+	g_file_members.set_Length = static_cast<FResult (Object::*)(__int64)>(&FileObject::set_Length);
+	g_file_members.get_Pos = static_cast<FResult (Object::*)(__int64 &)>(&FileObject::get_Pos);
+	g_file_members.set_Pos = static_cast<FResult (Object::*)(__int64)>(&FileObject::set_Pos);
+	g_file_members.get_Encoding = static_cast<FResult (Object::*)(ResultToken &)>(&FileObject::get_Encoding);
+	g_file_members.set_Encoding = static_cast<FResult (Object::*)(ExprTokenType &)>(&FileObject::set_Encoding);
+}
+
+bool LinuxIsFileObject(IObject *aObj)
+{
+	return dynamic_cast<FileObject *>(aObj) != nullptr;
+}
+
+#endif // __linux__
 
 FileObject *FileObject::Open(LPCTSTR aFileSpec, DWORD aFlags, UINT aCodePage)
 {

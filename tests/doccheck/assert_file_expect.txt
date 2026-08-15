@@ -1,0 +1,13 @@
+FileExist_yes=1
+FileExist_no=
+DirExist_yes=1
+DirExist_no=
+DirCreate=1
+DirDelete=1
+FileRead_ok=1
+FileExist_file=1
+FileDelete=1
+FileOpen_read=hello-file
+DirCopy=1
+DirMove=1
+DirMove_srcgone=1

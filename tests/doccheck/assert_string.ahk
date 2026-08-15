@@ -1,0 +1,52 @@
+; String module doc-check (v2 docs: StrLen/SubStr/InStr/StrReplace/Trim/...
+; Ord/Chr/Format/Sort/SplitPath/StrCompare/StrSplit/StrUpper/Lower/Title).
+#Requires AutoHotkey v2.0
+
+MsgBox "StrLen_empty=" StrLen("")
+MsgBox "StrLen=" StrLen("abc")
+MsgBox "SubStr_mid=" SubStr("abcdef", 2, 3)
+MsgBox "SubStr_tail=" SubStr("abcdef", 4)
+MsgBox "SubStr_neg=" SubStr("abcdef", -3)
+MsgBox "SubStr_neg_len=" SubStr("abcdef", -2, 1)
+MsgBox "SubStr_oob=" SubStr("abc", 10)
+MsgBox "InStr_found=" InStr("abcabc", "b")
+MsgBox "InStr_case=" InStr("abc", "B")          ; docs: CaseSense defaults to Off (case-insensitive)
+MsgBox "InStr_nocase=" InStr("abc", "B", false)
+MsgBox "InStr_nth=" InStr("abcabc", "b", , , 2) ; Occurrence is param #5
+MsgBox "InStr_missing=" InStr("abc", "d")
+MsgBox "StrReplace_all=" StrReplace("abcabc", "b", "X")
+cnt := 0
+MsgBox "StrReplace_limit=" StrReplace("aaa", "a", "b", , &cnt, 2)
+MsgBox "StrReplace_count=" cnt
+MsgBox "StrReplace_empty=" StrReplace("aaa", "a", "")
+MsgBox "StrReplace_none=" StrReplace("abc", "z", "X")
+MsgBox "Trim=" Trim("  x  ")
+MsgBox "LTrim=" LTrim("  x  ")
+MsgBox "RTrim=" RTrim("  x  ")
+MsgBox "StrUpper=" StrUpper("abc")
+MsgBox "StrLower=" StrLower("ABC")
+MsgBox "StrTitle=" StrTitle("hello world")
+MsgBox "StrCompare_lt=" StrCompare("a", "b")
+MsgBox "StrCompare_gt=" StrCompare("b", "a")
+MsgBox "StrCompare_eq=" StrCompare("a", "a")
+MsgBox "StrCompare_nocase=" StrCompare("A", "a", false)
+MsgBox "StrCompare_len=" StrCompare("abc", "ab")
+MsgBox "StrSplit_count=" StrSplit("a,b,c", ",").Length
+MsgBox "StrSplit_first=" StrSplit("a,b,c", ",")[1]
+MsgBox "StrSplit_multi=" StrSplit("a,b;c", [",", ";"]).Length
+MsgBox "Format_simple=" Format("{1} {2}", "a", "b")
+MsgBox "Format_reorder=" Format("{2} {1}", "a", "b")
+MsgBox "Format_int=" Format("{1:02d}", 7)
+MsgBox "Format_float=" Format("{1:.2f}", 3.14159)
+MsgBox "Format_braces=" Format("{{}}")
+MsgBox "Ord=" Ord("A")
+MsgBox "Ord_empty=" Ord("")
+MsgBox "Chr=" Chr(65)
+MsgBox "Chr_0=" Chr(0)
+MsgBox "Sort_comma=" Sort("c,b,a", "D,")
+MsgBox "Sort_numeric=" Sort("3,1,2", "N D,")
+MsgBox "SplitPath_name=" (SplitPath("/a/b/file.txt", &n, &d, &e, &ne, &dr), n)
+MsgBox "SplitPath_dir=" (SplitPath("/a/b/file.txt", &n, &d, &e, &ne, &dr), d)
+MsgBox "SplitPath_ext=" (SplitPath("/a/b/file.txt", &n, &d, &e, &ne, &dr), e)
+MsgBox "SplitPath_noext=" (SplitPath("/a/b/file.txt", &n, &d, &e, &ne, &dr), ne)
+MsgBox "SplitPath_rel=" (SplitPath("file.txt", &n, &d, &e, &ne, &dr), d)

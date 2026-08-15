@@ -3300,8 +3300,23 @@ int VersionSatisfies(LPCTSTR v, LPCTSTR req, bool aThreeWayDefault)
 BOOLEAN __stdcall GenRandom(PVOID RandomBuffer, ULONG RandomBufferLength)
 // Don't change the function signature without also changing the type-cast below.
 {
+#ifdef __linux__
+	// Linux port: use the getrandom() syscall with /dev/urandom as a fallback.
+	if (!RandomBuffer || !RandomBufferLength)
+		return FALSE;
+	ssize_t got = getrandom(RandomBuffer, RandomBufferLength, 0);
+	if (got == (ssize_t)RandomBufferLength)
+		return TRUE;
+	FILE *f = fopen("/dev/urandom", "rb");
+	if (!f)
+		return FALSE;
+	size_t n = fread(RandomBuffer, 1, RandomBufferLength, f);
+	fclose(f);
+	return n == RandomBufferLength;
+#else
 	static auto *RtlGenRandom = (decltype(&GenRandom)) GetProcAddress(GetModuleHandle(_T("Advapi32")), "SystemFunction036");
 	return RtlGenRandom && RtlGenRandom(RandomBuffer, RandomBufferLength);
+#endif
 }
 
 

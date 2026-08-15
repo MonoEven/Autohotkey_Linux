@@ -30,6 +30,7 @@
 #include <sys/utsname.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/random.h>
 #include <unistd.h>
 #include <filesystem>
 
@@ -810,7 +811,10 @@ inline BOOL SetFileTime(HANDLE, const FILETIME *, const FILETIME *, const FILETI
 typedef UINT_PTR           WPARAM;
 typedef LONG_PTR           LPARAM;
 typedef LONG_PTR           LRESULT;
-typedef long               HRESULT;
+// HRESULT must be 32-bit on all platforms: FResult/FAILED() and friends rely
+// on the sign bit (SEVERITY_ERROR) being set for error values (long is 64-bit
+// on Linux).
+typedef int32_t            HRESULT;
 
 #define SEVERITY_SUCCESS 0
 #define SEVERITY_ERROR   1
@@ -995,9 +999,18 @@ inline int _isctype(int c, int type)
 
 #define IsCharAlpha(c) iswalpha((wchar_t)(c))
 
+// Win32 CharLower/CharUpper modify the string in place and return the first
+// character.  Callers such as ltoupper()/ltolower() pass a character value
+// cast to LPTSTR, so mirror the Win32 convention: values that fit in 16 bits
+// are treated as characters, everything else as a string pointer.
 inline TBYTE CharLower(LPTSTR s)
 {
-	return (TBYTE)towlower((wchar_t)(UINT_PTR)s);
+	if ((UINT_PTR)s <= 0xFFFF)
+		return (TBYTE)towlower((wchar_t)(UINT_PTR)s);
+	if (s)
+		for (LPTSTR p = s; *p; ++p)
+			*p = (TCHAR)towlower((wint_t)*p);
+	return s ? (TBYTE)*s : 0;
 }
 inline TBYTE CharLower(TBYTE c)
 {
@@ -1005,7 +1018,12 @@ inline TBYTE CharLower(TBYTE c)
 }
 inline TBYTE CharUpper(LPTSTR s)
 {
-	return (TBYTE)towupper((wchar_t)(UINT_PTR)s);
+	if ((UINT_PTR)s <= 0xFFFF)
+		return (TBYTE)towupper((wchar_t)(UINT_PTR)s);
+	if (s)
+		for (LPTSTR p = s; *p; ++p)
+			*p = (TCHAR)towupper((wint_t)*p);
+	return s ? (TBYTE)*s : 0;
 }
 inline TBYTE CharUpper(TBYTE c)
 {
@@ -1377,13 +1395,33 @@ inline int _vsntprintf(LPTSTR buf, size_t count, LPCWSTR fmt, va_list ap)
 			size_t conv_start = out.size() - 1;
 			while (i < f.size() && wcschr(L"-+ #0", f[i]))
 				out += f[i++];
+			if (i < f.size() && f[i] == L'*') // Width from argument.
+				out += f[i++];
 			while (i < f.size() && iswdigit(f[i]))
 				out += f[i++];
 			if (i < f.size() && f[i] == L'.')
 			{
 				out += f[i++];
+				if (i < f.size() && f[i] == L'*') // Precision from argument.
+					out += f[i++];
 				while (i < f.size() && iswdigit(f[i]))
 					out += f[i++];
+			}
+			if (i < f.size() && f[i] == L'I')
+			{
+				// MSVC size specifiers, unknown to glibc: I64 -> ll, I32 -> (none), I -> (none).
+				if (i + 2 < f.size() && f[i + 1] == L'6' && f[i + 2] == L'4')
+				{
+					out += L'l';
+					out += L'l';
+					i += 3;
+				}
+				else if (i + 2 < f.size() && f[i + 1] == L'3' && f[i + 2] == L'2')
+					i += 3;
+				else
+					++i;
+				if (i >= f.size())
+					break;
 			}
 			if (i < f.size() && f[i] == L's')
 			{
@@ -2025,9 +2063,78 @@ inline DWORD GetModuleFileName(HMODULE, LPTSTR, DWORD)
 {
 	return 0;
 }
-inline DWORD GetFullPathName(LPCTSTR, DWORD, LPTSTR, LPTSTR*)
+// Resolve a (possibly relative, possibly non-existent) filesystem path to an
+// absolute canonical path, like Win32 GetFullPathName().  Returns the length
+// on success or 0 on failure.
+static inline DWORD LinuxGetFullPathNameA(const char *aNarrow, DWORD aBufLen, LPTSTR aBuf)
 {
-	return 0;
+	if (!aNarrow || !aBuf || aBufLen == 0)
+		return 0;
+	std::string s;
+	if (aNarrow[0] != '/')
+	{
+		char cwd[4096];
+		if (!getcwd(cwd, sizeof(cwd)))
+			return 0;
+		s = cwd;
+		s += '/';
+		s += aNarrow;
+	}
+	else
+		s = aNarrow;
+	// Canonicalize: split into components, drop "." and empty, apply "..".
+	std::vector<std::string> parts;
+	size_t start = 0;
+	for (size_t i = 0; i <= s.size(); ++i)
+	{
+		if (i == s.size() || s[i] == '/')
+		{
+			if (i > start)
+			{
+				std::string comp = s.substr(start, i - start);
+				if (comp == "..")
+				{
+					if (!parts.empty())
+						parts.pop_back();
+				}
+				else if (comp != ".")
+					parts.push_back(comp);
+			}
+			start = i + 1;
+		}
+	}
+	std::string out = "/";
+	for (size_t i = 0; i < parts.size(); ++i)
+	{
+		if (i) out += '/';
+		out += parts[i];
+	}
+	if (s.size() && s[s.size() - 1] == '/' && parts.empty())
+		out = "/"; // Keep root as "/".
+	size_t n = mbstowcs(aBuf, out.c_str(), aBufLen);
+	if (n == (size_t)-1 || n >= aBufLen)
+		return 0;
+	return (DWORD)n;
+}
+
+inline DWORD GetFullPathName(LPCTSTR aPath, DWORD aBufLen, LPTSTR aBuf, LPTSTR *aFilePart)
+{
+	if (!aPath)
+		return 0;
+	char narrow[4096];
+	if (wcstombs(narrow, aPath, sizeof(narrow)) == (size_t)-1)
+		return 0;
+	DWORD len = LinuxGetFullPathNameA(narrow, aBufLen, aBuf);
+	if (len && aFilePart)
+	{
+		// Point to the last path component, or to the end if path ends in a separator.
+		LPTSTR last = nullptr;
+		for (LPTSTR p = aBuf; *p; ++p)
+			if (*p == L'/')
+				last = p;
+		*aFilePart = last ? (last[1] ? last + 1 : aBuf + len) : aBuf;
+	}
+	return len;
 }
 
 struct WNDCLASSEX
@@ -2142,10 +2249,14 @@ inline void PostQuitMessage(int)
 {
 }
 #define MB_ICONHAND 0x00000010
-inline BOOL SetCurrentDirectory(LPCTSTR)
+inline BOOL SetCurrentDirectory(LPCTSTR aPath)
 {
-	// TODO: implement with chdir(); returning success is enough for now.
-	return TRUE;
+	if (!aPath)
+		return FALSE;
+	char buf[4096];
+	if (wcstombs(buf, aPath, sizeof(buf)) == (size_t)-1)
+		return FALSE;
+	return chdir(buf) == 0;
 }
 inline BOOL SetDllDirectory(LPCTSTR)
 {
@@ -2679,9 +2790,17 @@ inline BOOL IsWindowEnabled(HWND)
 {
 	return FALSE;
 }
-inline DWORD GetCurrentDirectory(DWORD, LPTSTR)
+inline DWORD GetCurrentDirectory(DWORD aBufLen, LPTSTR aBuf)
 {
-	return 0;
+	if (!aBuf || aBufLen == 0)
+		return 0;
+	char buf[4096];
+	if (!getcwd(buf, sizeof(buf)))
+		return 0;
+	size_t n = mbstowcs(aBuf, buf, aBufLen);
+	if (n == (size_t)-1 || n >= aBufLen)
+		return 0;
+	return (DWORD)n;
 }
 
 #define TTM_ADJUSTRECT     (WM_USER + 31)

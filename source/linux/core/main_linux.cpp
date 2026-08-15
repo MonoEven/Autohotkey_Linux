@@ -42,6 +42,29 @@ int main(int argc, char** argv)
 	Object::CreateRootPrototypes();
 	g_script.mIsReadyToExecute = true;
 
+	// Script::Init() (which normally sets mFileSpec/mFileDir/mFileName) is not
+	// used on Linux; replicate its path handling so that A_ScriptName,
+	// A_ScriptDir, A_ScriptFullPath and the startup working directory work.
+	{
+		TCHAR full_path[T_MAX_PATH];
+		DWORD full_len = GetFullPathName(wpath, _countof(full_path), full_path, nullptr);
+		if (!full_len)
+			return 1; // Invalid/too-long script path.
+		g_script.mFileSpec = SimpleHeap::Alloc(full_path);
+		LPTSTR filename_marker;
+		if ((filename_marker = _tcsrchr(full_path, '/')))
+		{
+			g_script.mFileDir = SimpleHeap::Alloc(full_path, (size_t)(filename_marker - full_path));
+			++filename_marker;
+		}
+		else
+		{
+			g_script.mFileDir = g_WorkingDirOrig;
+			filename_marker = full_path;
+		}
+		g_script.mFileName = SimpleHeap::Alloc(filename_marker);
+	}
+
 	LineNumberType load_result = g_script.LoadFromFile(wpath);
 	if (load_result == LOADING_FAILED)
 		return 1;

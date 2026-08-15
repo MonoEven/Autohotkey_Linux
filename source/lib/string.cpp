@@ -1573,7 +1573,16 @@ BIF_DECL(BIF_Format)
 			
 			if (target)
 			{
+#ifdef __linux__
+				// On Windows the union value is passed via the stack home slot, so
+				// %f reads the double bits from an __int64 vararg.  The SysV ABI
+				// passes floats in XMM registers, so pass the correctly-typed value.
+				int len = (value.symbol == SYM_FLOAT)
+					? _stprintf(target, spec, value.value_double)
+					: _stprintf(target, spec, value.value_int64);
+#else
 				int len = _stprintf(target, spec, value.value_int64);
+#endif
 				switch (custom_format)
 				{
 				case 0: break; // Might help performance to list this first.
@@ -1584,7 +1593,13 @@ BIF_DECL(BIF_Format)
 				target += len;
 			}
 			else
+#ifdef __linux__
+				size += (value.symbol == SYM_FLOAT)
+					? _sctprintf(spec, value.value_double)
+					: _sctprintf(spec, value.value_int64);
+#else
 				size += _sctprintf(spec, value.value_int64);
+#endif
 		}
 		if (target)
 		{

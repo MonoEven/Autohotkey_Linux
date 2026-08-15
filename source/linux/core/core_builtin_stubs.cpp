@@ -497,17 +497,20 @@ BIF_DECL(BIF_DirExist)
 		aResultToken.SetValue(_T(""));
 		return;
 	}
-	char path[4096];
 	TCHAR wbuf[4096];
 	LPTSTR wide = TokenToString(*aParam[0], wbuf, nullptr);
 	if (!wide)
 		wide = wbuf;
-	if (!WideToNarrowPath(wide, path, sizeof(path)))
+	DWORD attr;
+	// Docs: returns the attribute string of the first matching directory, or "".
+	if (!DoesFilePatternExist(wide, &attr, FILE_ATTRIBUTE_DIRECTORY))
 	{
 		aResultToken.SetValue(_T(""));
 		return;
 	}
-	LinuxSetPersistentString(aResultToken, std::filesystem::is_directory(path) ? wide : _T(""));
+	LPTSTR out = aResultToken.buf;
+	FileAttribToStr(out, attr);
+	aResultToken.SetValue(out);
 }
 
 BIF_DECL(BIF_FileAppend)
@@ -552,17 +555,27 @@ BIF_DECL(BIF_FileExist)
 		aResultToken.SetValue(_T(""));
 		return;
 	}
-	char path[4096];
 	TCHAR wbuf[4096];
 	LPTSTR wide = TokenToString(*aParam[0], wbuf, nullptr);
 	if (!wide)
 		wide = wbuf;
-	if (!WideToNarrowPath(wide, path, sizeof(path)))
+	DWORD attr;
+	// Docs: returns the attribute string of the first matching file, e.g. "A"
+	// for a regular file or "D" for a directory (the pattern is also matched
+	// against directories), or "" if nothing matches.
+	if (!DoesFilePatternExist(wide, &attr, 0))
 	{
 		aResultToken.SetValue(_T(""));
 		return;
 	}
-	LinuxSetPersistentString(aResultToken, std::filesystem::is_regular_file(path) ? wide : _T(""));
+	LPTSTR out = aResultToken.buf;
+	FileAttribToStr(out, attr);
+	if (!*out) // See FileOrDirExist() in lib/file.cpp.
+	{
+		out[0] = _T('X');
+		out[1] = _T('\0');
+	}
+	aResultToken.SetValue(out);
 }
 
 BIF_DECL(BIF_FileRead)

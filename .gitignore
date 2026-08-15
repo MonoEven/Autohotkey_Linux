@@ -10,3 +10,7 @@ ipch/
 *.aps
 *.sdf
 *.opensdf
+
+# Local doc mirror (AutoHotkeyDocs v2 branch) + doc-check outputs
+/docs-v2/
+tests/doccheck/out/
