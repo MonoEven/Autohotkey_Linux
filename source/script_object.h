@@ -749,6 +749,8 @@ public:
 		ExprTokenType val(aValue);
 		return SetItem(key, val);
 	}
+
+	ResultType SetItems(ExprTokenType *aParam[], int aParamCount);
 	// Methods callable by script.
 	void __Item(ResultToken &aResultToken, int aID, int aFlags, ExprTokenType *aParam[], int aParamCount);
 	void Set(ResultToken &aResultToken, int aID, int aFlags, ExprTokenType *aParam[], int aParamCount);

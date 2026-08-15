@@ -1,4 +1,4 @@
-﻿#include "stdafx.h" // pre-compiled headers
+#include "stdafx.h" // pre-compiled headers
 #include "defines.h"
 #include "globaldata.h"
 #include "script.h"
@@ -436,7 +436,7 @@ bool Object::Delete()
 
 		{
 			FuncResult rt;
-			CallMeta(_T("__Delete"), rt, ExprTokenType(this), nullptr, 0);
+			ExprTokenType this_token(this); CallMeta(_T("__Delete"), rt, this_token, nullptr, 0);
 			rt.Free();
 		}
 
@@ -843,7 +843,8 @@ void Map::__Item(ResultToken &aResultToken, int aID, int aFlags, ExprTokenType *
 		{
 			if (ParamIndexIsOmitted(1))
 			{
-				auto result = Invoke(aResultToken, IT_GET, _T("Default"), ExprTokenType { this }, nullptr, 0);
+				ExprTokenType this_token(this);
+				auto result = Invoke(aResultToken, IT_GET, _T("Default"), this_token, nullptr, 0);
 				if (result == INVOKE_NOT_HANDLED)
 					_o_throw(ERR_ITEM_UNSET, *aParam[0], ErrorPrototype::UnsetItem);
 				return;
@@ -900,7 +901,8 @@ ResultType Object::CallMeta(LPTSTR aName, ResultToken &aResultToken, ExprTokenTy
 	IObject *method;
 	if (method = GetMethod(aName))
 	{
-		return CallAsMethod(ExprTokenType(method), aResultToken, aThisToken, aParam, aParamCount);
+		ExprTokenType method_token(method);
+		return CallAsMethod(method_token, aResultToken, aThisToken, aParam, aParamCount);
 	}
 	return INVOKE_NOT_HANDLED;
 }
@@ -923,7 +925,8 @@ ResultType Object::CallMetaVarg(int aFlags, LPTSTR aName, ResultToken &aResultTo
 	if (IS_INVOKE_SET)
 		param[param_count++] = aParam[aParamCount]; // value
 	// return %func%(this, name, args [, value])
-	ResultType aResult = func->Invoke(aResultToken, IT_CALL, nullptr, ExprTokenType(func), param, param_count);
+	ExprTokenType func_token(func);
+	ResultType aResult = func->Invoke(aResultToken, IT_CALL, nullptr, func_token, param, param_count);
 	vargs->Release();
 	return aResult;
 }
@@ -1067,7 +1070,7 @@ Object *Object::CreatePrototype(LPTSTR aClassName, Object *aBase)
 {
 	auto obj = new Object();
 	obj->mFlags |= ClassPrototype;
-	obj->SetOwnProp(_T("__Class"), ExprTokenType(aClassName));
+	ExprTokenType class_name_token(aClassName); obj->SetOwnProp(_T("__Class"), class_name_token);
 	obj->SetBase(aBase);
 	return obj;
 }
@@ -1538,7 +1541,10 @@ void Object::GetOwnPropDesc(ResultToken &aResultToken, int aID, int aFlags, Expr
 		_o_throw_param(0);
 	auto field = FindField(name);
 	if (!field)
-		_o__ret(aResultToken.UnknownMemberError(ExprTokenType(this), IT_GET, name));
+	{
+		ExprTokenType this_token(this);
+		_o__ret(aResultToken.UnknownMemberError(this_token, IT_GET, name));
+	}
 	auto desc = Object::Create();
 	desc->SetInternalCapacity(field->symbol == SYM_DYNAMIC ? 3 : 1);
 	if (field->symbol == SYM_DYNAMIC)
@@ -2014,7 +2020,8 @@ void Array::Invoke(ResultToken &aResultToken, int aID, int aFlags, ExprTokenType
 				aResultToken.CopyValueFrom(*aParam[1]);
 				return;
 			}
-			auto result = Object::Invoke(aResultToken, IT_GET, _T("Default"), ExprTokenType{this}, nullptr, 0);
+			ExprTokenType this_token(this);
+			auto result = Object::Invoke(aResultToken, IT_GET, _T("Default"), this_token, nullptr, 0);
 			if (result != INVOKE_NOT_HANDLED)
 				_o_return_retval;
 			_o_throw(ERR_ITEM_UNSET, *aParam[0], ErrorPrototype::UnsetItem);
@@ -3278,7 +3285,7 @@ BIF_DECL(Class_CallNestedClass)
 	}
 	else
 		aResultToken.symbol = SYM_STRING; // Set the default expected by Invoke.
-	cls->Invoke(aResultToken, IT_CALL, nullptr, ExprTokenType { cls }, aParam + 1, aParamCount - 1);
+	ExprTokenType cls_token(cls); cls->Invoke(aResultToken, IT_CALL, nullptr, cls_token, aParam + 1, aParamCount - 1);
 }
 
 

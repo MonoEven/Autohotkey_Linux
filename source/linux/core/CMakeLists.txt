@@ -17,3 +17,6 @@ target_include_directories(ahk_core PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../..
     ${CMAKE_CURRENT_SOURCE_DIR}/../compat
 )
+
+# AutoHotkey upstream uses several MSVC extensions; allow them while porting.
+target_compile_options(ahk_core PRIVATE -fpermissive)

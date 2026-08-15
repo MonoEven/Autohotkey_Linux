@@ -399,7 +399,7 @@ __int64 pow_ll(__int64 base, __int64 exp); // integer power function
 // via COM IDispatch or coupled with different scripting languages.
 #define _f_return(...)			_f__ret(aResultToken.Return(__VA_ARGS__))
 #define _f_throw(...)			_f__ret(aResultToken.Error(__VA_ARGS__))
-#define _f_throw_param(_prm_, ...)	return ((void)aResultToken.ParamError(_prm_, aParam[_prm_], __VA_ARGS__))
+#define _f_throw_param(_prm_, ...)	return ((void)aResultToken.ParamError(_prm_, aParam[_prm_] __VA_OPT__(,) __VA_ARGS__))
 #define _f_throw_win32(...)		return ((void)aResultToken.Win32Error(__VA_ARGS__))
 #define _f_throw_value(...)		return ((void)aResultToken.ValueError(__VA_ARGS__))
 #define _f_throw_type(...)		return ((void)aResultToken.TypeError(__VA_ARGS__))
