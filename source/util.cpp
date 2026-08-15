@@ -109,7 +109,7 @@ DWORD YYYYMMDDToSystemTime2(LPCTSTR aYYYYMMDD, SYSTEMTIME *aSystemTime)
 		if (cp = _tcschr(aYYYYMMDD + 1, '-'))
 		{
 			// Temporarily terminate; otherwise, the dash and other chars would be considered invalid fields.
-			auto n = min(cp - aYYYYMMDD, _countof(temp) - 1);
+			auto n = min((size_t)(cp - aYYYYMMDD), (size_t)(_countof(temp) - 1));
 			tmemcpy(temp, aYYYYMMDD, n);
 			temp[n] = '\0';
 			first = temp;
@@ -429,6 +429,7 @@ SymbolType IsNumeric(LPCTSTR aBuf, BOOL aAllowNegative, BOOL aAllowAllWhitespace
 
 
 
+#ifndef __linux__
 void strlcpy(LPSTR aDst, LPCSTR aSrc, size_t aDstSize) // Non-inline because it benches slightly faster that way.
 // Caller must ensure that aDstSize is greater than 0.
 // Caller must ensure that the entire capacity of aDst is writable, EVEN WHEN it knows that aSrc is much shorter
@@ -459,6 +460,7 @@ void wcslcpy(LPWSTR aDst, LPCWSTR aSrc, size_t aDstSize)
 	wcsncpy(aDst, aSrc, aDstSize);
 	aDst[aDstSize] = '\0';
 }
+#endif
 
 
 
