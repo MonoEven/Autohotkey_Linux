@@ -32,7 +32,10 @@ add_executable(ahk_core
     ../../globaldata.cpp
     ../../TextIO.cpp
     ../../util.cpp
+    $<TARGET_OBJECTS:ahk_core_objects>
     core_stubs.cpp
+    core_builtin_stubs.cpp
+    core_platform_stubs.cpp
     main_linux.cpp
 )
 

@@ -1765,6 +1765,9 @@ ResultType Script::LoadIncludedFile(TextStream *fp, int aFileIndex)
 	// buf is initialized this way rather than calling GetLine() to simplify handling of comment
 	// sections beginning at the first line, and to reduce code size by having GetLine() only
 	// called from one place:
+	// Preserve the original "goto continue_main_loop" behaviour (buffer swap before
+	// continuing to the next line) without using gotos that GCC rejects.
+	#define CONTINUE_MAIN_LOOP { swap(buf.p, next_buf.p); swap(buf.size, next_buf.size); buf_length = next_buf_length; continue; }
 	*buf = '\0';
 
 	while (buf_length != -1)  // Compare directly to -1 since length is unsigned.
@@ -1787,7 +1790,7 @@ ResultType Script::LoadIncludedFile(TextStream *fp, int aFileIndex)
 process_completed_line:
 		// buf_length can't be -1 (though next_buf_length can) because outer loop's condition prevents it:
 		if (!buf_length) // Done only after the line number increments above so that the physical line number is properly tracked.
-			continue; // In lieu of "continue", for performance.
+			CONTINUE_MAIN_LOOP;
 
 		// Since neither of the above executed, or they did but didn't "continue",
 		// buf now contains a non-commented line, either by itself or built from
@@ -2028,7 +2031,7 @@ process_completed_line:
 					{
 						// This is valid remap syntax but the source key doesn't exist on the current keyboard layout.
 						// A warning has already been shown.
-						continue;
+						CONTINUE_MAIN_LOOP;
 					}
 					else
 					{
@@ -2178,7 +2181,7 @@ process_completed_line:
 						);
 						if (!define_remap_func()) // define the "up" function.
 							return FAIL;
-						continue;
+						CONTINUE_MAIN_LOOP;
 					}
 					// Since above didn't goto this is not a remap after all:
 				}
@@ -2257,7 +2260,7 @@ process_completed_line:
 					, hotstring_start, hotstring_execute || hotkey_uses_otb ? _T("") : hotkey_flag, has_continuation_section))
 					return FAIL;
 				if (!mLastHotFunc)
-					continue;
+					CONTINUE_MAIN_LOOP;
 			}
 			else // It's a hotkey vs. hotstring.
 			{
@@ -2355,7 +2358,7 @@ process_completed_line:
 					}
 				}
 			}
-			continue; // In lieu of "continue", for performance.
+			CONTINUE_MAIN_LOOP;
 		} // if (hotkey_flag && hotkey_flag > buf)
 
 		// Otherwise, not a hotkey or hotstring.  Check if it's a generic, non-hotkey label:
@@ -2387,7 +2390,7 @@ process_completed_line:
 					if (!AddLabel(buf, false))
 						return FAIL;
 				}
-				continue; // In lieu of "continue", for performance.
+				CONTINUE_MAIN_LOOP;
 			}
 		}
 		// Since above didn't "goto", it's not a label.
@@ -2409,7 +2412,7 @@ process_completed_line:
 				// hundreds of calls to ScriptError() and LineError():
 				mCurrFileIndex = source_file_index;
 				mCombinedLineNumber = saved_line_number;
-				continue; // In lieu of "continue", for performance.
+				CONTINUE_MAIN_LOOP;
 			case FAIL: // IsDirective() already displayed the error.
 				return FAIL;
 			//case CONDITION_FALSE: Do nothing; let processing below handle it.
@@ -2461,7 +2464,7 @@ process_completed_line:
 				mCurrLine = NULL;  // To signify that we're in transition, trying to load a new line.
 				goto process_completed_line; // Have the main loop process the contents of "buf" as though it came in from the script.
 			}
-			continue; // It's just a naked "{" or "}", so no more processing needed for this line.
+			CONTINUE_MAIN_LOOP;
 		}
 
 		// Handle this first so that GetLineContExpr() doesn't need to detect it for OTB exclusion:
@@ -2473,7 +2476,7 @@ process_completed_line:
 				return ScriptError(ERR_MISSING_OPEN_BRACE, buf);
 			if (!DefineClass(class_name))
 				return FAIL;
-			continue;
+			CONTINUE_MAIN_LOOP;
 		}
 
 		// Aside from goto/break/continue, anything not already handled above is either an expression
@@ -2495,7 +2498,7 @@ process_completed_line:
 					dot[1] = *buf; // Replace the x in property.xet(params).
 					if (!DefineClassPropertyXet(buf, cp))
 						return FAIL;
-					continue;
+					CONTINUE_MAIN_LOOP;
 				}
 			}
 			return ScriptError(ERR_INVALID_LINE_IN_PROPERTY_DEF, buf);
@@ -2517,7 +2520,7 @@ process_completed_line:
 			{
 				if (!DefineFunc(id, is_static))
 					return FAIL;
-				continue;
+				CONTINUE_MAIN_LOOP;
 			}
 			for (cp = id; IS_IDENTIFIER_CHAR(*cp) || *cp == '.'; ++cp);
 			if (cp > id) // i.e. buf begins with an identifier.
@@ -2527,7 +2530,7 @@ process_completed_line:
 				{
 					if (!DefineClassVars(id, is_static))
 						return FAIL;
-					continue;
+					CONTINUE_MAIN_LOOP;
 				}
 				if (!*cp || *cp == '[' || *cp == '{' || (*cp == '=' && cp[1] == '>')) // Property or invalid.
 				{
@@ -2539,7 +2542,7 @@ process_completed_line:
 							return ScriptError(ERR_UNRECOGNIZED_ACTION, buf); // Vague message because user's intention is unknown.
 						RemoveBufChar0(next_buf, next_buf_length);
 					}
-					continue;
+					CONTINUE_MAIN_LOOP;
 				}
 			}
 			// Anything not already handled above is not valid directly inside a class definition.
@@ -2549,7 +2552,7 @@ process_completed_line:
 		{
 			if (!DefineFunc(buf))
 				return FAIL;
-			continue;
+			CONTINUE_MAIN_LOOP;
 		}
 
 		// Parse the command, assignment or expression, including any same-line open brace or sub-action

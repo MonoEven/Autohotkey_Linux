@@ -68,4 +68,9 @@ M2：核心解释器 Linux 编译。
 - [x] script_expression.cpp 已能在 Linux 下编译（修复 GCC goto 跨初始化问题）
 - [x] os_version.cpp 已能在 Linux 下编译（新增 GetVersionExW 兼容实现）
 - [x] 新增 ahk_core_objects 静态库，集中编译 script/script2/script_expression/script_object/error/hotkey/os_version/var/window 核心源文件
+- [x] ahk_core 已链接全部核心解释器对象（script/script2/script_expression/script_object/error/hotkey/os_version/var/window）及 Linux 平台桩
+- [x] 新增 BIF_*/BIV_* 桩，使核心解释器可链接
+- [x] 修复 glibc 宽字符格式化（%s→%ls）与 GetFileAttributes/SetDllDirectory/MessageBox 等 Linux 兼容
+- [x] 修复 LoadIncludedFile 中 continue 跳过 buffer swap 导致的死循环，真实 LoadFromFile 已能读取 .ahk
+- [ ] 真实 AutoExecSection 仍需继续移植（当前简单脚本会因对象模型桩不完整而报错/崩溃）
 - [ ] 逐文件修复编译错误

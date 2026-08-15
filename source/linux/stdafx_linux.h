@@ -25,6 +25,7 @@
 #include <wctype.h>
 #include <ctype.h>
 #include <sys/utsname.h>
+#include <sys/stat.h>
 
 using std::min;
 using std::max;
@@ -1016,7 +1017,42 @@ inline void GetSystemTimeAsFileTime(FILETIME* ft)
 #ifdef UNICODE
 inline int _vsntprintf(LPTSTR buf, size_t count, LPCWSTR fmt, va_list ap)
 {
-	return vswprintf(buf, count, fmt, ap);
+	// glibc's wprintf treats %s as a narrow char* string, while AutoHotkey's
+	// Windows-oriented wide format strings use %s for TCHAR (wchar_t*).  Convert
+	// %s to %ls so wide strings are formatted correctly on Linux.
+	std::wstring f(fmt ? fmt : L"");
+	std::wstring out;
+	out.reserve(f.size() + 8);
+	for (size_t i = 0; i < f.size(); ++i)
+	{
+		if (f[i] == L'%' && i + 1 < f.size())
+		{
+			out += f[i++];
+			size_t conv_start = out.size() - 1;
+			while (i < f.size() && wcschr(L"-+ #0", f[i]))
+				out += f[i++];
+			while (i < f.size() && iswdigit(f[i]))
+				out += f[i++];
+			if (i < f.size() && f[i] == L'.')
+			{
+				out += f[i++];
+				while (i < f.size() && iswdigit(f[i]))
+					out += f[i++];
+			}
+			if (i < f.size() && f[i] == L's')
+			{
+				wchar_t prev = out.size() > conv_start ? out[out.size() - 1] : 0;
+				if (prev != L'l' && prev != L'h')
+					out += L'l';
+				out += f[i];
+			}
+			else if (i < f.size())
+				out += f[i];
+			continue;
+		}
+		out += f[i];
+	}
+	return vswprintf(buf, count, out.c_str(), ap);
 }
 #else
 inline int _vsntprintf(LPTSTR buf, size_t count, LPCSTR fmt, va_list ap)
@@ -1037,9 +1073,15 @@ inline BOOL FindClose(HANDLE)
 {
 	return TRUE;
 }
-inline DWORD GetFileAttributes(LPCTSTR)
+inline DWORD GetFileAttributes(LPCTSTR aPath)
 {
-	return (DWORD)-1;
+	char buf[4096];
+	if (!aPath || wcstombs(buf, aPath, sizeof(buf)) == (size_t)-1)
+		return (DWORD)-1;
+	struct stat st;
+	if (stat(buf, &st) != 0)
+		return (DWORD)-1;
+	return 0x80; // FILE_ATTRIBUTE_NORMAL
 }
 inline DWORD GetFileSize(HANDLE, DWORD*)
 {
@@ -1563,7 +1605,9 @@ inline BOOL ScrollWindow(HWND, int, int, const RECT*, RECT*)
 }
 inline INT_PTR DialogBoxParam(HINSTANCE, LPCTSTR, HWND, void*, LPARAM)
 {
-	return 0;
+	// Return -1 so ShowError() falls back to MsgBox(), which the Linux port
+	// currently maps to console output.
+	return -1;
 }
 inline void OutputDebugString(LPCTSTR)
 {
@@ -1741,11 +1785,12 @@ inline void PostQuitMessage(int)
 #define MB_ICONHAND 0x00000010
 inline BOOL SetCurrentDirectory(LPCTSTR)
 {
-	return FALSE;
+	// TODO: implement with chdir(); returning success is enough for now.
+	return TRUE;
 }
 inline BOOL SetDllDirectory(LPCTSTR)
 {
-	return FALSE;
+	return TRUE;
 }
 #define GET_MODULE_HANDLE_EX_FLAG_PIN 0x00000001
 inline BOOL GetModuleHandleEx(DWORD, LPCTSTR, HMODULE*)
@@ -1829,9 +1874,14 @@ inline BOOL ReadProcessMemory(HANDLE, const void*, void*, SIZE_T, SIZE_T*)
 {
 	return FALSE;
 }
-inline int MessageBox(HWND, LPCTSTR, LPCTSTR, UINT)
+inline int MessageBox(HWND, LPCTSTR aText, LPCTSTR aTitle, UINT)
 {
-	return 0;
+	// Linux console fallback: print the message instead of showing a GUI dialog.
+	if (aText)
+		std::printf("%ls\n", aText);
+	else
+		std::printf("Press OK to continue.\n");
+	return 1; // IDOK
 }
 inline DWORD GetCurrentProcessId()
 {
