@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstring>
 #include <string>
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cwchar>
@@ -23,6 +24,9 @@
 #include <wchar.h>
 #include <wctype.h>
 #include <ctype.h>
+
+using std::min;
+using std::max;
 
 // ---------------------------------------------------------------------------
 // Base integer types
@@ -553,8 +557,6 @@ typedef long               HRESULT;
 #define _tcsstr     wcsstr
 #define _tcsrchr    wcsrchr
 #define _tcschr     wcschr
-#define _ttoi       wcstol
-#define _ttoi64     wcstoll
 #define _tcstol     wcstol
 #define _tcstoul    wcstoul
 #define _sntprintf  swprintf
@@ -576,8 +578,6 @@ typedef long               HRESULT;
 #define _tcsstr     strstr
 #define _tcsrchr    strrchr
 #define _tcschr     strchr
-#define _ttoi       atoi
-#define _ttoi64     atoll
 #define _tcstol     strtol
 #define _tcstoul    strtoul
 #define _stprintf   sprintf
@@ -619,6 +619,26 @@ inline float _tstof(const char* s)
 {
 	return strtof(s, nullptr);
 }
+
+#ifdef UNICODE
+inline int _ttoi(const wchar_t* s)
+{
+	return (int)wcstol(s, nullptr, 10);
+}
+inline __int64 _ttoi64(const wchar_t* s)
+{
+	return (__int64)wcstoll(s, nullptr, 10);
+}
+#else
+inline int _ttoi(const char* s)
+{
+	return atoi(s);
+}
+inline __int64 _ttoi64(const char* s)
+{
+	return (__int64)atoll(s);
+}
+#endif
 
 #ifdef UNICODE
 inline int _stprintf(LPTSTR aBuf, LPCWSTR aFmt, ...)
@@ -933,6 +953,211 @@ inline void* _expand(void* p, size_t)
 #else
 #define _tcsnlen strnlen
 #endif
+// Additional Win32 compatibility helpers for util.cpp.
+
+#define GDTR_MIN 0
+#define GDTR_MAX 1
+
+union ULARGE_INTEGER
+{
+	struct { DWORD LowPart; DWORD HighPart; };
+	ULONGLONG QuadPart;
+};
+
+inline BOOL SystemTimeToFileTime(const SYSTEMTIME*, FILETIME*)
+{
+	return TRUE;
+}
+inline BOOL FileTimeToLocalFileTime(const FILETIME*, FILETIME*)
+{
+	return TRUE;
+}
+inline BOOL FileTimeToSystemTime(const FILETIME*, SYSTEMTIME*)
+{
+	return TRUE;
+}
+inline void GetSystemTimeAsFileTime(FILETIME* ft)
+{
+	if (ft)
+	{
+		ft->dwLowDateTime = 0;
+		ft->dwHighDateTime = 0;
+	}
+}
+
+#ifdef UNICODE
+inline int _vsntprintf(LPTSTR buf, size_t count, LPCWSTR fmt, va_list ap)
+{
+	return vswprintf(buf, count, fmt, ap);
+}
+#else
+inline int _vsntprintf(LPTSTR buf, size_t count, LPCSTR fmt, va_list ap)
+{
+	return vsnprintf(buf, count, fmt, ap);
+}
+#endif
+
+inline HANDLE FindFirstFile(LPCTSTR, WIN32_FIND_DATA*)
+{
+	return INVALID_HANDLE_VALUE;
+}
+inline BOOL FindNextFile(HANDLE, WIN32_FIND_DATA*)
+{
+	return FALSE;
+}
+inline BOOL FindClose(HANDLE)
+{
+	return TRUE;
+}
+inline DWORD GetFileAttributes(LPCTSTR)
+{
+	return (DWORD)-1;
+}
+inline DWORD GetFileSize(HANDLE, DWORD*)
+{
+	return 0;
+}
+
+#define FILE_ATTRIBUTE_READONLY      0x00000001
+#define FILE_ATTRIBUTE_HIDDEN        0x00000002
+#define FILE_ATTRIBUTE_SYSTEM        0x00000004
+#define FILE_ATTRIBUTE_DIRECTORY     0x00000010
+#define FILE_ATTRIBUTE_ARCHIVE       0x00000020
+#define FILE_ATTRIBUTE_NORMAL        0x00000080
+#define FILE_ATTRIBUTE_TEMPORARY     0x00000100
+#define FILE_ATTRIBUTE_COMPRESSED    0x00000800
+#define FILE_ATTRIBUTE_OFFLINE       0x00001000
+#define FILE_ATTRIBUTE_REPARSE_POINT 0x00000400
+#define INVALID_FILE_ATTRIBUTES      ((DWORD)-1)
+
+#define MAXDWORD ((DWORD)0xffffffff)
+#define NO_ERROR 0
+
+#define FORMAT_MESSAGE_FROM_SYSTEM    0x00001000
+#define FORMAT_MESSAGE_IGNORE_INSERTS 0x00000200
+inline DWORD FormatMessage(DWORD, void*, DWORD, DWORD, LPTSTR, DWORD, void*)
+{
+	return 0;
+}
+
+inline BOOL DeleteObject(HGDIOBJ)
+{
+	return TRUE;
+}
+inline HBRUSH CreateSolidBrush(COLORREF)
+{
+	return nullptr;
+}
+#define CLR_NONE 0xFFFFFFFF
+
+#define SPI_GETWORKAREA 0x0030
+inline BOOL SystemParametersInfo(UINT, UINT, void*, UINT)
+{
+	return FALSE;
+}
+
+#define DEFAULT_CHARSET 1
+#define LF_FACESIZE 32
+typedef int (CALLBACK *FONTENUMPROC)(void*, void*, DWORD, LPARAM);
+inline int EnumFontFamiliesEx(HDC, void*, FONTENUMPROC, LPARAM, DWORD)
+{
+	return 0;
+}
+
+inline BOOL GetWindowRect(HWND, RECT*)
+{
+	return FALSE;
+}
+inline BOOL IsIconic(HWND)
+{
+	return FALSE;
+}
+inline BOOL ClientToScreen(HWND, POINT*)
+{
+	return FALSE;
+}
+
+inline DWORD GetEnvironmentVariable(LPCTSTR, LPTSTR, DWORD)
+{
+	return 0;
+}
+
+#define KEY_QUERY_VALUE 0x0001
+#define HKEY_CURRENT_USER ((HKEY)(ULONG_PTR)0x80000001)
+inline LONG RegOpenKeyEx(HKEY, LPCTSTR, DWORD, DWORD, HKEY*)
+{
+	return ERROR_SUCCESS;
+}
+inline LONG RegQueryValueEx(HKEY, LPCTSTR, DWORD*, DWORD*, BYTE*, DWORD*)
+{
+	return ERROR_SUCCESS;
+}
+inline LONG RegCloseKey(HKEY)
+{
+	return ERROR_SUCCESS;
+}
+
+inline HANDLE GetCurrentProcess()
+{
+	return (HANDLE)(ULONG_PTR)-1;
+}
+inline BOOL IsWow64Process(HANDLE, BOOL* aWow64)
+{
+	if (aWow64)
+		*aWow64 = FALSE;
+	return TRUE;
+}
+inline DWORD GetWindowThreadProcessId(HWND, DWORD* aPid)
+{
+	if (aPid)
+		*aPid = 0;
+	return 0;
+}
+#define PROCESS_VM_OPERATION 0x0008
+#define PROCESS_VM_READ      0x0010
+#define PROCESS_VM_WRITE     0x0020
+inline HANDLE OpenProcess(DWORD, BOOL, DWORD)
+{
+	return nullptr;
+}
+#define MEM_RESERVE 0x2000
+#define MEM_COMMIT  0x1000
+#define MEM_RELEASE 0x8000
+#define PAGE_READWRITE 0x04
+inline LPVOID VirtualAllocEx(HANDLE, LPVOID, SIZE_T, DWORD, DWORD)
+{
+	return nullptr;
+}
+inline BOOL VirtualFreeEx(HANDLE, LPVOID, SIZE_T, DWORD)
+{
+	return FALSE;
+}
+
+struct TOOLINFO
+{
+	DWORD cbSize;
+	UINT uFlags;
+	HWND hwnd;
+	UINT_PTR uId;
+	RECT rect;
+	void* hinst;
+	LPTSTR lpszText;
+	LPARAM lParam;
+};
+#define TTM_GETTEXT (WM_USER + 52)
+inline LRESULT SendMessage(HWND, UINT, WPARAM, LPARAM)
+{
+	return 0;
+}
+#define SM_CXSMICON 49
+inline int GetSystemMetrics(int)
+{
+	return 0;
+}
+inline HWND FindWindow(LPCTSTR, LPCTSTR)
+{
+	return nullptr;
+}
 
 #ifdef UNICODE
 inline LPTSTR _itot(int value, LPTSTR buf, int radix) { std::wstring s = std::to_wstring(value); wcscpy(buf, s.c_str()); return buf; }
