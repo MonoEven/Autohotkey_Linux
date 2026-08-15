@@ -1540,6 +1540,212 @@ inline INT_PTR DialogBoxParam(HINSTANCE, LPCTSTR, HWND, void*, LPARAM)
 inline void OutputDebugString(LPCTSTR)
 {
 }
+// Additional script.cpp / Win32 stubs.
+inline void InitializeCriticalSection(CRITICAL_SECTION*)
+{
+}
+inline void DeleteCriticalSection(CRITICAL_SECTION*)
+{
+}
+inline void EnterCriticalSection(CRITICAL_SECTION*)
+{
+}
+inline void LeaveCriticalSection(CRITICAL_SECTION*)
+{
+}
+inline HRESULT OleInitialize(void*)
+{
+	return 0;
+}
+inline void OleUninitialize()
+{
+}
+inline HRESULT OleFlushClipboard()
+{
+	return 0;
+}
+
+#define NIM_ADD        0x00000000
+#define NIM_MODIFY     0x00000001
+#define NIM_DELETE     0x00000002
+#define NIF_MESSAGE    0x00000001
+#define NIF_ICON       0x00000002
+#define NIF_TIP        0x00000004
+inline BOOL Shell_NotifyIcon(DWORD, NOTIFYICONDATA*)
+{
+	return FALSE;
+}
+
+inline BOOL DestroyWindow(HWND)
+{
+	return TRUE;
+}
+inline BOOL IsWindow(HWND)
+{
+	return FALSE;
+}
+typedef DWORD MCIERROR;
+inline MCIERROR mciSendString(LPCTSTR, LPTSTR, UINT, HWND)
+{
+	return 0;
+}
+
+inline DWORD GetModuleFileName(HMODULE, LPTSTR, DWORD)
+{
+	return 0;
+}
+inline DWORD GetFullPathName(LPCTSTR, DWORD, LPTSTR, LPTSTR*)
+{
+	return 0;
+}
+
+struct WNDCLASSEX
+{
+	UINT cbSize;
+	UINT style;
+	void* lpfnWndProc;
+	int cbClsExtra;
+	int cbWndExtra;
+	HINSTANCE hInstance;
+	HICON hIcon;
+	HCURSOR hCursor;
+	HBRUSH hbrBackground;
+	LPCTSTR lpszMenuName;
+	LPCTSTR lpszClassName;
+	HICON hIconSm;
+};
+#define IDC_ARROW ((LPCTSTR)32512)
+inline HCURSOR LoadCursor(HINSTANCE, LPCTSTR)
+{
+	return nullptr;
+}
+#define COLOR_BTNFACE 15
+inline ATOM RegisterClassEx(const WNDCLASSEX*)
+{
+	return 0;
+}
+inline int GetClassName(HWND, LPTSTR, int)
+{
+	return 0;
+}
+
+#define WS_EX_TOOLWINDOW    0x00000080
+#define WS_OVERLAPPEDWINDOW (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)
+#define WS_OVERLAPPED       0x00000000
+#define WS_THICKFRAME       0x00040000
+#define WS_MAXIMIZEBOX      0x00010000
+#define WS_CHILD            0x40000000
+#define WS_VISIBLE          0x10000000
+#define WS_BORDER           0x00800000
+#define WS_VSCROLL          0x00200000
+#define CW_USEDEFAULT       ((int)0x80000000)
+inline HWND CreateWindowEx(DWORD, LPCTSTR, LPCTSTR, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, void*)
+{
+	return nullptr;
+}
+inline HWND CreateWindow(LPCTSTR, LPCTSTR, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, void*)
+{
+	return nullptr;
+}
+
+inline HMENU GetMenu(HWND)
+{
+	return nullptr;
+}
+#define MF_ENABLED  0x00000000
+#define MF_DISABLED 0x00000002
+#define MF_GRAYED   0x00000001
+inline BOOL EnableMenuItem(HMENU, UINT, UINT)
+{
+	return TRUE;
+}
+
+#define ES_LEFT      0x0000
+#define ES_MULTILINE 0x0004
+#define ES_READONLY  0x0800
+#define LOGPIXELSY   90
+#define DEFAULT_QUALITY 0
+#define DEFAULT_PITCH 0
+#define FF_DONTCARE  0
+inline HFONT CreateFont(int, int, int, int, int, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, LPCTSTR)
+{
+	return nullptr;
+}
+#define WM_SETFONT   0x0030
+#define EM_LIMITTEXT 0x00C5
+#define GWL_EXSTYLE  (-20)
+inline LONG SetWindowLong(HWND, int, LONG)
+{
+	return 0;
+}
+inline HACCEL LoadAccelerators(HINSTANCE, LPCTSTR)
+{
+	return nullptr;
+}
+inline BOOL AddClipboardFormatListener(HWND)
+{
+	return FALSE;
+}
+inline BOOL RemoveClipboardFormatListener(HWND)
+{
+	return FALSE;
+}
+#define LR_SHARED 0x8000
+#define SM_CYSMICON 50
+#define SM_CYICON   12
+#define CopyMemory(dst, src, len) memcpy((dst), (src), (len))
+#define TIMERPROC void*
+inline UINT_PTR SetTimer(HWND, UINT_PTR, UINT, TIMERPROC)
+{
+	return 0;
+}
+inline BOOL KillTimer(HWND, UINT_PTR)
+{
+	return TRUE;
+}
+inline BOOL IsWindowVisible(HWND)
+{
+	return FALSE;
+}
+inline void PostQuitMessage(int)
+{
+}
+#define MB_ICONHAND 0x00000010
+inline BOOL SetCurrentDirectory(LPCTSTR)
+{
+	return FALSE;
+}
+inline BOOL SetDllDirectory(LPCTSTR)
+{
+	return FALSE;
+}
+#define GET_MODULE_HANDLE_EX_FLAG_PIN 0x00000001
+inline BOOL GetModuleHandleEx(DWORD, LPCTSTR, HMODULE*)
+{
+	return FALSE;
+}
+inline int CompareStringOrdinal(LPCWSTR, int, LPCWSTR, int, BOOL)
+{
+	return 0;
+}
+#define RT_RCDATA MAKEINTRESOURCE(10)
+inline BOOL IsCharUpper(TCHAR)
+{
+	return FALSE;
+}
+#ifdef UNICODE
+#define _tcstod wcstod
+#else
+#define _tcstod strtod
+#endif
+inline void CoTaskMemFree(void*)
+{
+}
+#define PM_NOREMOVE 0x0000
+inline BOOL PeekMessage(MSG*, HWND, UINT, UINT, UINT)
+{
+	return FALSE;
+}
 
 #ifdef UNICODE
 inline LPTSTR _itot(int value, LPTSTR buf, int radix) { std::wstring s = std::to_wstring(value); wcscpy(buf, s.c_str()); return buf; }
