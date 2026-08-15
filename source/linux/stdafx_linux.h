@@ -146,6 +146,10 @@ struct NOTIFYICONDATA
 	UINT uCallbackMessage;
 	void* hIcon;
 	wchar_t szTip[128];
+	wchar_t szInfo[256];
+	wchar_t szInfoTitle[64];
+	DWORD dwInfoFlags;
+	void* hBalloonIcon;
 };
 struct PROCESS_INFORMATION
 {
@@ -1816,6 +1820,117 @@ inline BOOL CreateProcess(LPCTSTR, LPTSTR, void*, void*, BOOL, DWORD, void*, LPC
 	return FALSE;
 }
 inline BOOL ShellExecuteEx(SHELLEXECUTEINFO*)
+{
+	return FALSE;
+}
+// More script2.cpp stubs: notify icon fields, window messages, tooltips, monitors.
+#define NIF_INFO 0x00000010
+#define NIIF_NONE        0x00000000
+#define NIIF_INFO        0x00000001
+#define NIIF_WARNING     0x00000002
+#define NIIF_ERROR       0x00000003
+#define NIIF_USER        0x00000004
+#define NIIF_ICON_MASK   0x0000000F
+#define NIIF_NOSOUND     0x00000010
+#define NIIF_LARGE_ICON  0x00000020
+
+#define WM_COMMNOTIFY        0x0044
+#define WM_LBUTTONDOWN       0x0201
+#define WM_LBUTTONDBLCLK     0x0203
+#define WM_RBUTTONUP         0x0205
+#define WM_TIMER             0x0113
+#define PM_REMOVE            0x0001
+#define WM_HOTKEY            0x0312
+#define WM_SYSCOMMAND        0x0112
+#define SC_CLOSE             0xF060
+#define SC_MINIMIZE          0xF020
+#define WM_CLOSE             0x0010
+#define WM_ENDSESSION        0x0016
+#define ENDSESSION_LOGOFF    0x80000000
+#define WM_DESTROY           0x0002
+#define WM_CREATE            0x0001
+#define WM_WINDOWPOSCHANGED  0x0047
+#define SWP_HIDEWINDOW       0x0080
+#define WM_SIZE              0x0005
+#define SIZE_MINIMIZED       1
+#define WM_SETFOCUS          0x0007
+#define WM_CLIPBOARDUPDATE   0x031D
+#define WM_ENTERMENULOOP     0x0211
+#define WM_EXITMENULOOP      0x0212
+#define WM_SETTEXT           0x000C
+#define SW_SHOW              5
+#define SW_RESTORE           9
+#define EM_LINESCROLL        0x00B6
+
+#define HKEY_LOCAL_MACHINE ((HKEY)(ULONG_PTR)0x80000002)
+#define MB_ICONMASK        0x000000F0
+#define MB_DEFMASK         0x00000F00
+#define MB_MODEMASK        0x00003000
+#define MB_TYPEMASK        0x0000000F
+#define MB_ICONHAND        0x00000010
+#define MB_ICONQUESTION    0x00000020
+#define MB_ICONEXCLAMATION 0x00000030
+#define MB_ICONINFORMATION 0x00000040
+#define MB_ICONERROR       MB_ICONHAND
+#define IDYES      6
+#define IDNO       7
+#define IDOK       1
+#define IDABORT    3
+#define IDIGNORE   5
+#define IDRETRY    4
+#define IDTRYAGAIN 10
+#define ERROR_INVALID_MSGBOX_STYLE 1
+
+#define WS_EX_TOPMOST 0x00000008
+#define TOOLTIPS_CLASS _T("tooltips_class32")
+#define TTS_NOPREFIX  0x0002
+#define TTS_ALWAYSTIP 0x0001
+#define TTM_ADDTOOL   (WM_USER + 50)
+#define TTF_TRACK     0x0020
+#define TTF_ABSOLUTE  0x0080
+
+typedef void* HMONITOR;
+struct MONITORINFO
+{
+	DWORD cbSize;
+	RECT rcMonitor;
+	RECT rcWork;
+	DWORD dwFlags;
+};
+struct WINDOWPOS
+{
+	HWND hwnd;
+	HWND hwndInsertAfter;
+	int x;
+	int y;
+	int cx;
+	int cy;
+	UINT flags;
+};
+typedef WINDOWPOS* LPWINDOWPOS;
+typedef TOOLINFO* LPTOOLINFO;
+
+inline UINT RegisterWindowMessage(LPCTSTR)
+{
+	return 0;
+}
+inline LRESULT DefWindowProc(HWND, UINT, WPARAM, LPARAM)
+{
+	return 0;
+}
+inline BOOL SetForegroundWindow(HWND)
+{
+	return TRUE;
+}
+inline BOOL PostThreadMessage(DWORD, UINT, WPARAM, LPARAM)
+{
+	return TRUE;
+}
+inline BOOL GetCursorPos(POINT*)
+{
+	return FALSE;
+}
+inline BOOL GetMonitorInfo(HMONITOR, MONITORINFO*)
 {
 	return FALSE;
 }
