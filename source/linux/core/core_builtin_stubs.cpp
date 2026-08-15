@@ -3,6 +3,7 @@
 // will replace them as the Linux port progresses.
 #include "../../stdafx.h"
 #include "../../script.h"
+#include "../../globaldata.h"
 
 #define LINUX_BIF_STUB(name) \
 void name(BIF_DECL_PARAMS) { (void)aParam; (void)aParamCount; }
@@ -36,10 +37,8 @@ LINUX_BIF_STUB(BIF_StrPtr)
 LINUX_BIF_STUB(BIF_WinExistActive)
 
 LINUX_BIV_STUB(BIV_AhkPath)
-LINUX_BIV_STUB(BIV_AhkVersion)
 LINUX_BIV_STUB_RW(BIV_AllowMainWindow)
 LINUX_BIV_STUB_RW(BIV_Clipboard)
-LINUX_BIV_STUB(BIV_ComSpec)
 LINUX_BIV_STUB_RW(BIV_CoordMode)
 LINUX_BIV_STUB(BIV_Cursor)
 LINUX_BIV_STUB(BIV_DateTime)
@@ -54,10 +53,6 @@ LINUX_BIV_STUB(BIV_IconFile)
 LINUX_BIV_STUB_RW(BIV_IconHidden)
 LINUX_BIV_STUB(BIV_IconNumber)
 LINUX_BIV_STUB_RW(BIV_IconTip)
-LINUX_BIV_STUB(BIV_InitialWorkingDir)
-LINUX_BIV_STUB(BIV_Is64bitOS)
-LINUX_BIV_STUB(BIV_IsAdmin)
-LINUX_BIV_STUB(BIV_IsCompiled)
 LINUX_BIV_STUB(BIV_IsCritical)
 LINUX_BIV_STUB(BIV_IsPaused)
 LINUX_BIV_STUB(BIV_IsSuspended)
@@ -86,35 +81,24 @@ LINUX_BIV_STUB_RW(BIV_MenuMaskKey)
 LINUX_BIV_STUB(BIV_MMM_DDD)
 LINUX_BIV_STUB(BIV_MyDocuments)
 LINUX_BIV_STUB(BIV_Now)
-LINUX_BIV_STUB(BIV_OSVersion)
 LINUX_BIV_STUB(BIV_PriorHotkey)
 LINUX_BIV_STUB(BIV_PriorKey)
-LINUX_BIV_STUB(BIV_PtrSize)
 LINUX_BIV_STUB_RW(BIV_RegView)
 LINUX_BIV_STUB(BIV_ScreenDPI)
 LINUX_BIV_STUB(BIV_ScreenWidth_Height)
-LINUX_BIV_STUB(BIV_ScriptDir)
-LINUX_BIV_STUB(BIV_ScriptFullPath)
 LINUX_BIV_STUB(BIV_ScriptHwnd)
-LINUX_BIV_STUB_RW(BIV_ScriptName)
 LINUX_BIV_STUB_RW(BIV_SendLevel)
 LINUX_BIV_STUB_RW(BIV_SendMode)
-LINUX_BIV_STUB(BIV_Space_Tab)
 LINUX_BIV_STUB(BIV_SpecialFolderPath)
 LINUX_BIV_STUB_RW(BIV_StoreCapsLockMode)
-LINUX_BIV_STUB(BIV_Temp)
 LINUX_BIV_STUB(BIV_ThisFunc)
 LINUX_BIV_STUB(BIV_ThisHotkey)
-LINUX_BIV_STUB(BIV_TickCount)
 LINUX_BIV_STUB(BIV_TimeIdle)
 LINUX_BIV_STUB(BIV_TimeSincePriorHotkey)
 LINUX_BIV_STUB(BIV_TimeSinceThisHotkey)
 LINUX_BIV_STUB_RW(BIV_TitleMatchMode)
 LINUX_BIV_STUB(BIV_TitleMatchModeSpeed)
 LINUX_BIV_STUB(BIV_TrayMenu)
-LINUX_BIV_STUB(BIV_UserName_ComputerName)
-LINUX_BIV_STUB(BIV_WinDir)
-LINUX_BIV_STUB_RW(BIV_WorkingDir)
 LINUX_BIV_STUB_RW(BIV_xDelay)
 
 // Minimal MsgBox built-in for the Linux console port.  It prints the first
@@ -133,6 +117,45 @@ BIF_DECL(BIF_MsgBox)
 	}
 	std::printf("%ls\n", text ? text : L"");
 	aResultToken.SetValue(_T("OK"));
+}
+
+// A small set of built-in variables implemented for the Linux console port.
+BIV_DECL_R(BIV_AhkVersion) { aResultToken.SetValue(_T("2.0.26")); }
+BIV_DECL_R(BIV_ComSpec) { aResultToken.SetValue(_T("/bin/sh")); }
+BIV_DECL_R(BIV_InitialWorkingDir) { aResultToken.SetValue(g_WorkingDirOrig ? g_WorkingDirOrig : _T("")); }
+BIV_DECL_R(BIV_Is64bitOS) { aResultToken.SetValue((__int64)(sizeof(void*) == 8 ? 1 : 0)); }
+BIV_DECL_R(BIV_IsAdmin) { aResultToken.SetValue((__int64)0); }
+BIV_DECL_R(BIV_IsCompiled) { aResultToken.SetValue((__int64)0); }
+BIV_DECL_R(BIV_OSVersion) { aResultToken.SetValue(_T("Linux")); }
+BIV_DECL_R(BIV_PtrSize) { aResultToken.SetValue((__int64)sizeof(void*)); }
+BIV_DECL_R(BIV_ScriptDir) { aResultToken.SetValue(g_script.mFileDir ? g_script.mFileDir : _T("")); }
+BIV_DECL_R(BIV_ScriptFullPath) { aResultToken.SetValue(g_script.mFileSpec ? g_script.mFileSpec : _T("")); }
+void BIV_ScriptName(ResultToken &aResultToken, LPTSTR aVarName) { (void)aVarName; aResultToken.SetValue(g_script.mFileName ? g_script.mFileName : _T("")); }
+void BIV_ScriptName_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue) { (void)aResultToken; (void)aVarName; (void)aValue; }
+BIV_DECL_R(BIV_Space_Tab) { aResultToken.SetValue(_tcsicmp(aVarName, _T("Tab")) == 0 ? _T("\t") : _T(" ")); }
+BIV_DECL_R(BIV_Temp) { aResultToken.SetValue(_T("/tmp")); }
+BIV_DECL_R(BIV_TickCount) { aResultToken.SetValue((__int64)GetTickCount()); }
+BIV_DECL_R(BIV_UserName_ComputerName)
+{
+	const char *user = std::getenv("USER");
+	if (!user)
+		user = "user";
+	wchar_t buf[256];
+	mbstowcs(buf, user, 255);
+	buf[255] = L'\0';
+	aResultToken.SetValue(buf);
+}
+BIV_DECL_R(BIV_WinDir) { aResultToken.SetValue(_T("/usr")); }
+void BIV_WorkingDir(ResultToken &aResultToken, LPTSTR aVarName) { (void)aVarName; aResultToken.SetValue(g_WorkingDir.GetString()); }
+void BIV_WorkingDir_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
+{
+	(void)aResultToken; (void)aVarName;
+	TCHAR buf[4096];
+	buf[0] = L'\0';
+	size_t len = 0;
+	LPTSTR s = TokenToString(aValue, buf, &len);
+	if (s)
+		SetWorkingDir(s);
 }
 
 // Keep the preprocessor namespace clean.

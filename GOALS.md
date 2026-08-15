@@ -78,5 +78,6 @@ M2：核心解释器 Linux 编译。
 - [x] 接入 lib/math.cpp，启用真实 Abs/Sqrt/Round/Mod/Random 等数学内建函数
 - [x] 接入 lib/string.cpp，启用真实 StrLen/SubStr/InStr/StrReplace/Trim/Sort 等字符串内建函数
 - [x] 修复 script_func_impl.h 空 __VA_ARGS__ 宏兼容与 BIF_Sort 的 goto 跨初始化问题
+- [x] 实现常用 A_* 内置变量（A_PtrSize/A_Is64bitOS/A_ComSpec/A_WorkingDir/A_ScriptName/A_UserName/A_TickCount 等）
 - [ ] 复杂 GUI/热键/其余内置函数仍需继续移植
 - [ ] 逐文件修复编译错误
