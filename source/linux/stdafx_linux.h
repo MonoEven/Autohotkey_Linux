@@ -356,11 +356,19 @@ struct WIN32_FIND_DATA
 #define CP_ACP      0
 #define CP_OEMCP    1
 #define CP_UTF8     65001
+#define CP_UTF7     65000
 #define CP_UTF16    1200
 #define CP_UTF16BE  1201
 
 // Clipboard / dialog / registry constants needed by headers.
-#define CF_UNICODETEXT 13
+#define CF_TEXT           1
+#define CF_BITMAP         2
+#define CF_OEMTEXT        7
+#define CF_DIB            8
+#define CF_UNICODETEXT    13
+#define CF_ENHMETAFILE    14
+#define CF_DSPENHMETAFILE 0x008E
+#define CF_DIBV5          17
 #define WC_NO_BEST_FIT_CHARS 0x00000400
 #define IDCANCEL 2
 #define VOID void
@@ -413,6 +421,8 @@ struct WIN32_FIND_DATA
 #define FILE_FLAG_SEQUENTIAL_SCAN 0x08000000
 #define FILE_CURRENT          1
 #define LOGPIXELSX            88
+#define GMEM_MOVEABLE        0x0002
+#define GMEM_ZEROINIT        0x0040
 
 // ---------------------------------------------------------------------------
 // Handles / pointers
@@ -858,6 +868,71 @@ inline BOOL GetFileSizeEx(HANDLE hFile, PLARGE_INTEGER aFileSize)
 		aFileSize->QuadPart = size;
 	return TRUE;
 }
+
+// Clipboard stubs (will be replaced by X11/Wayland clipboard backend later).
+inline UINT EnumClipboardFormats(UINT)
+{
+	return 0;
+}
+inline SIZE_T GlobalSize(HANDLE)
+{
+	return 0;
+}
+inline LPVOID GlobalLock(HANDLE)
+{
+	return nullptr;
+}
+inline BOOL GlobalUnlock(HANDLE)
+{
+	return FALSE;
+}
+inline BOOL EmptyClipboard()
+{
+	return FALSE;
+}
+inline HANDLE GlobalAlloc(UINT, SIZE_T)
+{
+	return nullptr;
+}
+inline HANDLE GlobalFree(HANDLE)
+{
+	return nullptr;
+}
+inline HANDLE SetClipboardData(UINT, HANDLE)
+{
+	return nullptr;
+}
+inline BOOL OpenClipboard(HWND)
+{
+	return FALSE;
+}
+inline BOOL CloseClipboard()
+{
+	return FALSE;
+}
+inline HANDLE GetClipboardData(UINT)
+{
+	return nullptr;
+}
+inline BOOL IsClipboardFormatAvailable(UINT)
+{
+	return FALSE;
+}
+
+// CRT memory helpers.
+inline size_t _msize(void*)
+{
+	return 0;
+}
+inline void* _expand(void* p, size_t)
+{
+	return p;
+}
+#ifdef UNICODE
+#define _tcsnlen wcsnlen
+#else
+#define _tcsnlen strnlen
+#endif
 
 #ifdef UNICODE
 inline LPTSTR _itot(int value, LPTSTR buf, int radix) { std::wstring s = std::to_wstring(value); wcscpy(buf, s.c_str()); return buf; }

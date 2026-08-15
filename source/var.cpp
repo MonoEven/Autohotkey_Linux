@@ -1,4 +1,4 @@
-﻿/*
+/*
 AutoHotkey
 
 Copyright 2003-2009 Chris Mallett (support@autohotkey.com)
@@ -579,7 +579,10 @@ ResultType Var::AssignString(LPCTSTR aBuf, VarSizeType aLength, bool aExactSize)
 	if (mType == VAR_VIRTUAL)
 	{
 		if (do_assign)
-			return AssignVirtual(ExprTokenType(const_cast<LPTSTR>(aBuf), aLength));
+		{
+			ExprTokenType token(const_cast<LPTSTR>(aBuf), aLength);
+			return AssignVirtual(token);
+		}
 		// Since above didn't return, the caller wants to allocate some temporary memory for
 		// writing the value into, and should call Close() in order to commit the actual value.
 	}
@@ -794,7 +797,7 @@ ResultType Var::AssignSkipAddRef(IObject *aValueToAssign)
 
 	if (mType == VAR_VIRTUAL)
 	{
-		auto result = AssignVirtual(ExprTokenType(aValueToAssign));
+		ExprTokenType token(aValueToAssign); auto result = AssignVirtual(token);
 		aValueToAssign->Release(); // Caller wanted us to take responsibility for this.
 		return result;
 	}
