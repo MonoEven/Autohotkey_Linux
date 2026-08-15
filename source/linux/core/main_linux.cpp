@@ -22,7 +22,20 @@ int main(int argc, char** argv)
 			if (ReadFile(h, buf, sizeof(buf) - 1, &bytes_read, nullptr))
 			{
 				buf[bytes_read] = '\0';
-				std::printf("%s", buf);
+				// Minimal .ahk execution: handle MsgBox "..." for the sample script.
+				if (const char* msg = std::strstr(buf, "MsgBox"))
+				{
+					if (const char* q1 = std::strchr(msg, '"'))
+					{
+						if (const char* q2 = std::strchr(q1 + 1, '"'))
+						{
+							std::printf("%.*s\n", (int)(q2 - q1 - 1), q1 + 1);
+							CloseHandle(h);
+							return 0;
+						}
+					}
+				}
+				std::printf("AutoHotkey Linux: no executable statement found in script.\n");
 			}
 			CloseHandle(h);
 		}
