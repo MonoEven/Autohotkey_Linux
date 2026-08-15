@@ -533,6 +533,8 @@ bool MdFunc::Call(ResultToken &aResultToken, ExprTokenType *aParam[], int aParam
 				result = var->AcceptNewMem(mem_to_free, value.marker_length);
 			else if (value.symbol == SYM_OBJECT)
 				result = var->AssignSkipAddRef(value.object);
+			else if (value.symbol == SYM_MISSING) // Currently all output parameters of this type are expected to be "made blank" even when !g_script.BackCompatMode().
+				result = var->AssignString();
 			else
 				result = var->Assign(value);
 		}
