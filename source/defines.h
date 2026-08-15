@@ -1,4 +1,4 @@
-﻿/*
+/*
 AutoHotkey
 
 Copyright 2003-2009 Chris Mallett (support@autohotkey.com)
@@ -254,7 +254,9 @@ typedef __int64 IntKeyType;
 
 
 struct DECLSPEC_NOVTABLE IObject // L31: Abstract interface for "objects".
+#ifndef __linux__
 	: public IDispatch
+#endif
 {
 	#define IObject_Invoke_PARAMS_DECL \
 		ResultToken &aResultToken, int aFlags, LPTSTR aName, ExprTokenType &aThisToken, ExprTokenType *aParam[], int aParamCount
@@ -266,6 +268,8 @@ struct DECLSPEC_NOVTABLE IObject // L31: Abstract interface for "objects".
 		LPTSTR Type() { return _T(name); }
 	virtual Object *Base() = 0;
 	virtual bool IsOfType(Object *aPrototype) = 0;
+	virtual ULONG AddRef() = 0;
+	virtual ULONG Release() = 0;
 	
 #ifdef CONFIG_DEBUGGER
 	#define IObject_DebugWriteProperty_Def \
@@ -277,6 +281,7 @@ struct DECLSPEC_NOVTABLE IObject // L31: Abstract interface for "objects".
 };
 
 
+#ifndef __linux__
 struct DECLSPEC_NOVTABLE IObjectComCompatible : public IObject
 {
 	STDMETHODIMP QueryInterface(REFIID riid, void **ppv);
@@ -287,6 +292,7 @@ struct DECLSPEC_NOVTABLE IObjectComCompatible : public IObject
 	STDMETHODIMP GetIDsOfNames(REFIID riid, LPOLESTR *rgszNames, UINT cNames, LCID lcid, DISPID *rgDispId);
 	STDMETHODIMP Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams, VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr);
 };
+#endif
 
 
 #ifdef CONFIG_DEBUGGER
@@ -517,7 +523,9 @@ struct ResultToken : public ExprTokenType
 	}
 	ResultType Return(int aValue) { return Return((__int64)aValue); }
 	ResultType Return(UINT aValue) { return Return((__int64)aValue); }
+#ifndef __linux__
 	ResultType Return(DWORD aValue) { return Return((__int64)aValue); }
+#endif
 	ResultType Return(UINT64 aValue) { return Return((__int64)aValue); }
 	ResultType Return(double aValue)
 	{

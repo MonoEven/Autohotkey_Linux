@@ -1,4 +1,4 @@
-﻿/*
+/*
 AutoHotkey
 
 Copyright 2003-2009 Chris Mallett (support@autohotkey.com)
@@ -16,7 +16,11 @@ GNU General Public License for more details.
 
 #include "stdafx.h" // pre-compiled headers
 #include "SimpleHeap.h"
+#ifndef __linux__
 #include "globaldata.h" // for g_script, so that errors can be centrally reported here.
+#else
+#include "linux/core_errors.h" // Minimal Linux error-reporting declarations.
+#endif
 
 // Static member data:
 SimpleHeap *SimpleHeap::sFirst = NULL;

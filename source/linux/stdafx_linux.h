@@ -27,7 +27,10 @@
 // Base integer types
 // ---------------------------------------------------------------------------
 typedef unsigned char      BYTE;
+typedef unsigned char      UCHAR;
 typedef unsigned short     WORD;
+typedef unsigned short     USHORT;
+typedef short              SHORT;
 typedef unsigned int       DWORD;
 typedef unsigned long long QWORD;
 
@@ -38,6 +41,8 @@ typedef long               LONG;
 typedef unsigned long      ULONG;
 typedef long long          LONGLONG;
 typedef unsigned long long ULONGLONG;
+typedef long long          INT64;
+typedef unsigned long long UINT64;
 
 typedef intptr_t           INT_PTR;
 typedef uintptr_t          UINT_PTR;
@@ -49,9 +54,59 @@ typedef ptrdiff_t          SSIZE_T;
 typedef char               CHAR;
 typedef wchar_t            WCHAR;
 typedef float              FLOAT;
+typedef DWORD              COLORREF;
+
+#define RGB(r,g,b)          ((COLORREF)(((BYTE)(r)) | (((WORD)((BYTE)(g))) << 8) | (((DWORD)((BYTE)(b))) << 16)))
+#define GetRValue(rgb)      ((BYTE)(rgb))
+#define GetGValue(rgb)      ((BYTE)(((WORD)(rgb)) >> 8))
+#define GetBValue(rgb)      ((BYTE)((rgb) >> 16))
+
+struct FILETIME
+{
+	DWORD dwLowDateTime;
+	DWORD dwHighDateTime;
+};
+
+struct SYSTEMTIME
+{
+	WORD wYear;
+	WORD wMonth;
+	WORD wDayOfWeek;
+	WORD wDay;
+	WORD wHour;
+	WORD wMinute;
+	WORD wSecond;
+	WORD wMilliseconds;
+};
+
+struct POINT
+{
+	LONG x;
+	LONG y;
+};
+
+struct RECT
+{
+	LONG left;
+	LONG top;
+	LONG right;
+	LONG bottom;
+};
+
+struct ENUMLOGFONTEX
+{
+	// Minimal stub for declarations; fields are not used by the core port yet.
+	BYTE reserved[128];
+};
+
+struct NEWTEXTMETRICEX
+{
+	// Minimal stub for declarations; fields are not used by the core port yet.
+	BYTE reserved[128];
+};
 
 #ifndef __int64
-typedef long long          __int64;
+#define __int64 long long
 #endif
 
 #ifndef TRUE
@@ -61,9 +116,18 @@ typedef long long          __int64;
 #define FALSE 0
 #endif
 
+#define ZeroMemory(dest, len) memset((dest), 0, (len))
+
 #ifndef MAX_PATH
 #define MAX_PATH 260
 #endif
+
+// Code page constants used by TextIO and string conversion.
+#define CP_ACP      0
+#define CP_OEMCP    1
+#define CP_UTF8     65001
+#define CP_UTF16    1200
+#define CP_UTF16BE  1201
 
 // ---------------------------------------------------------------------------
 // Handles / pointers
@@ -123,6 +187,7 @@ typedef long               HRESULT;
 #define CALLBACK
 #define APIENTRY
 #define STDMETHODCALLTYPE
+#define DECLSPEC_NOVTABLE
 
 #ifdef UNICODE
 #define __T(x) L##x
@@ -224,6 +289,15 @@ inline int wcsnicasecmp(const wchar_t* a, const wchar_t* b, size_t n)
 	return 0;
 }
 
+inline float _tstof(const wchar_t* s)
+{
+	return wcstof(s, nullptr);
+}
+inline float _tstof(const char* s)
+{
+	return strtof(s, nullptr);
+}
+
 inline int _isctype(int c, int type)
 {
 	// Minimal implementation: classify ASCII only.
@@ -248,8 +322,23 @@ inline int _isctype(int c, int type)
 #define _istlower(c) iswlower(c)
 
 #define IsCharAlpha(c) iswalpha((wchar_t)(c))
-#define CharLower(c) towlower((wchar_t)(c))
-#define CharUpper(c) towupper((wchar_t)(c))
+
+inline TBYTE CharLower(LPTSTR s)
+{
+	return (TBYTE)towlower((wchar_t)(UINT_PTR)s);
+}
+inline TBYTE CharLower(TBYTE c)
+{
+	return (TBYTE)towlower((wchar_t)c);
+}
+inline TBYTE CharUpper(LPTSTR s)
+{
+	return (TBYTE)towupper((wchar_t)(UINT_PTR)s);
+}
+inline TBYTE CharUpper(TBYTE c)
+{
+	return (TBYTE)towupper((wchar_t)c);
+}
 
 // ---------------------------------------------------------------------------
 // Simple Win32 runtime helpers
@@ -276,14 +365,89 @@ inline DWORD GetTickCount64()
 	return (DWORD)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000L);
 }
 
-#define _alloca alloca
+inline DWORD GetLastError()
+{
+	return 0;
+}
 
-// Code page constants used by TextIO.
-#define CP_ACP      0
-#define CP_OEMCP    1
-#define CP_UTF8     65001
-#define CP_UTF16    1200
-#define CP_UTF16BE  1201
+inline UINT GetACP()
+{
+	return CP_UTF8;
+}
+
+inline int MultiByteToWideChar(UINT aCodePage, DWORD aFlags, LPCSTR aSrc, int aSrcLen, LPWSTR aDst, int aDstLen)
+{
+	// Simplified UTF-8/ANSI -> UTF-16 conversion for the Linux port.
+	if (!aSrc)
+		return 0;
+	if (aSrcLen < 0)
+		aSrcLen = (int)strlen(aSrc) + 1;
+	if (!aDst)
+	{
+		// Return required buffer size (number of wchar_t units).
+		return aSrcLen;
+	}
+	size_t written = 0;
+	for (int i = 0; i < aSrcLen && written < (size_t)aDstLen; ++i)
+	{
+		unsigned char ch = (unsigned char)aSrc[i];
+		if (ch < 0x80)
+		{
+			aDst[written++] = (wchar_t)ch;
+		}
+		else if ((ch & 0xE0) == 0xC0 && i + 1 < aSrcLen)
+		{
+			aDst[written++] = (wchar_t)(((ch & 0x1F) << 6) | (aSrc[++i] & 0x3F));
+		}
+		else if ((ch & 0xF0) == 0xE0 && i + 2 < aSrcLen)
+		{
+			aDst[written++] = (wchar_t)(((ch & 0x0F) << 12) | ((aSrc[i + 1] & 0x3F) << 6) | (aSrc[i + 2] & 0x3F));
+			i += 2;
+		}
+		else
+		{
+			aDst[written++] = (wchar_t)ch;
+		}
+	}
+	return (int)written;
+}
+
+inline int WideCharToMultiByte(UINT aCodePage, DWORD aFlags, LPCWSTR aSrc, int aSrcLen, LPSTR aDst, int aDstLen, LPCSTR aDefaultChar, BOOL* aUsedDefaultChar)
+{
+	// Simplified UTF-16 -> UTF-8/ANSI conversion for the Linux port.
+	if (!aSrc)
+		return 0;
+	if (aSrcLen < 0)
+		aSrcLen = (int)wcslen(aSrc) + 1;
+	if (!aDst)
+	{
+		// Rough upper bound: each wchar becomes at most 3 UTF-8 bytes.
+		return aSrcLen * 3;
+	}
+	size_t written = 0;
+	for (int i = 0; i < aSrcLen && written + 3 < (size_t)aDstLen; ++i)
+	{
+		unsigned int cp = (unsigned int)aSrc[i];
+		if (cp < 0x80)
+		{
+			aDst[written++] = (char)cp;
+		}
+		else if (cp < 0x800)
+		{
+			aDst[written++] = (char)(0xC0 | (cp >> 6));
+			aDst[written++] = (char)(0x80 | (cp & 0x3F));
+		}
+		else
+		{
+			aDst[written++] = (char)(0xE0 | (cp >> 12));
+			aDst[written++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+			aDst[written++] = (char)(0x80 | (cp & 0x3F));
+		}
+	}
+	return (int)written;
+}
+
+#define _alloca alloca
 
 // Placeholder for codepage info; expanded as needed.
 struct CPINFO

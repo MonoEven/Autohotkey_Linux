@@ -1,4 +1,4 @@
-﻿/*
+/*
 AutoHotkey
 
 Copyright 2003-2009 Chris Mallett (support@autohotkey.com)
@@ -702,8 +702,10 @@ __int64 FileTimeSecondsUntil(FILETIME *pftStart, FILETIME *pftEnd);
 SymbolType IsNumeric(LPCTSTR aBuf, BOOL aAllowNegative = false // BOOL vs. bool might squeeze a little more performance out of this frequently-called function.
 	, BOOL aAllowAllWhitespace = true, BOOL aAllowFloat = false, BOOL aAllowImpure = false);
 
+#ifndef __linux__
 void strlcpy(LPSTR aDst, LPCSTR aSrc, size_t aDstSize);
 void wcslcpy(LPWSTR aDst, LPCWSTR aSrc, size_t aDstSize);
+#endif
 #ifdef UNICODE
 #define tcslcpy wcslcpy
 #else

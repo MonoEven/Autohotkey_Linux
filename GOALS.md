@@ -44,6 +44,7 @@ M2：核心解释器 Linux 编译。
 
 - [x] 创建 `source/linux/stdafx_linux.h` Win32 兼容头（初版）
 - [x] 调整 `stdafx.h` 在 Linux 下加载兼容层
-- [x] 添加可选 CMake target `ahk_core`，当前可编译 `ahkversion.cpp` + Linux `main` stub
-- [ ] 为 `hook.h`/`script.h` 等平台相关头提供 Linux 桩类型，逐步加入 `SimpleHeap.cpp`
+- [x] 添加可选 CMake target `ahk_core`，当前可编译 `ahkversion.cpp` + `SimpleHeap.cpp` + Linux `main` stub
+- [x] 通过 `source/linux/core_errors.h` 解耦 `SimpleHeap.cpp` 对 `globaldata.h` 的依赖
+- [ ] 继续为其他核心模块（util/var/script 等）解耦平台依赖
 - [ ] 逐文件修复编译错误

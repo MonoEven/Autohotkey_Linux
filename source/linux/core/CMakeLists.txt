@@ -5,6 +5,8 @@
 
 add_executable(ahk_core
     ../../ahkversion.cpp
+    ../../SimpleHeap.cpp
+    core_stubs.cpp
     main_linux.cpp
 )
 
