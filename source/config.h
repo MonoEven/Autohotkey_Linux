@@ -6,8 +6,8 @@
 #define WIN32_PLATFORM
 #endif
 
-#ifdef _MSC_VER
-	#if defined(WIN32_PLATFORM) || defined(_WIN64)
+#if defined(_MSC_VER) || defined(__linux__)
+	#if defined(WIN32_PLATFORM) || defined(_WIN64) || defined(__linux__)
 	#define ENABLE_DLLCALL
 	#define ENABLE_REGISTERCALLBACK
 	#endif

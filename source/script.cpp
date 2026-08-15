@@ -1,4 +1,4 @@
-﻿/*
+/*
 AutoHotkey
 
 Copyright 2003-2009 Chris Mallett (support@autohotkey.com)
@@ -1787,7 +1787,7 @@ ResultType Script::LoadIncludedFile(TextStream *fp, int aFileIndex)
 process_completed_line:
 		// buf_length can't be -1 (though next_buf_length can) because outer loop's condition prevents it:
 		if (!buf_length) // Done only after the line number increments above so that the physical line number is properly tracked.
-			goto continue_main_loop; // In lieu of "continue", for performance.
+			continue; // In lieu of "continue", for performance.
 
 		// Since neither of the above executed, or they did but didn't "continue",
 		// buf now contains a non-commented line, either by itself or built from
@@ -2028,7 +2028,7 @@ process_completed_line:
 					{
 						// This is valid remap syntax but the source key doesn't exist on the current keyboard layout.
 						// A warning has already been shown.
-						goto continue_main_loop;
+						continue;
 					}
 					else
 					{
@@ -2178,7 +2178,7 @@ process_completed_line:
 						);
 						if (!define_remap_func()) // define the "up" function.
 							return FAIL;
-						goto continue_main_loop;
+						continue;
 					}
 					// Since above didn't goto this is not a remap after all:
 				}
@@ -2257,7 +2257,7 @@ process_completed_line:
 					, hotstring_start, hotstring_execute || hotkey_uses_otb ? _T("") : hotkey_flag, has_continuation_section))
 					return FAIL;
 				if (!mLastHotFunc)
-					goto continue_main_loop;
+					continue;
 			}
 			else // It's a hotkey vs. hotstring.
 			{
@@ -2355,7 +2355,7 @@ process_completed_line:
 					}
 				}
 			}
-			goto continue_main_loop; // In lieu of "continue", for performance.
+			continue; // In lieu of "continue", for performance.
 		} // if (hotkey_flag && hotkey_flag > buf)
 
 		// Otherwise, not a hotkey or hotstring.  Check if it's a generic, non-hotkey label:
@@ -2387,7 +2387,7 @@ process_completed_line:
 					if (!AddLabel(buf, false))
 						return FAIL;
 				}
-				goto continue_main_loop; // In lieu of "continue", for performance.
+				continue; // In lieu of "continue", for performance.
 			}
 		}
 		// Since above didn't "goto", it's not a label.
@@ -2409,7 +2409,7 @@ process_completed_line:
 				// hundreds of calls to ScriptError() and LineError():
 				mCurrFileIndex = source_file_index;
 				mCombinedLineNumber = saved_line_number;
-				goto continue_main_loop; // In lieu of "continue", for performance.
+				continue; // In lieu of "continue", for performance.
 			case FAIL: // IsDirective() already displayed the error.
 				return FAIL;
 			//case CONDITION_FALSE: Do nothing; let processing below handle it.
@@ -2461,7 +2461,7 @@ process_completed_line:
 				mCurrLine = NULL;  // To signify that we're in transition, trying to load a new line.
 				goto process_completed_line; // Have the main loop process the contents of "buf" as though it came in from the script.
 			}
-			goto continue_main_loop; // It's just a naked "{" or "}", so no more processing needed for this line.
+			continue; // It's just a naked "{" or "}", so no more processing needed for this line.
 		}
 
 		// Handle this first so that GetLineContExpr() doesn't need to detect it for OTB exclusion:
@@ -2473,7 +2473,7 @@ process_completed_line:
 				return ScriptError(ERR_MISSING_OPEN_BRACE, buf);
 			if (!DefineClass(class_name))
 				return FAIL;
-			goto continue_main_loop;
+			continue;
 		}
 
 		// Aside from goto/break/continue, anything not already handled above is either an expression
@@ -2495,7 +2495,7 @@ process_completed_line:
 					dot[1] = *buf; // Replace the x in property.xet(params).
 					if (!DefineClassPropertyXet(buf, cp))
 						return FAIL;
-					goto continue_main_loop;
+					continue;
 				}
 			}
 			return ScriptError(ERR_INVALID_LINE_IN_PROPERTY_DEF, buf);
@@ -2517,7 +2517,7 @@ process_completed_line:
 			{
 				if (!DefineFunc(id, is_static))
 					return FAIL;
-				goto continue_main_loop;
+				continue;
 			}
 			for (cp = id; IS_IDENTIFIER_CHAR(*cp) || *cp == '.'; ++cp);
 			if (cp > id) // i.e. buf begins with an identifier.
@@ -2527,7 +2527,7 @@ process_completed_line:
 				{
 					if (!DefineClassVars(id, is_static))
 						return FAIL;
-					goto continue_main_loop;
+					continue;
 				}
 				if (!*cp || *cp == '[' || *cp == '{' || (*cp == '=' && cp[1] == '>')) // Property or invalid.
 				{
@@ -2539,7 +2539,7 @@ process_completed_line:
 							return ScriptError(ERR_UNRECOGNIZED_ACTION, buf); // Vague message because user's intention is unknown.
 						RemoveBufChar0(next_buf, next_buf_length);
 					}
-					goto continue_main_loop;
+					continue;
 				}
 			}
 			// Anything not already handled above is not valid directly inside a class definition.
@@ -2549,7 +2549,7 @@ process_completed_line:
 		{
 			if (!DefineFunc(buf))
 				return FAIL;
-			goto continue_main_loop;
+			continue;
 		}
 
 		// Parse the command, assignment or expression, including any same-line open brace or sub-action
@@ -2558,7 +2558,6 @@ process_completed_line:
 		if (!ParseAndAddLine(buf))
 			return FAIL;
 
-continue_main_loop: // This method is used in lieu of "continue" for performance and code size reduction.
 		// Since above didn't "continue", resume loading script line by line:
 		swap(buf.p, next_buf.p);
 		swap(buf.size, next_buf.size);
@@ -3885,7 +3884,7 @@ inline ResultType Script::IsDirective(LPTSTR aBuf)
 						return CONDITION_TRUE;
 					
 					for (end = cp; *end && !IS_SPACE_OR_TAB(*end); ++end);
-					tcslcpy(word, cp, min(_countof(word), end - cp + 1));
+					tcslcpy(word, cp, min((size_t)_countof(word), (size_t)(end - cp + 1)));
 
 					// Allow these words when appropriate: 32-bit, 64-bit
 					if (!_tcsicmp(word, _T(AHK_BIT)))

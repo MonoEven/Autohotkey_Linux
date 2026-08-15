@@ -1746,6 +1746,92 @@ inline BOOL PeekMessage(MSG*, HWND, UINT, UINT, UINT)
 {
 	return FALSE;
 }
+// More script.cpp stubs: registry enumeration, process creation, shell execute.
+#define KEY_ENUMERATE_SUB_KEYS 0x0008
+#define ERROR_FILE_NOT_FOUND   2
+#define ERROR_PATH_NOT_FOUND   3
+#define MF_CHECKED   0x0008
+#define MF_UNCHECKED 0x0000
+#define STARTF_USESHOWWINDOW 0x00000001
+#define SEE_MASK_NOCLOSEPROCESS 0x00000040
+#define SEE_MASK_FLAG_NO_UI     0x00000400
+#define SEE_MASK_INVOKEIDLIST   0x0000000C
+
+inline BOOL CheckMenuItem(HMENU, UINT, UINT)
+{
+	return TRUE;
+}
+inline int GetWindowText(HWND, LPTSTR, int)
+{
+	return 0;
+}
+inline DWORD GetShortPathName(LPCTSTR, LPTSTR, DWORD)
+{
+	return 0;
+}
+
+struct STARTUPINFO
+{
+	DWORD cb;
+	LPTSTR lpReserved;
+	LPTSTR lpDesktop;
+	LPTSTR lpTitle;
+	DWORD dwX;
+	DWORD dwY;
+	DWORD dwXSize;
+	DWORD dwYSize;
+	DWORD dwXCountChars;
+	DWORD dwYCountChars;
+	DWORD dwFillAttribute;
+	DWORD dwFlags;
+	WORD wShowWindow;
+	WORD cbReserved2;
+	BYTE* lpReserved2;
+	HANDLE hStdInput;
+	HANDLE hStdOutput;
+	HANDLE hStdError;
+};
+
+struct SHELLEXECUTEINFO
+{
+	DWORD cbSize;
+	UINT fMask;
+	HWND hwnd;
+	LPCTSTR lpVerb;
+	LPCTSTR lpFile;
+	LPCTSTR lpParameters;
+	LPCTSTR lpDirectory;
+	int nShow;
+	HINSTANCE hInstApp;
+	void* lpIDList;
+	LPCTSTR lpClass;
+	HKEY hkeyClass;
+	DWORD dwHotKey;
+	HANDLE hIcon;
+	HANDLE hProcess;
+};
+
+inline BOOL CreateProcess(LPCTSTR, LPTSTR, void*, void*, BOOL, DWORD, void*, LPCTSTR, STARTUPINFO*, PROCESS_INFORMATION*)
+{
+	return FALSE;
+}
+inline BOOL ShellExecuteEx(SHELLEXECUTEINFO*)
+{
+	return FALSE;
+}
+
+inline LONG RegQueryInfoKey(HKEY, LPTSTR, DWORD*, DWORD*, DWORD*, DWORD*, DWORD*, DWORD*, DWORD*, DWORD*, DWORD*, FILETIME*)
+{
+	return ERROR_SUCCESS;
+}
+inline LONG RegEnumValue(HKEY, DWORD, LPTSTR, DWORD*, DWORD*, DWORD*, BYTE*, DWORD*)
+{
+	return ERROR_SUCCESS;
+}
+inline LONG RegEnumKeyEx(HKEY, DWORD, LPTSTR, DWORD*, DWORD*, LPTSTR, DWORD*, FILETIME*)
+{
+	return ERROR_SUCCESS;
+}
 
 #ifdef UNICODE
 inline LPTSTR _itot(int value, LPTSTR buf, int radix) { std::wstring s = std::to_wstring(value); wcscpy(buf, s.c_str()); return buf; }

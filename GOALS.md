@@ -61,4 +61,5 @@ M2：核心解释器 Linux 编译。
 - [x] var.cpp 已能在 Linux 下编译（链接仍需更多核心模块）
 - [x] util.cpp 已能在 Linux 下编译并链接进 ahk_core
 - [x] error.cpp 已能在 Linux 下编译（链接仍需更多核心模块）
+- [x] script.cpp 已能在 Linux 下编译（链接仍需更多核心模块）
 - [ ] 逐文件修复编译错误
