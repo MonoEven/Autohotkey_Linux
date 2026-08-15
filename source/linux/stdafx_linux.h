@@ -249,6 +249,27 @@ struct NEWTEXTMETRICEX
 #define CP_UTF16    1200
 #define CP_UTF16BE  1201
 
+// Clipboard / dialog / registry constants needed by headers.
+#define CF_UNICODETEXT 13
+#define WC_NO_BEST_FIT_CHARS 0x00000400
+#define IDCANCEL 2
+#define VOID void
+#define ERROR_SUCCESS 0
+
+#define REG_NONE                     0
+#define REG_SZ                       1
+#define REG_EXPAND_SZ                2
+#define REG_BINARY                   3
+#define REG_DWORD                    4
+#define REG_DWORD_BIG_ENDIAN         5
+#define REG_LINK                     6
+#define REG_MULTI_SZ                 7
+#define REG_RESOURCE_LIST            8
+#define REG_FULL_RESOURCE_DESCRIPTOR 9
+#define REG_RESOURCE_REQUIREMENTS_LIST 10
+#define REG_QWORD                    11
+#define KEY_WOW64_32KEY              0x0200
+
 // ---------------------------------------------------------------------------
 // Handles / pointers
 // ---------------------------------------------------------------------------
@@ -271,6 +292,7 @@ typedef void*              HPEN;
 typedef void*              HRGN;
 typedef void*              HRAWINPUT;
 typedef void*              HACCEL;
+typedef void*              HGLOBAL;
 #define INVALID_HANDLE_VALUE ((HANDLE)(LONG_PTR)-1)
 
 typedef void*              LPVOID;
@@ -518,6 +540,28 @@ inline HKL GetKeyboardLayout(DWORD)
 {
 	return nullptr;
 }
+
+inline int MulDiv(int nNumber, int nNumerator, int nDenominator)
+{
+	return (int)((long long)nNumber * nNumerator / nDenominator);
+}
+
+inline LONG RegConnectRegistry(LPCWSTR, HKEY, HKEY*)
+{
+	return ERROR_SUCCESS;
+}
+
+#ifdef UNICODE
+inline LPTSTR _itot(int value, LPTSTR buf, int radix) { swprintf(buf, L"%d", value); return buf; }
+inline LPTSTR _i64tot(__int64 value, LPTSTR buf, int radix) { swprintf(buf, L"%lld", (long long)value); return buf; }
+inline LPTSTR _ultot(unsigned long value, LPTSTR buf, int radix) { swprintf(buf, L"%lu", value); return buf; }
+inline LPTSTR _ui64tot(unsigned long long value, LPTSTR buf, int radix) { swprintf(buf, L"%llu", value); return buf; }
+#else
+inline LPTSTR _itot(int value, LPTSTR buf, int radix) { sprintf(buf, "%d", value); return buf; }
+inline LPTSTR _i64tot(__int64 value, LPTSTR buf, int radix) { sprintf(buf, "%lld", (long long)value); return buf; }
+inline LPTSTR _ultot(unsigned long value, LPTSTR buf, int radix) { sprintf(buf, "%lu", value); return buf; }
+inline LPTSTR _ui64tot(unsigned long long value, LPTSTR buf, int radix) { sprintf(buf, "%llu", value); return buf; }
+#endif
 
 inline UINT GetACP()
 {
