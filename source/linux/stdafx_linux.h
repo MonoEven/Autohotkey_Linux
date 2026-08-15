@@ -1158,6 +1158,111 @@ inline HWND FindWindow(LPCTSTR, LPCTSTR)
 {
 	return nullptr;
 }
+// Image / GDI+ stubs for util.cpp.
+#define _In_
+#define WINGDIPAPI
+
+#define IMAGE_BITMAP 0
+#define IMAGE_ICON   1
+#define IMAGE_CURSOR 2
+
+#define LR_LOADFROMFILE     0x0010
+#define LR_CREATEDIBSECTION 0x00002000
+#define LR_COPYRETURNORG    0x0004
+#define LR_COPYDELETEORG    0x0008
+#define LOAD_LIBRARY_AS_DATAFILE 0x00000002
+
+typedef void* LPSTREAM;
+typedef ULONG_PTR OLE_HANDLE;
+
+struct IPicture;
+struct BITMAP
+{
+	LONG bmType;
+	LONG bmWidth;
+	LONG bmHeight;
+	LONG bmWidthBytes;
+	WORD bmPlanes;
+	WORD bmBitsPixel;
+	LPVOID bmBits;
+};
+struct ICONINFO
+{
+	BOOL fIcon;
+	DWORD xHotspot;
+	DWORD yHotspot;
+	HBITMAP hbmMask;
+	HBITMAP hbmColor;
+};
+
+inline HMODULE LoadLibrary(LPCTSTR)
+{
+	return nullptr;
+}
+inline HMODULE LoadLibraryEx(LPCTSTR, HANDLE, DWORD)
+{
+	return nullptr;
+}
+inline BOOL FreeLibrary(HMODULE)
+{
+	return TRUE;
+}
+inline void* GetProcAddress(HMODULE, LPCSTR)
+{
+	return nullptr;
+}
+inline HANDLE LoadImage(HINSTANCE, LPCTSTR, UINT, int, int, UINT)
+{
+	return nullptr;
+}
+inline HANDLE CopyImage(HANDLE, UINT, int, int, UINT)
+{
+	return nullptr;
+}
+inline BOOL GetIconInfo(HICON, ICONINFO*)
+{
+	return FALSE;
+}
+inline BOOL DestroyIcon(HICON)
+{
+	return TRUE;
+}
+inline HICON CreateIconIndirect(ICONINFO*)
+{
+	return nullptr;
+}
+inline int GetObject(HANDLE, int, LPVOID)
+{
+	return 0;
+}
+inline BOOL EnumResourceNames(HMODULE, LPCTSTR, void*, LPARAM)
+{
+	return FALSE;
+}
+
+#define FAILED(hr) ((HRESULT)(hr) < 0)
+inline HRESULT CreateStreamOnHGlobal(HGLOBAL, BOOL, LPSTREAM*)
+{
+	return (HRESULT)0x80004005L;
+}
+inline HRESULT OleLoadPicture(LPSTREAM, LONG, BOOL, const void*, void**)
+{
+	return (HRESULT)0x80004005L;
+}
+
+namespace Gdiplus
+{
+	enum Status { Ok = 0 };
+	struct GdiplusStartupInput
+	{
+		DWORD GdiplusVersion;
+		DWORD DebugEventCallback;
+		BOOL SuppressBackgroundThread;
+		BOOL SuppressExternalCodecs;
+	};
+	typedef void* GpBitmap;
+	typedef void* GpImage;
+}
 
 #ifdef UNICODE
 inline LPTSTR _itot(int value, LPTSTR buf, int radix) { std::wstring s = std::to_wstring(value); wcscpy(buf, s.c_str()); return buf; }
