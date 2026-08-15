@@ -35,6 +35,7 @@ typedef unsigned int       DWORD;
 typedef unsigned long long QWORD;
 
 typedef int                BOOL;
+typedef unsigned char      BOOLEAN;
 typedef int                INT;
 typedef unsigned int       UINT;
 typedef long               LONG;
@@ -154,6 +155,9 @@ typedef void*              HACCEL;
 
 typedef void*              LPVOID;
 typedef const void*        LPCVOID;
+typedef void*              PVOID;
+typedef char*              PSTR;
+typedef wchar_t*           PWSTR;
 
 #ifdef UNICODE
 typedef wchar_t            TCHAR;
@@ -188,6 +192,7 @@ typedef long               HRESULT;
 #define APIENTRY
 #define STDMETHODCALLTYPE
 #define DECLSPEC_NOVTABLE
+#define __stdcall
 
 #ifdef UNICODE
 #define __T(x) L##x
