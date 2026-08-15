@@ -259,7 +259,7 @@ LPTSTR Line::ExpandExpression(int aArgIndex, ResultType &aResult, ResultToken *a
 							result_to_return = NULL;
 							goto normal_end_skip_output_var;
 						}
-						if (!this_token.var->IsUninitializedAliasFor())
+						if (!this_token.var->IsUninitialized())
 							goto push_this_token;
 						// Otherwise, the module executed but the imported var is unset.
 					}

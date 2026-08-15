@@ -1423,6 +1423,8 @@ ResultType Var::SelfInitialize()
 			ASSERT(dynamic_cast<ScriptModule*>(var.mObject));
 			mod = (ScriptModule*)var.mObject;
 			cur = var.mAliasFor;
+			if (cur->IsAlias())
+				var.mAliasFor = cur->mAliasFor; // Flatten multi-level alias.
 		}
 		else
 		{
