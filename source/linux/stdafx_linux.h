@@ -1422,7 +1422,7 @@ struct MONITORINFOEX
 #define EN_MSGFILTER    0x0700
 #define EN_REQUESTRESIZE 0x0701
 #define EN_LINK         0x070B
-#define IDCONTINUE      4
+#define IDCONTINUE      11
 #define DM_SETDEFID     0x0401
 #define SB_VERT         1
 #define SB_HORZ         0
@@ -1933,6 +1933,217 @@ inline BOOL GetCursorPos(POINT*)
 inline BOOL GetMonitorInfo(HMONITOR, MONITORINFO*)
 {
 	return FALSE;
+}
+// Additional script2 stubs: key state, tooltips, image lists, joystick.
+#define MONITOR_DEFAULTTONEAREST 2
+inline HMONITOR MonitorFromPoint(POINT, DWORD)
+{
+	return nullptr;
+}
+inline HWND WindowFromPoint(POINT)
+{
+	return nullptr;
+}
+inline BOOL EnumChildWindows(HWND, void*, LPARAM)
+{
+	return FALSE;
+}
+inline BOOL IsWindowEnabled(HWND)
+{
+	return FALSE;
+}
+inline DWORD GetCurrentDirectory(DWORD, LPTSTR)
+{
+	return 0;
+}
+
+#define TTM_ADJUSTRECT     (WM_USER + 31)
+#define TTM_SETMAXTIPWIDTH (WM_USER + 24)
+#define TTM_TRACKPOSITION  (WM_USER + 18)
+#define TTM_TRACKACTIVATE  (WM_USER + 17)
+#define TTM_UPDATETIPTEXT  (WM_USER + 57)
+
+#define ILC_MASK   0x0001
+#define ILC_COLOR32 0x0020
+inline void* ImageList_Create(int, int, UINT, int, int)
+{
+	return nullptr;
+}
+inline BOOL ImageList_Destroy(void*)
+{
+	return TRUE;
+}
+inline BOOL ImageList_GetIconSize(void*, int*, int*)
+{
+	return FALSE;
+}
+inline int ImageList_AddMasked(void*, HBITMAP, COLORREF)
+{
+	return -1;
+}
+inline int ImageList_AddIcon(void*, HICON)
+{
+	return -1;
+}
+
+inline SHORT GetAsyncKeyState(int)
+{
+	return 0;
+}
+inline SHORT GetKeyState(int)
+{
+	return 0;
+}
+
+struct JOYCAPS
+{
+	WORD wMid;
+	WORD wPid;
+	TCHAR szPname[32];
+	UINT wXmin;
+	UINT wXmax;
+	UINT wYmin;
+	UINT wYmax;
+	UINT wZmin;
+	UINT wZmax;
+	UINT wNumButtons;
+	UINT wPeriodMin;
+	UINT wPeriodMax;
+	UINT wRmin;
+	UINT wRmax;
+	UINT wUmin;
+	UINT wUmax;
+	UINT wVmin;
+	UINT wVmax;
+	UINT wCaps;
+	UINT wMaxAxes;
+	UINT wNumAxes;
+	UINT wMaxButtons;
+	TCHAR szRegKey[32];
+	TCHAR szOEMVxD[32];
+};
+struct JOYINFOEX
+{
+	DWORD dwSize;
+	DWORD dwFlags;
+	DWORD dwXpos;
+	DWORD dwYpos;
+	DWORD dwZpos;
+	DWORD dwRpos;
+	DWORD dwUpos;
+	DWORD dwVpos;
+	DWORD dwButtons;
+	DWORD dwButtonNumber;
+	DWORD dwPOV;
+	DWORD dwReserved1;
+	DWORD dwReserved2;
+};
+#define JOYERR_NOERROR 0
+#define JOY_RETURNALL  0x000000FF
+#define JOY_POVCENTERED 0xFFFF
+#define JOYCAPS_HASZ   0x0001
+#define JOYCAPS_HASR   0x0002
+#define JOYCAPS_HASU   0x0004
+#define JOYCAPS_HASV   0x0008
+#define JOYCAPS_HASPOV 0x0010
+#define JOYCAPS_POV4DIR 0x0020
+#define JOYCAPS_POVCTS  0x0040
+inline UINT joyGetDevCaps(UINT, JOYCAPS*, UINT)
+{
+	return JOYERR_NOERROR;
+}
+inline UINT joyGetPosEx(UINT, JOYINFOEX*)
+{
+	return JOYERR_NOERROR;
+}
+
+inline BOOL IsCharAlphaNumeric(TCHAR)
+{
+	return FALSE;
+}
+inline BOOL IsCharLower(TCHAR)
+{
+	return FALSE;
+}
+#define MAXINT_PTR INTPTR_MAX
+// File dialog COM stubs for script2.cpp.
+#define CLSCTX_INPROC_SERVER 0x1
+#define CLSID_FileOpenDialog nullptr
+#define CLSID_FileSaveDialog nullptr
+#define IID_PPV_ARGS(pp) ((const void*)nullptr), ((void**)(pp))
+#define SIGDN_FILESYSPATH 0x80058000
+#define ERROR_CANCELLED 1223
+#define HRESULT_FROM_WIN32(x) ((HRESULT)(((x) & 0xFFFF) | 0x80070000))
+
+#define FOS_OVERWRITEPROMPT   0x00000002
+#define FOS_CREATEPROMPT      0x00000008
+#define FOS_PATHMUSTEXIST     0x00000020
+#define FOS_FILEMUSTEXIST     0x00000010
+#define FOS_NODEREFERENCELINKS 0x00000040
+#define FOS_PICKFOLDERS       0x00000020
+#define FOS_ALLOWMULTISELECT  0x00000200
+#define FOS_NOCHANGEDIR       0x00000008
+
+struct COMDLG_FILTERSPEC
+{
+	LPCWSTR pszName;
+	LPCWSTR pszSpec;
+};
+
+struct IShellItem
+{
+	void Release() {}
+	HRESULT GetDisplayName(DWORD, LPWSTR*)
+	{
+		return (HRESULT)0x80004005L;
+	}
+};
+
+struct IShellItemArray
+{
+	void Release() {}
+	HRESULT GetCount(DWORD*)
+	{
+		return (HRESULT)0x80004005L;
+	}
+	HRESULT GetItemAt(DWORD, IShellItem**)
+	{
+		return (HRESULT)0x80004005L;
+	}
+};
+
+struct IFileDialog
+{
+	void Release() {}
+	HRESULT SetOptions(DWORD) { return (HRESULT)0x80004005L; }
+	HRESULT SetTitle(LPCWSTR) { return (HRESULT)0x80004005L; }
+	HRESULT SetFileTypes(UINT, const COMDLG_FILTERSPEC*) { return (HRESULT)0x80004005L; }
+	HRESULT SetFileName(LPCWSTR) { return (HRESULT)0x80004005L; }
+	HRESULT SetFolder(IShellItem*) { return (HRESULT)0x80004005L; }
+	HRESULT Show(HWND) { return (HRESULT)0x80004005L; }
+	HRESULT GetResult(IShellItem**) { return (HRESULT)0x80004005L; }
+	template<typename T>
+	HRESULT QueryInterface(T**)
+	{
+		return (HRESULT)0x80004005L;
+	}
+};
+
+struct IFileOpenDialog : IFileDialog
+{
+	HRESULT GetResults(IShellItemArray**)
+	{
+		return (HRESULT)0x80004005L;
+	}
+};
+
+inline HRESULT CoCreateInstance(const void*, void*, DWORD, const void*, void**)
+{
+	return (HRESULT)0x80004005L;
+}
+inline HRESULT SHCreateItemFromParsingName(LPCWSTR, void*, const void*, void**)
+{
+	return (HRESULT)0x80004005L;
 }
 
 inline LONG RegQueryInfoKey(HKEY, LPTSTR, DWORD*, DWORD*, DWORD*, DWORD*, DWORD*, DWORD*, DWORD*, DWORD*, DWORD*, FILETIME*)

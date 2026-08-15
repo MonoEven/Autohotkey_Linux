@@ -1,4 +1,4 @@
-﻿/*
+/*
 AutoHotkey
 
 Copyright 2003-2009 Chris Mallett (support@autohotkey.com)
@@ -1827,6 +1827,7 @@ FResult SetToggleState(vk_type aVK, ToggleValueType &ForceLock, optl<StrArg> aTo
 
 ResultType GetObjectIntProperty(IObject *aObject, LPTSTR aPropName, __int64 &aValue, ResultToken &aResultToken, bool aOptional)
 {
+	ExprTokenType object_token(aObject);
 	FuncResult result_token;
 	ExprTokenType this_token = aObject;
 
@@ -1844,7 +1845,7 @@ ResultType GetObjectIntProperty(IObject *aObject, LPTSTR aPropName, __int64 &aVa
 			return aResultToken.Error(ERR_TYPE_MISMATCH, aPropName, ErrorPrototype::Type);
 		//aValue = 0; // Caller should set default value for these cases.
 		if (!aOptional)
-			return aResultToken.UnknownMemberError(ExprTokenType(aObject), IT_GET, aPropName);
+			return aResultToken.UnknownMemberError(object_token, IT_GET, aPropName);
 		return result; // Let caller know it wasn't found.
 	}
 
@@ -1854,6 +1855,7 @@ ResultType GetObjectIntProperty(IObject *aObject, LPTSTR aPropName, __int64 &aVa
 
 ResultType SetObjectIntProperty(IObject *aObject, LPTSTR aPropName, __int64 aValue, ResultToken &aResultToken)
 {
+	ExprTokenType object_token(aObject);
 	FuncResult result_token;
 	ExprTokenType this_token = aObject, value_token = aValue, *param = &value_token;
 
@@ -1863,12 +1865,13 @@ ResultType SetObjectIntProperty(IObject *aObject, LPTSTR aPropName, __int64 aVal
 	if (result == FAIL || result == EARLY_EXIT)
 		return aResultToken.SetExitResult(result);
 	if (result == INVOKE_NOT_HANDLED)
-		return aResultToken.UnknownMemberError(ExprTokenType(aObject), IT_GET, aPropName);
+		return aResultToken.UnknownMemberError(object_token, IT_GET, aPropName);
 	return OK;
 }
 
 ResultType GetObjectPtrProperty(IObject *aObject, LPTSTR aPropName, UINT_PTR &aPtr, ResultToken &aResultToken, bool aOptional)
 {
+	ExprTokenType object_token(aObject);
 	__int64 value = NULL;
 	auto result = GetObjectIntProperty(aObject, aPropName, value, aResultToken, aOptional);
 	aPtr = (UINT_PTR)value;
@@ -2119,7 +2122,7 @@ BIF_DECL(BIF_IsTypeish)
 			// Do not permit pure numbers for the other functions, since the results would not be intuitive.
 			// For instance, isAlnum() would return false for negative values due to '-'; isXDigit() would
 			// return true for positive integers even though they are always in decimal.
-			goto type_mismatch;
+			_f_throw_param(0, _T("String"));
 		}
 	case SYM_FLOAT:
 		switch (variable_type)
@@ -2133,7 +2136,7 @@ BIF_DECL(BIF_IsTypeish)
 			// A function like isWholeNumber() could be added if that was needed.
 			_f_return_b(false);
 		default:
-			goto type_mismatch;
+			_f_throw_param(0, _T("String"));
 		}
 	case SYM_OBJECT:
 		switch (variable_type)
@@ -2143,7 +2146,7 @@ BIF_DECL(BIF_IsTypeish)
 		case VAR_TYPE_FLOAT:
 			_f_return_b(false);
 		default:
-			goto type_mismatch;
+			_f_throw_param(0, _T("String"));
 		}
 	}
 	// Since above did not return or goto, the value is a string.
@@ -2252,7 +2255,6 @@ BIF_DECL(BIF_IsTypeish)
 	}
 	_f_return_b(if_condition);
 
-type_mismatch:
 	_f_throw_param(0, _T("String"));
 }
 
@@ -3619,6 +3621,7 @@ FResult ValidateFunctor(IObject *aFunc, int aParamCount, int *aMinParams, bool a
 ResultType ValidateFunctor(IObject *aFunc, int aParamCount, ResultToken &aResultToken, int *aUseMinParams, bool aShowError)
 {
 	ASSERT(aFunc);
+	ExprTokenType func_token(aFunc);
 	__int64 min_params = 0, max_params = INT_MAX;
 	auto min_result = aParamCount == -1 ? INVOKE_NOT_HANDLED
 		: GetObjectIntProperty(aFunc, _T("MinParams"), min_params, aResultToken, true);
@@ -3628,7 +3631,7 @@ ResultType ValidateFunctor(IObject *aFunc, int aParamCount, ResultToken &aResult
 	if (aUseMinParams) // CallbackCreate's signal to default to MinParams.
 	{
 		if (!has_minparams)
-			return aShowError ? aResultToken.UnknownMemberError(ExprTokenType(aFunc), IT_GET, _T("MinParams")) : CONDITION_FALSE;
+			return aShowError ? aResultToken.UnknownMemberError(func_token, IT_GET, _T("MinParams")) : CONDITION_FALSE;
 		*aUseMinParams = aParamCount = (int)min_params;
 	}
 	else if (has_minparams && aParamCount < (int)min_params)
@@ -3653,7 +3656,7 @@ ResultType ValidateFunctor(IObject *aFunc, int aParamCount, ResultToken &aResult
 	if (min_result == INVOKE_NOT_HANDLED && max_result == INVOKE_NOT_HANDLED)
 		if (Object *obj = dynamic_cast<Object *>(aFunc))
 			if (!obj->HasMethod(_T("Call")))
-				return aShowError ? aResultToken.UnknownMemberError(ExprTokenType(aFunc), IT_CALL, _T("Call")) : CONDITION_FALSE;
+				return aShowError ? aResultToken.UnknownMemberError(func_token, IT_CALL, _T("Call")) : CONDITION_FALSE;
 		// Otherwise: COM objects can be callable via DISPID_VALUE.  There's probably
 		// no way to determine whether the object supports that without invoking it.
 	return OK;
