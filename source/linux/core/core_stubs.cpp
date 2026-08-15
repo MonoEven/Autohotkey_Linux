@@ -137,11 +137,6 @@ ResultType ResultToken::ValueError(LPCTSTR)
 	return FAIL;
 }
 
-__int64 istrtoi64(const wchar_t *, const wchar_t **)
-{
-	return 0;
-}
-
 void Object::Variant::Free()
 {
 }

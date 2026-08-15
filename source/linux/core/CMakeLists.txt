@@ -9,6 +9,7 @@ add_executable(ahk_core
     ../../StringConv.cpp
     ../../globaldata.cpp
     ../../TextIO.cpp
+    ../../util.cpp
     core_stubs.cpp
     main_linux.cpp
 )

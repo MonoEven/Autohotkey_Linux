@@ -1172,10 +1172,12 @@ inline HWND FindWindow(LPCTSTR, LPCTSTR)
 #define LR_COPYDELETEORG    0x0008
 #define LOAD_LIBRARY_AS_DATAFILE 0x00000002
 
-typedef void* LPSTREAM;
+typedef ULONG_PTR OLE_HANDLE;
+struct IStream { void Release() {} };
+typedef IStream* LPSTREAM;
 typedef ULONG_PTR OLE_HANDLE;
 
-struct IPicture;
+struct IPicture { void Release() {} void get_Handle(OLE_HANDLE*) {} };
 struct BITMAP
 {
 	LONG bmType;
@@ -1262,6 +1264,117 @@ namespace Gdiplus
 	};
 	typedef void* GpBitmap;
 	typedef void* GpImage;
+}
+// Additional resource/GDI stubs for util.cpp.
+#define IID_IPicture nullptr
+#define RT_ICON MAKEINTRESOURCE(3)
+#define RT_GROUP_ICON MAKEINTRESOURCE(14)
+#define HWND_DESKTOP ((HWND)0)
+#define SM_CXICON 11
+#define DI_NORMAL 0x0003
+
+typedef HANDLE HRSRC;
+typedef BYTE* PBYTE;
+
+inline HMODULE GetModuleHandle(LPCTSTR)
+{
+	return nullptr;
+}
+inline HRSRC FindResource(HMODULE, LPCTSTR, LPCTSTR)
+{
+	return nullptr;
+}
+inline HGLOBAL LoadResource(HMODULE, HRSRC)
+{
+	return nullptr;
+}
+inline LPVOID LockResource(HGLOBAL)
+{
+	return nullptr;
+}
+inline DWORD SizeofResource(HMODULE, HRSRC)
+{
+	return 0;
+}
+inline HICON CreateIconFromResourceEx(PBYTE, DWORD, BOOL, DWORD, int, int, UINT)
+{
+	return nullptr;
+}
+inline HICON ExtractIcon(HINSTANCE, LPCTSTR, UINT)
+{
+	return nullptr;
+}
+
+inline HDC CreateCompatibleDC(HDC)
+{
+	return nullptr;
+}
+inline HBITMAP CreateCompatibleBitmap(HDC, int, int)
+{
+	return nullptr;
+}
+inline HGDIOBJ SelectObject(HDC, HGDIOBJ)
+{
+	return nullptr;
+}
+inline int FillRect(HDC, const RECT*, HBRUSH)
+{
+	return 0;
+}
+inline BOOL DrawIconEx(HDC, int, int, HICON, int, int, UINT, HBRUSH, UINT)
+{
+	return FALSE;
+}
+inline BOOL DeleteDC(HDC)
+{
+	return TRUE;
+}
+
+struct BITMAPINFOHEADER
+{
+	DWORD biSize;
+	LONG biWidth;
+	LONG biHeight;
+	WORD biPlanes;
+	WORD biBitCount;
+	DWORD biCompression;
+	DWORD biSizeImage;
+	LONG biXPelsPerMeter;
+	LONG biYPelsPerMeter;
+	DWORD biClrUsed;
+	DWORD biClrImportant;
+};
+struct BITMAPINFO
+{
+	BITMAPINFOHEADER bmiHeader;
+	DWORD bmiColors[1];
+};
+
+inline HBITMAP CreateDIBSection(HDC, const BITMAPINFO*, UINT, void**, HANDLE, DWORD)
+{
+	return nullptr;
+}
+inline BOOL GdiFlush()
+{
+	return TRUE;
+}
+inline int GetDIBits(HDC, HBITMAP, UINT, UINT, LPVOID, const BITMAPINFO*, UINT)
+{
+	return 0;
+}
+
+#ifdef UNICODE
+#define _tcscspn wcscspn
+#else
+#define _tcscspn strcspn
+#endif
+
+#define FOLDERID_Documents nullptr
+#define KF_FLAG_DONT_VERIFY 0x00000040
+#define SUCCEEDED(hr) ((HRESULT)(hr) >= 0)
+inline HRESULT SHGetKnownFolderPath(const void*, DWORD, HANDLE, wchar_t**)
+{
+	return (HRESULT)0x80004005L;
 }
 
 #ifdef UNICODE

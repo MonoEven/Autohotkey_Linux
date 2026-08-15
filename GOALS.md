@@ -57,6 +57,7 @@ M2：核心解释器 Linux 编译。
 - [x] 最小解释器支持变量赋值与 MsgBox 变量引用
 - [x] 最小解释器支持简单整数算术表达式
 - [x] script_object.cpp 已能在 Linux 下编译（链接仍需更多核心模块）
-- [x] ar.cpp 已能在 Linux 下编译（链接仍需更多核心模块）
-- [ ] 继续为其他核心模块（util/var/script/TextIO 等）解耦平台依赖
+- [x] script_object.cpp 已能在 Linux 下编译（链接仍需更多核心模块）
+- [x] var.cpp 已能在 Linux 下编译（链接仍需更多核心模块）
+- [x] util.cpp 已能在 Linux 下编译并链接进 ahk_core
 - [ ] 逐文件修复编译错误
