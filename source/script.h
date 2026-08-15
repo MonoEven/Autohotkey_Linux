@@ -1,4 +1,4 @@
-﻿/*
+/*
 AutoHotkey
 
 Copyright 2003-2009 Chris Mallett (support@autohotkey.com)
@@ -590,7 +590,7 @@ enum JoyControls {JOYCTRL_INVALID, JOYCTRL_XPOS, JOYCTRL_YPOS, JOYCTRL_ZPOS
 // in g_BIF) which are implemented using a single C++ function.  These IDs are passed to the
 // C++ function to tell it which function is being called.  Each group starts at ID 0 in case
 // it helps the compiler to reduce code size.
-enum BuiltInFunctionID {
+enum BuiltInFunctionID : int {
 	FID_Object_New = -1,
 	FID_GetMethod = 0, FID_HasMethod,
 	FID_DllCall = 0, FID_ComCall,
@@ -981,7 +981,7 @@ public:
 		case REG_FULL_RESOURCE_DESCRIPTOR: return _T("REG_FULL_RESOURCE_DESCRIPTOR");
 		case REG_RESOURCE_REQUIREMENTS_LIST: return _T("REG_RESOURCE_REQUIREMENTS_LIST");
 		case REG_QWORD: return _T("REG_QWORD");
-		case REG_SUBKEY: return _T("KEY");  // Custom (non-standard) type.
+		case (DWORD)REG_SUBKEY: return _T("KEY");  // Custom (non-standard) type.
 		default: return _T("");  // Make it be the empty string for REG_NONE and anything else.
 		}
 	}
@@ -1862,7 +1862,7 @@ public:
 	bool mEnabled;
 	bool mRunOnlyOnce;
 	ScriptTimer *mNextTimer;  // Next items in linked list
-	void ScriptTimer::Disable();
+	void Disable();
 	ScriptTimer(IObject *aLabel)
 		#define DEFAULT_TIMER_PERIOD 250
 		: mCallback(aLabel), mPeriod(DEFAULT_TIMER_PERIOD), mPriority(0) // Default is always 0.

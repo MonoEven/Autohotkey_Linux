@@ -21,7 +21,7 @@ GNU General Public License for more details.
 #include "defines.h"
 
 
-#ifdef _WIN64
+#if defined(_WIN64) || defined(__x86_64__) || defined(__aarch64__)
 #define Exp32or64(exp32, exp64) (exp64)
 #else
 #define Exp32or64(exp32, exp64) (exp32)

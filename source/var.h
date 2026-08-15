@@ -1,4 +1,4 @@
-﻿/*
+/*
 AutoHotkey
 
 Copyright 2003-2009 Chris Mallett (support@autohotkey.com)
@@ -799,8 +799,8 @@ public:
 		if (mType == VAR_VIRTUAL)
 		{
 			// Commit the value in our temporary buffer.
-			auto result = AssignVirtual(ExprTokenType(mCharContents, CharLength()));
-			Free(); // Free temporary memory and remove VAR_ATTRIB_VIRTUAL_OPEN.
+			ExprTokenType value(mCharContents, CharLength());
+			auto result = AssignVirtual(value);
 			return result;
 		}
 		// VAR_ATTRIB_CONTENTS_OUT_OF_DATE is removed below for maintainability; it shouldn't be

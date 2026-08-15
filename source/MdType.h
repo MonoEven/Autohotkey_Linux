@@ -91,7 +91,7 @@ template<MdType T> struct md_optout { typedef typename md_argtype<T>::t *t; };
 template<> struct md_optout<MdType::String> { typedef StrRet *t; };
 template<> struct md_optout<MdType::Variant> { typedef ResultToken *t; };
 
-template<MdType T> struct md_optional { typedef typename optl<typename md_argtype<T>::t> t; };
+template<MdType T> struct md_optional { typedef optl<typename md_argtype<T>::t> t; };
 template<> struct md_optional<MdType::Variant> { typedef ExprTokenType *t; };
 
 //template<MdType T> struct md_retval { typedef typename md_argtype<T>::t t; };

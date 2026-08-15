@@ -450,9 +450,9 @@ public:
 		return field->Assign(aValue);
 	}
 
-	bool SetOwnProp(name_t aName, __int64 aValue) { return SetOwnProp(aName, ExprTokenType(aValue)); }
-	bool SetOwnProp(name_t aName, IObject *aValue) { return SetOwnProp(aName, ExprTokenType(aValue)); }
-	bool SetOwnProp(name_t aName, LPCTSTR aValue) { return SetOwnProp(aName, ExprTokenType(const_cast<LPTSTR>(aValue))); }
+	bool SetOwnProp(name_t aName, __int64 aValue) { ExprTokenType t(aValue); return SetOwnProp(aName, t); }
+	bool SetOwnProp(name_t aName, IObject *aValue) { ExprTokenType t(aValue); return SetOwnProp(aName, t); }
+	bool SetOwnProp(name_t aName, LPCTSTR aValue) { ExprTokenType t(const_cast<LPTSTR>(aValue)); return SetOwnProp(aName, t); }
 
 	void DeleteOwnProp(name_t aName)
 	{
@@ -585,8 +585,8 @@ public:
 
 	bool Append(ExprTokenType &aValue);
 	bool Append(LPCTSTR aValue, size_t aValueLength = -1) { return Append(const_cast<LPTSTR>(aValue), aValueLength); }
-	bool Append(LPTSTR aValue, size_t aValueLength = -1) { return Append(ExprTokenType(aValue, aValueLength)); }
-	bool Append(__int64 aValue) { return Append(ExprTokenType(aValue)); }
+	bool Append(LPTSTR aValue, size_t aValueLength = -1) { ExprTokenType t(aValue, aValueLength); return Append(t); }
+	bool Append(__int64 aValue) { ExprTokenType t(aValue); return Append(t); }
 
 	Array *Clone();
 
@@ -694,7 +694,7 @@ public:
 
 	bool HasItem(ExprTokenType &aKey)
 	{
-		return GetItem(ExprTokenType(), aKey); // Conserves code size vs. calling FindItem() directly and is unlikely to perform worse.
+		ExprTokenType token; return GetItem(token, aKey); // Conserves code size vs. calling FindItem() directly and is unlikely to perform worse.
 	}
 
 	bool GetItem(ExprTokenType &aToken, ExprTokenType &aKey)
@@ -732,21 +732,23 @@ public:
 
 	bool SetItem(LPTSTR aKey, ExprTokenType &aValue)
 	{
-		return SetItem(ExprTokenType(aKey), aValue);
+		ExprTokenType key(aKey);
+		return SetItem(key, aValue);
 	}
 
 	bool SetItem(LPTSTR aKey, __int64 aValue)
 	{
-		return SetItem(aKey, ExprTokenType(aValue));
+		ExprTokenType key(aKey);
+		ExprTokenType val(aValue);
+		return SetItem(key, val);
 	}
 
 	bool SetItem(LPTSTR aKey, IObject *aValue)
 	{
-		return SetItem(aKey, ExprTokenType(aValue));
+		ExprTokenType key(aKey);
+		ExprTokenType val(aValue);
+		return SetItem(key, val);
 	}
-
-	ResultType SetItems(ExprTokenType *aParam[], int aParamCount);
-
 	// Methods callable by script.
 	void __Item(ResultToken &aResultToken, int aID, int aFlags, ExprTokenType *aParam[], int aParamCount);
 	void Set(ResultToken &aResultToken, int aID, int aFlags, ExprTokenType *aParam[], int aParamCount);

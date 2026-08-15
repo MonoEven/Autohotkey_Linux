@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
+#include <string>
 #include <cstdio>
 #include <cstdlib>
 #include <cwchar>
@@ -48,8 +49,8 @@ typedef long               LONG;
 typedef unsigned long      ULONG;
 typedef long long          LONGLONG;
 typedef unsigned long long ULONGLONG;
-typedef long long          INT64;
-typedef unsigned long long UINT64;
+typedef int64_t            INT64;
+typedef uint64_t           UINT64;
 
 typedef intptr_t           INT_PTR;
 typedef uintptr_t          UINT_PTR;
@@ -110,6 +111,92 @@ struct NEWTEXTMETRICEX
 {
 	// Minimal stub for declarations; fields are not used by the core port yet.
 	BYTE reserved[128];
+};
+
+typedef void* HIMAGELIST;
+typedef WORD  ATOM;
+typedef void* HDROP;
+
+struct ACCEL
+{
+	BYTE fVirt;
+	WORD key;
+	WORD cmd;
+};
+typedef ACCEL* LPACCEL;
+
+struct NMHDR
+{
+	void* hwndFrom;
+	UINT_PTR idFrom;
+	UINT code;
+};
+typedef NMHDR* LPNMHDR;
+
+struct NOTIFYICONDATA
+{
+	DWORD cbSize;
+	void* hWnd;
+	UINT uID;
+	UINT uFlags;
+	UINT uCallbackMessage;
+	void* hIcon;
+	wchar_t szTip[128];
+};
+struct PROCESS_INFORMATION
+{
+	void* hProcess;
+	void* hThread;
+	DWORD dwProcessId;
+	DWORD dwThreadId;
+};
+
+union LARGE_INTEGER
+{
+	struct { DWORD LowPart; LONG HighPart; };
+	LONGLONG QuadPart;
+};
+typedef LARGE_INTEGER* PLARGE_INTEGER;
+
+struct OSVERSIONINFOW
+{
+	DWORD dwOSVersionInfoSize;
+	DWORD dwMajorVersion;
+	DWORD dwMinorVersion;
+	DWORD dwBuildNumber;
+	DWORD dwPlatformId;
+	wchar_t szCSDVersion[128];
+};
+
+struct LOGFONT
+{
+	LONG lfHeight;
+	LONG lfWidth;
+	LONG lfEscapement;
+	LONG lfOrientation;
+	LONG lfWeight;
+	BYTE lfItalic;
+	BYTE lfUnderline;
+	BYTE lfStrikeOut;
+	BYTE lfCharSet;
+	BYTE lfOutPrecision;
+	BYTE lfClipPrecision;
+	BYTE lfQuality;
+	BYTE lfPitchAndFamily;
+	wchar_t lfFaceName[32];
+};
+struct WIN32_FIND_DATA
+{
+	DWORD dwFileAttributes;
+	FILETIME ftCreationTime;
+	FILETIME ftLastAccessTime;
+	FILETIME ftLastWriteTime;
+	DWORD nFileSizeHigh;
+	DWORD nFileSizeLow;
+	DWORD dwReserved0;
+	DWORD dwReserved1;
+	wchar_t cFileName[260];
+	wchar_t cAlternateFileName[14];
 };
 
 #ifndef __int64
@@ -269,6 +356,38 @@ struct NEWTEXTMETRICEX
 #define REG_RESOURCE_REQUIREMENTS_LIST 10
 #define REG_QWORD                    11
 #define KEY_WOW64_32KEY              0x0200
+#define KEY_WOW64_64KEY              0x0100
+
+#define SW_HIDE        0
+#define SW_SHOWNORMAL  1
+#define SW_MAXIMIZE    3
+#define SW_MINIMIZE    6
+
+#define CLR_DEFAULT 0xFF000000
+#define CLR_INVALID 0xFFFFFFFF
+
+#define WS_POPUP          0x80000000
+#define WS_CLIPSIBLINGS   0x04000000
+#define WS_CAPTION        0x00C00000
+#define WS_SYSMENU        0x00080000
+#define WS_MINIMIZEBOX    0x00020000
+
+// File API constants needed by TextIO.
+#define MB_ERR_INVALID_CHARS  0x00000008
+#define GENERIC_READ          0x80000000
+#define GENERIC_WRITE         0x40000000
+#define OPEN_EXISTING         3
+#define CREATE_ALWAYS         2
+#define OPEN_ALWAYS           4
+#define FILE_SHARE_READ       0x00000001
+#define FILE_SHARE_WRITE      0x00000002
+#define FILE_SHARE_DELETE     0x00000004
+#define STD_OUTPUT_HANDLE     ((DWORD)-11)
+#define STD_ERROR_HANDLE      ((DWORD)-12)
+#define STD_INPUT_HANDLE      ((DWORD)-10)
+#define ERROR_INVALID_HANDLE  6
+#define FILE_FLAG_SEQUENTIAL_SCAN 0x08000000
+#define FILE_CURRENT          1
 
 // ---------------------------------------------------------------------------
 // Handles / pointers
@@ -541,6 +660,21 @@ inline HKL GetKeyboardLayout(DWORD)
 	return nullptr;
 }
 
+inline BOOL IsValidCodePage(UINT)
+{
+	return TRUE;
+}
+
+inline int GetDlgCtrlID(HWND)
+{
+	return 0;
+}
+
+inline HWND GetParent(HWND)
+{
+	return nullptr;
+}
+
 inline int MulDiv(int nNumber, int nNumerator, int nDenominator)
 {
 	return (int)((long long)nNumber * nNumerator / nDenominator);
@@ -551,16 +685,62 @@ inline LONG RegConnectRegistry(LPCWSTR, HKEY, HKEY*)
 	return ERROR_SUCCESS;
 }
 
+inline void SetLastError(DWORD)
+{
+}
+
+inline DWORD GetFileType(HANDLE)
+{
+	return 1; // FILE_TYPE_DISK
+}
+
+inline HANDLE GetStdHandle(DWORD)
+{
+	return nullptr;
+}
+
+inline HANDLE CreateFile(LPCTSTR, DWORD, DWORD, void*, DWORD, DWORD, HANDLE)
+{
+	return INVALID_HANDLE_VALUE;
+}
+
+inline BOOL CloseHandle(HANDLE)
+{
+	return TRUE;
+}
+
+inline BOOL ReadFile(HANDLE, LPVOID, DWORD, DWORD*, void*)
+{
+	return FALSE;
+}
+
+inline BOOL WriteFile(HANDLE, LPCVOID, DWORD, DWORD*, void*)
+{
+	return FALSE;
+}
+
+inline BOOL SetFilePointerEx(HANDLE, LARGE_INTEGER, PLARGE_INTEGER, DWORD)
+{
+	return FALSE;
+}
+
+inline BOOL GetFileSizeEx(HANDLE, PLARGE_INTEGER aFileSize)
+{
+	if (aFileSize)
+		aFileSize->QuadPart = 0;
+	return FALSE;
+}
+
 #ifdef UNICODE
-inline LPTSTR _itot(int value, LPTSTR buf, int radix) { swprintf(buf, L"%d", value); return buf; }
-inline LPTSTR _i64tot(__int64 value, LPTSTR buf, int radix) { swprintf(buf, L"%lld", (long long)value); return buf; }
-inline LPTSTR _ultot(unsigned long value, LPTSTR buf, int radix) { swprintf(buf, L"%lu", value); return buf; }
-inline LPTSTR _ui64tot(unsigned long long value, LPTSTR buf, int radix) { swprintf(buf, L"%llu", value); return buf; }
+inline LPTSTR _itot(int value, LPTSTR buf, int radix) { std::wstring s = std::to_wstring(value); wcscpy(buf, s.c_str()); return buf; }
+inline LPTSTR _i64tot(__int64 value, LPTSTR buf, int radix) { std::wstring s = std::to_wstring((long long)value); wcscpy(buf, s.c_str()); return buf; }
+inline LPTSTR _ultot(unsigned long value, LPTSTR buf, int radix) { std::wstring s = std::to_wstring(value); wcscpy(buf, s.c_str()); return buf; }
+inline LPTSTR _ui64tot(unsigned long long value, LPTSTR buf, int radix) { std::wstring s = std::to_wstring(value); wcscpy(buf, s.c_str()); return buf; }
 #else
-inline LPTSTR _itot(int value, LPTSTR buf, int radix) { sprintf(buf, "%d", value); return buf; }
-inline LPTSTR _i64tot(__int64 value, LPTSTR buf, int radix) { sprintf(buf, "%lld", (long long)value); return buf; }
-inline LPTSTR _ultot(unsigned long value, LPTSTR buf, int radix) { sprintf(buf, "%lu", value); return buf; }
-inline LPTSTR _ui64tot(unsigned long long value, LPTSTR buf, int radix) { sprintf(buf, "%llu", value); return buf; }
+inline LPTSTR _itot(int value, LPTSTR buf, int radix) { std::string s = std::to_string(value); strcpy(buf, s.c_str()); return buf; }
+inline LPTSTR _i64tot(__int64 value, LPTSTR buf, int radix) { std::string s = std::to_string((long long)value); strcpy(buf, s.c_str()); return buf; }
+inline LPTSTR _ultot(unsigned long value, LPTSTR buf, int radix) { std::string s = std::to_string(value); strcpy(buf, s.c_str()); return buf; }
+inline LPTSTR _ui64tot(unsigned long long value, LPTSTR buf, int radix) { std::string s = std::to_string(value); strcpy(buf, s.c_str()); return buf; }
 #endif
 
 inline UINT GetACP()
