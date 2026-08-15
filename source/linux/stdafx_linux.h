@@ -765,41 +765,98 @@ inline DWORD GetFileType(HANDLE)
 	return 1; // FILE_TYPE_DISK
 }
 
-inline HANDLE GetStdHandle(DWORD)
+inline HANDLE GetStdHandle(DWORD aStdHandle)
 {
+	if (aStdHandle == STD_OUTPUT_HANDLE)
+		return (HANDLE)stdout;
+	if (aStdHandle == STD_ERROR_HANDLE)
+		return (HANDLE)stderr;
+	if (aStdHandle == STD_INPUT_HANDLE)
+		return (HANDLE)stdin;
 	return nullptr;
 }
 
-inline HANDLE CreateFile(LPCTSTR, DWORD, DWORD, void*, DWORD, DWORD, HANDLE)
+inline HANDLE CreateFile(LPCTSTR aFileName, DWORD aAccess, DWORD, void*, DWORD aCreation, DWORD, HANDLE)
 {
-	return INVALID_HANDLE_VALUE;
+	if (!aFileName)
+		return INVALID_HANDLE_VALUE;
+	char path[4096];
+	size_t converted = wcstombs(path, aFileName, sizeof(path) - 1);
+	if (converted == (size_t)-1)
+		return INVALID_HANDLE_VALUE;
+	path[converted] = '\0';
+
+	bool write = (aAccess & GENERIC_WRITE) != 0;
+	bool read = (aAccess & GENERIC_READ) != 0;
+	const char* mode = "rb";
+	if (aCreation == CREATE_ALWAYS)
+		mode = write ? "wb" : "wb";
+	else if (aCreation == OPEN_ALWAYS)
+		mode = write ? (read ? "a+b" : "ab") : "rb";
+	else if (aCreation == OPEN_EXISTING)
+		mode = write ? (read ? "r+b" : "rb") : "rb";
+	else
+		mode = write ? "wb" : "rb";
+
+	FILE* f = fopen(path, mode);
+	return (HANDLE)f;
 }
 
-inline BOOL CloseHandle(HANDLE)
+inline BOOL CloseHandle(HANDLE hFile)
 {
+	if (hFile && hFile != INVALID_HANDLE_VALUE)
+		return fclose((FILE*)hFile) == 0;
 	return TRUE;
 }
 
-inline BOOL ReadFile(HANDLE, LPVOID, DWORD, DWORD*, void*)
+inline BOOL ReadFile(HANDLE hFile, LPVOID lpBuffer, DWORD nNumberOfBytesToRead, DWORD* lpNumberOfBytesRead, void*)
 {
-	return FALSE;
+	if (!hFile || hFile == INVALID_HANDLE_VALUE)
+		return FALSE;
+	size_t n = fread(lpBuffer, 1, nNumberOfBytesToRead, (FILE*)hFile);
+	if (lpNumberOfBytesRead)
+		*lpNumberOfBytesRead = (DWORD)n;
+	return n > 0 || nNumberOfBytesToRead == 0;
 }
 
-inline BOOL WriteFile(HANDLE, LPCVOID, DWORD, DWORD*, void*)
+inline BOOL WriteFile(HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite, DWORD* lpNumberOfBytesWritten, void*)
 {
-	return FALSE;
+	if (!hFile || hFile == INVALID_HANDLE_VALUE)
+		return FALSE;
+	size_t n = fwrite(lpBuffer, 1, nNumberOfBytesToWrite, (FILE*)hFile);
+	if (lpNumberOfBytesWritten)
+		*lpNumberOfBytesWritten = (DWORD)n;
+	return n == nNumberOfBytesToWrite;
 }
 
-inline BOOL SetFilePointerEx(HANDLE, LARGE_INTEGER, PLARGE_INTEGER, DWORD)
+inline BOOL SetFilePointerEx(HANDLE hFile, LARGE_INTEGER liDistanceToMove, PLARGE_INTEGER lpNewFilePointer, DWORD dwMoveMethod)
 {
-	return FALSE;
+	if (!hFile || hFile == INVALID_HANDLE_VALUE)
+		return FALSE;
+	int origin = SEEK_SET;
+	if (dwMoveMethod == FILE_CURRENT)
+		origin = SEEK_CUR;
+	else if (dwMoveMethod == 2)
+		origin = SEEK_END;
+	if (fseek((FILE*)hFile, (long)liDistanceToMove.QuadPart, origin) != 0)
+		return FALSE;
+	if (lpNewFilePointer)
+		lpNewFilePointer->QuadPart = ftell((FILE*)hFile);
+	return TRUE;
 }
 
-inline BOOL GetFileSizeEx(HANDLE, PLARGE_INTEGER aFileSize)
+inline BOOL GetFileSizeEx(HANDLE hFile, PLARGE_INTEGER aFileSize)
 {
+	if (!hFile || hFile == INVALID_HANDLE_VALUE)
+		return FALSE;
+	long pos = ftell((FILE*)hFile);
+	if (fseek((FILE*)hFile, 0, SEEK_END) != 0)
+		return FALSE;
+	long size = ftell((FILE*)hFile);
+	fseek((FILE*)hFile, pos, SEEK_SET);
 	if (aFileSize)
-		aFileSize->QuadPart = 0;
-	return FALSE;
+		aFileSize->QuadPart = size;
+	return TRUE;
 }
 
 #ifdef UNICODE
