@@ -1773,6 +1773,58 @@ inline BOOL UnregisterHotKey(HWND, int)
 {
 	return FALSE;
 }
+// Additional window.cpp stubs.
+#define GW_OWNER 4
+#define HWND_BROADCAST ((HWND)0xffff)
+#define SB_GETPARTS     0x0406
+#define SB_GETTEXTLENGTH 0x0403
+#define SB_GETTEXT      0x0402
+#define WM_NULL         0x0000
+#define WM_GETTEXT      0x000D
+#define WM_GETTEXTLENGTH 0x000E
+#define QS_ALLEVENTS    0x04BF
+typedef DWORD_PTR* PDWORD_PTR;
+
+inline HWND GetWindow(HWND, UINT)
+{
+	return nullptr;
+}
+inline BOOL AttachThreadInput(DWORD, DWORD, BOOL)
+{
+	return FALSE;
+}
+inline BOOL BringWindowToTop(HWND)
+{
+	return TRUE;
+}
+inline BOOL EnumWindows(void*, LPARAM)
+{
+	return FALSE;
+}
+inline BOOL ReadProcessMemory(HANDLE, const void*, void*, SIZE_T, SIZE_T*)
+{
+	return FALSE;
+}
+inline int MessageBox(HWND, LPCTSTR, LPCTSTR, UINT)
+{
+	return 0;
+}
+inline DWORD GetCurrentProcessId()
+{
+	return 0;
+}
+inline HWND GetTopWindow(HWND)
+{
+	return nullptr;
+}
+inline HRESULT DwmGetWindowAttribute(HWND, DWORD, void*, DWORD)
+{
+	return (HRESULT)0x80004005L;
+}
+inline DWORD GetQueueStatus(UINT)
+{
+	return 0;
+}
 inline BOOL PeekMessage(MSG*, HWND, UINT, UINT, UINT)
 {
 	return FALSE;
