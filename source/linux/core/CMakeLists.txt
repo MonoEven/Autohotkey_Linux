@@ -20,4 +20,4 @@ target_include_directories(ahk_core PRIVATE
 )
 
 # AutoHotkey upstream uses several MSVC extensions; allow them while porting.
-target_compile_options(ahk_core PRIVATE -fpermissive)
+target_compile_options(ahk_core PRIVATE -fpermissive -Wno-jump-misses-init)
