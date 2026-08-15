@@ -15,6 +15,7 @@ add_library(ahk_core_objects STATIC
     ../../lib/math.cpp
     ../../lib/string.cpp
     ../../lib/file.cpp
+    ../../lib/interop.cpp
     ../../error.cpp
     ../../hotkey.cpp
     ../../os_version.cpp

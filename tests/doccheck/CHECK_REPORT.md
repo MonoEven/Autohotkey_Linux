@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **204 / 204 断言通过** (普通构建与 ASan 构建均通过;25 项 headless 回归测试亦全部通过)
+- **结果**: **242 / 242 断言通过** (普通构建与 ASan 构建均通过;25 项 headless 回归测试亦全部通过)
 
 ---
 
@@ -26,10 +26,11 @@
 | 数学 | `assert_math.ahk` | 44 |
 | 字符串 | `assert_string.ahk` | 47 |
 | 对象/数组/Map/类 | `assert_object.ahk` | 33 |
-| 文件/目录 | `assert_file.ahk` | 13 |
+| 文件/目录 | `assert_file.ahk` | 31 |
 | 日期时间 | `assert_datetime.ahk` | 33 |
 | 通用/环境/进程/驱动器/INI/剪贴板 | `assert_general.ahk` | 31 |
-| **合计** | | **204** |
+| 二进制互操作 (NumGet/NumPut/StrGet/StrPut/Buffer) | `assert_interop.ahk` | 20 |
+| **合计** | | **242** |
 
 复现命令:
 
@@ -90,6 +91,38 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 ### 2.9 回调式错误未抛出(连带修复)
 - `FResultToError` 路径经 2.2 修复后,`OnError` 等回调及所有 md 函数错误路径恢复文档语义。
 
+### 2.10 FindFirstFile/SetFileTime/SetFileAttributes 为桩(本轮)
+- **现象**: `FileGetTime/FileGetSize` 找不到文件,`FileSetTime/FileSetAttrib` 报错,`Loop Files` 不迭代。
+- **根因**: `FindFirstFile/FindNextFile/FindClose` 返回 INVALID/FALSE;`SetFileTime`、`SetFileAttributes` 为恒真 no-op。
+- **修复**: 以 `opendir/readdir` + 大小写不敏感通配匹配实现 Find 系列(句柄带 MAGIC 标识,`CloseHandle` 可区分 FILE*/进程/查找句柄);`SetFileTime` 经 `futimens` 实现(M/C/A 选择,创建时间无法修改则忽略);`SetFileAttributes` 经 `chmod` 实现(READONLY↔写位);`FilePatternApply` 同步支持 `/` 分隔;`GetFileAttributes` 补 READONLY/ARCHIVE 位。
+
+### 2.11 FILETIME 本地/UTC 转换互为 no-op(本轮)
+- **现象**: `FileSetTime("20200102030405", f)` 后再 `FileGetTime` 得到 `20200102110405`(+8 小时)。
+- **根因**: `LocalFileTimeToFileTime` 用 `localtime_r`+`mktime` 往返,净效果为零。
+- **修复**: 用 `gmtime_r` 取出墙钟字段再 `mktime` 按本地解释,与 `FileTimeToLocalFileTime` 对称。
+
+### 2.12 文件时间/属性/遍历函数接入真实实现(本轮)
+- 为 lib/file.cpp 中已有的 `FileGetAttrib/FileGetTime/FileGetSize/FileSetAttrib/FileSetTime` 原生实现补齐 BIF 包装并切换到 `LMD_IMPL`;缺失文件按文档抛 OSError。
+
+### 2.13 Loop Files 内置变量为桩(本轮)
+- **现象**: `A_LoopFileName` 输出指针值。
+- **根因**: `BIV_LoopFile*` 9 个内置变量均为空桩(lib/vars.cpp 未链接)。
+- **修复**: 按 vars.cpp 原实现移植 Name/Ext/Dir/Path/FullPath/ShortPath/Time/Attrib/Size。
+
+### 2.14 NumGet/NumPut/StrGet/StrPut 整体缺失(本轮)
+- **现象**: 均为 no-op 桩。
+- **修复**: 编译 `lib/interop.cpp`(去重 `GetBufferObjectPtr` 桩);`BufferObject` 增加 Linux 专属虚函数强制独立 vtable(GCC 不覆盖虚函数时共享基类 vtable,`IsInstanceExact` 会误判所有对象);`WideCharToMultiByte/MultiByteToWideChar` 重写为精确大小计算并支持 4 字节 UTF-8/代理对。
+
+### 2.15 StrGet 的 Length 语义(本轮)
+- **现象**: `StrGet(buf, 2, "UTF-8")` 读 2 字节截断多字节字符。
+- **根因**: 共享代码对非 UTF-16 编码按字节 `strnlen`。
+- **修复**: Linux 下按文档"最大字符数"语义对 UTF-8 逐字符计数。
+
+### 2.16 控制台输出丢弃代理对(本轮)
+- **现象**: 含 emoji 的 MsgBox 输出为空。
+- **根因**: glibc `wcstombs` 在 C.UTF-8 下拒绝代理对。
+- **修复**: `WideToNarrow` 改为手写 UTF-8 编码(支持代理对)。
+
 ---
 
 ## 3. 测试预期修正(文档语义确认,非移植缺陷)
@@ -120,18 +153,20 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 | 数学 (Math/Random/Abs/Mod/… ) | ✅ 44/44 | `GenRandom` 已用 `getrandom` 实现 |
 | 字符串 (StrLen/SubStr/InStr/StrReplace/Trim/Format/Sort/SplitPath/StrUpper/Lower/Title/…) | ✅ 47/47 | 本轮修复 Format/CharUpper/翻译器后全绿 |
 | 对象 (Object/Array/Map/类/属性/绑定方法/枚举) | ✅ 33/33 | 类字段初始化、属性 get/set 全绿 |
-| 文件 (FileOpen/File对象方法/FileRead/Append/Delete/DirCreate/Delete/Copy/Move) | ✅ 13/13 | 本轮补齐 File 类成员注册 |
+| 文件 (FileOpen/File对象方法/FileRead/Append/Delete/DirCreate/Delete/Copy/Move) | ✅ 31/31 | 本轮补齐 File 类成员注册 |
+| 文件元数据 (FileGet/SetTime、FileGetSize、FileGet/SetAttrib、Loop Files) | ✅ 并入 assert_file | 本轮实现 FindFirstFile/futimens/chmod + Loop Files 变量 |
+| 二进制互操作 (NumGet/NumPut/StrGet/StrPut/Buffer) | ✅ 20/20 | 本轮接入 lib/interop.cpp 并修复 vtable/编码转换 |
 | 日期时间 (DateAdd/Diff/FormatTime/A_Now/A_YYYY 等) | ✅ 33/33 | 与文档 TimeUnits/Format 语义一致 |
 | 通用 (Env/WorkingDir/Sleep/MsgBox/Process/Run/RunWait/Drive/Ini/Clipboard/GetKeyName/A_* 变量) | ✅ 31/31 | 路径函数与键名表修复后全绿 |
-| 未实现模块 (GUI/GuiCtrl/COM/DllCall/RegEx/注册表/窗口管理/热键系统/剪贴板监听等 177 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
+| 未实现模块 (GUI/GuiCtrl/COM/DllCall/RegEx/注册表/窗口管理/热键系统/剪贴板监听等 172 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
 
 ## 5. 回归与构建验证
 
 ```
 普通构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh PASS=204 FAIL=0
+          tests/doccheck/run_check.sh PASS=242 FAIL=0
 ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh PASS=204 FAIL=0
+          tests/doccheck/run_check.sh PASS=242 FAIL=0
 ```
 
 ## 6. 本轮改动文件
@@ -139,9 +174,14 @@ ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
 - `source/linux/core/core_file_linux.cpp` / `.h`(新增):File 类成员注册
 - `source/TextIO.cpp`:friend 表填充、`LinuxIsFileObject`
 - `source/linux/core/core_platform_stubs.cpp`:`DefineMetadataMembers` 接入 File;键名表;真实 `GetFullPathName` 辅助
-- `source/linux/stdafx_linux.h`:`HRESULT` 32 位;`CharLower/CharUpper`;`_vsntprintf` 翻译器(`*`/`I64`);`GetFullPathName/GetCurrentDirectory/SetCurrentDirectory` 真实实现
+- `source/linux/stdafx_linux.h`:`HRESULT` 32 位;`CharLower/CharUpper`;`_vsntprintf` 翻译器(`*`/`I64`);`GetFullPathName/GetCurrentDirectory/SetCurrentDirectory` 真实实现;**FindFirstFile/FindNextFile/FindClose、SetFileTime(futimens)、SetFileAttributes(chmod)、FILETIME 时区转换、精确版 WideCharToMultiByte/MultiByteToWideChar**
 - `source/lib/string.cpp`:`BIF_Format` Linux 浮点参数传递
+- `source/lib/file.cpp`:FilePatternApply 支持 `/` 分隔
+- `source/lib/interop.cpp`(本轮加入构建):NumGet/NumPut/StrGet/StrPut/StrPtr 真实实现;StrGet 字符计数语义
+- `source/script_object.h`:BufferObject 独立 vtable(Linux)
 - `source/linux/core/main_linux.cpp`:脚本路径字段初始化
-- `source/linux/core/core_builtin_stubs.cpp`:`FileExist/DirExist` 属性字母语义
-- `source/linux/core/CMakeLists.txt`:加入 `core_file_linux.cpp`
-- `tests/doccheck/*`:断言脚本与期望值按文档修正,新增 `run_check.sh` 二进制参数
+- `source/linux/core/core_builtin_stubs.cpp`:`FileExist/DirExist` 属性字母语义;Loop Files 9 个内置变量真实实现
+- `source/linux/core/core_mdfunc_linux.cpp`:文件元数据 5 函数包装;`LMD_NI → LMD_IMPL`
+- `source/linux/gui/x11_gui.cpp`:`WideToNarrow` 支持代理对
+- `source/linux/core/CMakeLists.txt`:加入 `core_file_linux.cpp`、`lib/interop.cpp`
+- `tests/doccheck/*`:断言脚本与期望值按文档修正,新增 assert_interop 套件,worklist 重新生成(147 IMPL / 172 NOT_IMPL)

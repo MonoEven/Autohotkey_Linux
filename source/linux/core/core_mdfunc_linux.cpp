@@ -66,6 +66,11 @@ FResult OnError(IObject *aFunction, optl<int> aAddRemove);
 FResult OnExit(IObject *aFunction, optl<int> aAddRemove);
 FResult DateAdd(StrArg aDateTime, double aTime, StrArg aTimeUnits, StrRet &aRetVal);
 FResult DateDiff(StrArg aTime1, StrArg aTime2, StrArg aTimeUnits, __int64 &aRetVal);
+FResult FileGetAttrib(optl<StrArg> aPath, StrRet &aRetVal);
+FResult FileGetTime(optl<StrArg> aPath, optl<StrArg> aWhichTime, StrRet &aRetVal);
+FResult FileGetSize(optl<StrArg> aPath, optl<StrArg> aUnits, __int64 &aRetVal);
+FResult FileSetAttrib(StrArg aAttributes, optl<StrArg> aFilePattern, optl<StrArg> aMode);
+FResult FileSetTime(optl<StrArg> aYYYYMMDD, optl<StrArg> aFilePattern, optl<StrArg> aWhichTime, optl<StrArg> aMode);
 FResult StrSplit(StrArg aInputString, ExprTokenType *aDelimiters, optl<StrArg> aOmitChars, optl<int> aMaxParts, IObject *&aRetVal);
 FResult DirCopy(StrArg aSource, StrArg aDest, optl<int> aOverwrite);
 FResult DirMove(StrArg aSource, StrArg aDest, optl<StrArg> aFlag);
@@ -482,6 +487,83 @@ BIF_DECL(BIF_Linux_DirMove)
 	FResult fr = DirMove(src ? src : src_buf, dst ? dst : dst_buf, flag);
 	if (FAILED(fr))
 		FResultToError(aResultToken, aParam, aParamCount, fr, 0);
+}
+
+BIF_DECL(BIF_Linux_FileGetAttrib)
+{
+	TCHAR path_buf[4096];
+	optl<StrArg> path = (aParamCount > 0 && !ParamIndexIsOmitted(0))
+		? LinuxOptStr(aParam, aParamCount, 0, path_buf, sizeof(path_buf))
+		: optl<StrArg>(nullptr);
+	StrRet ret(aResultToken.buf);
+	FResult fr = FileGetAttrib(path, ret);
+	if (FAILED(fr)) { FResultToError(aResultToken, aParam, aParamCount, fr, 0); return; }
+	LinuxCopyStrRet(aResultToken, ret);
+}
+
+BIF_DECL(BIF_Linux_FileGetTime)
+{
+	TCHAR path_buf[4096], which_buf[16];
+	optl<StrArg> path = (aParamCount > 0 && !ParamIndexIsOmitted(0))
+		? LinuxOptStr(aParam, aParamCount, 0, path_buf, sizeof(path_buf))
+		: optl<StrArg>(nullptr);
+	optl<StrArg> which = (aParamCount > 1 && !ParamIndexIsOmitted(1))
+		? LinuxOptStr(aParam, aParamCount, 1, which_buf, sizeof(which_buf))
+		: optl<StrArg>(nullptr);
+	StrRet ret(aResultToken.buf);
+	FResult fr = FileGetTime(path, which, ret);
+	if (FAILED(fr)) { FResultToError(aResultToken, aParam, aParamCount, fr, 0); return; }
+	LinuxCopyStrRet(aResultToken, ret);
+}
+
+BIF_DECL(BIF_Linux_FileGetSize)
+{
+	TCHAR path_buf[4096], units_buf[16];
+	optl<StrArg> path = (aParamCount > 0 && !ParamIndexIsOmitted(0))
+		? LinuxOptStr(aParam, aParamCount, 0, path_buf, sizeof(path_buf))
+		: optl<StrArg>(nullptr);
+	optl<StrArg> units = (aParamCount > 1 && !ParamIndexIsOmitted(1))
+		? LinuxOptStr(aParam, aParamCount, 1, units_buf, sizeof(units_buf))
+		: optl<StrArg>(nullptr);
+	__int64 ret = 0;
+	FResult fr = FileGetSize(path, units, ret);
+	if (FAILED(fr)) { FResultToError(aResultToken, aParam, aParamCount, fr, 0); return; }
+	aResultToken.SetValue(ret);
+}
+
+BIF_DECL(BIF_Linux_FileSetAttrib)
+{
+	TCHAR attr_buf[256], path_buf[4096], mode_buf[64];
+	LPTSTR attr = TokenToString(*aParam[0], attr_buf, nullptr);
+	if (!attr)
+		attr = attr_buf;
+	optl<StrArg> path = (aParamCount > 1 && !ParamIndexIsOmitted(1))
+		? LinuxOptStr(aParam, aParamCount, 1, path_buf, sizeof(path_buf))
+		: optl<StrArg>(nullptr);
+	optl<StrArg> mode = (aParamCount > 2 && !ParamIndexIsOmitted(2))
+		? LinuxOptStr(aParam, aParamCount, 2, mode_buf, sizeof(mode_buf))
+		: optl<StrArg>(nullptr);
+	FResult fr = FileSetAttrib(attr, path, mode);
+	if (FAILED(fr)) { FResultToError(aResultToken, aParam, aParamCount, fr, 0); return; }
+}
+
+BIF_DECL(BIF_Linux_FileSetTime)
+{
+	TCHAR yyyymmdd_buf[64], path_buf[4096], which_buf[16], mode_buf[64];
+	optl<StrArg> yyyymmdd = (aParamCount > 0 && !ParamIndexIsOmitted(0))
+		? LinuxOptStr(aParam, aParamCount, 0, yyyymmdd_buf, sizeof(yyyymmdd_buf))
+		: optl<StrArg>(nullptr);
+	optl<StrArg> path = (aParamCount > 1 && !ParamIndexIsOmitted(1))
+		? LinuxOptStr(aParam, aParamCount, 1, path_buf, sizeof(path_buf))
+		: optl<StrArg>(nullptr);
+	optl<StrArg> which = (aParamCount > 2 && !ParamIndexIsOmitted(2))
+		? LinuxOptStr(aParam, aParamCount, 2, which_buf, sizeof(which_buf))
+		: optl<StrArg>(nullptr);
+	optl<StrArg> mode = (aParamCount > 3 && !ParamIndexIsOmitted(3))
+		? LinuxOptStr(aParam, aParamCount, 3, mode_buf, sizeof(mode_buf))
+		: optl<StrArg>(nullptr);
+	FResult fr = FileSetTime(yyyymmdd, path, which, mode);
+	if (FAILED(fr)) { FResultToError(aResultToken, aParam, aParamCount, fr, 0); return; }
 }
 
 // Run: launch Target (via Script::ActionExec -> POSIX CreateProcess/xdg-open).
@@ -1344,18 +1426,18 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_NI(FileCopy, 2, 3),
 	LMD_NI(FileCreateShortcut, 2, 8),
 	LMD_NI(FileEncoding, 0, 1),
-	LMD_NI(FileGetAttrib, 0, 1),
+	LMD_IMPL(FileGetAttrib, BIF_Linux_FileGetAttrib, 0, 1),
 	LMD_NI(FileGetShortcut, 1, 8),
-	LMD_NI(FileGetSize, 0, 2),
-	LMD_NI(FileGetTime, 0, 2),
+	LMD_IMPL(FileGetSize, BIF_Linux_FileGetSize, 0, 2),
+	LMD_IMPL(FileGetTime, BIF_Linux_FileGetTime, 0, 2),
 	LMD_NI(FileGetVersion, 0, 1),
 	LMD_NI(FileInstall, 2, 3),
 	LMD_NI(FileMove, 2, 3),
 	LMD_NI(FileRecycle, 1, 1),
 	LMD_NI(FileRecycleEmpty, 0, 1),
 	LMD_NI(FileSelect, 0, 4),
-	LMD_NI(FileSetAttrib, 1, 3),
-	LMD_NI(FileSetTime, 0, 4),
+	LMD_IMPL(FileSetAttrib, BIF_Linux_FileSetAttrib, 1, 3),
+	LMD_IMPL(FileSetTime, BIF_Linux_FileSetTime, 0, 4),
 	LMD_IMPL(GetKeyName, BIF_Linux_GetKeyName, 1, 1),
 	LMD_IMPL(GetKeySC, BIF_Linux_GetKeySC, 1, 1),
 	LMD_IMPL(GetKeyState, BIF_Linux_GetKeyState, 1, 2),

@@ -1,4 +1,4 @@
-﻿/*
+/*
 AutoHotkey
 
 Copyright 2003-2009 Chris Mallett (support@autohotkey.com)
@@ -17,6 +17,16 @@ GNU General Public License for more details.
 #include "stdafx.h"
 #include "script.h"
 #include "script_func_impl.h"
+
+#ifdef __linux__
+#ifndef ERROR_INVALID_FLAGS
+#define ERROR_INVALID_FLAGS 1004
+#endif
+// Windows CRT provides min()/max() as macros; glibc does not.
+#ifndef min
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#endif
+#endif
 
 
 
@@ -517,6 +527,28 @@ BIF_DECL(BIF_StrGetPut) // BIF_DECL(BIF_StrGet), BIF_DECL(BIF_StrPut)
 			// length.  So find the exact length up front:
 			if (encoding == CP_UTF16)
 				length = wcsnlen((LPWSTR)address, (size_t)length);
+#ifdef __linux__
+			else if (encoding == CP_UTF8)
+			{
+				// Docs define Length as a character count.  Count UTF-8
+				// characters (skipping continuation bytes) and convert the
+				// result to the byte count of those characters.
+				const char *src = (const char *)address;
+				const char *p = src;
+				size_t chars = 0;
+				while (*p && chars < (size_t)length)
+				{
+					unsigned char ch = (unsigned char)*p;
+					if (ch < 0x80) p += 1;
+					else if ((ch & 0xE0) == 0xC0) p += 2;
+					else if ((ch & 0xF0) == 0xE0) p += 3;
+					else if ((ch & 0xF8) == 0xF0) p += 4;
+					else p += 1; // Invalid lead byte; treat as one character.
+					++chars;
+				}
+				length = p - src;
+			}
+#endif
 			else
 				length = strnlen((LPSTR)address, (size_t)length);
 		}

@@ -843,6 +843,13 @@ protected:
 	BufferObject(void *aData = nullptr, size_t aSize = 0) : mData(aData), mSize(aSize) {}
 
 public:
+#ifdef __linux__
+	// GCC/Itanium ABI: a class that overrides no virtuals shares the primary
+	// base's vtable, so BufferObject's vptr would equal Object's and
+	// IsInstanceExact() (which compares the vptr against sVTable) would match
+	// every Object.  This forces a distinct vtable on Linux.
+	virtual void LinuxDistinctVTable() {}
+#endif
 	void *Data() { return mData; }
 	size_t Size() { return mSize; }
 	ResultType Resize(size_t aNewSize);

@@ -37,13 +37,9 @@ LINUX_BIF_STUB(BIF_ComObjQuery)
 LINUX_BIF_STUB(BIF_ComObjType)
 LINUX_BIF_STUB(BIF_ComObjValue)
 LINUX_BIF_STUB(BIF_DllCall)
-LINUX_BIF_STUB(BIF_NumGet)
-LINUX_BIF_STUB(BIF_NumPut)
 LINUX_BIF_STUB(BIF_Reg)
 LINUX_BIF_STUB(BIF_RegEx)
 LINUX_BIF_STUB(BIF_Sound)
-LINUX_BIF_STUB(BIF_StrGetPut)
-LINUX_BIF_STUB(BIF_StrPtr)
 
 // WinExist/WinActive: no X11 window backend yet, so no window ever matches.
 // Per the docs both return an empty string when no window is found.
@@ -77,15 +73,178 @@ LINUX_BIV_STUB_RW(BIV_LastError)
 LINUX_BIV_STUB(BIV_LineFile)
 LINUX_BIV_STUB(BIV_LineNumber)
 LINUX_BIV_STUB_RW(BIV_ListLines)
-LINUX_BIV_STUB(BIV_LoopFileAttrib)
-LINUX_BIV_STUB(BIV_LoopFileDir)
-LINUX_BIV_STUB(BIV_LoopFileExt)
-LINUX_BIV_STUB(BIV_LoopFileFullPath)
-LINUX_BIV_STUB(BIV_LoopFileName)
-LINUX_BIV_STUB(BIV_LoopFilePath)
-LINUX_BIV_STUB(BIV_LoopFileShortPath)
-LINUX_BIV_STUB(BIV_LoopFileSize)
-LINUX_BIV_STUB(BIV_LoopFileTime)
+// --- Loop Files built-in variables (mirrors lib/vars.cpp implementations) ---
+
+static void LinuxFixLoopFilePath(LPTSTR aBuf, LPTSTR aPattern)
+{
+	int count = 0;
+	if (*aPattern == '.')
+	{
+		if (!aPattern[1])
+			count = 1; // aBuf "x\y\y" should be "x\y" for "x\y\.".
+		else if (aPattern[1] == '.' && !aPattern[2])
+			count = 2; // aBuf "x\y\x" should be "x" for "x\y\..".
+	}
+	for (; count > 0; --count)
+	{
+		LPTSTR end = _tcsrchr(aBuf, '\\');
+		if (!end)
+			end = _tcsrchr(aBuf, '/');
+		if (end)
+			*end = '\0';
+	}
+}
+
+static void LinuxReturnLoopFilePath(ResultToken &aResultToken, LPTSTR aPattern, LPTSTR aPrefix, size_t aPrefixLen, LPTSTR aSuffix, size_t aSuffixLen)
+{
+	if (!TokenSetResult(aResultToken, nullptr, aPrefixLen + aSuffixLen))
+		return;
+	aResultToken.symbol = SYM_STRING;
+	LPTSTR buf = aResultToken.marker;
+	tmemcpy(buf, aPrefix, aPrefixLen);
+	tmemcpy(buf + aPrefixLen, aSuffix, aSuffixLen + 1); // +1 for \0.
+	LinuxFixLoopFilePath(buf, aPattern);
+	aResultToken.marker_length = -1;
+}
+
+void BIV_LoopFileName(ResultToken &aResultToken, LPTSTR aVarName)
+{
+	LPTSTR filename = _T(""); // Set default.
+	if (g->mLoopFile)
+	{
+		if (ctoupper(aVarName[10]) != 'S' || !*(filename = g->mLoopFile->cAlternateFileName))
+			filename = g->mLoopFile->cFileName;
+	}
+	aResultToken.SetValue(filename);
+}
+
+void BIV_LoopFileExt(ResultToken &aResultToken, LPTSTR aVarName)
+{
+	(void)aVarName;
+	LPTSTR file_ext = _T(""); // Set default.
+	if (g->mLoopFile)
+	{
+		if (file_ext = _tcsrchr(g->mLoopFile->cFileName, '.'))
+			++file_ext;
+		else
+			file_ext = _T("");
+	}
+	aResultToken.SetValue(file_ext);
+}
+
+void BIV_LoopFileDir(ResultToken &aResultToken, LPTSTR aVarName)
+{
+	(void)aVarName;
+	if (!g->mLoopFile)
+	{
+		aResultToken.SetValue(_T(""));
+		return;
+	}
+	LoopFilesStruct &lfs = *g->mLoopFile;
+	LPTSTR dir_end = lfs.file_path + lfs.dir_length; // Start of the filename.
+	size_t suffix_length = dir_end - lfs.file_path_suffix; // Directory names\ added since the loop started.
+	size_t total_length = lfs.orig_dir_length + suffix_length;
+	if (total_length)
+		--total_length; // Omit the trailing slash.
+	if (!TokenSetResult(aResultToken, nullptr, total_length))
+		return;
+	aResultToken.symbol = SYM_STRING;
+	LPTSTR buf = aResultToken.marker;
+	tmemcpy(buf, lfs.orig_dir, lfs.orig_dir_length);
+	tmemcpy(buf + lfs.orig_dir_length, lfs.file_path_suffix, suffix_length);
+	buf[total_length] = '\0';
+}
+
+void BIV_LoopFilePath(ResultToken &aResultToken, LPTSTR aVarName)
+{
+	(void)aVarName;
+	if (!g->mLoopFile)
+	{
+		aResultToken.SetValue(_T(""));
+		return;
+	}
+	LoopFilesStruct &lfs = *g->mLoopFile;
+	LinuxReturnLoopFilePath(aResultToken, lfs.pattern
+		, lfs.orig_dir, lfs.orig_dir_length
+		, lfs.file_path_suffix, lfs.file_path_length - (lfs.file_path_suffix - lfs.file_path));
+}
+
+void BIV_LoopFileFullPath(ResultToken &aResultToken, LPTSTR aVarName)
+{
+	(void)aVarName;
+	if (!g->mLoopFile)
+	{
+		aResultToken.SetValue(_T(""));
+		return;
+	}
+	LoopFilesStruct &lfs = *g->mLoopFile;
+	LinuxReturnLoopFilePath(aResultToken, lfs.pattern
+		, lfs.long_dir, lfs.long_dir_length
+		, lfs.file_path_suffix, lfs.file_path_length - (lfs.file_path_suffix - lfs.file_path));
+}
+
+void BIV_LoopFileShortPath(ResultToken &aResultToken, LPTSTR aVarName)
+{
+	(void)aVarName;
+	if (!g->mLoopFile)
+	{
+		aResultToken.SetValue(_T(""));
+		return;
+	}
+	LoopFilesStruct &lfs = *g->mLoopFile;
+	LPTSTR name = *lfs.cAlternateFileName ? lfs.cAlternateFileName : lfs.cFileName;
+	LinuxReturnLoopFilePath(aResultToken, lfs.pattern
+		, lfs.short_path, lfs.short_path_length
+		, name, _tcslen(name));
+}
+
+void BIV_LoopFileTime(ResultToken &aResultToken, LPTSTR aVarName)
+{
+	LPTSTR target_buf = aResultToken.buf;
+	*target_buf = '\0'; // Set default.
+	if (g->mLoopFile)
+	{
+		FILETIME ft;
+		switch (ctoupper(aVarName[14])) // A_LoopFileTime[A]ccessed / [C]reated / [M]odified
+		{
+		case 'M': ft = g->mLoopFile->ftLastWriteTime; break;
+		case 'C': ft = g->mLoopFile->ftCreationTime; break;
+		default: ft = g->mLoopFile->ftLastAccessTime;
+		}
+		FileTimeToYYYYMMDD(target_buf, ft, true);
+	}
+	aResultToken.SetValue(target_buf);
+}
+
+void BIV_LoopFileAttrib(ResultToken &aResultToken, LPTSTR aVarName)
+{
+	(void)aVarName;
+	LPTSTR target_buf = aResultToken.buf;
+	*target_buf = '\0'; // Set default.
+	if (g->mLoopFile)
+		FileAttribToStr(target_buf, g->mLoopFile->dwFileAttributes);
+	aResultToken.SetValue(target_buf);
+}
+
+void BIV_LoopFileSize(ResultToken &aResultToken, LPTSTR aVarName)
+{
+	if (g->mLoopFile)
+	{
+		ULARGE_INTEGER ul;
+		ul.HighPart = g->mLoopFile->nFileSizeHigh;
+		ul.LowPart = g->mLoopFile->nFileSizeLow;
+		int divider;
+		switch (ctoupper(aVarName[14])) // A_LoopFileSize[K/M]B
+		{
+		case 'K': divider = 1024; break;
+		case 'M': divider = 1024 * 1024; break;
+		default: divider = 0;
+		}
+		aResultToken.SetValue((__int64)(divider ? ((unsigned __int64)ul.QuadPart / divider) : ul.QuadPart));
+		return;
+	}
+	aResultToken.SetValue(_T(""));
+}
 LINUX_BIV_STUB(BIV_LoopRegKey)
 LINUX_BIV_STUB(BIV_LoopRegName)
 LINUX_BIV_STUB(BIV_LoopRegTimeModified)

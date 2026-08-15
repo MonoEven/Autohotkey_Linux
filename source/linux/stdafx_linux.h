@@ -32,6 +32,7 @@
 #include <sys/wait.h>
 #include <sys/random.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <filesystem>
 
 using std::min;
@@ -761,9 +762,36 @@ inline BOOL MoveFile(LPCTSTR aSrc, LPCTSTR aDst)
 	return rename(src, dst) == 0;
 }
 
-inline BOOL SetFileAttributes(LPCTSTR, DWORD)
+#define FILE_ATTRIBUTE_READONLY      0x00000001
+#define FILE_ATTRIBUTE_HIDDEN        0x00000002
+#define FILE_ATTRIBUTE_SYSTEM        0x00000004
+#define FILE_ATTRIBUTE_DIRECTORY     0x00000010
+#define FILE_ATTRIBUTE_ARCHIVE       0x00000020
+#define FILE_ATTRIBUTE_NORMAL        0x00000080
+#define FILE_ATTRIBUTE_TEMPORARY     0x00000100
+#define FILE_ATTRIBUTE_COMPRESSED    0x00000800
+#define FILE_ATTRIBUTE_OFFLINE       0x00001000
+#define FILE_ATTRIBUTE_REPARSE_POINT 0x00000400
+#define INVALID_FILE_ATTRIBUTES      ((DWORD)-1)
+
+inline BOOL SetFileAttributes(LPCTSTR aPath, DWORD aAttr)
 {
-	return TRUE;
+	if (!aPath)
+		return FALSE;
+	char buf[4096];
+	if (wcstombs(buf, aPath, sizeof(buf)) == (size_t)-1)
+		return FALSE;
+	struct stat st;
+	if (stat(buf, &st) != 0)
+		return FALSE;
+	mode_t mode = st.st_mode & 07777;
+	// Best-effort POSIX mapping: READONLY clears the write bits, anything
+	// else (e.g. NORMAL) restores them.  H/S/A/O/T have no POSIX equivalent.
+	if (aAttr & FILE_ATTRIBUTE_READONLY)
+		mode &= ~(S_IWUSR | S_IWGRP | S_IWOTH);
+	else
+		mode |= S_IWUSR | S_IWGRP | S_IWOTH;
+	return chmod(buf, mode) == 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -791,9 +819,10 @@ inline BOOL LocalFileTimeToFileTime(const FILETIME *aLocal, FILETIME *aUtc)
 {
 	if (!aLocal || !aUtc)
 		return FALSE;
-	time_t local_secs = (time_t)(LinuxFileTimeToInt64(aLocal) / 10000000 - LINUX_FILETIME_UNIX_EPOCH_OFFSET);
+	// aLocal encodes LOCAL wall-clock fields as if they were UTC.
+	time_t wall_as_utc = (time_t)(LinuxFileTimeToInt64(aLocal) / 10000000 - LINUX_FILETIME_UNIX_EPOCH_OFFSET);
 	struct tm t;
-	if (!localtime_r(&local_secs, &t))
+	if (!gmtime_r(&wall_as_utc, &t)) // Extract the wall-clock fields.
 		return FALSE;
 	t.tm_isdst = -1;
 	time_t utc_secs = mktime(&t); // Interpret the wall-clock fields as local time.
@@ -803,9 +832,35 @@ inline BOOL LocalFileTimeToFileTime(const FILETIME *aLocal, FILETIME *aUtc)
 	return TRUE;
 }
 
-inline BOOL SetFileTime(HANDLE, const FILETIME *, const FILETIME *, const FILETIME *)
+// Forward decl (defined with the process-handle helpers further below).
+inline bool LinuxIsProcessHandle(HANDLE h);
+
+static inline struct timespec LinuxFileTimeToTimespec(const FILETIME *aFt)
 {
-	return TRUE;
+	__int64 ft100 = LinuxFileTimeToInt64(aFt);
+	struct timespec ts;
+	ts.tv_sec = (time_t)(ft100 / 10000000 - LINUX_FILETIME_UNIX_EPOCH_OFFSET);
+	ts.tv_nsec = (long)((ft100 % 10000000) * 100);
+	return ts;
+}
+
+inline BOOL SetFileTime(HANDLE hFile, const FILETIME *aCreation, const FILETIME *aAccess, const FILETIME *aWrite)
+{
+	// The creation (birth) time cannot be changed on Linux; it is ignored.
+	if (!hFile || hFile == INVALID_HANDLE_VALUE || LinuxIsProcessHandle(hFile))
+		return FALSE;
+	if (!aAccess && !aWrite)
+		return TRUE;
+	int fd = fileno((FILE *)hFile);
+	if (fd < 0)
+		return FALSE;
+	struct stat st;
+	if (fstat(fd, &st) != 0)
+		return FALSE;
+	struct timespec times[2];
+	times[0] = aAccess ? LinuxFileTimeToTimespec(aAccess) : st.st_atim;
+	times[1] = aWrite ? LinuxFileTimeToTimespec(aWrite) : st.st_mtim;
+	return futimens(fd, times) == 0;
 }
 
 typedef UINT_PTR           WPARAM;
@@ -1182,12 +1237,19 @@ inline pid_t LinuxHandleToPid(HANDLE h)
 	return (pid_t)(((intptr_t)h) >> 3);
 }
 
+// Forward decls so CloseHandle() can free FindFirstFile handles (defined below).
+struct LinuxFindState;
+inline bool LinuxIsFindHandle(HANDLE h);
+inline BOOL FindClose(HANDLE hFindFile);
+
 inline BOOL CloseHandle(HANDLE hFile)
 {
 	if (!hFile || hFile == INVALID_HANDLE_VALUE)
 		return TRUE;
 	if (LinuxIsProcessHandle(hFile))
 		return TRUE; // Process handles need no cleanup on Linux.
+	if (LinuxIsFindHandle(hFile))
+		return FindClose(hFile);
 	return fclose((FILE*)hFile) == 0;
 }
 
@@ -1456,35 +1518,10 @@ inline int _sntprintf(LPTSTR buf, size_t count, LPCWSTR fmt, ...)
 }
 #endif
 
-inline HANDLE FindFirstFile(LPCTSTR, WIN32_FIND_DATA*)
-{
-	return INVALID_HANDLE_VALUE;
-}
-inline BOOL FindNextFile(HANDLE, WIN32_FIND_DATA*)
-{
-	return FALSE;
-}
-inline BOOL FindClose(HANDLE)
-{
-	return TRUE;
-}
-inline DWORD GetFileAttributes(LPCTSTR aPath)
-{
-	char buf[4096];
-	if (!aPath || wcstombs(buf, aPath, sizeof(buf)) == (size_t)-1)
-		return (DWORD)-1;
-	struct stat st;
-	if (stat(buf, &st) != 0)
-		return (DWORD)-1;
-	if (S_ISDIR(st.st_mode))
-		return 0x10; // FILE_ATTRIBUTE_DIRECTORY
-	return 0x80; // FILE_ATTRIBUTE_NORMAL
-}
-inline DWORD GetFileSize(HANDLE, DWORD*)
-{
-	return 0;
-}
-
+// ---------------------------------------------------------------------------
+// FindFirstFile/FindNextFile/FindClose (opendir/readdir + wildcard matching).
+// Handle is a heap LinuxFindState; CloseHandle()/FindClose() free it.
+// ---------------------------------------------------------------------------
 #define FILE_ATTRIBUTE_READONLY      0x00000001
 #define FILE_ATTRIBUTE_HIDDEN        0x00000002
 #define FILE_ATTRIBUTE_SYSTEM        0x00000004
@@ -1496,6 +1533,165 @@ inline DWORD GetFileSize(HANDLE, DWORD*)
 #define FILE_ATTRIBUTE_OFFLINE       0x00001000
 #define FILE_ATTRIBUTE_REPARSE_POINT 0x00000400
 #define INVALID_FILE_ATTRIBUTES      ((DWORD)-1)
+
+static inline bool LinuxWildcardMatch(const wchar_t *aPattern, const wchar_t *aName)
+{
+	const wchar_t *p = aPattern, *n = aName;
+	const wchar_t *star_p = nullptr, *star_n = nullptr;
+	while (*n)
+	{
+		if (*p == L'*')
+		{
+			star_p = p++;
+			star_n = n;
+		}
+		else if (*p == L'?' || towlower(*p) == towlower(*n))
+		{
+			++p;
+			++n;
+		}
+		else if (star_p)
+		{
+			p = star_p + 1;
+			n = ++star_n;
+		}
+		else
+			return false;
+	}
+	while (*p == L'*')
+		++p;
+	return *p == L'\0';
+}
+
+struct LinuxFindState
+{
+	static constexpr DWORD MAGIC = 0x46494E44; // "DINF"
+	DWORD magic;
+	std::string dir;
+	std::wstring pattern;
+	DIR *dirp;
+
+	LinuxFindState(const std::string &aDir, const std::wstring &aPattern)
+		: magic(MAGIC), dir(aDir), pattern(aPattern), dirp(opendir(aDir.c_str())) {}
+	~LinuxFindState()
+	{
+		if (dirp)
+			closedir(dirp);
+	}
+
+	bool Next(WIN32_FIND_DATA &aWfd)
+	{
+		if (!dirp)
+			return false;
+		for (;;)
+		{
+			struct dirent *ent = readdir(dirp);
+			if (!ent)
+			{
+				closedir(dirp);
+				dirp = nullptr;
+				return false;
+			}
+			const char *name = ent->d_name;
+			if (!strcmp(name, ".") || !strcmp(name, ".."))
+				continue;
+			wchar_t wname[512];
+			if (mbstowcs(wname, name, 511) == (size_t)-1)
+				continue;
+			if (!LinuxWildcardMatch(pattern.c_str(), wname))
+				continue;
+			std::string full = dir;
+			if (!full.empty() && full.back() != '/')
+				full += '/';
+			full += name;
+			struct stat st;
+			if (stat(full.c_str(), &st) != 0)
+				continue;
+			memset(&aWfd, 0, sizeof(aWfd));
+			aWfd.dwFileAttributes = S_ISDIR(st.st_mode) ? FILE_ATTRIBUTE_DIRECTORY : (FILE_ATTRIBUTE_NORMAL | FILE_ATTRIBUTE_ARCHIVE);
+			if (!(st.st_mode & (S_IWUSR | S_IWGRP | S_IWOTH)))
+				aWfd.dwFileAttributes |= FILE_ATTRIBUTE_READONLY;
+			// FILETIME = 100ns since 1601-01-01 UTC.  Creation approximated by ctime.
+			__int64 ft = ((__int64)st.st_mtim.tv_sec + LINUX_FILETIME_UNIX_EPOCH_OFFSET) * 10000000 + st.st_mtim.tv_nsec / 100;
+			LinuxInt64ToFileTime(ft, &aWfd.ftLastWriteTime);
+			ft = ((__int64)st.st_atim.tv_sec + LINUX_FILETIME_UNIX_EPOCH_OFFSET) * 10000000 + st.st_atim.tv_nsec / 100;
+			LinuxInt64ToFileTime(ft, &aWfd.ftLastAccessTime);
+			ft = ((__int64)st.st_ctim.tv_sec + LINUX_FILETIME_UNIX_EPOCH_OFFSET) * 10000000 + st.st_ctim.tv_nsec / 100;
+			LinuxInt64ToFileTime(ft, &aWfd.ftCreationTime);
+			aWfd.nFileSizeHigh = (DWORD)(((__int64)st.st_size >> 32) & 0xFFFFFFFF);
+			aWfd.nFileSizeLow = (DWORD)(st.st_size & 0xFFFFFFFF);
+			wcsncpy(aWfd.cFileName, wname, _countof(aWfd.cFileName) - 1);
+			aWfd.cFileName[_countof(aWfd.cFileName) - 1] = L'\0';
+			aWfd.cAlternateFileName[0] = L'\0';
+			return true;
+		}
+	}
+};
+
+inline bool LinuxIsFindHandle(HANDLE h)
+{
+	return h && h != INVALID_HANDLE_VALUE && !LinuxIsProcessHandle(h)
+		&& *(const DWORD *)h == LinuxFindState::MAGIC;
+}
+
+inline HANDLE FindFirstFile(LPCTSTR aFileSpec, WIN32_FIND_DATA *aWfd)
+{
+	if (!aFileSpec || !aWfd)
+		return INVALID_HANDLE_VALUE;
+	// Split into directory part and pattern; accept both '/' and '\'.
+	std::wstring spec(aFileSpec);
+	for (auto &c : spec)
+		if (c == L'\\')
+			c = L'/';
+	size_t slash = spec.find_last_of(L'/');
+	std::wstring dir_ws = (slash == std::wstring::npos) ? L"." : (slash == 0 ? L"/" : spec.substr(0, slash));
+	std::wstring pat = (slash == std::wstring::npos) ? spec : spec.substr(slash + 1);
+	if (pat.empty())
+		pat = L"*";
+	char dir_narrow[4096];
+	if (wcstombs(dir_narrow, dir_ws.c_str(), sizeof(dir_narrow)) == (size_t)-1)
+		return INVALID_HANDLE_VALUE;
+	auto *state = new LinuxFindState(dir_narrow, pat);
+	if (state->Next(*aWfd))
+		return (HANDLE)state;
+	delete state;
+	return INVALID_HANDLE_VALUE;
+}
+
+inline BOOL FindNextFile(HANDLE hFindFile, WIN32_FIND_DATA *aWfd)
+{
+	if (!hFindFile || !aWfd || !LinuxIsFindHandle(hFindFile))
+		return FALSE;
+	return ((LinuxFindState *)hFindFile)->Next(*aWfd) ? TRUE : FALSE;
+}
+
+inline BOOL FindClose(HANDLE hFindFile)
+{
+	if (!hFindFile || hFindFile == INVALID_HANDLE_VALUE || !LinuxIsFindHandle(hFindFile))
+		return TRUE;
+	delete (LinuxFindState *)hFindFile;
+	return TRUE;
+}
+
+inline DWORD GetFileAttributes(LPCTSTR aPath)
+{
+	char buf[4096];
+	if (!aPath || wcstombs(buf, aPath, sizeof(buf)) == (size_t)-1)
+		return (DWORD)-1;
+	struct stat st;
+	if (stat(buf, &st) != 0)
+		return (DWORD)-1;
+	if (S_ISDIR(st.st_mode))
+		return FILE_ATTRIBUTE_DIRECTORY;
+	DWORD attr = FILE_ATTRIBUTE_NORMAL | FILE_ATTRIBUTE_ARCHIVE; // Windows sets A on files by default.
+	if (!(st.st_mode & (S_IWUSR | S_IWGRP | S_IWOTH)))
+		attr |= FILE_ATTRIBUTE_READONLY;
+	return attr;
+}
+inline DWORD GetFileSize(HANDLE, DWORD*)
+{
+	return 0;
+}
 
 #define MAXDWORD ((DWORD)0xffffffff)
 #define NO_ERROR 0
@@ -3025,56 +3221,98 @@ inline UINT GetACP()
 inline int MultiByteToWideChar(UINT aCodePage, DWORD aFlags, LPCSTR aSrc, int aSrcLen, LPWSTR aDst, int aDstLen)
 {
 	// Simplified UTF-8/ANSI -> UTF-16 conversion for the Linux port.
+	(void)aCodePage; (void)aFlags;
 	if (!aSrc)
 		return 0;
 	if (aSrcLen < 0)
 		aSrcLen = (int)strlen(aSrc) + 1;
-	if (!aDst)
+	// First pass: determine the required number of wchar_t units.
+	int required = 0;
+	for (int i = 0; i < aSrcLen;)
 	{
-		// Return required buffer size (number of wchar_t units).
-		return aSrcLen;
+		unsigned char ch = (unsigned char)aSrc[i];
+		if (ch < 0x80) { ++i; required += 1; }
+		else if ((ch & 0xE0) == 0xC0 && i + 1 < aSrcLen) { i += 2; required += 1; }
+		else if ((ch & 0xF0) == 0xE0 && i + 2 < aSrcLen) { i += 3; required += 1; }
+		else if ((ch & 0xF8) == 0xF0 && i + 3 < aSrcLen) { i += 4; required += 2; } // -> surrogate pair
+		else { ++i; required += 1; }
 	}
-	size_t written = 0;
-	for (int i = 0; i < aSrcLen && written < (size_t)aDstLen; ++i)
+	if (!aDst)
+		return required;
+	int written = 0;
+	for (int i = 0; i < aSrcLen && written < aDstLen;)
 	{
 		unsigned char ch = (unsigned char)aSrc[i];
 		if (ch < 0x80)
 		{
 			aDst[written++] = (wchar_t)ch;
+			++i;
 		}
 		else if ((ch & 0xE0) == 0xC0 && i + 1 < aSrcLen)
 		{
-			aDst[written++] = (wchar_t)(((ch & 0x1F) << 6) | (aSrc[++i] & 0x3F));
+			aDst[written++] = (wchar_t)(((ch & 0x1F) << 6) | ((unsigned char)aSrc[i + 1] & 0x3F));
+			i += 2;
 		}
 		else if ((ch & 0xF0) == 0xE0 && i + 2 < aSrcLen)
 		{
-			aDst[written++] = (wchar_t)(((ch & 0x0F) << 12) | ((aSrc[i + 1] & 0x3F) << 6) | (aSrc[i + 2] & 0x3F));
-			i += 2;
+			aDst[written++] = (wchar_t)(((ch & 0x0F) << 12) | (((unsigned char)aSrc[i + 1] & 0x3F) << 6) | ((unsigned char)aSrc[i + 2] & 0x3F));
+			i += 3;
+		}
+		else if ((ch & 0xF8) == 0xF0 && i + 3 < aSrcLen)
+		{
+			unsigned int cp = ((ch & 0x07) << 18) | (((unsigned char)aSrc[i + 1] & 0x3F) << 12)
+				| (((unsigned char)aSrc[i + 2] & 0x3F) << 6) | ((unsigned char)aSrc[i + 3] & 0x3F);
+			cp -= 0x10000;
+			aDst[written++] = (wchar_t)(0xD800 + (cp >> 10));
+			if (written < aDstLen)
+				aDst[written++] = (wchar_t)(0xDC00 + (cp & 0x3FF));
+			i += 4;
 		}
 		else
 		{
 			aDst[written++] = (wchar_t)ch;
+			++i;
 		}
 	}
-	return (int)written;
+	return written;
 }
 
 inline int WideCharToMultiByte(UINT aCodePage, DWORD aFlags, LPCWSTR aSrc, int aSrcLen, LPSTR aDst, int aDstLen, LPCSTR aDefaultChar, BOOL* aUsedDefaultChar)
 {
 	// Simplified UTF-16 -> UTF-8/ANSI conversion for the Linux port.
+	(void)aCodePage; (void)aFlags; (void)aDefaultChar;
 	if (!aSrc)
 		return 0;
 	if (aSrcLen < 0)
 		aSrcLen = (int)wcslen(aSrc) + 1;
-	if (!aDst)
-	{
-		// Rough upper bound: each wchar becomes at most 3 UTF-8 bytes.
-		return aSrcLen * 3;
-	}
-	size_t written = 0;
-	for (int i = 0; i < aSrcLen && written + 3 < (size_t)aDstLen; ++i)
+	// First pass: determine the exact required byte count (Win32 semantics).
+	int required = 0;
+	for (int i = 0; i < aSrcLen; ++i)
 	{
 		unsigned int cp = (unsigned int)aSrc[i];
+		if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < aSrcLen
+			&& (unsigned int)aSrc[i + 1] >= 0xDC00 && (unsigned int)aSrc[i + 1] <= 0xDFFF)
+		{
+			cp = 0x10000 + ((cp - 0xD800) << 10) + ((unsigned int)aSrc[++i] - 0xDC00);
+		}
+		if (cp < 0x80) required += 1;
+		else if (cp < 0x800) required += 2;
+		else if (cp < 0x10000) required += 3;
+		else required += 4;
+	}
+	if (aUsedDefaultChar)
+		*aUsedDefaultChar = FALSE;
+	if (!aDst)
+		return required;
+	int written = 0;
+	for (int i = 0; i < aSrcLen && written + 3 < aDstLen; ++i)
+	{
+		unsigned int cp = (unsigned int)aSrc[i];
+		if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < aSrcLen
+			&& (unsigned int)aSrc[i + 1] >= 0xDC00 && (unsigned int)aSrc[i + 1] <= 0xDFFF)
+		{
+			cp = 0x10000 + ((cp - 0xD800) << 10) + ((unsigned int)aSrc[++i] - 0xDC00);
+		}
 		if (cp < 0x80)
 		{
 			aDst[written++] = (char)cp;
@@ -3084,14 +3322,21 @@ inline int WideCharToMultiByte(UINT aCodePage, DWORD aFlags, LPCWSTR aSrc, int a
 			aDst[written++] = (char)(0xC0 | (cp >> 6));
 			aDst[written++] = (char)(0x80 | (cp & 0x3F));
 		}
-		else
+		else if (cp < 0x10000)
 		{
 			aDst[written++] = (char)(0xE0 | (cp >> 12));
 			aDst[written++] = (char)(0x80 | ((cp >> 6) & 0x3F));
 			aDst[written++] = (char)(0x80 | (cp & 0x3F));
 		}
+		else
+		{
+			aDst[written++] = (char)(0xF0 | (cp >> 18));
+			aDst[written++] = (char)(0x80 | ((cp >> 12) & 0x3F));
+			aDst[written++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+			aDst[written++] = (char)(0x80 | (cp & 0x3F));
+		}
 	}
-	return (int)written;
+	return written;
 }
 
 #define _alloca alloca

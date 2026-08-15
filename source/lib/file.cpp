@@ -1,4 +1,4 @@
-﻿/*
+/*
 AutoHotkey
 
 Copyright 2003-2009 Chris Mallett (support@autohotkey.com)
@@ -698,6 +698,9 @@ static FResult FilePatternApply(LPCTSTR aFilePattern, FileLoopModeType aOperateO
 	FilePatternStruct fps;
 
 	auto last_backslash = _tcsrchr(aFilePattern, '\\');
+	LPTSTR last_slash = _tcsrchr(aFilePattern, '/'); // Linux port: also split on forward slashes.
+	if (!last_backslash || (last_slash && last_slash > last_backslash))
+		last_backslash = last_slash;
 	if (last_backslash)
 		fps.dir_length = last_backslash - aFilePattern + 1; // Include the slash.
 	else // Use current working directory, e.g. if user specified only *.*

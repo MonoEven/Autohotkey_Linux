@@ -94,13 +94,36 @@ bool WideToNarrow(const wchar_t *aIn, char *aOut, size_t aOutSize)
 		aOut[0] = '\0';
 		return true;
 	}
-	size_t n = wcstombs(aOut, aIn, aOutSize - 1);
-	if (n == (size_t)-1)
+	// glibc's wcstombs() rejects UTF-16 surrogate pairs even in C.UTF-8, so
+	// encode manually (the locale is always UTF-8 for the console path).
+	size_t out_pos = 0;
+	for (const wchar_t *p = aIn; *p && out_pos + 4 < aOutSize; ++p)
 	{
-		aOut[0] = '\0';
-		return false;
+		unsigned int cp = (unsigned int)*p;
+		if (cp >= 0xD800 && cp <= 0xDBFF && p[1] >= 0xDC00 && p[1] <= 0xDFFF)
+			cp = 0x10000 + ((cp - 0xD800) << 10) + ((unsigned int)*++p - 0xDC00);
+		if (cp < 0x80)
+			aOut[out_pos++] = (char)cp;
+		else if (cp < 0x800)
+		{
+			aOut[out_pos++] = (char)(0xC0 | (cp >> 6));
+			aOut[out_pos++] = (char)(0x80 | (cp & 0x3F));
+		}
+		else if (cp < 0x10000)
+		{
+			aOut[out_pos++] = (char)(0xE0 | (cp >> 12));
+			aOut[out_pos++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+			aOut[out_pos++] = (char)(0x80 | (cp & 0x3F));
+		}
+		else
+		{
+			aOut[out_pos++] = (char)(0xF0 | (cp >> 18));
+			aOut[out_pos++] = (char)(0x80 | ((cp >> 12) & 0x3F));
+			aOut[out_pos++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+			aOut[out_pos++] = (char)(0x80 | (cp & 0x3F));
+		}
 	}
-	aOut[n] = '\0';
+	aOut[out_pos] = '\0';
 	return true;
 }
 
