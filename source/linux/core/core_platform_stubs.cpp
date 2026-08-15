@@ -11,7 +11,20 @@
 #include "../../WinGroup.h"
 
 // --- application/message pump ---
-bool MsgSleep(int, MessageMode) { return true; }
+bool MsgSleep(int aDuration, MessageMode)
+{
+	// Real sleep so that Sleep() and other timing-sensitive code behaves
+	// correctly on Linux.  Script timers are not fired yet (the Windows
+	// message pump that runs them has not been ported).
+	if (aDuration > 0)
+	{
+		struct timespec ts;
+		ts.tv_sec = aDuration / 1000;
+		ts.tv_nsec = (aDuration % 1000) * 1000000L;
+		nanosleep(&ts, nullptr);
+	}
+	return true;
+}
 bool MsgMonitor(HWND, UINT, WPARAM, LPARAM, MSG *, LRESULT &aMsgReply) { aMsgReply = 0; return false; }
 void InitNewThread(int, bool, bool, bool) {}
 void ResumeUnderlyingThread() {}
@@ -68,7 +81,6 @@ LPTSTR Script::CurrentFile() { return _T(""); }
 LineNumberType Script::CurrentLine() { return 0; }
 ResultType Script::DoRunAs(LPTSTR, LPCTSTR, bool, WORD, PROCESS_INFORMATION &, bool &aSuccess, HANDLE &, DWORD &) { aSuccess = false; return FAIL; }
 UserMenu *Script::FindMenu(HMENU) { return nullptr; }
-Func *Script::GetBuiltInMdFunc(LPTSTR) { return nullptr; }
 
 // --- window/group ---
 WindowSpec *WinGroup::IsMember(HWND, ScriptThreadSettings &) { return nullptr; }
@@ -107,3 +119,70 @@ ResultType UserMenu::Display(bool, int, int) { return OK; }
 UserMenuItem *UserMenu::FindItemByID(UINT) { return nullptr; }
 ObjectMemberMd UserMenu::sMembers[] = {};
 int UserMenu::sMemberCount = 0;
+
+// --- file utilities (POSIX implementations for lib/file.cpp) ---
+static bool WideToPath(LPCTSTR aWide, char *aBuf, size_t aBufSize)
+{
+	if (!aWide || wcstombs(aBuf, aWide, aBufSize) == (size_t)-1)
+		return false;
+	return true;
+}
+
+bool Line::Util_CopyDir(LPCTSTR aSrc, LPCTSTR aDst, int, bool aMove)
+{
+	char src[4096], dst[4096];
+	if (!WideToPath(aSrc, src, sizeof(src)) || !WideToPath(aDst, dst, sizeof(dst)))
+		return false;
+	try
+	{
+		std::filesystem::copy(src, dst, std::filesystem::copy_options::recursive
+			| std::filesystem::copy_options::overwrite_existing);
+		if (aMove)
+			std::filesystem::remove_all(src);
+		return true;
+	}
+	catch (...)
+	{
+		return false;
+	}
+}
+
+bool Line::Util_RemoveDir(LPCTSTR aSrc, bool)
+{
+	char src[4096];
+	if (!WideToPath(aSrc, src, sizeof(src)))
+		return false;
+	try
+	{
+		std::filesystem::remove_all(src);
+		return true;
+	}
+	catch (...)
+	{
+		return false;
+	}
+}
+
+int Line::Util_CopyFile(LPCTSTR aSrc, LPCTSTR aDst, bool aOverwrite, bool aMove, DWORD &aLastError)
+{
+	char src[4096], dst[4096];
+	if (!WideToPath(aSrc, src, sizeof(src)) || !WideToPath(aDst, dst, sizeof(dst)))
+	{
+		aLastError = ERROR_INVALID_PARAMETER;
+		return 0;
+	}
+	try
+	{
+		auto opts = aOverwrite ? std::filesystem::copy_options::overwrite_existing
+			: std::filesystem::copy_options::none;
+		std::filesystem::copy_file(src, dst, opts);
+		if (aMove)
+			std::filesystem::remove(src);
+		return 1;
+	}
+	catch (...)
+	{
+		aLastError = ERROR_ALREADY_EXISTS;
+		return 0;
+	}
+}

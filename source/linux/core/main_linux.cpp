@@ -43,8 +43,17 @@ int main(int argc, char** argv)
 	if (!load_result)
 		return 0;
 
+	// LoadFromFile() resets mIsReadyToExecute to false.  On Windows the ready
+	// flag is set by InitForExecution() after the windows/tray icon are created;
+	// on Linux we have no windows yet, so mark the script ready right before
+	// running the auto-execute section.  This makes Script::ExitApp() use
+	// mPendingExitCode (0 for a clean run) instead of CRITICAL_ERROR (2).
+	g_script.mIsReadyToExecute = true;
+
 	Hotkey::ManifestAllHotkeysHotstringsHooks();
 	ResultType exec_result = g_script.AutoExecSection();
+	if (exec_result == FAIL && !g_script.mPendingExitCode)
+		g_script.mPendingExitCode = CRITICAL_ERROR;
 	g_script.ExitApp(exec_result == FAIL ? EXIT_ERROR : EXIT_EXIT);
 	return 0;
 }

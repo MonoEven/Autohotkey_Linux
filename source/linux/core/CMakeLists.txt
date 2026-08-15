@@ -14,6 +14,7 @@ add_library(ahk_core_objects STATIC
     ../../script_object_bif.cpp
     ../../lib/math.cpp
     ../../lib/string.cpp
+    ../../lib/file.cpp
     ../../error.cpp
     ../../hotkey.cpp
     ../../os_version.cpp
@@ -38,6 +39,7 @@ add_executable(ahk_core
     $<TARGET_OBJECTS:ahk_core_objects>
     core_stubs.cpp
     core_builtin_stubs.cpp
+    core_mdfunc_linux.cpp
     core_platform_stubs.cpp
     main_linux.cpp
 )

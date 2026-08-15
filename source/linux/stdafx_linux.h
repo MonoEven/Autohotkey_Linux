@@ -26,6 +26,7 @@
 #include <ctype.h>
 #include <sys/utsname.h>
 #include <sys/stat.h>
+#include <filesystem>
 
 using std::min;
 using std::max;
@@ -561,9 +562,125 @@ inline int GetTimeFormat(LCID, DWORD, const SYSTEMTIME *, LPCTSTR, LPTSTR aBuf, 
 	return 0;
 }
 
-inline int _sctprintf(LPCTSTR, ...)
+// Implemented further below, where _vsntprintf is defined.
+inline int _vsntprintf(LPTSTR buf, size_t count, LPCWSTR fmt, va_list ap);
+
+inline int _sctprintf(LPCTSTR aFmt, ...)
 {
-	return 0;
+	wchar_t buf[32768];
+	va_list ap;
+	va_start(ap, aFmt);
+	int result = _vsntprintf(buf, sizeof(buf) / sizeof(buf[0]), aFmt, ap);
+	va_end(ap);
+	return result > 0 ? result : 0;
+}
+
+#define DECLSPEC_NOINLINE
+#define ERROR_ALREADY_EXISTS 183
+#define ERROR_INVALID_PARAMETER 87
+#define ERROR_BUFFER_OVERFLOW 111
+#define CREATE_NEW 1
+#define FILE_FLAG_NO_BUFFERING 0x20000000
+#define FILE_FLAG_BACKUP_SEMANTICS 0x02000000
+#define FILE_READ_ATTRIBUTES 0x0080
+typedef void* LPSECURITY_ATTRIBUTES;
+
+inline LPTSTR _tcsupr(LPTSTR s)
+{
+	for (LPTSTR p = s; p && *p; ++p)
+		*p = (TCHAR)towupper(*p);
+	return s;
+}
+
+inline BOOL CreateDirectory(LPCTSTR aPath, LPSECURITY_ATTRIBUTES)
+{
+	if (!aPath)
+		return FALSE;
+	char buf[4096];
+	if (wcstombs(buf, aPath, sizeof(buf)) == (size_t)-1)
+		return FALSE;
+	return mkdir(buf, 0777) == 0;
+}
+
+inline BOOL DeleteFile(LPCTSTR aPath)
+{
+	if (!aPath)
+		return FALSE;
+	char buf[4096];
+	if (wcstombs(buf, aPath, sizeof(buf)) == (size_t)-1)
+		return FALSE;
+	return remove(buf) == 0;
+}
+
+inline BOOL CopyFile(LPCTSTR aSrc, LPCTSTR aDst, BOOL aFailIfExists)
+{
+	namespace fs = std::filesystem;
+	try
+	{
+		fs::copy_file(aSrc, aDst, aFailIfExists ? fs::copy_options::none : fs::copy_options::overwrite_existing);
+		return TRUE;
+	}
+	catch (...)
+	{
+		return FALSE;
+	}
+}
+
+inline BOOL MoveFile(LPCTSTR aSrc, LPCTSTR aDst)
+{
+	if (!aSrc || !aDst)
+		return FALSE;
+	char src[4096], dst[4096];
+	if (wcstombs(src, aSrc, sizeof(src)) == (size_t)-1 || wcstombs(dst, aDst, sizeof(dst)) == (size_t)-1)
+		return FALSE;
+	return rename(src, dst) == 0;
+}
+
+inline BOOL SetFileAttributes(LPCTSTR, DWORD)
+{
+	return TRUE;
+}
+
+// ---------------------------------------------------------------------------
+// FILETIME / SYSTEMTIME conversions (Windows semantics: FILETIME and
+// SYSTEMTIME in SystemTimeToFileTime/FileTimeToSystemTime are UTC; the
+// Local/FileTime pair converts between UTC and local wall-clock time).
+// ---------------------------------------------------------------------------
+
+// Seconds between the Windows FILETIME epoch (1601-01-01 UTC) and the Unix
+// epoch (1970-01-01 UTC).
+static const __int64 LINUX_FILETIME_UNIX_EPOCH_OFFSET = 11644473600LL;
+
+static inline __int64 LinuxFileTimeToInt64(const FILETIME *aFt)
+{
+	return ((__int64)aFt->dwHighDateTime << 32) | (DWORD)aFt->dwLowDateTime;
+}
+
+static inline void LinuxInt64ToFileTime(__int64 aValue, FILETIME *aFt)
+{
+	aFt->dwLowDateTime = (DWORD)(aValue & 0xFFFFFFFF);
+	aFt->dwHighDateTime = (DWORD)((aValue >> 32) & 0xFFFFFFFF);
+}
+
+inline BOOL LocalFileTimeToFileTime(const FILETIME *aLocal, FILETIME *aUtc)
+{
+	if (!aLocal || !aUtc)
+		return FALSE;
+	time_t local_secs = (time_t)(LinuxFileTimeToInt64(aLocal) / 10000000 - LINUX_FILETIME_UNIX_EPOCH_OFFSET);
+	struct tm t;
+	if (!localtime_r(&local_secs, &t))
+		return FALSE;
+	t.tm_isdst = -1;
+	time_t utc_secs = mktime(&t); // Interpret the wall-clock fields as local time.
+	if (utc_secs == (time_t)-1)
+		return FALSE;
+	LinuxInt64ToFileTime(((__int64)utc_secs + LINUX_FILETIME_UNIX_EPOCH_OFFSET) * 10000000, aUtc);
+	return TRUE;
+}
+
+inline BOOL SetFileTime(HANDLE, const FILETIME *, const FILETIME *, const FILETIME *)
+{
+	return TRUE;
 }
 
 typedef UINT_PTR           WPARAM;
@@ -633,7 +750,8 @@ typedef long               HRESULT;
 #define _tcschr     wcschr
 #define _tcstol     wcstol
 #define _tcstoul    wcstoul
-#define _sntprintf  swprintf
+// _sntprintf/_stprintf/_sctprintf are implemented as inline functions below
+// (near _vsntprintf) so that "%s" is converted to "%ls" for glibc.
 #define _ftprintf   fwprintf
 #define _tprintf    wprintf
 #define _tcsftime   wcsftime
@@ -717,9 +835,10 @@ inline __int64 _ttoi64(const char* s)
 #ifdef UNICODE
 inline int _stprintf(LPTSTR aBuf, LPCWSTR aFmt, ...)
 {
+	// Route through _vsntprintf so that "%s" is converted to "%ls" for glibc.
 	va_list ap;
 	va_start(ap, aFmt);
-	int result = vswprintf(aBuf, 32768, aFmt, ap);
+	int result = _vsntprintf(aBuf, 32768, aFmt, ap);
 	va_end(ap);
 	return result;
 }
@@ -1038,25 +1157,66 @@ union ULARGE_INTEGER
 	ULONGLONG QuadPart;
 };
 
-inline BOOL SystemTimeToFileTime(const SYSTEMTIME*, FILETIME*)
+inline BOOL SystemTimeToFileTime(const SYSTEMTIME *aSt, FILETIME *aFt)
 {
+	if (!aSt || !aFt)
+		return FALSE;
+	struct tm t;
+	memset(&t, 0, sizeof(t));
+	t.tm_year = aSt->wYear - 1900;
+	t.tm_mon = aSt->wMonth - 1;
+	t.tm_mday = aSt->wDay;
+	t.tm_hour = aSt->wHour;
+	t.tm_min = aSt->wMinute;
+	t.tm_sec = aSt->wSecond;
+	t.tm_isdst = 0;
+	time_t secs = timegm(&t); // SYSTEMTIME is in UTC.
+	if (secs == (time_t)-1)
+		return FALSE;
+	LinuxInt64ToFileTime(((__int64)secs + LINUX_FILETIME_UNIX_EPOCH_OFFSET) * 10000000, aFt);
 	return TRUE;
 }
-inline BOOL FileTimeToLocalFileTime(const FILETIME*, FILETIME*)
+
+inline BOOL FileTimeToLocalFileTime(const FILETIME *aUtc, FILETIME *aLocal)
 {
+	if (!aUtc || !aLocal)
+		return FALSE;
+	time_t utc_secs = (time_t)(LinuxFileTimeToInt64(aUtc) / 10000000 - LINUX_FILETIME_UNIX_EPOCH_OFFSET);
+	struct tm t;
+	if (!localtime_r(&utc_secs, &t))
+		return FALSE;
+	// timegm() on the local wall-clock fields yields the local epoch seconds.
+	time_t local_secs = timegm(&t);
+	LinuxInt64ToFileTime(((__int64)local_secs + LINUX_FILETIME_UNIX_EPOCH_OFFSET) * 10000000, aLocal);
 	return TRUE;
 }
-inline BOOL FileTimeToSystemTime(const FILETIME*, SYSTEMTIME*)
+
+inline BOOL FileTimeToSystemTime(const FILETIME *aFt, SYSTEMTIME *aSt)
 {
+	if (!aFt || !aSt)
+		return FALSE;
+	__int64 ft = LinuxFileTimeToInt64(aFt);
+	time_t secs = (time_t)(ft / 10000000 - LINUX_FILETIME_UNIX_EPOCH_OFFSET);
+	struct tm t;
+	if (!gmtime_r(&secs, &t))
+		return FALSE;
+	aSt->wYear = t.tm_year + 1900;
+	aSt->wMonth = t.tm_mon + 1;
+	aSt->wDay = t.tm_mday;
+	aSt->wHour = t.tm_hour;
+	aSt->wMinute = t.tm_min;
+	aSt->wSecond = t.tm_sec;
+	aSt->wMilliseconds = (WORD)((ft / 10000) % 1000);
+	aSt->wDayOfWeek = t.tm_wday;
 	return TRUE;
 }
-inline void GetSystemTimeAsFileTime(FILETIME* ft)
+
+inline void GetSystemTimeAsFileTime(FILETIME *ft)
 {
-	if (ft)
-	{
-		ft->dwLowDateTime = 0;
-		ft->dwHighDateTime = 0;
-	}
+	if (!ft)
+		return;
+	time_t secs = time(nullptr);
+	LinuxInt64ToFileTime(((__int64)secs + LINUX_FILETIME_UNIX_EPOCH_OFFSET) * 10000000, ft);
 }
 
 #ifdef UNICODE
@@ -1103,6 +1263,17 @@ inline int _vsntprintf(LPTSTR buf, size_t count, LPCWSTR fmt, va_list ap)
 inline int _vsntprintf(LPTSTR buf, size_t count, LPCSTR fmt, va_list ap)
 {
 	return vsnprintf(buf, count, fmt, ap);
+}
+#endif
+
+#ifdef UNICODE
+inline int _sntprintf(LPTSTR buf, size_t count, LPCWSTR fmt, ...)
+{
+	va_list ap;
+	va_start(ap, fmt);
+	int result = _vsntprintf(buf, count, fmt, ap);
+	va_end(ap);
+	return result;
 }
 #endif
 

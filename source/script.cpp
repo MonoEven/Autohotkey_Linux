@@ -52,11 +52,18 @@ FuncEntry g_BIF[] =
 	BIF1(ComObjType, 1, 2),
 	BIF1(ComObjValue, 1, 1),
 	BIF1(Cos, 1, 1),
+	BIF1(DirCreate, 1, 1),
+	BIF1(DirDelete, 1, 2),
+	BIF1(DirExist, 1, 1),
 #ifdef ENABLE_DLLCALL
 	BIFn(DllCall, 1, NA, BIF_DllCall),
 #endif
 	BIF1(Exp, 1, 1),
+	BIF1(FileAppend, 2, 2),
+	BIF1(FileDelete, 1, 1),
+	BIF1(FileExist, 1, 1),
 	BIF1(FileOpen, 2, 3),
+	BIF1(FileRead, 1, 2),
 	BIFn(Floor, 1, 1, BIF_FloorCeil),
 	BIF1(Format, 1, NA),
 	BIF1(FormatTime, 0, 2),

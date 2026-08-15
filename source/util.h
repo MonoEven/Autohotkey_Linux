@@ -33,9 +33,11 @@ GNU General Public License for more details.
 #define tmemmove		wmemmove
 #define tmemset			wmemset
 #define tmemcmp			wmemcmp
-#define tmalloc(c)		((LPTSTR) malloc((c) << 1))
-#define trealloc(p, c)	((LPTSTR) realloc((p), (c) << 1))
-#define talloca(c)		((LPTSTR) _alloca((c) << 1))
+// NOTE: sizeof(TCHAR) is used instead of Windows' "c << 1" so that this also
+// works on Linux, where wchar_t is 4 bytes rather than 2.
+#define tmalloc(c)		((LPTSTR) malloc((c) * sizeof(TCHAR)))
+#define trealloc(p, c)	((LPTSTR) realloc((p), (c) * sizeof(TCHAR)))
+#define talloca(c)		((LPTSTR) _alloca((c) * sizeof(TCHAR)))
 #else
 #define tmemcpy			(char*)memcpy
 #define tmemmove		memmove

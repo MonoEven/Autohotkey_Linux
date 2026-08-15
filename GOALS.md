@@ -79,5 +79,13 @@ M2：核心解释器 Linux 编译。
 - [x] 接入 lib/string.cpp，启用真实 StrLen/SubStr/InStr/StrReplace/Trim/Sort 等字符串内建函数
 - [x] 修复 script_func_impl.h 空 __VA_ARGS__ 宏兼容与 BIF_Sort 的 goto 跨初始化问题
 - [x] 实现常用 A_* 内置变量（A_PtrSize/A_Is64bitOS/A_ComSpec/A_WorkingDir/A_ScriptName/A_UserName/A_TickCount 等）
+- [x] 接入 lib/file.cpp 并实现 FileRead/FileAppend/FileExist/DirExist/DirCreate/FileDelete 等文件内建函数
+- [x] 修复 `Script::GetBuiltInMdFunc`（Windows 上由 MdFunc.cpp + DynaCall 汇编提供）：Linux 版改为标准 BIF 约定的查表实现，接通 Exit/ExitApp/Sleep/Persistent/OnExit/OnError/DateAdd/DateDiff/StrSplit/DirCopy/DirMove/EnvGet/EnvSet/GetKey*/HotIf*/IsLabel/ListLines/OutputDebug/Pause/Suspend/Reload/SetWorkingDir/Thread/TraySetIcon/TrayTip/Critical 等真实实现；其余未移植内建函数返回明确的 "not implemented on Linux" 运行时错误（不再被当作未赋值变量读取）
+- [x] 修复 `MsgSleep` 为真实睡眠，Sleep() 生效
+- [x] 修复 `tmalloc/trealloc/talloca` 按 2 字节 wchar 计算（`<<1`）导致 Linux（wchar_t=4 字节）堆缓冲区溢出 → 全部内存错误消除（ASan 验证）
+- [x] 修复 `_stprintf/_sntprintf/_sctprintf`：走 `_vsntprintf` 的 `%s→%ls` 转换，Format()/错误消息等宽字符格式化正确
+- [x] 实现 SystemTimeToFileTime/FileTimeToSystemTime/FileTimeToLocalFileTime/LocalFileTimeToFileTime/GetSystemTimeAsFileTime，DateAdd/DateDiff/FormatTime 日期计算正确
+- [x] 修复 main_linux 退出码：LoadFromFile 后恢复 mIsReadyToExecute，成功脚本 exit 0，失败脚本 exit 2
+- [x] 建立回归测试 `tests/run_tests.sh`（17 项，常规构建与 ASan 构建全部通过）
 - [ ] 复杂 GUI/热键/其余内置函数仍需继续移植
 - [ ] 逐文件修复编译错误

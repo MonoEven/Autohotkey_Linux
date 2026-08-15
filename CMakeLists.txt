@@ -1,8 +1,9 @@
-# AutoHotkey Linux migration build system (initial scaffold).
+# AutoHotkey Linux migration build system.
 #
-# This CMake project currently only provides the platform abstraction library.
-# It does not yet compile the full AutoHotkey interpreter because the upstream
-# source still depends on Win32 headers.  See LINUX_PORT.md for the roadmap.
+# With BUILD_AHK_CORE=ON this compiles the core AutoHotkey v2 interpreter for
+# Linux (see source/linux/core and LINUX_PORT.md).  The result is a console
+# runner that executes .ahk scripts natively; GUI/hotkey backends (X11 etc.)
+# are still in progress.
 
 cmake_minimum_required(VERSION 3.16)
 project(AutoHotkey_Linux LANGUAGES CXX)
@@ -10,7 +11,7 @@ project(AutoHotkey_Linux LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-option(BUILD_AHK_CORE "Build AutoHotkey core interpreter for Linux" OFF)
+option(BUILD_AHK_CORE "Build AutoHotkey core interpreter for Linux" ON)
 
 add_subdirectory(source/linux)
 
