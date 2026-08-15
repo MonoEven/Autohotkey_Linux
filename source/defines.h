@@ -402,6 +402,13 @@ struct ExprTokenType  // Something in the compiler hates the name TokenType, so 
 		marker = aValue;
 		marker_length = aLength;
 	}
+	void SetValue(LPCTSTR aValue, size_t aLength = -1)
+	{
+		ASSERT(aValue);
+		symbol = SYM_STRING;
+		marker = const_cast<LPTSTR>(aValue);
+		marker_length = aLength;
+	}
 	void SetValue(IObject *aValue)
 	// Caller must AddRef() if appropriate.
 	{

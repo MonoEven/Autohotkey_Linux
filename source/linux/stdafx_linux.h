@@ -1376,6 +1376,170 @@ inline HRESULT SHGetKnownFolderPath(const void*, DWORD, HANDLE, wchar_t**)
 {
 	return (HRESULT)0x80004005L;
 }
+// Additional error.cpp / dialog / rich edit stubs.
+struct MONITORINFOEX
+{
+	DWORD cbSize;
+	RECT rcMonitor;
+	RECT rcWork;
+	DWORD dwFlags;
+	wchar_t szDevice[32];
+};
+
+#define MB_OK           0x00000000
+#define MB_SETFOREGROUND 0x00010000
+#define MB_TOPMOST      0x00040000
+#define _MAX_ULTOSTR_BASE10_COUNT 32
+#define DWLP_USER       0x8
+#define GWL_STYLE       (-16)
+#define WM_COMMAND      0x0111
+#define WM_NOTIFY       0x004E
+#define WM_CHAR         0x0102
+#define WM_INITDIALOG   0x0110
+#define EM_GETRECT      0x00B2
+#define EM_SETRECTNP    0x00B4
+#define EM_SETPARAFORMAT 0x0447
+#define EM_SETCHARFORMAT 0x0444
+#define EM_REPLACESEL   0x00C2
+#define EM_SETEVENTMASK 0x0445
+#define EM_REQUESTRESIZE 0x0449
+#define EM_SHOWSCROLLBAR 0x0460
+#define PFM_TABSTOPS    0x00000010
+#define CFM_SIZE        0x40000000
+#define CFM_COLOR       0x40000000
+#define CFM_BACKCOLOR   0x04000000
+#define CFM_LINK        0x20000000
+#define CFE_LINK        0x0020
+#define SCF_DEFAULT     0x0000
+#define SCF_SELECTION   0x0001
+#define ENM_REQUESTRESIZE 0x40000000
+#define ENM_LINK        0x04000000
+#define ENM_KEYEVENTS   0x00010000
+#define EN_MSGFILTER    0x0700
+#define EN_REQUESTRESIZE 0x0701
+#define EN_LINK         0x070B
+#define IDCONTINUE      4
+#define DM_SETDEFID     0x0401
+#define SB_VERT         1
+#define SB_HORZ         0
+#define WS_HSCROLL      0x00100000
+#define SM_CYSCREEN     1
+#define SM_CYHSCROLL    3
+#define ST_SELECTION    0x0001
+#define ST_UNICODE      0x0002
+#define ST_DEFAULT      0x0000
+#define WM_LBUTTONUP    0x0202
+#define EM_EXSETSEL     0x0437
+#define EM_GETTEXTRANGE 0x043B
+#define WM_NEXTDLGCTL   0x0028
+#define HRESULT_CODE(hr) ((hr) & 0xFFFF)
+#define HRESULT_FACILITY(hr) (((hr) >> 16) & 0x1FFF)
+
+typedef POINT* LPPOINT;
+
+struct CHARRANGE { LONG cpMin; LONG cpMax; };
+struct TEXTRANGE { CHARRANGE chrg; LPTSTR lpstrText; };
+struct PARAFORMAT
+{
+	DWORD cbSize;
+	DWORD dwMask;
+	WORD wNumbering;
+	WORD wEffects;
+	LONG dxStartIndent;
+	LONG dxRightIndent;
+	LONG dxOffset;
+	WORD cTabCount;
+	LONG rgxTabs[32];
+};
+struct SETTEXTEX { DWORD flags; UINT codepage; };
+struct CHARFORMAT2
+{
+	DWORD cbSize;
+	DWORD dwMask;
+	DWORD dwEffects;
+	LONG yHeight;
+	LONG yOffset;
+	COLORREF crTextColor;
+	COLORREF crBackColor;
+	BYTE bCharSet;
+	BYTE bPitchAndFamily;
+	TCHAR szFaceName[32];
+};
+struct MSGFILTER { UINT msg; WPARAM wParam; LPARAM lParam; };
+struct REQRESIZE { RECT rc; };
+struct ENLINK { NMHDR nmhdr; UINT msg; WPARAM wParam; LPARAM lParam; CHARRANGE chrg; };
+
+inline BOOL SetWindowText(HWND, LPCTSTR)
+{
+	return TRUE;
+}
+inline LONG_PTR SetWindowLongPtr(HWND, int, LONG_PTR)
+{
+	return 0;
+}
+inline HWND GetDlgItem(HWND, int)
+{
+	return nullptr;
+}
+inline BOOL MapDialogRect(HWND, RECT*)
+{
+	return TRUE;
+}
+inline BOOL EnableWindow(HWND, BOOL)
+{
+	return TRUE;
+}
+inline BOOL GetClientRect(HWND, RECT*)
+{
+	return TRUE;
+}
+inline int MapWindowPoints(HWND, HWND, POINT*, UINT)
+{
+	return 0;
+}
+inline BOOL MoveWindow(HWND, int, int, int, int, BOOL)
+{
+	return TRUE;
+}
+inline LRESULT DefDlgProc(HWND, UINT, WPARAM, LPARAM)
+{
+	return 0;
+}
+inline HWND SetFocus(HWND)
+{
+	return nullptr;
+}
+inline BOOL ShowWindow(HWND, int)
+{
+	return TRUE;
+}
+inline BOOL EndDialog(HWND, INT_PTR)
+{
+	return TRUE;
+}
+inline LONG_PTR GetWindowLongPtr(HWND, int)
+{
+	return 0;
+}
+inline BOOL PostMessage(HWND, UINT, WPARAM, LPARAM)
+{
+	return TRUE;
+}
+inline LONG GetWindowLong(HWND, int)
+{
+	return 0;
+}
+inline BOOL ScrollWindow(HWND, int, int, const RECT*, RECT*)
+{
+	return TRUE;
+}
+inline INT_PTR DialogBoxParam(HINSTANCE, LPCTSTR, HWND, void*, LPARAM)
+{
+	return 0;
+}
+inline void OutputDebugString(LPCTSTR)
+{
+}
 
 #ifdef UNICODE
 inline LPTSTR _itot(int value, LPTSTR buf, int radix) { std::wstring s = std::to_wstring(value); wcscpy(buf, s.c_str()); return buf; }
