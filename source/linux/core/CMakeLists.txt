@@ -7,6 +7,8 @@ add_executable(ahk_core
     ../../ahkversion.cpp
     ../../SimpleHeap.cpp
     ../../StringConv.cpp
+    ../../globaldata.cpp
+    ../../TextIO.cpp
     core_stubs.cpp
     main_linux.cpp
 )

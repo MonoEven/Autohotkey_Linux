@@ -168,6 +168,25 @@ struct OSVERSIONINFOW
 	wchar_t szCSDVersion[128];
 };
 
+struct KBDLLHOOKSTRUCT
+{
+	DWORD vkCode;
+	DWORD scanCode;
+	DWORD flags;
+	DWORD time;
+	ULONG_PTR dwExtraInfo;
+};
+
+struct MSG
+{
+	void* hwnd;
+	UINT message;
+	UINT_PTR wParam;
+	LONG_PTR lParam;
+	DWORD time;
+	POINT pt;
+};
+
 struct LOGFONT
 {
 	LONG lfHeight;
@@ -224,10 +243,12 @@ struct WIN32_FIND_DATA
 #define VK_BACK           0x08
 #define VK_TAB            0x09
 #define VK_RETURN         0x0D
+#define VK_CLEAR          0x0C
 #define VK_SHIFT          0x10
 #define VK_CONTROL        0x11
 #define VK_MENU           0x12
 #define VK_PAUSE          0x13
+#define VK_HELP           0x2F
 #define VK_CAPITAL        0x14
 #define VK_ESCAPE         0x1B
 #define VK_SPACE          0x20
@@ -241,6 +262,7 @@ struct WIN32_FIND_DATA
 #define VK_DOWN           0x28
 #define VK_INSERT         0x2D
 #define VK_DELETE         0x2E
+#define VK_SNAPSHOT       0x2C
 #define VK_0              0x30
 #define VK_1              0x31
 #define VK_2              0x32
@@ -280,6 +302,7 @@ struct WIN32_FIND_DATA
 #define VK_LWIN           0x5B
 #define VK_RWIN           0x5C
 #define VK_APPS           0x5D
+#define VK_SLEEP          0x5F
 #define VK_NUMPAD0        0x60
 #define VK_NUMPAD1        0x61
 #define VK_NUMPAD2        0x62
@@ -371,6 +394,7 @@ struct WIN32_FIND_DATA
 #define WS_CAPTION        0x00C00000
 #define WS_SYSMENU        0x00080000
 #define WS_MINIMIZEBOX    0x00020000
+#define WM_USER           0x0400
 
 // File API constants needed by TextIO.
 #define MB_ERR_INVALID_CHARS  0x00000008
@@ -388,6 +412,7 @@ struct WIN32_FIND_DATA
 #define ERROR_INVALID_HANDLE  6
 #define FILE_FLAG_SEQUENTIAL_SCAN 0x08000000
 #define FILE_CURRENT          1
+#define LOGPIXELSX            88
 
 // ---------------------------------------------------------------------------
 // Handles / pointers
@@ -413,6 +438,18 @@ typedef void*              HRAWINPUT;
 typedef void*              HACCEL;
 typedef void*              HGLOBAL;
 #define INVALID_HANDLE_VALUE ((HANDLE)(LONG_PTR)-1)
+
+struct CRITICAL_SECTION
+{
+	void* DebugInfo;
+	LONG LockCount;
+	LONG RecursionCount;
+	void* OwningThread;
+	void* LockSemaphore;
+	ULONG_PTR SpinCount;
+};
+
+typedef long (*WNDPROC)(HWND, UINT, UINT_PTR, LONG_PTR);
 
 typedef void*              LPVOID;
 typedef const void*        LPCVOID;
@@ -501,6 +538,7 @@ typedef long               HRESULT;
 #define _tcscmp     wcscmp
 #define _tcsncmp    wcsncmp
 #define _tcsicmp    wcsicasecmp
+#define lstrcmpi    _tcsicmp
 #define _tcsnicmp   wcsnicasecmp
 #define _tcsstr     wcsstr
 #define _tcsrchr    wcsrchr
@@ -509,7 +547,6 @@ typedef long               HRESULT;
 #define _ttoi64     wcstoll
 #define _tcstol     wcstol
 #define _tcstoul    wcstoul
-#define _stprintf   swprintf
 #define _sntprintf  swprintf
 #define _ftprintf   fwprintf
 #define _tprintf    wprintf
@@ -524,6 +561,7 @@ typedef long               HRESULT;
 #define _tcscmp     strcmp
 #define _tcsncmp    strncmp
 #define _tcsicmp    strcasecmp
+#define lstrcmpi    _tcsicmp
 #define _tcsnicmp   strncasecmp
 #define _tcsstr     strstr
 #define _tcsrchr    strrchr
@@ -571,6 +609,19 @@ inline float _tstof(const char* s)
 {
 	return strtof(s, nullptr);
 }
+
+#ifdef UNICODE
+inline int _stprintf(LPTSTR aBuf, LPCWSTR aFmt, ...)
+{
+	va_list ap;
+	va_start(ap, aFmt);
+	int result = vswprintf(aBuf, 32768, aFmt, ap);
+	va_end(ap);
+	return result;
+}
+#else
+#define _stprintf sprintf
+#endif
 
 inline int _isctype(int c, int type)
 {
@@ -673,6 +724,26 @@ inline int GetDlgCtrlID(HWND)
 inline HWND GetParent(HWND)
 {
 	return nullptr;
+}
+
+inline DWORD GetCurrentThreadId()
+{
+	return 1;
+}
+
+inline HDC GetDC(HWND)
+{
+	return nullptr;
+}
+
+inline int GetDeviceCaps(HDC, int)
+{
+	return 96;
+}
+
+inline int ReleaseDC(HWND, HDC)
+{
+	return 1;
 }
 
 inline int MulDiv(int nNumber, int nNumerator, int nDenominator)
@@ -821,6 +892,13 @@ inline int WideCharToMultiByte(UINT aCodePage, DWORD aFlags, LPCWSTR aSrc, int a
 }
 
 #define _alloca alloca
+#define _malloca _alloca
+#define _freea(p)
+#ifdef UNICODE
+#define _tcsdup wcsdup
+#else
+#define _tcsdup strdup
+#endif
 
 // Placeholder for codepage info; expanded as needed.
 struct CPINFO

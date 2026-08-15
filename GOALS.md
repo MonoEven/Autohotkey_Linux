@@ -50,5 +50,7 @@ M2：核心解释器 Linux 编译。
 - [x] 扩充 Win32 兼容层（UINT8/VK/HRESULT/GetForegroundWindow 等）
 - [x] script.h 已通过 Linux 语法编译
 - [x] TextIO.cpp 已可编译（尚未链接完整对象模型）
+- [x] globaldata.cpp 已编译并链接进 hk_core（含临时对象模型桩）
+- [x] TextIO.cpp 已链接进 hk_core（对象模型暂为桩实现）
 - [ ] 继续为其他核心模块（util/var/script/TextIO 等）解耦平台依赖
 - [ ] 逐文件修复编译错误

@@ -1,4 +1,4 @@
-﻿/*
+/*
 AutoHotkey
 
 Copyright 2003-2009 Chris Mallett (support@autohotkey.com)
@@ -215,7 +215,7 @@ struct input_type
 	UINT EndingMatchIndex;
 	UCHAR KeyVK[VK_ARRAY_COUNT]; // A sparse array of key flags by VK.
 	UCHAR KeySC[SC_ARRAY_COUNT]; // A sparse array of key flags by SC.
-	input_type::input_type() // A simple constructor to initialize the fields that need it.
+	input_type() // A simple constructor to initialize the fields that need it.
 		: Status(INPUT_OFF), Prev(NULL), ScriptObject(NULL)
 		, Buffer(NULL), match(NULL), MatchBuf(NULL), MatchBufSize(0)
 		, EndChars(NULL), EndCharsMax(0), KeyVK(), KeySC(), BufferLength(0)
