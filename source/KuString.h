@@ -1,4 +1,4 @@
-﻿/* This file is part of KuShellExtension
+/* This file is part of KuShellExtension
  * Copyright (C) 2008-2009 Kai-Chieh Ku (kjackie@gmail.com)
  *
  * This program is free software; you can redistribute it and/or
@@ -83,7 +83,7 @@ typedef CKuStringT<char, CKuStringUtilA> CKuStringA;
 typedef CKuStringT<wchar_t, CKuStringUtilW> CKuStringW;
 #endif
 
-#if defined(_WIN32) && defined(_UNICODE) && !defined(NO_WCHAR)
+#if (defined(_WIN32) || defined(__linux__)) && defined(_UNICODE) && !defined(NO_WCHAR)
 typedef CKuStringW CKuString;
 typedef CKuStringUtilW CKuStringUtil;
 #else

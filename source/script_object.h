@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "MdType.h"
 
@@ -13,7 +13,12 @@
 // ObjectBase - Common base class, implements reference counting.
 //
 
-class DECLSPEC_NOVTABLE ObjectBase : public IObjectComCompatible
+class DECLSPEC_NOVTABLE ObjectBase
+#ifdef __linux__
+    : public IObject
+#else
+    : public IObjectComCompatible
+#endif
 {
 protected:
 	ULONG mRefCount;

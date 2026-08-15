@@ -47,5 +47,6 @@ M2：核心解释器 Linux 编译。
 - [x] 添加可选 CMake target `ahk_core`，当前可编译 `ahkversion.cpp` + `SimpleHeap.cpp` + `StringConv.cpp` + Linux `main` stub
 - [x] 通过 `source/linux/core_errors.h` 解耦 `SimpleHeap.cpp` 对 `globaldata.h` 的依赖
 - [x] `StringConv.cpp` 已进入 Linux 核心构建
+- [x] 扩充 Win32 兼容层（UINT8/VK/HRESULT/GetForegroundWindow 等）
 - [ ] 继续为其他核心模块（util/var/script/TextIO 等）解耦平台依赖
 - [ ] 逐文件修复编译错误
