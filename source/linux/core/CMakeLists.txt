@@ -13,6 +13,7 @@ add_library(ahk_core_objects STATIC
     ../../script_object.cpp
     ../../script_object_bif.cpp
     ../../lib/math.cpp
+    ../../lib/string.cpp
     ../../error.cpp
     ../../hotkey.cpp
     ../../os_version.cpp

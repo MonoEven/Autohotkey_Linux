@@ -811,7 +811,7 @@ int SortUDF(const void *a1, const void *a2)
 
 	LPTSTR aStr1 = *(LPTSTR *)a1;
 	LPTSTR aStr2 = *(LPTSTR *)a2;
-	ExprTokenType param[] = { aStr1, aStr2, __int64(aStr2 - aStr1) };
+	ExprTokenType param[] = { aStr1, aStr2, (__int64)(aStr2 - aStr1) };
 	__int64 i64;
 	g_SortFuncResult = CallMethod(g_SortFunc, g_SortFunc, nullptr, param, _countof(param), &i64);
 	// An alternative to g_SortFuncResult using 'throw' to abort qsort() produced slightly
@@ -950,7 +950,8 @@ BIF_DECL(BIF_Sort)
 	for (item_count = 1, cp = aContents; *cp; ++cp)  // Start at 1 since item_count is delimiter_count+1
 		if (*cp == delimiter)
 			++item_count;
-	size_t aContents_length = cp - aContents;
+	size_t aContents_length;
+	aContents_length = cp - aContents;
 
 	// If the last character in the unsorted list is a delimiter then technically the final item
 	// in the list is a blank item.  However, if the options specify not to allow that, don't count that
@@ -1023,8 +1024,10 @@ BIF_DECL(BIF_Sort)
 	// Create the array of pointers that points into aContents to each delimited item.
 	// Use item_count + 1 to allow space for the last (blank) item in case
 	// trailing_delimiter_indicates_trailing_blank_item is false:
-	int unit_size = sort_random ? 2 : 1;
-	size_t item_size = unit_size * sizeof(LPTSTR);
+	int unit_size;
+	unit_size = sort_random ? 2 : 1;
+	size_t item_size;
+	item_size = unit_size * sizeof(LPTSTR);
 	item = (LPTSTR *)malloc((item_count + 1) * item_size);
 	if (!item)
 	{
@@ -1044,7 +1047,8 @@ BIF_DECL(BIF_Sort)
 	//    into the result.
 	// 2) Store a marker/pointer to each item (string) in aContents so that we know where
 	//    each item begins for sorting and recopying purposes.
-	LPTSTR *item_curr = item; // i.e. Don't use [] indexing for the reason in the paragraph previous to above.
+	LPTSTR *item_curr; // i.e. Don't use [] indexing for the reason in the paragraph previous to above.
+	item_curr = item;
 	for (item_count = 0, cp = *item_curr = aContents; *cp; ++cp)
 	{
 		if (*cp == delimiter)  // Each delimiter char becomes the terminator of the previous key phrase.
@@ -1112,11 +1116,14 @@ BIF_DECL(BIF_Sort)
 	aResultToken.symbol = SYM_STRING;
 
 	// Set default in case original last item is still the last item, or if last item was omitted due to being a dupe:
-	size_t i, item_count_minus_1 = item_count - 1;
-	DWORD omit_dupe_count = 0;
+	size_t i, item_count_minus_1;
+	item_count_minus_1 = item_count - 1;
+	DWORD omit_dupe_count;
+	omit_dupe_count = 0;
 	bool keep_this_item;
 	LPTSTR source, dest;
-	LPTSTR item_prev = NULL;
+	LPTSTR item_prev;
+	item_prev = NULL;
 
 	// Copy the sorted result back into output_var.  Do all except the last item, since the last
 	// item gets special treatment depending on the options that were specified.

@@ -521,6 +521,51 @@ typedef wchar_t*           LPWSTR;
 typedef const wchar_t*     LPCWSTR;
 #endif
 
+typedef DWORD LCID;
+#define LOCALE_SYSTEM_DEFAULT 0x0800
+#define LOCALE_USER_DEFAULT 0x0400
+#define DATE_SHORTDATE   0x00000001
+#define DATE_LONGDATE    0x00000002
+#define DATE_YEARMONTH   0x00000008
+#define TIME_NOSECONDS   0x00000002
+#define _totupper towupper
+
+inline void GetLocalTime(SYSTEMTIME *st)
+{
+	if (!st)
+		return;
+	time_t t = time(nullptr);
+	struct tm tmv;
+	localtime_r(&t, &tmv);
+	st->wYear = (WORD)(tmv.tm_year + 1900);
+	st->wMonth = (WORD)(tmv.tm_mon + 1);
+	st->wDayOfWeek = (WORD)tmv.tm_wday;
+	st->wDay = (WORD)tmv.tm_mday;
+	st->wHour = (WORD)tmv.tm_hour;
+	st->wMinute = (WORD)tmv.tm_min;
+	st->wSecond = (WORD)tmv.tm_sec;
+	st->wMilliseconds = 0;
+}
+
+inline int GetDateFormat(LCID, DWORD, const SYSTEMTIME *, LPCTSTR, LPTSTR aBuf, int aBufSize)
+{
+	if (aBuf && aBufSize > 0)
+		aBuf[0] = L'\0';
+	return 0;
+}
+
+inline int GetTimeFormat(LCID, DWORD, const SYSTEMTIME *, LPCTSTR, LPTSTR aBuf, int aBufSize)
+{
+	if (aBuf && aBufSize > 0)
+		aBuf[0] = L'\0';
+	return 0;
+}
+
+inline int _sctprintf(LPCTSTR, ...)
+{
+	return 0;
+}
+
 typedef UINT_PTR           WPARAM;
 typedef LONG_PTR           LPARAM;
 typedef LONG_PTR           LRESULT;

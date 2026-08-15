@@ -76,5 +76,7 @@ M2：核心解释器 Linux 编译。
 - [x] 链接 script_object_bif.cpp，接入真实 Object::HasBase/Op_Array/Op_Object 等对象内建函数
 - [x] 新增 BIF_MsgBox 控制台实现，MsgBox "Hi" 可输出到终端
 - [x] 接入 lib/math.cpp，启用真实 Abs/Sqrt/Round/Mod/Random 等数学内建函数
+- [x] 接入 lib/string.cpp，启用真实 StrLen/SubStr/InStr/StrReplace/Trim/Sort 等字符串内建函数
+- [x] 修复 script_func_impl.h 空 __VA_ARGS__ 宏兼容与 BIF_Sort 的 goto 跨初始化问题
 - [ ] 复杂 GUI/热键/其余内置函数仍需继续移植
 - [ ] 逐文件修复编译错误
