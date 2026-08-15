@@ -55,6 +55,7 @@ M2：核心解释器 Linux 编译。
 - [x] Linux 兼容层已实现 POSIX 文件读写，hk_core 可读取 .ahk 文件内容
 - [x] hk_core 已能最小化执行简单 .ahk（MsgBox 示例输出成功）
 - [x] 最小解释器支持变量赋值与 MsgBox 变量引用
+- [x] 最小解释器支持简单整数算术表达式
 - [x] script_object.cpp 已能在 Linux 下编译（链接仍需更多核心模块）
 - [x] ar.cpp 已能在 Linux 下编译（链接仍需更多核心模块）
 - [ ] 继续为其他核心模块（util/var/script/TextIO 等）解耦平台依赖

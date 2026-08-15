@@ -8,6 +8,49 @@
 #include <string>
 #include <map>
 #include <algorithm>
+#include <cctype>
+
+static bool eval_int_expr(const std::string& s, long long& out)
+{
+	std::string t = s;
+	t.erase(0, t.find_first_not_of(" \t"));
+	t.erase(t.find_last_not_of(" \t") + 1);
+	if (t.empty())
+		return false;
+	for (char op : {'+', '-', '*', '/'})
+	{
+		size_t pos = t.find(op);
+		if (pos != std::string::npos && pos > 0 && pos + 1 < t.size())
+		{
+			long long a = 0, b = 0;
+			try
+			{
+				a = std::stoll(t.substr(0, pos));
+				b = std::stoll(t.substr(pos + 1));
+			}
+			catch (...)
+			{
+				return false;
+			}
+			switch (op)
+			{
+				case '+': out = a + b; return true;
+				case '-': out = a - b; return true;
+				case '*': out = a * b; return true;
+				case '/': if (b == 0) return false; out = a / b; return true;
+			}
+		}
+	}
+	try
+	{
+		out = std::stoll(t);
+		return true;
+	}
+	catch (...)
+	{
+		return false;
+	}
+}
 
 int main(int argc, char** argv)
 {
@@ -53,6 +96,12 @@ int main(int argc, char** argv)
 						value.erase(0, value.find_first_not_of(" \t"));
 						if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
 							value = value.substr(1, value.size() - 2);
+						else
+						{
+							long long num = 0;
+							if (eval_int_expr(value, num))
+								value = std::to_string(num);
+						}
 						vars[name] = value;
 						continue;
 					}
