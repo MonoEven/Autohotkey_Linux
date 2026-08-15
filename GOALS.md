@@ -63,4 +63,5 @@ M2：核心解释器 Linux 编译。
 - [x] error.cpp 已能在 Linux 下编译（链接仍需更多核心模块）
 - [x] script.cpp 已能在 Linux 下编译（链接仍需更多核心模块）
 - [x] script2.cpp 已能在 Linux 下编译（链接仍需更多核心模块）
+- [x] hotkey.cpp 已能在 Linux 下编译（链接仍需更多核心模块）
 - [ ] 逐文件修复编译错误

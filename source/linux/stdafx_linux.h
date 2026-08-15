@@ -1746,6 +1746,33 @@ inline void CoTaskMemFree(void*)
 {
 }
 #define PM_NOREMOVE 0x0000
+// Additional hotkey.cpp stubs.
+typedef ULONG_PTR DWORD_PTR;
+#define SMTO_BLOCK        0x0001
+#define SMTO_ABORTIFHUNG  0x0002
+#define MB_YESNO          0x0004
+#define MOD_ALT      0x0001
+#define MOD_CONTROL  0x0002
+#define MOD_SHIFT    0x0004
+#define MOD_WIN      0x0008
+#define IS_SURROGATE_PAIR(hi, lo) ((hi) >= 0xD800 && (hi) <= 0xDBFF && (lo) >= 0xDC00 && (lo) <= 0xDFFF)
+
+inline LRESULT SendMessageTimeout(HWND, UINT, WPARAM, LPARAM, UINT, UINT, DWORD_PTR*)
+{
+	return 0;
+}
+inline BOOL UnhookWindowsHookEx(HHOOK)
+{
+	return TRUE;
+}
+inline BOOL RegisterHotKey(HWND, int, UINT, UINT)
+{
+	return FALSE;
+}
+inline BOOL UnregisterHotKey(HWND, int)
+{
+	return FALSE;
+}
 inline BOOL PeekMessage(MSG*, HWND, UINT, UINT, UINT)
 {
 	return FALSE;
