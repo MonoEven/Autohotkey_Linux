@@ -10,4 +10,10 @@ project(AutoHotkey_Linux LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(BUILD_AHK_CORE "Build AutoHotkey core interpreter for Linux" OFF)
+
 add_subdirectory(source/linux)
+
+if(BUILD_AHK_CORE)
+    add_subdirectory(source/linux/core)
+endif()

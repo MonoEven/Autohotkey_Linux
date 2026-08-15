@@ -1,4 +1,4 @@
-﻿/*
+/*
 AutoHotkey
 
 Copyright 2003-2009 Chris Mallett (support@autohotkey.com)
@@ -66,6 +66,23 @@ GNU General Public License for more details.
 	//#include "window.h"  // Not to be confused with "windows.h"
 	//#include "util.h"
 	//#include "SimpleHeap.h"
+#else
+	#include "config.h" // compile-time configurations
+	#include "debug.h"
+
+	// C RunTime Header Files
+	#include <stdio.h>
+	#include <stdlib.h>
+	#include <stdarg.h> // used by snprintfcat()
+	#include <limits.h> // for UINT_MAX, UCHAR_MAX, etc.
+	#include <alloca.h> // For _alloca()
+
+	#ifdef __linux__
+	#include "linux/stdafx_linux.h"
+	#endif
+
+	// ATL alternatives (KuString is cross-platform; StringConv is ported later).
+	#include "KuString.h"
 #endif
 
 // Lexikos: Defining _WIN32_WINNT 0x0600 seems to break TrayTip in non-English Windows,
