@@ -225,10 +225,27 @@ BIF_DECL(BIF_DefineProp)
 
 BIF_DECL(BIF_Props)
 {
-	auto obj = ParamToObjectOrBase(*aParam[0]);
+	LPTSTR mem_to_free = nullptr;
+	ExprTokenType v;
+	if (aParam[0]->symbol == SYM_VAR)
+		aParam[0]->var->ToTokenSkipAddRef(v);
+	else
+		v.CopyValueFrom(*aParam[0]);
+
+	auto obj = ParamToObjectOrBase(v);
 	if (obj == Object::sComObjectPrototype)
 		_f_throw_param(0);
-	_f_return(new Object::PropEnum(obj, *aParam[0]));
+
+	if (v.symbol == SYM_STRING) // e.g. Props("x") or Props(a:="b")
+	{
+		if (v.marker_length == 0)
+			v.marker = _T("");
+		else
+			v.marker = mem_to_free = _tcsdup(v.marker);
+		if (!v.marker)
+			_f_throw_oom;
+	}
+	_f_return(new Object::PropEnum(obj, v, mem_to_free));
 }
 
 

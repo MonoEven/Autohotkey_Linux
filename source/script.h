@@ -1838,10 +1838,11 @@ class Object::PropEnum : public EnumBase
 	index_t *mIndex;
 	int mIndexCount = 0;
 	ExprTokenType mThisToken;
+	LPTSTR mMemToFree = nullptr;
 
 public:
 	PropEnum(Object *aObject);
-	PropEnum(Object *aObject, ExprTokenType &aThisToken);
+	PropEnum(Object *aObject, ExprTokenType &aThisToken, LPTSTR aMemToFree = nullptr);
 	~PropEnum();
 	ResultType Next(Var *aName, Var *aVal) override;
 };
