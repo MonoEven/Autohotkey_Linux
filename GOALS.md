@@ -75,5 +75,6 @@ M2：核心解释器 Linux 编译。
 - [x] 定义 _WIN64 修正 64 位 Linux 结构体布局，真实 AutoExecSection 已可运行简单 MsgBox/赋值脚本
 - [x] 链接 script_object_bif.cpp，接入真实 Object::HasBase/Op_Array/Op_Object 等对象内建函数
 - [x] 新增 BIF_MsgBox 控制台实现，MsgBox "Hi" 可输出到终端
-- [ ] 复杂 GUI/热键/内置函数仍需继续移植
+- [x] 接入 lib/math.cpp，启用真实 Abs/Sqrt/Round/Mod/Random 等数学内建函数
+- [ ] 复杂 GUI/热键/其余内置函数仍需继续移植
 - [ ] 逐文件修复编译错误

@@ -365,7 +365,7 @@ BIF_DECL(BIF_Random)
 			}
 			rand %= (u_max + 1);
 		}
-		_f_return((INT64)(rand + (UINT64)target_min));
+		_f_return((__int64)(rand + (UINT64)target_min));
 	}
 }
 
