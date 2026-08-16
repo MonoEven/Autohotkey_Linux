@@ -27,8 +27,14 @@ hotkeys.
   modifier-combo hotkey-style bindings and screen capture via
   `wlr-screencopy` — **13** Wayland + **229** XWayland assertions pass
   under sway.
+- **System clipboard**: `A_Clipboard` integrates with the desktop
+  clipboard (X11 CLIPBOARD selection on X11/XWayland, wl_data_device on
+  Wayland; process-internal fallback headless), verified cross-process
+  with xclip.
 - **327/327** built-in functions implemented (0 not implemented); see
   `tests/doccheck/CHECK_REPORT.md` for the per-module report.
+- **CI**: GitHub Actions builds both the regular and ASan binaries and
+  runs the full suite (headless, Xvfb, Wayland, XWayland) on every push.
 
 ## Install ##
 

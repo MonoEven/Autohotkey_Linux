@@ -59,9 +59,20 @@
 - **函数**：327/327 已实现（0 未实现，见 `tests/doccheck/worklist.tsv`）
 - **文档**：`tests/doccheck/CHECK_REPORT.md` 为完整逐模块校验报告
 
-## 后续候选增强（非阻塞）
+## 后续增强（已完成）
 
-- [ ] GitHub Actions CI（双构建 + 套件跑批）
-- [ ] 更多发行版包（AppImage/rpm/Arch PKGBUILD）
-- [ ] 输入法（ibus/fcitx）集成评估
-- [ ] 剪贴板接入系统（当前为进程内实现）
+- [x] **GitHub Actions CI**（`.github/workflows/ci.yml`）：常规 + ASan 双构建，
+      跑 `tests/run_tests.sh`、`run_check.sh --xvfb`、`wayland_run.sh`
+      （纯 Wayland + XWayland），package job 构建并检查 tar.gz/.deb/AppImage/rpm
+- [x] **更多发行版包**：`tools/linux/pack-appimage.sh`（AppImage）、
+      `pack-rpm.sh`（rpm）、`PKGBUILD`（Arch）
+- [x] **系统剪贴板**：`core_clipboard_linux.cpp` —— X11 CLIPBOARD selection
+      （读写、跨进程经 xclip 验证）与 Wayland wl_data_device（数据源/offer）；
+      无显示时保留进程内回退
+- [x] **输入法集成评估**：`docs/IME-Integration.md`（XIM / Wayland text-input
+      分阶段方案、热键与 preedit 交互、推荐路径）
+
+## 后续候选增强（未实现）
+
+- [ ] 输入法实际集成（Phase 1：XIM 事件过滤 + IME 状态变量）
+- [ ] Wayland text-input（zwp_text_input_v3）Send 文本投递
