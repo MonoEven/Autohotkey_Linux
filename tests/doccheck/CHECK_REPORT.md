@@ -343,6 +343,23 @@ ASan 构建: tests/run_tests.sh        PASS=26 FAIL=0
           tests/doccheck/wayland_run.sh --xwayland PASS=229 FAIL=0
 ```
 
+## 5.4 文档示例审计(Linux 可运行性)
+
+对 `docs-v2/` 全部 1390 个示例块做了自动化审计
+(`tests/doccheck/verify_examples*.py`,headless 与 Xvfb 两种模式,
+MsgBox/InputBox/FileSelect 带 autoclose 钩子):
+
+- **244 个示例**单独运行失败;原因分类(全部经人工复核):
+  - **~200 个是文档片段**(snippet):引用前文变量/窗口/热键标签、类定义
+    片段、依赖上下文的语句——在 Windows 上同样不能独立运行,属官方
+    文档教学性质,非移植缺陷;
+  - **~30 个平台专属**:Windows 路径(`D:\...`)、PE 文件头检查、
+    Windows API 调用等——页面已加 Linux note 说明;
+  - **~10 个环境依赖**:需要真实显示器/Xvfb、外部设备(光驱)、网络资源;
+  - **~6 个 TIMEOUT**:Persistent/等待类示例,本就不应退出。
+- 修正动作:25 个平台专属页面加 Linux note;DllCall/ComObject 页面
+  新增已实测的 Linux 可运行示例;linux-port.htm 增加示例阅读说明。
+
 ## 5.5 Wayland 后端(第 20 轮)
 
 显示层选择:X11 优先(有 DISPLAY 即可用,亦覆盖 XWayland);无 X11 但
