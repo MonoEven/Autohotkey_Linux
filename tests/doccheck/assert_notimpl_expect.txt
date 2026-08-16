@@ -1,5 +1,3 @@
-ni_DirSelect=1
-ni_FileSelect=1
 ni_GuiCtrlFromHwnd=1
 ni_GuiFromHwnd=1
 ni_Hotstring=1

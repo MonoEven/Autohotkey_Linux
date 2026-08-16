@@ -200,6 +200,33 @@ check t23_drive 0 /tmp/ahk_t/t23.ahk
 check t24_soundbeep 0 /tmp/ahk_t/t24.ahk
 check t_missing_file 1 /tmp/ahk_t/does_not_exist.ahk
 
+# t25: FileSelect/DirSelect headless stdin path -- each FileSelect() call
+# reads one line from stdin (empty line = cancel); FileSelect("M") reads
+# one path per line until an empty line and returns an Array.
+cat > /tmp/ahk_t/t25.ahk <<'EOF'
+MsgBox "fs=" FileSelect()
+MsgBox "fsc=" (FileSelect() = "")
+MsgBox "ds=" DirSelect()
+arr := FileSelect("M")
+MsgBox "mtype=" (Type(arr) = "Array")
+MsgBox "mcount=" arr.Length
+MsgBox "m1=" arr[1]
+MsgBox "m2=" arr[2]
+EOF
+printf '%b' "/tmp/ahk_t/choice.txt\n\n/tmp/ahk_t/dir\n/tmp/ahk_t/a.txt\n/tmp/ahk_t/b.txt\n\n" \
+  | DISPLAY= "$BIN" /tmp/ahk_t/t25.ahk > /tmp/ahk_t/out.txt 2>&1
+if grep -q "^fs=/tmp/ahk_t/choice.txt$" /tmp/ahk_t/out.txt \
+   && grep -q "^fsc=1$" /tmp/ahk_t/out.txt \
+   && grep -q "^ds=/tmp/ahk_t/dir$" /tmp/ahk_t/out.txt \
+   && grep -q "^mtype=1$" /tmp/ahk_t/out.txt \
+   && grep -q "^mcount=2$" /tmp/ahk_t/out.txt \
+   && grep -q "^m1=/tmp/ahk_t/a.txt$" /tmp/ahk_t/out.txt \
+   && grep -q "^m2=/tmp/ahk_t/b.txt$" /tmp/ahk_t/out.txt; then
+  pass=$((pass+1)); echo "PASS: t25_dialogs_stdin (exit=0)"
+else
+  fail=$((fail+1)); echo "FAIL: t25_dialogs_stdin"; cat /tmp/ahk_t/out.txt
+fi
+
 echo "=============================="
 echo "PASS=$pass FAIL=$fail"
 [ "$fail" = 0 ]

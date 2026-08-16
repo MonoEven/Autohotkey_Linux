@@ -640,6 +640,198 @@ BIF_DECL(BIF_Linux_InputBox)
 	aResultToken.SetValue(obj);
 }
 
+// FileSelect: a path-entry dialog (X11, with a headless stdin fallback) --
+// the Linux equivalent of the standard open/save dialog, which needs a
+// desktop file-picker service.  The option letters D (folder pick), M
+// (multi-select) and S (save dialog) and the numeric flag bits (1, 2, 8,
+// 16, 32 per docs) are parsed and validated exactly as upstream, but the
+// flags have no effect on the Linux dialog (documented in CHECK_REPORT).
+// Returns the chosen path, an empty string on cancel, or an Array of paths
+// when M is used (docs).
+BIF_DECL(BIF_Linux_FileSelect)
+{
+	TCHAR opt_buf[128];
+	opt_buf[0] = L'\0';
+	LPTSTR options = (aParamCount > 0 && !ParamIndexIsOmitted(0))
+		? TokenToString(*aParam[0], opt_buf, nullptr) : nullptr;
+	if (!options)
+		options = opt_buf;
+	// One leading option letter (upstream: switch on the first character).
+	bool pick_folder = false, multi = false, save = false;
+	switch (ctoupper(*options))
+	{
+	case 'D': pick_folder = true; ++options; break;
+	case 'M': multi = true; ++options; break;
+	case 'S': save = true; ++options; break;
+	}
+	(void)save; // No separate save mode in the Linux entry dialog.
+	// The remainder must be a number (upstream: else FR_E_ARG(0)).
+	if (!IsNumeric(options, false, true))
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	// Docs: the Filter parameter cannot be used with the D option.
+	TCHAR filter_buf[1024];
+	LPTSTR filter = (aParamCount > 3 && !ParamIndexIsOmitted(3))
+		? TokenToString(*aParam[3], filter_buf, nullptr) : nullptr;
+	if (pick_folder && filter && *filter)
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(3), 0);
+		return;
+	}
+	// RootDir\Filename (param 1, docs): an existing directory is used as
+	// the initial directory; otherwise the part before the last '/' (or
+	// '\' for Windows-style paths) is the initial directory and the rest
+	// the default filename.
+	std::wstring root;
+	if (aParamCount > 1 && !ParamIndexIsOmitted(1))
+	{
+		TCHAR rd_buf[8192];
+		LPTSTR rd = TokenToString(*aParam[1], rd_buf, nullptr);
+		if (rd)
+			root = rd;
+	}
+	std::wstring initial_dir, default_name;
+	if (!root.empty())
+	{
+		DWORD attr = GetFileAttributes(root.c_str());
+		if (attr != 0xFFFFFFFF && (attr & FILE_ATTRIBUTE_DIRECTORY))
+			initial_dir = root;
+		else
+		{
+			size_t slash = root.find_last_of(L"/\\");
+			if (slash == std::wstring::npos)
+				default_name = root;
+			else
+			{
+				initial_dir = root.substr(0, slash);
+				default_name = root.substr(slash + 1);
+			}
+		}
+	}
+	// Title (param 2): default "Select File/Folder - <script>" (docs).
+	std::wstring title;
+	if (aParamCount > 2 && !ParamIndexIsOmitted(2))
+	{
+		TCHAR tb[1024];
+		LPTSTR t = TokenToString(*aParam[2], tb, nullptr);
+		if (t)
+			title = t;
+	}
+	if (title.empty())
+		title = std::wstring(pick_folder ? L"Select Folder - " : L"Select File - ")
+			+ g_script.DefaultDialogTitle();
+	std::wstring def = default_name.empty()
+		? initial_dir
+		: (initial_dir.empty() ? default_name : (initial_dir + L"/" + default_name));
+	wchar_t result_buf[16384];
+	bool confirmed = LinuxFileDialog(title.c_str(), title.c_str(), def.c_str()
+		, result_buf, _countof(result_buf), multi);
+	if (!confirmed)
+	{
+		// Docs: an empty string (or empty array for M) on cancel.
+		if (multi)
+		{
+			Array *arr = Array::Create();
+			if (arr)
+				aResultToken.SetValue(arr);
+			else
+				aResultToken.SetValue(_T(""));
+		}
+		else
+			aResultToken.SetValue(_T(""));
+		return;
+	}
+	if (multi)
+	{
+		Array *arr = Array::Create();
+		if (arr)
+		{
+			std::wstring all(result_buf);
+			size_t start = 0;
+			for (size_t i = 0; i <= all.size(); ++i)
+				if (i == all.size() || all[i] == L'\n')
+				{
+					if (i > start)
+						arr->Append(all.substr(start, i - start).c_str());
+					start = i + 1;
+				}
+		}
+		if (arr)
+			aResultToken.SetValue(arr);
+		else
+			aResultToken.SetValue(_T(""));
+		return;
+	}
+	LinuxWinSetPersistentEx(aResultToken, std::wstring(result_buf));
+}
+
+// DirSelect: same dialog mechanism as FileSelect (docs: "Displays a
+// standard dialog that allows the user to select a folder").  The
+// StartingFolder parameter may contain "root*initial": the part after the
+// '*' is the initial folder (docs).  Options (0/1/2, default 1) select
+// whether the native dialog offers a "create new folder" button / edit box;
+// they are accepted for compatibility but have no effect on the Linux
+// path-entry dialog (documented).
+BIF_DECL(BIF_Linux_DirSelect)
+{
+	std::wstring spec;
+	if (aParamCount > 0 && !ParamIndexIsOmitted(0))
+	{
+		TCHAR sb[8192];
+		LPTSTR s = TokenToString(*aParam[0], sb, nullptr);
+		if (s)
+			spec = s;
+	}
+	std::wstring root, initial;
+	size_t star = spec.find(L'*');
+	if (star != std::wstring::npos)
+	{
+		root = spec.substr(0, star);
+		initial = spec.substr(star + 1);
+	}
+	else
+		root = spec;
+	// Prompt (param 2): default "Select Folder - <script>" (docs).
+	std::wstring title;
+	if (aParamCount > 2 && !ParamIndexIsOmitted(2))
+	{
+		TCHAR tb[1024];
+		LPTSTR t = TokenToString(*aParam[2], tb, nullptr);
+		if (t)
+			title = t;
+	}
+	if (title.empty())
+		title = std::wstring(L"Select Folder - ") + g_script.DefaultDialogTitle();
+	// Initial selection: the folder after '*', else the starting folder,
+	// else the user's home directory (the Linux counterpart of "My
+	// Documents" from the docs).
+	std::wstring def = initial;
+	if (def.empty())
+		def = root;
+	if (def.empty())
+	{
+		const char *home = getenv("HOME");
+		if (home)
+		{
+			wchar_t home_wide[4096];
+			if (mbstowcs(home_wide, home, _countof(home_wide)) != (size_t)-1)
+				def = home_wide;
+		}
+	}
+	wchar_t result_buf[16384];
+	bool confirmed = LinuxFileDialog(title.c_str(), title.c_str(), def.c_str()
+		, result_buf, _countof(result_buf), false);
+	if (!confirmed)
+	{
+		// Docs: empty string when the user cancels.
+		aResultToken.SetValue(_T(""));
+		return;
+	}
+	LinuxWinSetPersistentEx(aResultToken, std::wstring(result_buf));
+}
+
 // ---------------------------------------------------------------------------
 // Process functions (kill() + /proc based)
 // ---------------------------------------------------------------------------
@@ -2345,7 +2537,7 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(DetectHiddenWindows, BIF_Linux_DetectHiddenWindows, 1, 1),
 	LMD_IMPL(DirCopy, BIF_Linux_DirCopy, 2, 3),
 	LMD_IMPL(DirMove, BIF_Linux_DirMove, 2, 3),
-	LMD_NI(DirSelect, 0, 3),
+	LMD_IMPL(DirSelect, BIF_Linux_DirSelect, 0, 3),
 	LMD_IMPL(Download, BIF_Linux_Download, 2, 2),
 	LMD_IMPL(DriveEject, BIF_Linux_DriveEject, 0, 1),
 	LMD_IMPL(DriveGetCapacity, BIF_Linux_DriveGetCapacity, 1, 1),
@@ -2384,7 +2576,7 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(FileMove, BIF_Linux_FileMove, 2, 3),
 	LMD_IMPL(FileRecycle, BIF_Linux_FileRecycle, 1, 1),
 	LMD_IMPL(FileRecycleEmpty, BIF_Linux_FileRecycleEmpty, 0, 1),
-	LMD_NI(FileSelect, 0, 4),
+	LMD_IMPL(FileSelect, BIF_Linux_FileSelect, 0, 4),
 	LMD_IMPL(FileSetAttrib, BIF_Linux_FileSetAttrib, 1, 3),
 	LMD_IMPL(FileSetTime, BIF_Linux_FileSetTime, 0, 4),
 	LMD_IMPL(GetKeyName, BIF_Linux_GetKeyName, 1, 1),

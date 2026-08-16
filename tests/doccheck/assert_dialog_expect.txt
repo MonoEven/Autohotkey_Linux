@@ -1,0 +1,16 @@
+fs_path=1
+fs_dir=1
+fs_flags=1
+fs_multi_type=1
+fs_multi_len=1
+fs_multi_0=1
+fs_save=1
+fs_empty=1
+fs_d_filter=1
+fs_badopt=1
+fs_dm=1
+ds_path=1
+ds_initial=1
+ds_opt0=1
+ds_prompt=1
+ds_home=1

@@ -546,7 +546,13 @@ int LinuxMessageBox(HWND, LPCTSTR aText, LPCTSTR aTitle, UINT aType, double aTim
 	return result;
 }
 
-bool LinuxInputBox(LPCTSTR aPrompt, LPCTSTR aTitle, LPCTSTR aDefault, LPTSTR aBuf, int aBufSize)
+// Shared X11 entry dialog with a headless stdin fallback; used by
+// InputBox (via LinuxInputBox) and by FileSelect/DirSelect (via
+// LinuxFileDialog).  aAutocloseEnv names the environment variable that
+// auto-confirms the dialog with the current entry text after a delay, so
+// automated suites can exercise the X11 path without user interaction.
+static bool LinuxEntryDialog(LPCTSTR aPrompt, LPCTSTR aTitle, LPCTSTR aDefault, LPTSTR aBuf, int aBufSize
+	, const char *aAutocloseEnv)
 {
 	if (!aBuf || aBufSize <= 0)
 		return false;
@@ -619,11 +625,11 @@ bool LinuxInputBox(LPCTSTR aPrompt, LPCTSTR aTitle, LPCTSTR aDefault, LPTSTR aBu
 	XMapRaised(dpy, win);
 	XFlush(dpy);
 
-	// Test hook: AHK_INPUTBOX_AUTOCLOSE_MS=<ms> auto-confirms the dialog with
+	// Test hook: <aAutocloseEnv>=<ms> auto-confirms the dialog with
 	// the default text after the given delay, so automated suites can exercise
 	// the X11 path without user interaction.
 	int autoclose_ms = 0;
-	if (const char *ac = getenv("AHK_INPUTBOX_AUTOCLOSE_MS"))
+	if (const char *ac = getenv(aAutocloseEnv))
 		autoclose_ms = atoi(ac);
 	long long opened_at = LinuxNowMs();
 
@@ -750,4 +756,58 @@ bool LinuxInputBox(LPCTSTR aPrompt, LPCTSTR aTitle, LPCTSTR aDefault, LPTSTR aBu
 	XDestroyWindow(dpy, win);
 	XCloseDisplay(dpy);
 	return result_id == IDOK;
+}
+
+bool LinuxInputBox(LPCTSTR aPrompt, LPCTSTR aTitle, LPCTSTR aDefault, LPTSTR aBuf, int aBufSize)
+{
+	return LinuxEntryDialog(aPrompt, aTitle, aDefault, aBuf, aBufSize, "AHK_INPUTBOX_AUTOCLOSE_MS");
+}
+
+// File/directory selection dialog used by FileSelect/DirSelect.  With a
+// display it is the shared X11 path-entry dialog (autoclose hook:
+// AHK_FILESELECT_AUTOCLOSE_MS); headless it prompts on stdout and reads one
+// path per line from stdin -- in multi mode (aMulti) the list ends with an
+// empty line.  Returns false when the user cancels.
+bool LinuxFileDialog(LPCTSTR aPrompt, LPCTSTR aTitle, LPCTSTR aDefault, LPTSTR aBuf, int aBufSize, bool aMulti)
+{
+	if (!aBuf || aBufSize <= 0)
+		return false;
+	aBuf[0] = L'\0';
+
+	if (!LinuxHasDisplay())
+	{
+		char narrow[4096];
+		WideToNarrow(aPrompt, narrow, sizeof(narrow));
+		std::printf("%s\n", narrow);
+		std::fflush(stdout);
+		size_t total = 0;
+		for (;;)
+		{
+			char line[4096];
+			if (!std::fgets(line, sizeof(line), stdin))
+				break;
+			size_t n = strlen(line);
+			while (n && (line[n - 1] == '\n' || line[n - 1] == '\r'))
+				line[--n] = '\0';
+			if (!n)
+				break; // Empty line ends the (multi) list / means cancel.
+			if (total + n >= (size_t)aBufSize)
+				break;
+			if (total)
+				aBuf[total++] = L'\n';
+			size_t w = mbstowcs(aBuf + total, line, aBufSize - (int)total - 1);
+			if (w == (size_t)-1)
+				break;
+			total += w;
+			if (!aMulti)
+				break;
+		}
+		aBuf[total] = L'\0';
+		aBuf[aBufSize - 1] = L'\0';
+		return total > 0;
+	}
+
+	// X11: the entry dialog yields one path; multi-select yields an array
+	// with that single element (documented Linux limitation).
+	return LinuxEntryDialog(aPrompt, aTitle, aDefault, aBuf, aBufSize, "AHK_FILESELECT_AUTOCLOSE_MS");
 }

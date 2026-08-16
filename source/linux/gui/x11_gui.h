@@ -20,3 +20,4 @@ int LinuxMessageBox(HWND aOwner, LPCTSTR aText, LPCTSTR aTitle, UINT aType, doub
 // Returns true if the user confirmed, false on cancel.  The entered text is
 // stored in aBuf (null-terminated, at most aBufSize-1 chars).
 bool LinuxInputBox(LPCTSTR aPrompt, LPCTSTR aTitle, LPCTSTR aDefault, LPTSTR aBuf, int aBufSize);
+bool LinuxFileDialog(LPCTSTR aPrompt, LPCTSTR aTitle, LPCTSTR aDefault, LPTSTR aBuf, int aBufSize, bool aMulti);

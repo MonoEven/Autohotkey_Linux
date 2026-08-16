@@ -23,8 +23,6 @@ Check(name, fn) {
     Log("ni_" name "=0 noerror")
 }
 
-Check("DirSelect", DirSelect)
-Check("FileSelect", FileSelect)
 Check("GuiCtrlFromHwnd", () => GuiCtrlFromHwnd(1))
 Check("GuiFromHwnd", () => GuiFromHwnd(1))
 Check("Hotstring", () => Hotstring("::btw::by the way"))
