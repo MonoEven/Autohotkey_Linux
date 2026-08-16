@@ -101,6 +101,10 @@ if [ "$XWAYLAND" = 1 ]; then
   done
   if [ "$xwayland_ok" != 1 ]; then
     echo "SKIP: XWayland suites (no XWayland socket from this sway instance found)"
+    echo "--- sway.log tail (diagnostics) ---"
+    grep -iE 'xwayland|X11|socket|error|fail' /tmp/sway.log | tail -15 || true
+    echo "--- /tmp/.X11-unix ---"
+    ls -la /tmp/.X11-unix/ 2>/dev/null || true
     echo "=============================="
     echo "WAYLAND DOC-CHECK PASS=0 FAIL=0 (XWayland skipped)"
     exit 0
