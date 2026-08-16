@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [linux-port]
+  pull_request:
+    branches: [linux-port]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        build: [core, asan]
+    runs-on: ubuntu-24.04
+    env:
+      BUILD_DIR: build-${{ matrix.build }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake g++ ninja-build \
+            libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev \
+            libwayland-dev wayland-protocols libxkbcommon-dev \
+            xvfb xdotool sway xwayland weston
+          sudo apt-get install -y --no-install-recommends python3 dpkg-dev
+
+      - name: Configure
+        run: |
+          cmake -S . -B "$BUILD_DIR"
+          if [ "${{ matrix.build }}" = "asan" ]; then
+            rm -rf "$BUILD_DIR"
+            cmake -S . -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Debug \
+              -DCMAKE_CXX_FLAGS="-fsanitize=address -g" \
+              -DCMAKE_C_FLAGS="-fsanitize=address -g" \
+              -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address"
+          fi
+
+      - name: Build
+        run: cmake --build "$BUILD_DIR" -j$(nproc)
+
+      - name: Headless regression
+        run: |
+          bash tests/run_tests.sh "$BUILD_DIR/source/linux/core/ahk_core"
+
+      - name: Doc-check (Xvfb)
+        run: |
+          bash tests/doccheck/run_check.sh --xvfb "$BUILD_DIR/source/linux/core/ahk_core"
+
+      - name: Wayland doc-check (pure + XWayland)
+        run: |
+          bash tests/doccheck/wayland_run.sh "$BUILD_DIR/source/linux/core/ahk_core"
+          bash tests/doccheck/wayland_run.sh --xwayland "$BUILD_DIR/source/linux/core/ahk_core"
+        env:
+          XDG_RUNTIME_DIR: /tmp
+
+  package:
+    runs-on: ubuntu-24.04
+    needs: build-and-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake g++ ninja-build \
+            libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev \
+            libwayland-dev wayland-protocols libxkbcommon-dev \
+            python3 dpkg-dev
+
+      - name: Build
+        run: |
+          cmake -S . -B build-core
+          cmake --build build-core -j$(nproc)
+
+      - name: Build packages
+        run: |
+          bash tools/linux/pack.sh
+          ls -la dist/
+
+      - name: Verify packages
+        run: |
+          tar tzf dist/autohotkey-linux-*.tar.gz | head -5
+          dpkg-deb --info dist/autohotkey-linux-*.deb | head -8
