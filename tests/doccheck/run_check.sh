@@ -46,6 +46,9 @@ if [ "$XVFB" = 1 ]; then
     sleep 1
     gcc -o out/xwin_helper xwin_helper.c -lX11 2>/dev/null
     gcc -o out/xkeycap xkeycap.c -lX11 2>/dev/null
+    # Editor marker for the assert_edit Edit() check: records its arguments.
+    printf '#!/bin/sh\necho "$@" > /tmp/ahk_dc_edit_marker.txt\n' > /tmp/ahk_edit_marker.sh
+    chmod +x /tmp/ahk_edit_marker.sh
   fi
 fi
 trap 'kill $HTTP_PID 2>/dev/null; [ -n "$XVFB_PID" ] && kill $XVFB_PID 2>/dev/null' EXIT
@@ -82,6 +85,10 @@ for ahk in assert_*.ahk; do
     echo "SKIP: assert_hotkey (run with --xvfb)"
     continue
   fi
+  if [ "$base" = "assert_edit" ] && [ "$XVFB" != 1 ]; then
+    echo "SKIP: assert_edit (run with --xvfb)"
+    continue
+  fi
   # Some suites need script arguments (e.g. assert_general checks A_Args);
   # run those with args instead of the plain invocation.
   case "$base" in
@@ -90,7 +97,7 @@ for ahk in assert_*.ahk; do
   esac
   # assert_win/assert_input run under Xvfb and write their output to a file
   # (MsgBox would open a real dialog with a display present).
-  if [ "$base" = "assert_win" ] || [ "$base" = "assert_input" ] || [ "$base" = "assert_ctrl" ] || [ "$base" = "assert_monitor" ] || [ "$base" = "assert_timer" ] || [ "$base" = "assert_hotkey" ]; then
+  if [ "$base" = "assert_win" ] || [ "$base" = "assert_input" ] || [ "$base" = "assert_ctrl" ] || [ "$base" = "assert_monitor" ] || [ "$base" = "assert_timer" ] || [ "$base" = "assert_hotkey" ] || [ "$base" = "assert_edit" ]; then
     XDISPLAY=:99
   else
     XDISPLAY=""
@@ -119,6 +126,9 @@ for ahk in assert_*.ahk; do
   fi
   if [ "$base" = "assert_hotkey" ]; then
     cp /tmp/ahk_dc_hotkey_out.txt "out/${base}.txt" 2>/dev/null || true
+  fi
+  if [ "$base" = "assert_edit" ]; then
+    cp /tmp/ahk_dc_edit_out.txt "out/${base}.txt" 2>/dev/null || true
   fi
   # assert_display: the ListVars/ListHotkeys/KeyHistory dumps go to stdout;
   # check the freeform content patterns from assert_display_content.txt.

@@ -42,6 +42,16 @@ BIF_DECL(BIF_Linux_ControlShowDropDown);
 BIF_DECL(BIF_Linux_WinGetControls);
 BIF_DECL(BIF_Linux_WinGetControlsHwnd);
 
+// Edit* / EditPaste / ListViewGetContent (virtual edit/list state).
+BIF_DECL(BIF_Linux_Edit);
+BIF_DECL(BIF_Linux_EditGetCurrentCol);
+BIF_DECL(BIF_Linux_EditGetCurrentLine);
+BIF_DECL(BIF_Linux_EditGetLine);
+BIF_DECL(BIF_Linux_EditGetLineCount);
+BIF_DECL(BIF_Linux_EditGetSelectedText);
+BIF_DECL(BIF_Linux_EditPaste);
+BIF_DECL(BIF_Linux_ListViewGetContent);
+
 // First descendant of aParent whose class contains aClassPart
 // (case-insensitive); 0 if none.  Used by StatusBarGetText/Wait.
 Window LinuxFindDescendantByClass(Display *d, Window aParent, const wchar_t *aClassPart);

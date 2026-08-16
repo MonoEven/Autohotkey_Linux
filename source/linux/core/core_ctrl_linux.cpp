@@ -213,9 +213,25 @@ struct LinuxCtrlState
 	bool dropdown;    // ControlShowDropDown/ControlHideDropDown.
 	std::vector<std::wstring> items; // Combo/List entries.
 	int cur_index;    // 0 = none selected.
+	// Edit-control caret/selection as zero-based character offsets into the
+	// control's text; equal values mean "caret, no selection".  Windows
+	// exposes these via EM_GETSEL; on X11 they are virtual like the
+	// Combo/List entries above.  ControlSetText resets them to (0,0)
+	// (WM_SETTEXT semantics); EditPaste replaces the selection and leaves
+	// the caret at the end of the pasted string (EM_REPLACESEL semantics).
+	int sel_start;
+	int sel_end;
+	// ListView virtual rows and column count.  On Windows a script creates
+	// ListView content with Gui.Add("ListView"); the port has no Gui, so
+	// ControlAddItem on a ListView-class control appends a row (a documented
+	// Linux extension -- on Windows LB_ADDSTRING is a no-op for a ListView).
+	// lv_cols is -1 ("undetermined", i.e. no header) until the first row is
+	// added, then 1, mirroring the docs' "Count Col" semantics.
+	std::vector<std::vector<std::wstring>> lv_rows;
+	int lv_cols;
 
 	LinuxCtrlState() : style(0), exstyle(0), enabled(true), checked(false)
-		, dropdown(false), cur_index(0) {}
+		, dropdown(false), cur_index(0), sel_start(0), sel_end(0), lv_cols(-1) {}
 };
 
 static std::map<Window, LinuxCtrlState> &LinuxCtrlStates()
@@ -381,15 +397,10 @@ BIF_DECL(BIF_Linux_ControlGetText)
 	LinuxWinSetPersistentEx(aResultToken, text);
 }
 
-BIF_DECL(BIF_Linux_ControlSetText)
+// Write a control's text as _NET_WM_NAME (UTF-8) + WM_NAME (legacy);
+// shared by ControlSetText and EditPaste.
+static void LinuxCtrlWriteText(Display *d, Window control, const wchar_t *text)
 {
-	Window target = 0, control = 0;
-	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 1, 2, target, control))
-		return;
-	Display *d = LinuxX11Display();
-	TCHAR text_buf[65536];
-	LPTSTR text = TokenToString(*aParam[0], text_buf, nullptr);
-	// _NET_WM_NAME (UTF-8) + WM_NAME (legacy).
 	Atom utf8 = XInternAtom(d, "UTF8_STRING", False);
 	Atom net_wm_name = XInternAtom(d, "_NET_WM_NAME", False);
 	char utf8buf[131072];
@@ -401,6 +412,21 @@ BIF_DECL(BIF_Linux_ControlSetText)
 		XStoreName(d, control, utf8buf);
 		XFlush(d);
 	}
+}
+
+BIF_DECL(BIF_Linux_ControlSetText)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 1, 2, target, control))
+		return;
+	Display *d = LinuxX11Display();
+	TCHAR text_buf[65536];
+	LPTSTR text = TokenToString(*aParam[0], text_buf, nullptr);
+	LinuxCtrlWriteText(d, control, text ? text : text_buf);
+	// WM_SETTEXT moves the caret to the start and clears the selection.
+	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	s.sel_start = 0;
+	s.sel_end = 0;
 	LinuxCtrlDelay();
 }
 
@@ -921,6 +947,21 @@ BIF_DECL(BIF_Linux_ControlAddItem)
 	TCHAR item_buf[65536];
 	LPTSTR item = TokenToString(*aParam[0], item_buf, nullptr);
 	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	// Linux extension: on a ListView-class control the entry becomes a new
+	// row (column 1) in the virtual ListView store used by
+	// ListViewGetContent.  (On Windows LB_ADDSTRING is not handled by a
+	// ListView, so upstream ControlAddItem is a silent no-op there; the
+	// port has no Gui with which a script could otherwise create ListView
+	// content, hence this extension.)
+	if (wcsstr(LinuxCtrlClassOf(LinuxX11Display(), control).c_str(), L"ListView"))
+	{
+		std::vector<std::wstring> row(1, item ? item : L"");
+		s.lv_rows.push_back(std::move(row));
+		if (s.lv_cols < 1)
+			s.lv_cols = 1; // A row exists, so the header has one column.
+		aResultToken.SetValue((__int64)s.lv_rows.size()); // 1-based row index.
+		return;
+	}
 	s.items.push_back(item ? item : L"");
 	aResultToken.SetValue((__int64)s.items.size()); // Docs: index of the new entry.
 }
@@ -933,6 +974,17 @@ BIF_DECL(BIF_Linux_ControlDeleteItem)
 	// Docs: N = the index of the entry (1-based).
 	int idx = (int)TokenToInt64(*aParam[0]);
 	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	if (wcsstr(LinuxCtrlClassOf(LinuxX11Display(), control).c_str(), L"ListView"))
+	{
+		// Linux extension (see ControlAddItem): delete a ListView row.
+		if (idx < 1 || (size_t)idx > s.lv_rows.size())
+		{
+			aResultToken.Error(_T("The entry could not be deleted."), _T(""), ErrorPrototype::Error);
+			return;
+		}
+		s.lv_rows.erase(s.lv_rows.begin() + (idx - 1));
+		return;
+	}
 	if (idx < 1 || (size_t)idx > s.items.size())
 	{
 		aResultToken.Error(_T("The entry could not be deleted."), _T(""), ErrorPrototype::Error);
@@ -1105,4 +1157,311 @@ BIF_DECL(BIF_Linux_WinGetControls)
 BIF_DECL(BIF_Linux_WinGetControlsHwnd)
 {
 	LinuxWinGetControlsImpl(aResultToken, aParam, aParamCount, true);
+}
+
+// ---------------------------------------------------------------------------
+// Edit / EditGet* / EditPaste / ListViewGetContent
+// ---------------------------------------------------------------------------
+//
+// Windows implements these via EM_* / LVM_* messages to the control.  On
+// X11 the control's text is real (WM_NAME/_NET_WM_NAME, so ControlSetText/
+// ControlGetText/EditPaste round-trip), while the caret/selection
+// (EM_GETSEL) and ListView rows (LVM_*) are tracked in the virtual
+// per-control store, like the Combo/List entries above.  Error handling
+// follows docs-v2: TargetError when the window/control is not found,
+// ValueError when an index/option is invalid.
+
+// The control's text (real X11 property).
+static std::wstring LinuxCtrlTextOf(Window control)
+{
+	std::wstring text;
+	LinuxWinTitleEx(LinuxX11Display(), control, text);
+	return text;
+}
+
+// Split on '\n'; lines keep a trailing '\r' for CRLF text, mirroring the
+// docs: "Depending on the nature of the control, the string might end in a
+// carriage return (`r) or a carriage return + linefeed (`r`n)."
+static void LinuxCtrlSplitLines(const std::wstring &aText, std::vector<std::wstring> &aLines)
+{
+	aLines.clear();
+	size_t start = 0;
+	for (size_t i = 0; i <= aText.size(); ++i)
+		if (i == aText.size() || aText[i] == L'\n')
+		{
+			aLines.push_back(aText.substr(start, i - start));
+			start = i + 1;
+		}
+}
+
+// Docs (EditGetLineCount): "All edit controls have at least one line, even
+// if the control is empty."
+static int LinuxCtrlLineCount(const std::wstring &aText)
+{
+	int n = 1;
+	for (wchar_t c : aText)
+		if (c == L'\n')
+			++n;
+	return n;
+}
+
+// 1-based line number containing character offset aPos (EM_LINEFROMCHAR).
+static int LinuxCtrlLineOf(const std::wstring &aText, int aPos)
+{
+	int line = 1;
+	int end = aPos < (int)aText.size() ? aPos : (int)aText.size();
+	for (int i = 0; i < end; ++i)
+		if (aText[i] == L'\n')
+			++line;
+	return line;
+}
+
+// 1-based column of aPos within its line (EM_LINEINDEX based).
+static int LinuxCtrlColOf(const std::wstring &aText, int aPos)
+{
+	int line_start = 0;
+	int end = aPos < (int)aText.size() ? aPos : (int)aText.size();
+	for (int i = 0; i < end; ++i)
+		if (aText[i] == L'\n')
+			line_start = i + 1;
+	return aPos - line_start + 1;
+}
+
+// Docs (Edit): "Opens the current script for editing."  Scripts loaded from
+// stdin have no file to open (upstream Script::Edit returns OK for those).
+// On Linux the editor is taken from $VISUAL/$EDITOR when set (spawned
+// asynchronously as `$EDITOR "script"` so a terminal editor does not block
+// the script); otherwise the upstream path applies: reuse an already-open
+// editor window if one exists, else open the file with the system default
+// handler (xdg-open on Linux).
+BIF_DECL(BIF_Linux_Edit)
+{
+	if (g_script.mKind != Script::ScriptKindFile)
+		return;
+	// $VISUAL takes precedence over $EDITOR (usual convention); both are
+	// byte strings, converted here for the wide CreateProcess shim.
+	const char *editor_env = getenv("VISUAL");
+	if (!editor_env || !*editor_env)
+		editor_env = getenv("EDITOR");
+	if (editor_env && *editor_env)
+	{
+		wchar_t editor_wide[4096];
+		if (mbstowcs(editor_wide, editor_env, _countof(editor_wide)) != (size_t)-1)
+		{
+			std::wstring cmd(editor_wide);
+			cmd += L" \"";
+			cmd += g_script.mFileSpec ? g_script.mFileSpec : L"";
+			cmd += L"\"";
+			PROCESS_INFORMATION pi = {0};
+			if (CreateProcess(nullptr, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr
+				, nullptr, nullptr, &pi))
+			{
+				if (pi.hProcess)
+					CloseHandle(pi.hProcess);
+				return;
+			}
+		}
+	}
+	g_script.Edit(nullptr);
+}
+
+BIF_DECL(BIF_Linux_EditGetLineCount)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	aResultToken.SetValue((__int64)LinuxCtrlLineCount(LinuxCtrlTextOf(control)));
+}
+
+BIF_DECL(BIF_Linux_EditGetCurrentLine)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	// Docs: "If there is text selected in the control, the return value is
+	// the line number where the selection begins."
+	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	aResultToken.SetValue((__int64)LinuxCtrlLineOf(LinuxCtrlTextOf(control), s.sel_start));
+}
+
+BIF_DECL(BIF_Linux_EditGetCurrentCol)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	aResultToken.SetValue((__int64)LinuxCtrlColOf(LinuxCtrlTextOf(control), s.sel_start));
+}
+
+BIF_DECL(BIF_Linux_EditGetLine)
+{
+	// Docs: ValueError if N is out of range, TargetError if the control
+	// could not be found.
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 1, 2, target, control))
+		return;
+	std::vector<std::wstring> lines;
+	LinuxCtrlSplitLines(LinuxCtrlTextOf(control), lines);
+	int n = (int)TokenToInt64(*aParam[0]);
+	if (n < 1 || (size_t)n > lines.size())
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	LinuxWinSetPersistentEx(aResultToken, lines[n - 1]);
+}
+
+BIF_DECL(BIF_Linux_EditGetSelectedText)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	// Docs: "If no text is selected, an empty string is returned."
+	if (s.sel_start == s.sel_end)
+	{
+		aResultToken.SetValue(_T(""));
+		return;
+	}
+	std::wstring text = LinuxCtrlTextOf(control);
+	size_t start = (size_t)s.sel_start;
+	size_t len = (size_t)(s.sel_end - s.sel_start);
+	if (start + len > text.size())
+	{
+		// Safety net; the state invariants make this unreachable.
+		aResultToken.SetValue(_T(""));
+		return;
+	}
+	LinuxWinSetPersistentEx(aResultToken, text.substr(start, len));
+}
+
+BIF_DECL(BIF_Linux_EditPaste)
+{
+	// Docs: "Pastes the specified string into an Edit control, replacing
+	// any selected text."  EM_REPLACESEL semantics: with no selection the
+	// string is inserted at the caret; the caret ends up after the pasted
+	// string.
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 1, 2, target, control))
+		return;
+	TCHAR paste_buf[65536];
+	LPTSTR paste = TokenToString(*aParam[0], paste_buf, nullptr);
+	std::wstring text = LinuxCtrlTextOf(control);
+	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	int start = s.sel_start, end = s.sel_end;
+	if (start > end)
+	{
+		int t = start; start = end; end = t;
+	}
+	size_t plen = wcslen(paste);
+	std::wstring newtext = text.substr(0, (size_t)start) + paste
+		+ text.substr((size_t)end);
+	LinuxCtrlWriteText(LinuxX11Display(), control, newtext.c_str());
+	s.sel_start = s.sel_end = start + (int)plen;
+	LinuxCtrlDelay();
+}
+
+// Case-insensitive substring search (upstream tcscasestr).
+static const wchar_t *LinuxStriStr(const wchar_t *aHay, const wchar_t *aNeedle)
+{
+	if (!aHay || !*aNeedle)
+		return aHay;
+	for (const wchar_t *p = aHay; *p; ++p)
+	{
+		const wchar_t *h = p, *n = aNeedle;
+		while (*h && *n && towlower(*h) == towlower(*n))
+		{
+			++h; ++n;
+		}
+		if (!*n)
+			return p;
+	}
+	return nullptr;
+}
+
+BIF_DECL(BIF_Linux_ListViewGetContent)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 1, 2, target, control))
+		return;
+	TCHAR opt_buf[512];
+	LPTSTR options = (aParamCount > 0 && !ParamIndexIsOmitted(0))
+		? TokenToString(*aParam[0], opt_buf, nullptr) : nullptr;
+	if (!options)
+		options = opt_buf;
+	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	int row_count = (int)s.lv_rows.size();
+	int col_count = s.lv_cols; // -1 = "undetermined" (no header, per docs).
+
+	// Simple option parse (upstream: "a simple vs. strict method is used to
+	// reduce code size"); option matching is case-insensitive.
+	bool get_count = LinuxStriStr(options, _T("Count")) != nullptr;
+	bool include_selected_only = LinuxStriStr(options, _T("Selected")) != nullptr;
+	bool include_focused_only = LinuxStriStr(options, _T("Focused")) != nullptr;
+	const wchar_t *col_option = LinuxStriStr(options, _T("Col"));
+	int requested_col = col_option ? (int)wcstol(col_option + 3, nullptr, 10) - 1 : -1;
+	// Docs: ColN -- N is the column number (1-based); an invalid
+	// specification (or a column beyond the control's count) throws a
+	// ValueError.  With an undetermined column count any ColN is attempted.
+	if (col_option && (get_count
+			? (col_option[3] && !iswspace(col_option[3]))
+			: (requested_col < 0 || (col_count > -1 && requested_col >= col_count))))
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	if (get_count)
+	{
+		// Docs: "Count" = number of rows; "Count Col" = number of columns
+		// (-1 if undetermined); "Count Selected" / "Count Focused" = 0 on
+		// a control with no selected/focused row (the port has no way to
+		// mark a row selected or focused; on Windows these read
+		// LVM_GETSELECTEDCOUNT / LVM_GETNEXTITEM-LVNI_FOCUSED).
+		int result = include_focused_only ? 0
+			: include_selected_only ? 0
+			: col_option ? col_count
+			: row_count;
+		aResultToken.SetValue((__int64)result);
+		return;
+	}
+	// Upstream: "No text in the control, so indicate success."
+	if (row_count < 1 || !col_count)
+	{
+		LinuxWinSetPersistentEx(aResultToken, std::wstring());
+		return;
+	}
+	// Selective modes: no row is ever selected/focused on the port, so the
+	// result is empty (upstream stops at the first LVM_GETNEXTITEM -1).
+	if (include_focused_only || include_selected_only)
+	{
+		LinuxWinSetPersistentEx(aResultToken, std::wstring());
+		return;
+	}
+	// Build the text: rows are delimited by linefeeds, fields by tabs
+	// (docs).  single_col_mode fetches one column per row (the requested
+	// one, or column 1 when the column count is undetermined).
+	bool single_col_mode = requested_col > -1 || col_count == -1;
+	std::wstring out;
+	for (int i = 0; i < row_count; ++i)
+	{
+		if (i)
+			out += L'\n';
+		if (single_col_mode)
+		{
+			int c = requested_col > -1 ? requested_col : 0;
+			if ((size_t)c < s.lv_rows[i].size())
+				out += s.lv_rows[i][c];
+		}
+		else
+		{
+			for (int c = 0; c < col_count; ++c)
+			{
+				if (c)
+					out += L'\t';
+				if ((size_t)c < s.lv_rows[i].size())
+					out += s.lv_rows[i][c];
+			}
+		}
+	}
+	LinuxWinSetPersistentEx(aResultToken, out);
 }
