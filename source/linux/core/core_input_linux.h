@@ -3,6 +3,7 @@
 #pragma once
 
 #include "../../abi.h"
+#include <X11/Xlib.h>
 
 BIF_DECL(BIF_Linux_Send);
 BIF_DECL(BIF_Linux_SendEvent);
@@ -20,3 +21,10 @@ BIF_DECL(BIF_Linux_InstallMouseHook);
 BIF_DECL(BIF_Linux_SetCapsLockState);
 BIF_DECL(BIF_Linux_SetNumLockState);
 BIF_DECL(BIF_Linux_SetScrollLockState);
+
+// Accessors for the control module (core_ctrl_linux.cpp).
+void LinuxFakeButtonEvent(Display *d, unsigned int aButton, bool aDown);
+void LinuxFakeMotionEvent(Display *d, int aX, int aY);
+void LinuxSendKeysString(Display *d, const wchar_t *aKeys);
+void LinuxSendCharsString(Display *d, const wchar_t *aKeys);
+bool LinuxButtonFromNameEx(const wchar_t *aName, unsigned int &aBtn);

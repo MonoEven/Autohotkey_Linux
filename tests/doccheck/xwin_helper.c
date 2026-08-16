@@ -1,30 +1,76 @@
-/* xwin_helper: create an X11 test window for the doc-check Win* suite.
+/* xwin_helper: create an X11 test window (with optional child "control"
+ * windows) for the doc-check Win* and Control* suites.
  *
  * Usage: xwin_helper -title T -class C -x X -y Y -w W -h H
- *                    [-hidden] [-focus] [-ms N]
+ *                    [-child NAME CLASS CX CY CW CH]...   (repeatable)
+ *                    [-evout FILE] [-hidden] [-focus] [-ms N]
  *
- * Sets WM_NAME/_NET_WM_NAME, WM_CLASS, _NET_WM_PID, maps the window (unless
- * -hidden), optionally takes input focus, and exits on WM_DELETE_WINDOW or
- * after -ms milliseconds (default 600000) or when stdin closes.
+ * Sets WM_NAME/_NET_WM_NAME, WM_CLASS, _NET_WM_PID on the main window and
+ * each -child window (child windows get WM_NAME + WM_CLASS too).  Key and
+ * button events received by any of the windows are logged to FILE (default
+ * /tmp/ahk_dc_ev.txt) as:
+ *   k:down:<keysym>:win:<hwnd>   k:up:<keysym>:win:<hwnd>
+ *   b:down:<button>:win:<hwnd>   b:up:<button>:win:<hwnd>
+ * Exits on WM_DELETE_WINDOW, on DestroyNotify, after -ms ms, or when stdin
+ * closes.
  */
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
+#include <X11/keysym.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
 
+#define MAX_CHILDREN 32
+
+struct child_spec
+{
+    const char *name;
+    const char *cls;
+    int x, y, w, h;
+};
+
 static int g_running = 1;
+static FILE *g_ev = NULL;
+
+static long now_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+static void log_key(const char *kind, const char *name, Window win)
+{
+    if (g_ev)
+    {
+        fprintf(g_ev, "%s:%s:win:%lu\n", kind, name, (unsigned long)win);
+        fflush(g_ev);
+    }
+}
+
+static void log_button(const char *kind, unsigned int btn, Window win)
+{
+    if (g_ev)
+    {
+        fprintf(g_ev, "%s:%u:win:%lu\n", kind, btn, (unsigned long)win);
+        fflush(g_ev);
+    }
+}
 
 int main(int argc, char **argv)
 {
     const char *title = "DocCheck Window";
     const char *cls = "DocCheckClass";
+    const char *evout = "/tmp/ahk_dc_ev.txt";
     int x = 100, y = 100, w = 400, h = 300;
     int hidden = 0, focus = 0;
     long ms = 600000;
+    struct child_spec kids[MAX_CHILDREN];
+    int nkids = 0;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -35,8 +81,19 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "-w") && i + 1 < argc) w = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-h") && i + 1 < argc) h = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-ms") && i + 1 < argc) ms = atol(argv[++i]);
+        else if (!strcmp(argv[i], "-evout") && i + 1 < argc) evout = argv[++i];
         else if (!strcmp(argv[i], "-hidden")) hidden = 1;
         else if (!strcmp(argv[i], "-focus")) focus = 1;
+        else if (!strcmp(argv[i], "-child") && i + 5 < argc && nkids < MAX_CHILDREN)
+        {
+            struct child_spec *k = &kids[nkids++];
+            k->name = argv[++i];
+            k->cls = argv[++i];
+            k->x = atoi(argv[++i]);
+            k->y = atoi(argv[++i]);
+            k->w = atoi(argv[++i]);
+            k->h = atoi(argv[++i]);
+        }
     }
 
     Display *d = XOpenDisplay(NULL);
@@ -64,25 +121,45 @@ int main(int argc, char **argv)
     XChangeProperty(d, win, XInternAtom(d, "_NET_WM_PID", False), XA_CARDINAL, 32,
                     PropModeReplace, (unsigned char *)&pid, 1);
 
-    // WM_DELETE_WINDOW so WinClose can ask us to exit.
     Atom wm_protocols = XInternAtom(d, "WM_PROTOCOLS", False);
     Atom wm_delete = XInternAtom(d, "WM_DELETE_WINDOW", False);
     XSetWMProtocols(d, win, &wm_delete, 1);
     (void)wm_protocols;
 
-    XSelectInput(d, win, StructureNotifyMask | ExposureMask);
+    XSelectInput(d, win, StructureNotifyMask | ExposureMask | KeyPressMask
+                 | KeyReleaseMask | ButtonPressMask | ButtonReleaseMask);
     if (!hidden)
         XMapWindow(d, win);
     if (focus)
         XSetInputFocus(d, win, RevertToParent, CurrentTime);
     XFlush(d);
 
-    // Small loop so X server errors don't kill us mid-flight.
-    long start = 0;
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    start = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+    // Child "control" windows.
+    Window kids_win[MAX_CHILDREN];
+    for (int i = 0; i < nkids; ++i)
+    {
+        struct child_spec *k = &kids[i];
+        Window cw = XCreateSimpleWindow(d, win, k->x, k->y, k->w, k->h, 1,
+                                        BlackPixel(d, screen), WhitePixel(d, screen));
+        XStoreName(d, cw, k->name);
+        XChangeProperty(d, cw, XInternAtom(d, "_NET_WM_NAME", False), utf8, 8,
+                        PropModeReplace, (unsigned char *)k->name, (int)strlen(k->name));
+        XClassHint ch;
+        ch.res_name = (char *)k->cls;
+        ch.res_class = (char *)k->cls;
+        XSetClassHint(d, cw, &ch);
+        XSelectInput(d, cw, KeyPressMask | KeyReleaseMask | ButtonPressMask
+                     | ButtonReleaseMask | StructureNotifyMask);
+        XMapWindow(d, cw);
+        kids_win[i] = cw;
+    }
+    XFlush(d);
 
+    g_ev = fopen(evout, "w");
+    if (!g_ev)
+        g_ev = NULL;
+
+    long start = now_ms();
     while (g_running)
     {
         while (XPending(d) > 0)
@@ -94,13 +171,25 @@ int main(int argc, char **argv)
                 g_running = 0;
             if (ev.type == DestroyNotify)
                 g_running = 0;
+            if (ev.type == KeyPress || ev.type == KeyRelease)
+            {
+                KeySym ks = XLookupKeysym(&ev.xkey, (ev.xkey.state & ShiftMask) ? 1 : 0);
+                const char *name = ks ? XKeysymToString(ks) : "?";
+                log_key(ev.type == KeyPress ? "k:down" : "k:up",
+                        name ? name : "?", ev.xkey.window);
+            }
+            if (ev.type == ButtonPress || ev.type == ButtonRelease)
+            {
+                log_button(ev.type == ButtonPress ? "b:down" : "b:up",
+                           ev.xbutton.button, ev.xbutton.window);
+            }
         }
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        long now = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
-        if (now - start > ms)
+        if (now_ms() - start > ms)
             g_running = 0;
         usleep(20000);
     }
+    if (g_ev)
+        fclose(g_ev);
     XDestroyWindow(d, win);
     XCloseDisplay(d);
     return 0;

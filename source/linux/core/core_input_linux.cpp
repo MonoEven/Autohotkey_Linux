@@ -690,6 +690,39 @@ BIF_DECL(BIF_Linux_SendPlay)  { LinuxSendWrapper(aResultToken, aParam, aParamCou
 BIF_DECL(BIF_Linux_SendText)  { LinuxSendWrapper(aResultToken, aParam, aParamCount, true); }
 
 // ---------------------------------------------------------------------------
+// Accessors for the control module (core_ctrl_linux.cpp): ControlClick and
+// ControlSend reuse the XTEST send engine.
+// ---------------------------------------------------------------------------
+
+void LinuxFakeButtonEvent(Display *d, unsigned int aButton, bool aDown)
+{
+	LinuxFakeButton(d, aButton, aDown);
+}
+
+void LinuxFakeMotionEvent(Display *d, int aX, int aY)
+{
+	LinuxFakeMotion(d, aX, aY);
+}
+
+void LinuxSendKeysString(Display *d, const wchar_t *aKeys)
+{
+	LinuxSendKeys(d, aKeys);
+}
+
+void LinuxSendCharsString(Display *d, const wchar_t *aKeys)
+{
+	LinuxHeldMods held;
+	for (const wchar_t *p = aKeys; *p; ++p)
+		LinuxSendChar(d, *p, held);
+	LinuxReleaseAllMods(d, held);
+}
+
+bool LinuxButtonFromNameEx(const wchar_t *aName, unsigned int &aBtn)
+{
+	return LinuxButtonFromName(aName, aBtn);
+}
+
+// ---------------------------------------------------------------------------
 // MouseMove / MouseClick / MouseClickDrag / MouseGetPos
 // ---------------------------------------------------------------------------
 

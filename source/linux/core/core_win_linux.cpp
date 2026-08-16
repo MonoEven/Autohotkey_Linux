@@ -1182,25 +1182,6 @@ BIF_DECL(BIF_Linux_WinGetTransColor)
 		});
 }
 
-BIF_DECL(BIF_Linux_WinGetControls)
-{
-	// X11 has no child controls; an empty array is returned.
-	Array *arr = Array::Create();
-	if (arr)
-		aResultToken.SetValue(arr);
-	else
-		aResultToken.SetValue(_T(""));
-}
-
-BIF_DECL(BIF_Linux_WinGetControlsHwnd)
-{
-	Array *arr = Array::Create();
-	if (arr)
-		aResultToken.SetValue(arr);
-	else
-		aResultToken.SetValue(_T(""));
-}
-
 // ---------------------------------------------------------------------------
 // WinActivate / WinActivateBottom / WinClose / WinKill / WinMove / WinRedraw
 // / WinHide / WinShow / WinMinimize / WinMaximize / WinRestore / WinMoveTop /
@@ -1859,3 +1840,29 @@ BIF_DECL(BIF_Linux_GroupDeactivate)
 	XSync(d, False);
 }
 
+
+// ---------------------------------------------------------------------------
+// Accessors for the control module (core_ctrl_linux.cpp).  These must come
+// after the static helpers they wrap.
+// ---------------------------------------------------------------------------
+
+Display *LinuxX11Display()
+{
+	return LinuxWinDisplay();
+}
+
+Window LinuxWinFindTargetEx(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount
+	, ScriptThreadSettings &aSettings, int aTitleIdx, int aTextIdx, int aExcludeIdx)
+{
+	return LinuxWinFindTarget(aResultToken, aParam, aParamCount, aSettings, aTitleIdx, aTextIdx, aExcludeIdx);
+}
+
+bool LinuxWinTitleEx(Display *d, Window aWin, std::wstring &aTitle)
+{
+	return LinuxWinTitle(d, aWin, aTitle);
+}
+
+void LinuxWinSetPersistentEx(ResultToken &aResultToken, const std::wstring &aStr)
+{
+	LinuxWinSetPersistent(aResultToken, aStr);
+}

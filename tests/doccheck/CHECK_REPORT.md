@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **515 / 515 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项与输入模块 40 项实测;25 项 headless 回归测试亦全部通过)
+- **结果**: **577 / 577 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项与控件模块 62 项实测;25 项 headless 回归测试亦全部通过)
 
 ---
 
@@ -14,7 +14,7 @@
 | 文件 | 作用 |
 |---|---|
 | `tests/doccheck/extract_docs.py` | 解析 `docs-v2/docs/lib/*.htm`,提取每个函数的名称/描述/语法/参数/返回值/示例 → `doc_index.tsv`(352 个函数条目) |
-| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(253 个已实现,76 个未实现) |
+| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(285 个已实现,44 个未实现) |
 | `tests/doccheck/assert_*.ahk` | 按模块编写的实测脚本(每个断言输出 `name=value` 行,取自官方文档语义) |
 | `tests/doccheck/assert_*_expect.txt` | 与文档语义对应的期望值 |
 | `tests/doccheck/run_check.sh` | 运行全部断言并逐条比对(支持传入任意二进制路径,如 `run_check.sh build-asan/ahk_core`) |
@@ -35,7 +35,8 @@
 | 系统/设置/进程/文件操作/网络 (CoordMode/DetectHidden*/Set*Delay/SendMode/SendLevel/SetRegView/FileEncoding/SetStoreCapsLockMode/ProcessGet*/FileCopy/FileMove/FileInstall/FileRecycle/FileGetVersion/SysGet/SysGetIPAddresses/Download/Drive*/SoundPlay) | `assert_sys.ahk` | 106 |
 | 窗口管理 (WinExist/WinActive/WinGet*/WinSet*/WinMove/WinClose/WinKill/WinWait*/WinActivate/WinMinimize/Maximize/Restore/Hide/Show/Redraw/Group*,X11 后端) | `assert_win.ahk` | 67 |
 | 输入模拟 (Send/SendEvent/SendInput/SendPlay/SendText/Click/MouseMove/MouseClick/MouseClickDrag/MouseGetPos/KeyWait/BlockInput/InstallKeybdHook/InstallMouseHook/SetCapsLockState/SetNumLockState/SetScrollLockState/GetKeyState,XTEST 后端) | `assert_input.ahk` | 40 |
-| **合计** | | **515** |
+| 控件 (ControlGetText/SetText/GetPos/Move/GetHwnd/GetClassNN/Focus/GetFocus/GetSetStyle/ExStyle/GetSetEnabled/GetSetChecked/GetVisible/Show/Hide/Click/Send/SendText/Combo-List 系列/ShowHideDropDown + WinGetControls/WinGetControlsHwnd,X11 子窗口后端) | `assert_ctrl.ahk` | 62 |
+| **合计** | | **577** |
 
 复现命令:
 
@@ -206,6 +207,15 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 - **根因**: 上游 `_Seek` 用 `*((PLARGE_INTEGER)&aDistance)` 别名技巧传参——Windows 上 `LONG` 为 32 位,`LARGE_INTEGER` 恰为 8 字节;Linux 上 `long` 为 64 位,`struct {DWORD LowPart; LONG HighPart;}` 变为 12 字节并填充到 16,联合体变成 16 字节,从 8 字节栈变量读取 16 字节 → UB(QuadPart 恰与低 8 字节重合,普通构建"碰巧正确")。
 - **修复**: `TextIO.cpp` 改为先 `LARGE_INTEGER li; li.QuadPart = aDistance;` 再传值,消除别名读取;`lib/file.cpp:973` 的 `(PLARGE_INTEGER)&size` 仅写入 8 字节,无越界,保留。
 
+### 2.27 控件模块(X11 子窗口后端,本轮)
+- **实现**: 新增 `core_ctrl_linux.cpp`(控件模块,32 个 Control* BIF + WinGetControls/WinGetControlsHwnd 真实实现),按 docs-v2 与上游 lib/win.cpp 语义:
+  - **控件标识**(Control Identifiers 文档):HWND(整数/`ahk_id N`/纯数字串,高于一切)→ ClassNN(WM_CLASS 类名 + 同类序号,大小写不敏感、序号按十进制串精确比较,与上游 EnumControlFind 一致)→ 文本(WM_NAME/_NET_WM_NAME,按 SetTitleMatchMode 1/2/3/RegEx,区分大小写);空 Control = 目标窗口本身(上游 DetermineTargetControl);子窗口按 XQueryTree 深度优先枚举(上游 EnumChildWindows);
+  - **真实 X11 操作**: ControlGetText/SetText(_NET_WM_NAME UTF-8 + WM_NAME)、ControlGetPos/Move(经 XTranslateCoordinates,坐标相对目标窗口客户区,减去子窗口边框宽度得外沿原点)、ControlGetHwnd、ControlFocus/ControlGetFocus(返回 HWND,0 = 无焦点控件,须为目标窗口后代)、ControlGetVisible/Show/Hide(map 状态)、ControlClick(ClassNN/文本/HWND/`xN yM` 客户区坐标,按钮 Left/Right/Middle/X1/X2、ClickCount、Options 的 D/U/x/y,复用 XTEST 鼠标引擎)、ControlSend/ControlSendText(聚焦控件 → XTEST 键盘引擎 → 恢复焦点,复用 Send 引擎);
+  - **虚拟状态**(Windows 经消息暴露、X11 无对应物): ControlGet/SetStyle/ExStyle(`+` 加/`-` 减/`^` 切换/覆盖)、Get/SetEnabled、Get/SetChecked(均支持 `-1` 切换)、Combo/List 系列(ControlAddItem 返回新条目序号、DeleteItem 按序号删、FindItem 全串大小写不敏感匹配未命中抛 Error、ChooseIndex 0=取消选择、ChooseString 前缀匹配返回序号、GetChoice 未选择抛 Error、GetIndex、GetItems 数组、Show/HideDropDown 标志),类名必须含 "Combo"/"List"(ChooseIndex/GetIndex 另容 "Tab")否则 TargetError(文档);
+  - 改变控件的函数按文档执行 SetControlDelay 延时(SetStyle/ExStyle 除外);WinGetControls/WinGetControlsHwnd 从空数组桩改为真实枚举(ClassNN 与 HWND 数组)。
+- **测试设施**: `xwin_helper.c` 扩展支持 `-child NAME CLASS X Y W H` 创建子"控件"窗口并记录各窗口收到的键/按钮事件(`-evout`);`assert_ctrl.ahk`/`assert_ctrl_expect.txt`(新增,62 断言);`run_check.sh --xvfb` 运行 assert_ctrl。
+- **本轮修复的真实缺陷**: ① ControlGetPos/ControlMove 的 LMD 参数范围把可选的 X/Y/W/H 当成必填(解释器按 `参数 < mMinParams 即必填` 校验)——改为全可选 + BIF 内按文档强制 Control 必填;② Control 参数为变量(非整数字面量)时 HWND 识别失败(令牌类型判断过窄)——新增统一解析(整数令牌/`ahk_id N`/纯数字串 → HWND,文档优先级);③ ControlGetItems/GetChoice/GetIndex 的 Control 参数下标错位(误用带前置参数函数的 1/2);④ 子窗口边框宽度使 ControlGetPos/ControlMove 的坐标差 1 像素;⑤ 测试脚手架:Run 相对路径以脚本目录为基准(调试脚本放 /tmp 时 helper 找不到),DrvFS 目录缓存陈旧导致新建脚本"not found"。
+
 ---
 
 ## 3. 测试预期修正(文档语义确认,非移植缺陷)
@@ -254,16 +264,17 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 | 驱动器/声音错误路径 (DriveSetLabel/DriveEject/DriveLock/DriveUnlock/DriveRetract/SoundPlay) | ✅ 6/6 | 不存在设备/无播放器按文档抛 OSError(Shutdown 已实现但测试中不实际执行,防误关机) |
 | 窗口管理 (WinExist/WinActive/WinGet*/WinSet*/WinMove/WinClose/WinKill/WinWait*/WinActivate/WinMinimize/Maximize/Restore/Hide/Show/Redraw/Group*) | ✅ 67/67 | Xvfb 下以 xwin_helper 实测:条件匹配(标题/类/exe/pid/id/RegEx/排除)、几何/样式/透明度/置顶、隐藏与 DetectHiddenWindows 联动、关闭/强杀/等待、分组循环 |
 | 输入模拟 (Send/SendEvent/SendInput/SendPlay/SendText/Click/Mouse*/KeyWait/BlockInput/Install*Hook/Set*LockState/GetKeyState) | ✅ 40/40 | Xvfb 下以 xkeycap 实测:Send 事件序列(字面/Shift 合成/修饰符/按住/重复/Text)、Mouse 坐标/按钮/计数/按住、KeyWait 与 GetKeyState 状态、锁键开关、BlockInput On/Default/Off 阻断语义;XTEST 后端,无显示时按文档抛 OSError |
-| 未实现模块 (GUI/GuiCtrl/COM/DllCall/热键系统/剪贴板监听/Control*/SendMessage/PostMessage/Pixel*/Monitor*/Hotkey/Hotstring/SetTimer/ToolTip/ImageSearch/DirSelect/FileSelect/OnMessage 等 76 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
+| 控件 (ControlGetText/SetText/GetPos/Move/GetHwnd/GetClassNN/Focus/GetFocus/Style/Enabled/Checked/Visible/Click/Send/Combo-List/ShowDropDown + WinGetControls) | ✅ 62/62 | Xvfb 下以 xwin_helper 子窗口实测:ClassNN/HWND/文本三种标识与优先级、文本匹配随 TitleMatchMode、几何/移动、聚焦、点击与按键事件落到正确控件、样式位运算、启用/勾选/可见性、Combo 列表增删查选、文档规定的 TargetError/Error 错误路径 |
+| 未实现模块 (GUI/GuiCtrl/COM/DllCall/热键系统/剪贴板监听/Edit*/SendMessage/PostMessage/Pixel*/Monitor*/Hotkey/Hotstring/SetTimer/ToolTip/ImageSearch/DirSelect/FileSelect/OnMessage 等 44 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
 
 ## 5. 回归与构建验证
 
 ```
 普通构建: tests/run_tests.sh        PASS=25 FAIL=0
           tests/doccheck/run_check.sh PASS=408 FAIL=0 (headless)
-          tests/doccheck/run_check.sh --xvfb PASS=515 FAIL=0 (含窗口模块 67 + 输入模块 40)
+          tests/doccheck/run_check.sh --xvfb PASS=577 FAIL=0 (含窗口 67 + 输入 40 + 控件 62)
 ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=515 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=577 FAIL=0
 ```
 
 ## 6. 本轮改动文件
@@ -302,3 +313,9 @@ ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
 - `source/linux/core/CMakeLists.txt`(本轮):加入 `core_input_linux.cpp`、链接 Xtst(`find_library(XTST_LIBRARY Xtst REQUIRED)`)
 - `source/TextIO.cpp`(本轮):`TextFile::_Seek` 消除 `PLARGE_INTEGER` 别名读取(Linux 上 LARGE_INTEGER 为 16 字节导致 8 字节栈变量被读 16 字节,ASan 捕获)
 - `tests/doccheck/xkeycap.c`(新增):XTEST 事件捕获客户端;`assert_input.ahk`/`assert_input_expect.txt`(新增,40 断言);`run_check.sh` 的 `--xvfb` 模式编译 xkeycap 并运行 assert_input;worklist 重新生成(**253 IMPL / 76 NOT_IMPL**)
+- `source/linux/core/core_ctrl_linux.cpp` / `.h`(新增,本轮):控件模块——控件标识解析(HWND/ClassNN/文本,文档优先级)、子窗口深度优先枚举、真实 X11 操作(文本/几何/移动/聚焦/可见性/点击/按键,复用 XTEST 引擎)、虚拟状态(样式位运算、启用/勾选、Combo/List 条目与选择、下拉标志)、WinGetControls/WinGetControlsHwnd 真实实现
+- `source/linux/core/core_win_linux.cpp` / `.h`(本轮):WinGetControls/WinGetControlsHwnd 空数组桩移除;导出 `LinuxX11Display/LinuxWinFindTargetEx/LinuxWinTitleEx/LinuxWinSetPersistentEx` 访问器
+- `source/linux/core/core_input_linux.cpp` / `.h`(本轮):导出 `LinuxFakeButtonEvent/LinuxFakeMotionEvent/LinuxSendKeysString/LinuxSendCharsString/LinuxButtonFromNameEx` 访问器
+- `source/linux/core/core_mdfunc_linux.cpp`(本轮):32 个 Control* BIF 由 LMD_NI 翻转 LMD_IMPL(ControlGetPos/ControlMove 输出参数与必填 Control 的文档语义经 min=0 + BIF 内校验实现)
+- `source/linux/core/CMakeLists.txt`(本轮):加入 `core_ctrl_linux.cpp`
+- `tests/doccheck/xwin_helper.c`(本轮):新增 `-child NAME CLASS X Y W H` 子控件窗口与 `-evout` 事件记录;`assert_ctrl.ahk`/`assert_ctrl_expect.txt`(新增,62 断言);`run_check.sh` 的 `--xvfb` 模式运行 assert_ctrl;worklist 重新生成(**285 IMPL / 44 NOT_IMPL**)

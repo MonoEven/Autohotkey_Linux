@@ -3,7 +3,10 @@
 #pragma once
 
 #include "../../abi.h"
+#include <string>
 #include <X11/Xlib.h>
+
+struct ScriptThreadSettings;
 
 BIF_DECL(BIF_Linux_WinGetTitle);
 BIF_DECL(BIF_Linux_WinGetClass);
@@ -57,3 +60,10 @@ BIF_DECL(BIF_Linux_GroupDeactivate);
 
 // The current input-focus top-level window (0 if none).
 Window LinuxX11ActiveWindow();
+
+// Shared accessors used by the control module (core_ctrl_linux.cpp).
+Display *LinuxX11Display();
+Window LinuxWinFindTargetEx(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount
+	, ScriptThreadSettings &aSettings, int aTitleIdx, int aTextIdx, int aExcludeIdx);
+bool LinuxWinTitleEx(Display *d, Window aWin, std::wstring &aTitle);
+void LinuxWinSetPersistentEx(ResultToken &aResultToken, const std::wstring &aStr);

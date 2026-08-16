@@ -1,0 +1,1104 @@
+// Linux X11 control module (round 8): Control* built-in functions.
+//
+// On X11 a "control" is a child window of the target window.  Semantics
+// follow docs-v2 (Return Value / Error Handling sections) and the upstream
+// implementations in lib/win.cpp:
+//   - Control identification (per "Control Identifiers"): HWND (integer or
+//     "ahk_id N") > ClassNN (WM_CLASS + per-class sequence number, 1-based in
+//     child order) > text (WM_NAME/_NET_WM_NAME, matched per
+//     SetTitleMatchMode 1 prefix / 2 anywhere / 3 exact / RegEx;
+//     case-sensitive).
+//   - State that Windows exposes via messages (checkbox checked state,
+//     combo/list entries, drop-down visibility) has no X11 equivalent for
+//     foreign child windows and is tracked in a virtual per-control store;
+//     everything else (text, geometry, visibility, focus, clicks, keys) is
+//     a real X11 operation.
+//   - ControlGetFocus returns the HWND of the focused control (docs), 0 if
+//     the target window has no focused control.
+//   - ControlClick reuses the XTEST mouse engine; ControlSend reuses the
+//     XTEST Send engine after moving the input focus to the control.
+//   - A SetControlDelay sleep follows functions that change a control
+//     (docs: "a delay is done automatically after each use of a Control
+//     function that changes a control, except ControlSetStyle/ExStyle").
+#include "../../stdafx.h"
+#include "../../script.h"
+#include "../../globaldata.h"
+#include "../../script_func_impl.h"
+#include "core_ctrl_linux.h"
+#include "core_win_linux.h"
+#include "core_input_linux.h"
+#include <X11/Xlib.h>
+#include <X11/Xatom.h>
+#include <X11/Xutil.h>
+#include <cstdlib>
+#include <cstring>
+#include <cstdio>
+#include <cwchar>
+#include <cwctype>
+#include <string>
+#include <vector>
+#include <map>
+#include <algorithm>
+
+void ScriptSleep(int aDelay);
+
+// ---------------------------------------------------------------------------
+// Child-window ("control") enumeration and identification
+// ---------------------------------------------------------------------------
+
+struct LinuxCtrlEntry
+{
+	Window win;
+	std::wstring cls;   // Class name (WM_CLASS 2nd string; "Window" fallback).
+	std::wstring text;  // WM_NAME/_NET_WM_NAME.
+};
+
+// Class name of a window: the second (class) string of WM_CLASS.
+static std::wstring LinuxCtrlClassOf(Display *d, Window w)
+{
+	Atom wm_class = XInternAtom(d, "WM_CLASS", False);
+	Atom type = None;
+	int fmt = 0;
+	unsigned long nitems = 0, after = 0;
+	unsigned char *prop = nullptr;
+	std::wstring cls;
+	if (XGetWindowProperty(d, w, wm_class, 0, 64, False, XA_STRING
+		, &type, &fmt, &nitems, &after, &prop) == Success && prop && nitems)
+	{
+		const char *s = (const char *)prop;
+		size_t l1 = strlen(s);
+		const char *s2 = s + l1 + 1;
+		if (l1 && *s2) // WM_CLASS is "instance\0class\0".
+		{
+			// Reuse the wide conversion via a simple UTF-8/Latin-1 decode.
+			size_t len = strlen(s2);
+			for (size_t i = 0; i < len; ++i)
+				cls += (unsigned char)s2[i] < 0x80 ? (wchar_t)(unsigned char)s2[i] : L'?';
+		}
+		XFree(prop);
+	}
+	if (cls.empty())
+		cls = L"Window";
+	return cls;
+}
+
+// Depth-first enumeration of every descendant (upstream EnumChildWindows).
+static void LinuxCtrlCollect(Display *d, Window aParent, std::vector<LinuxCtrlEntry> &aOut)
+{
+	Window root_ret = 0, parent_ret = 0;
+	Window *children = nullptr;
+	unsigned int n = 0;
+	if (!XQueryTree(d, aParent, &root_ret, &parent_ret, &children, &n) || !children)
+		return;
+	for (unsigned int i = 0; i < n; ++i)
+	{
+		LinuxCtrlEntry e;
+		e.win = children[i];
+		e.cls = LinuxCtrlClassOf(d, children[i]);
+		LinuxWinTitleEx(d, children[i], e.text);
+		aOut.push_back(e);
+		LinuxCtrlCollect(d, children[i], aOut);
+	}
+	XFree(children);
+}
+
+// ClassNN (class + per-class sequence number) of aControl within aWindow.
+// The class comparison is case-insensitive and the sequence number is
+// compared as a decimal string, mirroring upstream EnumControlFind().
+static bool LinuxCtrlClassNN(Display *d, Window aWindow, Window aControl, std::wstring &aOut)
+{
+	std::vector<LinuxCtrlEntry> ctrls;
+	LinuxCtrlCollect(d, aWindow, ctrls);
+	std::wstring cls = LinuxCtrlClassOf(d, aControl);
+	int seq = 0;
+	for (auto &e : ctrls)
+	{
+		if (!_tcsicmp(e.cls.c_str(), cls.c_str()))
+		{
+			++seq;
+			if (e.win == aControl)
+			{
+				wchar_t num[32];
+				swprintf(num, 32, L"%d", seq);
+				aOut = cls + num;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+// Split "ClassNN" into class name + sequence number (trailing digits).
+static bool LinuxCtrlSplitClassNN(const std::wstring &aSpec, std::wstring &aClass, int &aNN)
+{
+	size_t p = aSpec.size();
+	while (p > 0 && iswdigit(aSpec[p - 1]))
+		--p;
+	if (p == 0 || p == aSpec.size())
+		return false; // Need both a class part and digits.
+	aClass = aSpec.substr(0, p);
+	aNN = (int)wcstol(aSpec.c_str() + p, nullptr, 10);
+	return true;
+}
+
+// Text matching per SetTitleMatchMode (1 prefix / 2 anywhere / 3 exact /
+// RegEx); case-sensitive by default like window titles.
+static bool LinuxCtrlTextMatch(ScriptThreadSettings &aSettings, const std::wstring &aSpec, const std::wstring &aText)
+{
+	if (aText.empty())
+		return aSpec.empty();
+	switch (aSettings.TitleMatchMode)
+	{
+	case 1:
+		return aText.size() >= aSpec.size() && wcsncmp(aText.c_str(), aSpec.c_str(), aSpec.size()) == 0;
+	case 2:
+		return aText.find(aSpec) != std::wstring::npos;
+	case 3:
+		return aText == aSpec;
+	default: // RegEx (TitleMatchMode 4 / RegEx).
+		return RegExMatch(aText.c_str(), aSpec.c_str()) != nullptr;
+	}
+}
+
+// Resolve the Control parameter against the children of aTargetWin:
+// HWND (integer or "ahk_id N") > ClassNN > text (upstream ControlExist:
+// ClassNN is tried when the spec ends in a digit; text fallback matches
+// per TitleMatchMode, case-sensitive like window titles).
+static Window LinuxCtrlFind(Display *d, Window aTargetWin, const std::wstring &aSpec
+	, ScriptThreadSettings &aSettings, bool aSpecIsHwnd, Window aHwnd)
+{
+	if (aSpecIsHwnd)
+		return aHwnd;
+	std::vector<LinuxCtrlEntry> ctrls;
+	LinuxCtrlCollect(d, aTargetWin, ctrls);
+	// ClassNN: class (case-insensitive) + sequence number (decimal string).
+	std::wstring cls;
+	int nn = 0;
+	if (LinuxCtrlSplitClassNN(aSpec, cls, nn))
+	{
+		int seq = 0;
+		for (auto &e : ctrls)
+		{
+			if (!_tcsicmp(e.cls.c_str(), cls.c_str()))
+			{
+				++seq;
+				wchar_t num[32];
+				swprintf(num, 32, L"%d", seq);
+				if (!_tcscmp(num, aSpec.c_str() + cls.size()))
+					return e.win;
+			}
+		}
+	}
+	// Text: first control whose text matches per TitleMatchMode.
+	for (auto &e : ctrls)
+		if (LinuxCtrlTextMatch(aSettings, aSpec, e.text))
+			return e.win;
+	return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Virtual per-control state (Windows exposes these via messages)
+// ---------------------------------------------------------------------------
+
+struct LinuxCtrlState
+{
+	DWORD style;      // ControlSetStyle/ControlGetStyle.
+	DWORD exstyle;    // ControlSetExStyle/ControlGetExStyle.
+	bool enabled;     // ControlSetEnabled/ControlGetEnabled (default true).
+	bool checked;     // ControlSetChecked/ControlGetChecked (default false).
+	bool dropdown;    // ControlShowDropDown/ControlHideDropDown.
+	std::vector<std::wstring> items; // Combo/List entries.
+	int cur_index;    // 0 = none selected.
+
+	LinuxCtrlState() : style(0), exstyle(0), enabled(true), checked(false)
+		, dropdown(false), cur_index(0) {}
+};
+
+static std::map<Window, LinuxCtrlState> &LinuxCtrlStates()
+{
+	static std::map<Window, LinuxCtrlState> sMap;
+	return sMap;
+}
+
+static LinuxCtrlState &LinuxCtrlStateOf(Window w)
+{
+	auto &m = LinuxCtrlStates();
+	auto it = m.find(w);
+	if (it == m.end())
+		it = m.emplace(w, LinuxCtrlState()).first;
+	return it->second;
+}
+
+// Docs: ControlAddItem/ChooseIndex/ChooseString/DeleteItem/FindItem/
+// GetChoice/GetIndex/GetItems require the control class to contain
+// "Combo" or "List" (ChooseIndex/GetIndex also allow "Tab").
+static bool LinuxCtrlIsListClass(Display *d, Window w, bool aAllowTab)
+{
+	std::wstring cls = LinuxCtrlClassOf(d, w);
+	auto has = [&](const wchar_t *s) -> bool {
+		return wcsstr(cls.c_str(), s) != nullptr;
+	};
+	return has(L"Combo") || has(L"List") || (aAllowTab && has(L"Tab"));
+}
+
+// ---------------------------------------------------------------------------
+// Common target-window/control resolution (docs "Control Identifiers")
+// ---------------------------------------------------------------------------
+
+// Parse a Control parameter value: HWND (integer token, "ahk_id N", or a
+// pure-digit string) > ClassNN/text string.  Docs precedence: HWND first.
+static void LinuxCtrlParseSpec(ExprTokenType *aTok, bool &aIsHwnd, Window &aHwnd, std::wstring &aSpec)
+{
+	aIsHwnd = false;
+	aHwnd = 0;
+	aSpec.clear();
+	if (!aTok)
+		return;
+	if (aTok->symbol == SYM_INTEGER)
+	{
+		aIsHwnd = true;
+		aHwnd = (Window)TokenToInt64(*aTok);
+		return;
+	}
+	if (aTok->symbol == SYM_OBJECT)
+		return; // Object with Hwnd property: unsupported without a GUI.
+	TCHAR spec_buf[4096];
+	aSpec = TokenToString(*aTok, spec_buf, nullptr);
+	if (aSpec.compare(0, 7, L"ahk_id ") == 0)
+	{
+		aIsHwnd = true;
+		aHwnd = (Window)wcstoull(aSpec.c_str() + 7, nullptr, 10);
+		return;
+	}
+	bool all_digits = !aSpec.empty();
+	for (wchar_t c : aSpec)
+		if (!iswdigit(c))
+		{
+			all_digits = false;
+			break;
+		}
+	if (all_digits)
+	{
+		aIsHwnd = true;
+		aHwnd = (Window)wcstoull(aSpec.c_str(), nullptr, 10);
+	}
+}
+
+// Resolve the target window and control for the Control* BIFs.
+// aControlIdx: parameter index of the Control value (or -1 when absent).
+// Window params start at aTitleIdx (WinTitle), then WinText, ExcludeTitle,
+// ExcludeText.  Returns 0 on failure (aResultToken already holds the error);
+// on success aControl is the control window and aTarget the top-level window.
+static Window LinuxCtrlTarget(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount
+	, ScriptThreadSettings &aSettings, int aControlIdx, int aTitleIdx, Window &aTarget, Window &aControl)
+{
+	Display *d = LinuxX11Display();
+	if (!d)
+	{
+		aResultToken.Error(_T("No X display is available."), _T(""), ErrorPrototype::Target);
+		return 0;
+	}
+	aTarget = 0;
+	aControl = 0;
+
+	// HWND given directly (integer or "ahk_id N"): window params are ignored.
+	bool spec_is_hwnd = false;
+	Window spec_hwnd = 0;
+	std::wstring spec;
+	if (aControlIdx >= 0 && aControlIdx < aParamCount && !ParamIndexIsOmitted(aControlIdx))
+		LinuxCtrlParseSpec(aParam[aControlIdx], spec_is_hwnd, spec_hwnd, spec);
+
+	if (spec_is_hwnd)
+	{
+		if (!spec_hwnd)
+		{
+			aResultToken.Error(_T("The specified control could not be found."), _T(""), ErrorPrototype::Target);
+			return 0;
+		}
+		aControl = spec_hwnd;
+		// Target window = the top-level ancestor (parent chain).
+		Window root_ret = 0, parent_ret = 0;
+		Window *children = nullptr;
+		unsigned int n = 0;
+		XQueryTree(d, aControl, &root_ret, &parent_ret, &children, &n);
+		if (children)
+			XFree(children);
+		Window w = aControl;
+		while (parent_ret && parent_ret != root_ret)
+		{
+			w = parent_ret;
+			XQueryTree(d, w, &root_ret, &parent_ret, &children, &n);
+			if (children)
+				XFree(children);
+		}
+		aTarget = w;
+		return aControl;
+	}
+
+	aTarget = LinuxWinFindTargetEx(aResultToken, aParam, aParamCount, aSettings, aTitleIdx, aTitleIdx + 1, aTitleIdx + 2);
+	if (!aTarget)
+		return 0;
+
+	// No Control value: for ControlSend/ControlSendText the target window
+	// itself is the "control" (docs); for the others a Control is required,
+	// which the interpreter enforces via min-args.
+	if (spec.empty())
+	{
+		aControl = aTarget;
+		return aTarget;
+	}
+	aControl = LinuxCtrlFind(d, aTarget, spec, aSettings, false, 0);
+	if (!aControl)
+	{
+		aResultToken.Error(_T("The specified control could not be found."), _T(""), ErrorPrototype::Target);
+		return 0;
+	}
+	return aTarget;
+}
+
+// SetControlDelay sleep after changing functions (except SetStyle/ExStyle).
+static void LinuxCtrlDelay()
+{
+	ScriptSleep(g->ControlDelay);
+}
+
+// ---------------------------------------------------------------------------
+// ControlGetText / ControlSetText / ControlGetPos / ControlMove /
+// ControlGetHwnd / ControlGetClassNN / ControlFocus / ControlGetFocus
+// ---------------------------------------------------------------------------
+
+BIF_DECL(BIF_Linux_ControlGetText)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	std::wstring text;
+	LinuxWinTitleEx(LinuxX11Display(), control, text);
+	LinuxWinSetPersistentEx(aResultToken, text);
+}
+
+BIF_DECL(BIF_Linux_ControlSetText)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 1, 2, target, control))
+		return;
+	Display *d = LinuxX11Display();
+	TCHAR text_buf[65536];
+	LPTSTR text = TokenToString(*aParam[0], text_buf, nullptr);
+	// _NET_WM_NAME (UTF-8) + WM_NAME (legacy).
+	Atom utf8 = XInternAtom(d, "UTF8_STRING", False);
+	Atom net_wm_name = XInternAtom(d, "_NET_WM_NAME", False);
+	char utf8buf[131072];
+	int len = WideCharToUTF8(text, utf8buf, (int)sizeof(utf8buf));
+	if (len > 0)
+	{
+		XChangeProperty(d, control, net_wm_name, utf8, 8, PropModeReplace
+			, (const unsigned char *)utf8buf, (unsigned long)(len - 1));
+		XStoreName(d, control, utf8buf);
+		XFlush(d);
+	}
+	LinuxCtrlDelay();
+}
+
+BIF_DECL(BIF_Linux_ControlGetPos)
+{
+	// Docs: the Control parameter is required (unlike the outputs, which are
+	// all optional) -- the LMD table marks all params optional so this is
+	// enforced here.
+	if (aParamCount <= 4 || ParamIndexIsOmitted(4))
+	{
+		aResultToken.Error(ERR_PARAM_REQUIRED, _T(""), ErrorPrototype::Error);
+		return;
+	}
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 4, 5, target, control))
+		return;
+	Display *d = LinuxX11Display();
+	// Position relative to the target window's upper-left corner.
+	// XTranslateCoordinates yields the interior origin; the control's outer
+	// upper-left corner (what the docs describe) is offset by the border.
+	int rx = 0, ry = 0;
+	Window child_ret = 0;
+	XTranslateCoordinates(d, control, target, 0, 0, &rx, &ry, &child_ret);
+	XWindowAttributes attrs;
+	int w = 0, h = 0;
+	if (XGetWindowAttributes(d, control, &attrs))
+	{
+		rx -= attrs.border_width;
+		ry -= attrs.border_width;
+		w = attrs.width;
+		h = attrs.height;
+	}
+	Var *out;
+	if (aParamCount > 0 && (out = TokenToOutputVar(*aParam[0]))) out->Assign((__int64)rx);
+	if (aParamCount > 1 && (out = TokenToOutputVar(*aParam[1]))) out->Assign((__int64)ry);
+	if (aParamCount > 2 && (out = TokenToOutputVar(*aParam[2]))) out->Assign((__int64)w);
+	if (aParamCount > 3 && (out = TokenToOutputVar(*aParam[3]))) out->Assign((__int64)h);
+}
+
+BIF_DECL(BIF_Linux_ControlMove)
+{
+	// Docs: the Control parameter is required; X/Y/Width/Height are optional.
+	if (aParamCount <= 4 || ParamIndexIsOmitted(4))
+	{
+		aResultToken.Error(ERR_PARAM_REQUIRED, _T(""), ErrorPrototype::Error);
+		return;
+	}
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 4, 5, target, control))
+		return;
+	Display *d = LinuxX11Display();
+	// Current position relative to the target window (outer upper-left
+	// corner, like ControlGetPos: subtract the border from the translation).
+	int rx = 0, ry = 0;
+	Window child_ret = 0;
+	XTranslateCoordinates(d, control, target, 0, 0, &rx, &ry, &child_ret);
+	XWindowAttributes attrs;
+	int w = 0, h = 0;
+	if (XGetWindowAttributes(d, control, &attrs))
+	{
+		rx -= attrs.border_width;
+		ry -= attrs.border_width;
+		w = attrs.width;
+		h = attrs.height;
+	}
+	int x = rx, y = ry;
+	if (aParamCount > 0 && !ParamIndexIsOmitted(0)) x = (int)TokenToInt64(*aParam[0]);
+	if (aParamCount > 1 && !ParamIndexIsOmitted(1)) y = (int)TokenToInt64(*aParam[1]);
+	if (aParamCount > 2 && !ParamIndexIsOmitted(2)) w = (int)TokenToInt64(*aParam[2]);
+	if (aParamCount > 3 && !ParamIndexIsOmitted(3)) h = (int)TokenToInt64(*aParam[3]);
+	XWindowAttributes cattrs;
+	if (XGetWindowAttributes(d, control, &cattrs))
+	{
+		// attrs.x/y are relative to the control's parent; apply the delta.
+		XMoveResizeWindow(d, control, cattrs.x + (x - rx), cattrs.y + (y - ry)
+			, (unsigned)w, (unsigned)h);
+		XSync(d, False);
+	}
+	LinuxCtrlDelay();
+}
+
+BIF_DECL(BIF_Linux_ControlGetHwnd)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	aResultToken.SetValue((__int64)control);
+}
+
+BIF_DECL(BIF_Linux_ControlGetClassNN)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	Display *d = LinuxX11Display();
+	// A top-level window itself has no ClassNN (upstream uses the parent
+	// window, which on X11 is the root); return an empty string.
+	std::wstring classnn;
+	if (target != control && LinuxCtrlClassNN(d, target, control, classnn))
+		LinuxWinSetPersistentEx(aResultToken, classnn);
+	else
+		aResultToken.SetValue(_T(""));
+}
+
+BIF_DECL(BIF_Linux_ControlFocus)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	Display *d = LinuxX11Display();
+	XSetInputFocus(d, control, RevertToParent, CurrentTime);
+	XSync(d, False);
+	LinuxCtrlDelay();
+}
+
+BIF_DECL(BIF_Linux_ControlGetFocus)
+{
+	// Docs: returns the HWND of the focused control; 0 if the target
+	// window has no focused control.
+	Display *d = LinuxX11Display();
+	if (!d)
+	{
+		aResultToken.Error(_T("No X display is available."), _T(""), ErrorPrototype::Target);
+		return;
+	}
+	Window target = LinuxWinFindTargetEx(aResultToken, aParam, aParamCount, *g, 0, 1, 2);
+	if (!target)
+		return;
+	Window focus = 0;
+	int revert = 0;
+	if (!XGetInputFocus(d, &focus, &revert))
+	{
+		aResultToken.Error(_T("Unable to determine the keyboard focus."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	if (!focus || focus == PointerRoot || focus == None)
+	{
+		aResultToken.SetValue((__int64)0);
+		return;
+	}
+	// The focused control must be a descendant of the target window.
+	Window root_ret = 0, parent_ret = 0;
+	Window *children = nullptr;
+	unsigned int n = 0;
+	Window w = focus;
+	bool is_child = false;
+	while (!is_child)
+	{
+		if (w == target)
+		{
+			is_child = true;
+			break;
+		}
+		if (!XQueryTree(d, w, &root_ret, &parent_ret, &children, &n))
+			break;
+		if (children)
+			XFree(children);
+		if (!parent_ret || parent_ret == root_ret)
+			break;
+		w = parent_ret;
+	}
+	aResultToken.SetValue((__int64)(is_child ? (Window)focus : 0));
+}
+
+// ---------------------------------------------------------------------------
+// ControlGetStyle/ExStyle/SetStyle/ExStyle, ControlGet/SetEnabled,
+// ControlGet/SetChecked, ControlGetVisible/Show/Hide
+// ---------------------------------------------------------------------------
+
+BIF_DECL(BIF_Linux_ControlGetStyle)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	aResultToken.SetValue((__int64)(ULONG_PTR)LinuxCtrlStateOf(control).style);
+}
+
+BIF_DECL(BIF_Linux_ControlGetExStyle)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	aResultToken.SetValue((__int64)(ULONG_PTR)LinuxCtrlStateOf(control).exstyle);
+}
+
+// Value: "0x80" replaces, "+0x80" adds, "-0x80" removes, "^0x80" toggles
+// (docs ControlSetStyle).
+static void LinuxCtrlSetStyleBits(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount
+	, int aValueIdx, Window control, bool aExStyle)
+{
+	TCHAR val_buf[64];
+	LPTSTR val = aValueIdx < aParamCount ? TokenToString(*aParam[aValueIdx], val_buf, nullptr) : nullptr;
+	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	DWORD &bits = aExStyle ? s.exstyle : s.style;
+	const wchar_t *p = val ? val : L"0";
+	wchar_t op = 0;
+	if (*p == L'+' || *p == L'-' || *p == L'^')
+		op = *p++;
+	DWORD mask = (DWORD)wcstoul(p, nullptr, 0);
+	if (op == L'+')
+		bits |= mask;
+	else if (op == L'-')
+		bits &= ~mask;
+	else if (op == L'^')
+		bits ^= mask;
+	else
+		bits = mask;
+}
+
+BIF_DECL(BIF_Linux_ControlSetStyle)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 1, 2, target, control))
+		return;
+	LinuxCtrlSetStyleBits(aResultToken, aParam, aParamCount, 0, control, false);
+}
+
+BIF_DECL(BIF_Linux_ControlSetExStyle)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 1, 2, target, control))
+		return;
+	LinuxCtrlSetStyleBits(aResultToken, aParam, aParamCount, 0, control, true);
+}
+
+BIF_DECL(BIF_Linux_ControlGetEnabled)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	aResultToken.SetValue((__int64)(LinuxCtrlStateOf(control).enabled ? 1 : 0));
+}
+
+BIF_DECL(BIF_Linux_ControlSetEnabled)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 1, 2, target, control))
+		return;
+	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	__int64 v = TokenToInt64(*aParam[0]);
+	s.enabled = v == -1 ? !s.enabled : (v != 0);
+}
+
+BIF_DECL(BIF_Linux_ControlGetChecked)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	aResultToken.SetValue((__int64)(LinuxCtrlStateOf(control).checked ? 1 : 0));
+}
+
+BIF_DECL(BIF_Linux_ControlSetChecked)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 1, 2, target, control))
+		return;
+	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	__int64 v = TokenToInt64(*aParam[0]);
+	s.checked = v == -1 ? !s.checked : (v != 0);
+}
+
+BIF_DECL(BIF_Linux_ControlGetVisible)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	Display *d = LinuxX11Display();
+	XWindowAttributes attrs;
+	aResultToken.SetValue((__int64)(XGetWindowAttributes(d, control, &attrs) && attrs.map_state == IsViewable ? 1 : 0));
+}
+
+BIF_DECL(BIF_Linux_ControlShow)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	Display *d = LinuxX11Display();
+	XMapRaised(d, control);
+	XSync(d, False);
+	LinuxCtrlDelay();
+}
+
+BIF_DECL(BIF_Linux_ControlHide)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	Display *d = LinuxX11Display();
+	XUnmapWindow(d, control);
+	XSync(d, False);
+	LinuxCtrlDelay();
+}
+
+// ---------------------------------------------------------------------------
+// ControlClick
+// ---------------------------------------------------------------------------
+
+BIF_DECL(BIF_Linux_ControlClick)
+{
+	// ControlID-or-Pos: omitted -> click the target window itself;
+	// "X55 Y33" -> client-area coordinates; ClassNN/text/HWND -> the control.
+	Display *d = LinuxX11Display();
+	if (!d)
+	{
+		aResultToken.Error(_T("No X display is available."), _T(""), ErrorPrototype::Target);
+		return;
+	}
+	// Parse Options (param 5): "NA", "D", "U", "xN yN" (relative to the
+	// control).  The X/Y option letters are ignored in position mode.
+	bool down_only = false, up_only = false;
+	int opt_x = -1, opt_y = -1;
+	if (aParamCount > 5 && !ParamIndexIsOmitted(5))
+	{
+		TCHAR opt_buf[256];
+		LPTSTR opts = TokenToString(*aParam[5], opt_buf, nullptr);
+		for (const wchar_t *p = opts; *p; )
+		{
+			while (*p == L' ' || *p == L'\t') ++p;
+			if ((*p == L'D' || *p == L'd') && (p[1] == 0 || p[1] == L' ' || p[1] == L'\t'))
+			{
+				down_only = true; ++p;
+			}
+			else if ((*p == L'U' || *p == L'u') && (p[1] == 0 || p[1] == L' ' || p[1] == L'\t'))
+			{
+				up_only = true; ++p;
+			}
+			else if ((*p == L'x' || *p == L'X') && iswdigit(p[1]))
+			{
+				opt_x = (int)wcstol(p + 1, nullptr, 10);
+				while (iswdigit(*p)) ++p;
+			}
+			else if ((*p == L'y' || *p == L'Y') && iswdigit(p[1]))
+			{
+				opt_y = (int)wcstol(p + 1, nullptr, 10);
+				while (iswdigit(*p)) ++p;
+			}
+			else
+				++p; // "NA" and unknown tokens are ignored.
+		}
+	}
+
+	bool pos_mode = false;
+	int pos_x = 0, pos_y = 0;
+	std::wstring spec;
+	bool spec_is_hwnd = false;
+	Window spec_hwnd = 0;
+	if (aParamCount > 0 && !ParamIndexIsOmitted(0))
+	{
+		LinuxCtrlParseSpec(aParam[0], spec_is_hwnd, spec_hwnd, spec);
+		if (!spec_is_hwnd && !spec.empty())
+		{
+			// "X55 Y33": X before Y, separated by space/tab (position mode).
+			size_t sp = spec.find_first_of(L" \t");
+			if (sp != std::wstring::npos && (spec[0] == L'x' || spec[0] == L'X')
+				&& iswdigit(spec[1]) && (spec[sp + 1] == L'y' || spec[sp + 1] == L'Y')
+				&& iswdigit(spec[sp + 2]))
+			{
+				pos_mode = true;
+				pos_x = (int)wcstol(spec.c_str() + 1, nullptr, 10);
+				pos_y = (int)wcstol(spec.c_str() + sp + 2, nullptr, 10);
+			}
+		}
+	}
+
+	Window target = 0, control = 0;
+	if (spec_is_hwnd)
+	{
+		if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+			return;
+	}
+	else if (!pos_mode && !spec.empty())
+	{
+		if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+			return;
+	}
+	else
+	{
+		// Position mode (or omitted): the target window itself.
+		target = LinuxWinFindTargetEx(aResultToken, aParam, aParamCount, *g, 1, 2, 3);
+		if (!target)
+			return;
+		control = target;
+	}
+
+	// Click coordinates in root space.
+	int root_x = 0, root_y = 0;
+	Window child_ret = 0;
+	if (pos_mode || control == target)
+	{
+		XTranslateCoordinates(d, target, DefaultRootWindow(d), pos_x, pos_y, &root_x, &root_y, &child_ret);
+	}
+	else
+	{
+		XWindowAttributes attrs;
+		if (!XGetWindowAttributes(d, control, &attrs))
+		{
+			aResultToken.Error(_T("The specified control could not be found."), _T(""), ErrorPrototype::Target);
+			return;
+		}
+		int cx = attrs.width / 2, cy = attrs.height / 2;
+		if (opt_x >= 0) cx = opt_x;
+		if (opt_y >= 0) cy = opt_y;
+		XTranslateCoordinates(d, control, DefaultRootWindow(d), cx, cy, &root_x, &root_y, &child_ret);
+	}
+
+	// WhichButton (param 3, default Left), ClickCount (param 4, default 1).
+	unsigned int btn = 1;
+	if (aParamCount > 3 && !ParamIndexIsOmitted(3))
+	{
+		TCHAR btn_buf[32];
+		LPTSTR bname = TokenToString(*aParam[3], btn_buf, nullptr);
+		if (bname && *bname)
+		{
+			std::wstring b(bname);
+			// Docs accept "Left"/"Right"/"Middle"/"X1"/"X2" and their
+			// single-letter forms; Wheel* buttons are not simulated.
+			if (b.size() == 1)
+			{
+				if (b[0] == L'L' || b[0] == L'l') btn = 1;
+				else if (b[0] == L'R' || b[0] == L'r') btn = 3;
+				else if (b[0] == L'M' || b[0] == L'm') btn = 2;
+			}
+			else if (!LinuxButtonFromNameEx(bname, btn))
+			{
+				aResultToken.Error(_T("Invalid button name."), _T(""), ErrorPrototype::Value);
+				return;
+			}
+		}
+	}
+	int count = aParamCount > 4 && !ParamIndexIsOmitted(4) ? (int)TokenToInt64(*aParam[4]) : 1;
+	if (count < 1)
+		count = 1;
+
+	LinuxFakeMotionEvent(d, root_x, root_y);
+	XSync(d, False);
+	if (up_only)
+		LinuxFakeButtonEvent(d, btn, false);
+	else if (down_only)
+		LinuxFakeButtonEvent(d, btn, true);
+	else
+		for (int i = 0; i < count; ++i)
+		{
+			LinuxFakeButtonEvent(d, btn, true);
+			LinuxFakeButtonEvent(d, btn, false);
+		}
+	LinuxCtrlDelay();
+}
+
+// ---------------------------------------------------------------------------
+// ControlSend / ControlSendText
+// ---------------------------------------------------------------------------
+
+static void LinuxCtrlSendImpl(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount, bool aRaw)
+{
+	Display *d = LinuxX11Display();
+	if (!d)
+	{
+		aResultToken.Error(_T("No X display is available."), _T(""), ErrorPrototype::Target);
+		return;
+	}
+	// Keys = param 0; Control = param 1 (optional -> the target window).
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 1, 2, target, control))
+		return;
+	// Focus the control so the XTEST events reach it, then restore focus.
+	Window prev_focus = 0;
+	int prev_revert = 0;
+	XGetInputFocus(d, &prev_focus, &prev_revert);
+	XSetInputFocus(d, control, RevertToParent, CurrentTime);
+	XSync(d, False);
+	TCHAR keys_buf[65536];
+	LPTSTR keys = aParamCount > 0 ? TokenToString(*aParam[0], keys_buf, nullptr) : nullptr;
+	if (keys)
+	{
+		if (aRaw)
+			LinuxSendCharsString(d, keys);
+		else
+			LinuxSendKeysString(d, keys);
+	}
+	if (prev_focus && prev_focus != PointerRoot && prev_focus != None)
+	{
+		XSetInputFocus(d, prev_focus, RevertToParent, CurrentTime);
+		XSync(d, False);
+	}
+	LinuxCtrlDelay();
+}
+
+BIF_DECL(BIF_Linux_ControlSend)     { LinuxCtrlSendImpl(aResultToken, aParam, aParamCount, false); }
+BIF_DECL(BIF_Linux_ControlSendText) { LinuxCtrlSendImpl(aResultToken, aParam, aParamCount, true); }
+
+// ---------------------------------------------------------------------------
+// Combo/List virtual operations
+// ---------------------------------------------------------------------------
+
+// Common list-target resolution: the control class must contain "Combo" or
+// "List" (docs); ChooseIndex/GetIndex also accept "Tab".
+static bool LinuxCtrlListTarget(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount
+	, bool aAllowTab, Window &aControl, int aControlIdx = 1, int aTitleIdx = 2)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, aControlIdx, aTitleIdx, target, control))
+		return false;
+	Display *d = LinuxX11Display();
+	if (!LinuxCtrlIsListClass(d, control, aAllowTab))
+	{
+		aResultToken.Error(_T("The specified control is not a ComboBox or ListBox."), _T(""), ErrorPrototype::Target);
+		return false;
+	}
+	aControl = control;
+	return true;
+}
+
+BIF_DECL(BIF_Linux_ControlAddItem)
+{
+	Window control = 0;
+	if (!LinuxCtrlListTarget(aResultToken, aParam, aParamCount, false, control))
+		return;
+	TCHAR item_buf[65536];
+	LPTSTR item = TokenToString(*aParam[0], item_buf, nullptr);
+	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	s.items.push_back(item ? item : L"");
+	aResultToken.SetValue((__int64)s.items.size()); // Docs: index of the new entry.
+}
+
+BIF_DECL(BIF_Linux_ControlDeleteItem)
+{
+	Window control = 0;
+	if (!LinuxCtrlListTarget(aResultToken, aParam, aParamCount, false, control))
+		return;
+	// Docs: N = the index of the entry (1-based).
+	int idx = (int)TokenToInt64(*aParam[0]);
+	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	if (idx < 1 || (size_t)idx > s.items.size())
+	{
+		aResultToken.Error(_T("The entry could not be deleted."), _T(""), ErrorPrototype::Error);
+		return;
+	}
+	s.items.erase(s.items.begin() + (idx - 1));
+	if (s.cur_index == idx)
+		s.cur_index = 0;
+	else if (s.cur_index > idx)
+		--s.cur_index;
+}
+
+BIF_DECL(BIF_Linux_ControlFindItem)
+{
+	Window control = 0;
+	if (!LinuxCtrlListTarget(aResultToken, aParam, aParamCount, false, control))
+		return;
+	// Docs: full-text, case-insensitive search; throws Error if not found.
+	TCHAR item_buf[65536];
+	LPTSTR item = TokenToString(*aParam[0], item_buf, nullptr);
+	std::wstring want(item ? item : L"");
+	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	for (size_t i = 0; i < s.items.size(); ++i)
+		if (!_tcsicmp(s.items[i].c_str(), want.c_str()))
+		{
+			aResultToken.SetValue((__int64)(i + 1));
+			return;
+		}
+	aResultToken.Error(_T("The entry could not be found."), _T(""), ErrorPrototype::Error);
+}
+
+BIF_DECL(BIF_Linux_ControlChooseIndex)
+{
+	Window control = 0;
+	if (!LinuxCtrlListTarget(aResultToken, aParam, aParamCount, true, control))
+		return;
+	int idx = (int)TokenToInt64(*aParam[0]);
+	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	if (idx < 0 || (size_t)idx > s.items.size())
+	{
+		aResultToken.Error(_T("The change could not be applied."), _T(""), ErrorPrototype::Error);
+		return;
+	}
+	s.cur_index = idx; // 0 = deselect all (docs).
+}
+
+BIF_DECL(BIF_Linux_ControlChooseString)
+{
+	Window control = 0;
+	if (!LinuxCtrlListTarget(aResultToken, aParam, aParamCount, false, control))
+		return;
+	// Docs: full text or leading part, case-insensitive, first match;
+	// returns the index of the selected entry.
+	TCHAR item_buf[65536];
+	LPTSTR item = TokenToString(*aParam[0], item_buf, nullptr);
+	std::wstring want(item ? item : L"");
+	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	for (size_t i = 0; i < s.items.size(); ++i)
+		if (_tcsnicmp(s.items[i].c_str(), want.c_str(), want.size()) == 0)
+		{
+			s.cur_index = (int)(i + 1);
+			aResultToken.SetValue((__int64)(i + 1));
+			return;
+		}
+	aResultToken.Error(_T("The entry could not be found."), _T(""), ErrorPrototype::Error);
+}
+
+BIF_DECL(BIF_Linux_ControlGetChoice)
+{
+	Window control = 0;
+	if (!LinuxCtrlListTarget(aResultToken, aParam, aParamCount, false, control, 0, 1))
+		return;
+	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	if (s.cur_index < 1 || (size_t)s.cur_index > s.items.size())
+	{
+		aResultToken.Error(_T("No entry is selected."), _T(""), ErrorPrototype::Error);
+		return;
+	}
+	LinuxWinSetPersistentEx(aResultToken, s.items[s.cur_index - 1]);
+}
+
+BIF_DECL(BIF_Linux_ControlGetIndex)
+{
+	Window control = 0;
+	if (!LinuxCtrlListTarget(aResultToken, aParam, aParamCount, true, control, 0, 1))
+		return;
+	aResultToken.SetValue((__int64)LinuxCtrlStateOf(control).cur_index);
+}
+
+BIF_DECL(BIF_Linux_ControlGetItems)
+{
+	Window control = 0;
+	if (!LinuxCtrlListTarget(aResultToken, aParam, aParamCount, false, control, 0, 1))
+		return;
+	Array *arr = Array::Create();
+	LinuxCtrlState &s = LinuxCtrlStateOf(control);
+	if (arr)
+	{
+		for (auto &item : s.items)
+			arr->Append(item.c_str());
+		aResultToken.SetValue(arr);
+	}
+	else
+		aResultToken.SetValue(_T(""));
+}
+
+BIF_DECL(BIF_Linux_ControlShowDropDown)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	LinuxCtrlStateOf(control).dropdown = true;
+}
+
+BIF_DECL(BIF_Linux_ControlHideDropDown)
+{
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	LinuxCtrlStateOf(control).dropdown = false;
+}
+
+// ---------------------------------------------------------------------------
+// WinGetControls / WinGetControlsHwnd (real implementations; the old stubs
+// in core_win_linux.cpp returned an empty array)
+// ---------------------------------------------------------------------------
+
+static void LinuxWinGetControlsImpl(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount, bool aHwnds)
+{
+	Display *d = LinuxX11Display();
+	if (!d)
+	{
+		aResultToken.Error(_T("No X display is available."), _T(""), ErrorPrototype::Target);
+		return;
+	}
+	Window w = LinuxWinFindTargetEx(aResultToken, aParam, aParamCount, *g, 0, 1, 2);
+	if (!w)
+		return;
+	std::vector<LinuxCtrlEntry> ctrls;
+	LinuxCtrlCollect(d, w, ctrls);
+	Array *arr = Array::Create();
+	if (!arr)
+	{
+		aResultToken.SetValue(_T(""));
+		return;
+	}
+	// Sequence numbers are per-class over the whole descendant set.
+	std::map<std::wstring, int> seq;
+	for (auto &e : ctrls)
+	{
+		if (aHwnds)
+			arr->Append((__int64)e.win);
+		else
+		{
+			int n = ++seq[e.cls];
+			wchar_t num[32];
+			swprintf(num, 32, L"%d", n);
+			std::wstring classnn = e.cls + num;
+			arr->Append(classnn.c_str());
+		}
+	}
+	aResultToken.SetValue(arr);
+}
+
+BIF_DECL(BIF_Linux_WinGetControls)
+{
+	LinuxWinGetControlsImpl(aResultToken, aParam, aParamCount, false);
+}
+
+BIF_DECL(BIF_Linux_WinGetControlsHwnd)
+{
+	LinuxWinGetControlsImpl(aResultToken, aParam, aParamCount, true);
+}
