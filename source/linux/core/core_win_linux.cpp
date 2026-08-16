@@ -19,6 +19,8 @@
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
+#include <X11/extensions/shape.h>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -1874,3 +1876,261 @@ void LinuxWinSetPersistentEx(ResultToken &aResultToken, const std::wstring &aStr
 {
 	LinuxWinSetPersistent(aResultToken, aStr);
 }
+
+// ---------------------------------------------------------------------------
+// WinSetRegion (X11 SHAPE extension)
+// ---------------------------------------------------------------------------
+//
+// Docs: "Changes the shape of the specified window to be the specified
+// rectangle, ellipse, or polygon."  The X11 equivalent of a Win32 region is
+// the SHAPE extension's bounding shape; the upstream option grammar
+// (lib/win.cpp WinSetRegion) is mirrored exactly:
+//   - blank/omitted Options restore the window's normal shape;
+//   - "X-Y" coordinate pairs (separated by '-') are points; the first pair
+//     is the origin for the rectangle/ellipse/rounded-rectangle forms;
+//   - 'Wn' width, 'Hn' height, 'E' ellipse, 'R'/'Rw-h' rounded rectangle
+//     (default 30x30), 'Wind' winding polygon fill (accepted; self-
+//     intersecting polygons are filled with the even-odd rule, documented);
+//   - unknown letters, missing '-' delimiters or a missing origin yield a
+//     ValueError (upstream FR_E_ARG(0));
+//   - TargetError when the window cannot be found; OSError when the SHAPE
+//     extension is unavailable.
+// The region is converted to a list of scan-line rectangles and applied
+// with XShapeCombineRectangles (ShapeBounding, ShapeSet).
+
+#define REGION_DELIMITER L'-'
+
+static void LinuxRegionAddRect(std::vector<XRectangle> &aRects, int aX, int aY, int aW, int aH)
+{
+	if (aW <= 0 || aH <= 0)
+		return;
+	XRectangle r;
+	r.x = aX;
+	r.y = aY;
+	r.width = (unsigned)aW;
+	r.height = (unsigned)aH;
+	aRects.push_back(r);
+}
+
+// Scan-lines for an ellipse spanning [aX, aX+aW) x [aY, aY+aH).
+static void LinuxRegionEllipse(std::vector<XRectangle> &aRects, int aX, int aY, int aW, int aH)
+{
+	double cx = aX + aW / 2.0;
+	double cy = aY + aH / 2.0;
+	double rx = aW / 2.0;
+	double ry = aH / 2.0;
+	for (int yy = aY; yy < aY + aH; ++yy)
+	{
+		double t = (yy + 0.5 - cy) / ry;
+		if (t < -1.0 || t > 1.0)
+			continue;
+		double half = rx * sqrt(1.0 - t * t);
+		int x0 = (int)floor(cx - half + 0.5);
+		int x1 = (int)floor(cx + half + 0.5);
+		LinuxRegionAddRect(aRects, x0, yy, x1 - x0, 1);
+	}
+}
+
+// Scan-lines for a rounded rectangle spanning [aX, aX+aW) x [aY, aY+aH)
+// with corner radii rr_w x rr_h.
+static void LinuxRegionRoundRect(std::vector<XRectangle> &aRects, int aX, int aY, int aW, int aH
+	, int aRrW, int aRrH)
+{
+	if (aRrW > aW / 2)
+		aRrW = aW / 2;
+	if (aRrH > aH / 2)
+		aRrH = aH / 2;
+	for (int yy = aY; yy < aY + aH; ++yy)
+	{
+		int local = yy - aY;
+		int from_top = local;
+		int from_bottom = aH - 1 - local;
+		int d = from_top < from_bottom ? from_top : from_bottom;
+		int inset = 0;
+		if (d < aRrH && aRrH > 0)
+		{
+			double ratio = 1.0 - (double)d / aRrH;
+			inset = (int)floor(aRrW * (1.0 - sqrt(1.0 - ratio * ratio)) + 0.5);
+		}
+		LinuxRegionAddRect(aRects, aX + inset, yy, aW - 2 * inset, 1);
+	}
+}
+
+// Even-odd scan-line fill of a polygon.
+static void LinuxRegionPolygon(std::vector<XRectangle> &aRects, const std::vector<POINT> &aPts)
+{
+	int min_y = aPts[0].y, max_y = aPts[0].y;
+	for (size_t i = 1; i < aPts.size(); ++i)
+	{
+		if (aPts[i].y < min_y)
+			min_y = aPts[i].y;
+		if (aPts[i].y > max_y)
+			max_y = aPts[i].y;
+	}
+	for (int yy = min_y; yy <= max_y; ++yy)
+	{
+		std::vector<double> xs;
+		size_t n = aPts.size();
+		for (size_t i = 0; i < n; ++i)
+		{
+			const POINT &p1 = aPts[i];
+			const POINT &p2 = aPts[(i + 1) % n];
+			if ((p1.y <= yy && yy < p2.y) || (p2.y <= yy && yy < p1.y))
+			{
+				double t = (double)(yy - p1.y) / (p2.y - p1.y);
+				xs.push_back(p1.x + t * (p2.x - p1.x));
+			}
+		}
+		std::sort(xs.begin(), xs.end());
+		for (size_t i = 0; i + 1 < xs.size(); i += 2)
+		{
+			int x0 = (int)floor(xs[i] + 0.5);
+			int x1 = (int)floor(xs[i + 1] + 0.5);
+			LinuxRegionAddRect(aRects, x0, yy, x1 - x0, 1);
+		}
+	}
+}
+
+BIF_DECL(BIF_Linux_WinSetRegion)
+{
+	Window w = LinuxWinFindTargetEx(aResultToken, aParam, aParamCount, *g, 1, 2, 3);
+	if (!w)
+		return; // TargetError already raised.
+	Display *d = LinuxWinDisplay();
+	// Blank/omitted Options: restore the window's normal shape (docs).
+	if (aParamCount == 0 || ParamIndexIsOmitted(0))
+	{
+		XShapeCombineMask(d, w, ShapeBounding, 0, 0, None, ShapeSet);
+		XFlush(d);
+		return;
+	}
+	int shape_event = 0, shape_error = 0;
+	if (!XShapeQueryExtension(d, &shape_event, &shape_error))
+	{
+		aResultToken.Error(_T("The X SHAPE extension is not available."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	TCHAR opt_buf[4096];
+	LPTSTR opts = TokenToString(*aParam[0], opt_buf, nullptr);
+	// Option grammar (upstream WinSetRegion): space-separated tokens.
+	std::vector<POINT> pts;
+	int width = COORD_UNSPECIFIED, height = COORD_UNSPECIFIED;
+	int rr_width = COORD_UNSPECIFIED, rr_height = COORD_UNSPECIFIED;
+	bool use_ellipse = false;
+	const wchar_t *cp = opts ? opts : L"";
+	for (;;)
+	{
+		cp = omit_leading_whitespace(cp);
+		if (!*cp)
+			break;
+		if (cisdigit(*cp) || *cp == L'-' || *cp == L'+')
+		{
+			POINT pt;
+			pt.x = ATOI(cp);
+			const wchar_t *delim = _tcschr(cp + 1, REGION_DELIMITER);
+			if (!delim)
+			{
+				FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+				return;
+			}
+			pt.y = ATOI(delim + 1);
+			pts.push_back(pt);
+			cp = delim + 1;
+		}
+		else
+		{
+			wchar_t c = towupper(*cp);
+			switch (c)
+			{
+			case L'E':
+				use_ellipse = true;
+				++cp;
+				break;
+			case L'R':
+				if (!cp[1] || cp[1] == L' ')
+				{
+					rr_width = 30;
+					rr_height = 30;
+					++cp;
+				}
+				else
+				{
+					rr_width = ATOI(cp + 1);
+					const wchar_t *delim = _tcschr(cp + 1, REGION_DELIMITER);
+					if (!delim)
+					{
+						FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+						return;
+					}
+					rr_height = ATOI(delim + 1);
+					cp = delim + 1;
+				}
+				break;
+			case L'W':
+				if (!_tcsnicmp(cp, L"Wind", 4))
+					cp += 4; // Winding fill accepted; even-odd applied (documented).
+				else
+				{
+					width = ATOI(cp + 1);
+					++cp;
+					while (cisdigit(*cp))
+						++cp;
+				}
+				break;
+			case L'H':
+				height = ATOI(cp + 1);
+				++cp;
+				while (cisdigit(*cp))
+					++cp;
+				break;
+			default:
+				FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+				return;
+			}
+		}
+		if (!(cp = _tcschr(cp, L' ')))
+			break;
+	}
+	if (pts.empty())
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	bool both = !(width == COORD_UNSPECIFIED || height == COORD_UNSPECIFIED);
+	if (both)
+	{
+		width += pts[0].x;
+		height += pts[0].y;
+	}
+	std::vector<XRectangle> rects;
+	if (use_ellipse)
+	{
+		if (!both)
+		{
+			// Upstream: CreateEllipticRgn with no width/height -> NULL -> FR_E_WIN32.
+			aResultToken.Error(_T("An ellipse region requires W and H options."), _T(""), ErrorPrototype::OS);
+			return;
+		}
+		LinuxRegionEllipse(rects, pts[0].x, pts[0].y, width - pts[0].x, height - pts[0].y);
+	}
+	else if (rr_width != COORD_UNSPECIFIED)
+	{
+		if (!both)
+		{
+			// Upstream: CreateRoundRectRgn with no width/height -> NULL -> FR_E_WIN32.
+			aResultToken.Error(_T("A rounded rectangle region requires W and H options."), _T(""), ErrorPrototype::OS);
+			return;
+		}
+		LinuxRegionRoundRect(rects, pts[0].x, pts[0].y, width - pts[0].x, height - pts[0].y
+			, rr_width, rr_height);
+	}
+	else if (both)
+		LinuxRegionAddRect(rects, pts[0].x, pts[0].y, width - pts[0].x, height - pts[0].y);
+	else
+		LinuxRegionPolygon(rects, pts);
+	XShapeCombineRectangles(d, w, ShapeBounding, 0, 0, rects.data(), (int)rects.size()
+		, ShapeSet, Unsorted);
+	XFlush(d);
+}
+
+#undef REGION_DELIMITER

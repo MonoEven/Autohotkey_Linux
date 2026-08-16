@@ -49,6 +49,7 @@ BIF_DECL(BIF_Linux_WinSetTransColor);
 BIF_DECL(BIF_Linux_WinSetEnabled);
 BIF_DECL(BIF_Linux_WinSetStyle);
 BIF_DECL(BIF_Linux_WinSetExStyle);
+BIF_DECL(BIF_Linux_WinSetRegion);
 BIF_DECL(BIF_Linux_WinWait);
 BIF_DECL(BIF_Linux_WinWaitActive);
 BIF_DECL(BIF_Linux_WinWaitNotActive);

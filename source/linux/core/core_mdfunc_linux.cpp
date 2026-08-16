@@ -1000,6 +1000,36 @@ BIF_DECL(BIF_Linux_Hotstring)
 }
 
 // ---------------------------------------------------------------------------
+// GuiFromHwnd / GuiCtrlFromHwnd / MenuFromHandle
+// ---------------------------------------------------------------------------
+//
+// Docs: "This function returns the Gui object associated with the specified
+// HWND, or an empty string if there isn't one or the HWND is invalid" (same
+// for GuiControl objects); MenuFromHandle: "or an empty string if the
+// handle is invalid or no Menu object corresponds to it".  The port has no
+// Gui class and cannot create Win32 menus, so no HWND/menu handle can ever
+// correspond to a script object: the functions always return "" (the
+// documented result for the only reachable state; documented).
+
+BIF_DECL(BIF_Linux_GuiFromHwnd)
+{
+	(void)TokenToInt64(*aParam[0]); // Hwnd (UInt32) accepted as-is.
+	aResultToken.SetValue(_T(""));
+}
+
+BIF_DECL(BIF_Linux_GuiCtrlFromHwnd)
+{
+	(void)TokenToInt64(*aParam[0]);
+	aResultToken.SetValue(_T(""));
+}
+
+BIF_DECL(BIF_Linux_MenuFromHandle)
+{
+	(void)TokenToInt64(*aParam[0]);
+	aResultToken.SetValue(_T(""));
+}
+
+// ---------------------------------------------------------------------------
 // Process functions (kill() + /proc based)
 // ---------------------------------------------------------------------------
 
@@ -2754,8 +2784,8 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(GroupAdd, BIF_Linux_GroupAdd, 1, 5),
 	LMD_IMPL(GroupClose, BIF_Linux_GroupClose, 1, 2),
 	LMD_IMPL(GroupDeactivate, BIF_Linux_GroupDeactivate, 1, 2),
-	LMD_NI(GuiCtrlFromHwnd, 1, 1),
-	LMD_NI(GuiFromHwnd, 1, 2),
+	LMD_IMPL(GuiCtrlFromHwnd, BIF_Linux_GuiCtrlFromHwnd, 1, 1),
+	LMD_IMPL(GuiFromHwnd, BIF_Linux_GuiFromHwnd, 1, 2),
 	LMD_IMPL(HotIf, BIF_Linux_HotIf, 0, 1),
 	LMD_IMPL(HotIfWinActive, BIF_Linux_HotIfWinActive, 0, 2),
 	LMD_IMPL(HotIfWinExist, BIF_Linux_HotIfWinExist, 0, 2),
@@ -2780,7 +2810,7 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(ListLines, BIF_Linux_ListLines, 0, 1),
 	LMD_IMPL(ListVars, BIF_Linux_ListVars, 0, 0),	LMD_IMPL(ListViewGetContent, BIF_Linux_ListViewGetContent, 1, 6),
 	LMD_IMPL(LoadPicture, BIF_Linux_LoadPicture, 1, 3, 3),
-	LMD_NI(MenuFromHandle, 1, 1),
+	LMD_IMPL(MenuFromHandle, BIF_Linux_MenuFromHandle, 1, 1),
 	LMD_IMPL(MenuSelect, BIF_Linux_MenuSelect, 3, 11),
 	LMD_IMPL(MonitorGet, BIF_Linux_MonitorGet, 0, 5, 2, 3, 4, 5),
 	LMD_IMPL(MonitorGetCount, BIF_Linux_MonitorGetCount, 0, 0),
@@ -2883,7 +2913,7 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(WinSetAlwaysOnTop, BIF_Linux_WinSetAlwaysOnTop, 0, 5),
 	LMD_IMPL(WinSetEnabled, BIF_Linux_WinSetEnabled, 1, 5),
 	LMD_IMPL(WinSetExStyle, BIF_Linux_WinSetExStyle, 1, 5),
-	LMD_NI(WinSetRegion, 0, 5),
+	LMD_IMPL(WinSetRegion, BIF_Linux_WinSetRegion, 0, 5),
 	LMD_IMPL(WinSetStyle, BIF_Linux_WinSetStyle, 1, 5),
 	LMD_IMPL(WinSetTitle, BIF_Linux_WinSetTitle, 1, 5),
 	LMD_IMPL(WinSetTransColor, BIF_Linux_WinSetTransColor, 1, 5),

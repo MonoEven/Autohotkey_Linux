@@ -1,4 +1,0 @@
-ni_GuiCtrlFromHwnd=1
-ni_GuiFromHwnd=1
-ni_MenuFromHandle=1
-ni_WinSetRegion=1
