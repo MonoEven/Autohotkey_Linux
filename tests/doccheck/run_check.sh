@@ -43,7 +43,18 @@ if [ "$XVFB" = 1 ]; then
     sleep 0.3
     Xvfb :99 -screen 0 1024x768x24 >/dev/null 2>&1 &
     XVFB_PID=$!
-    sleep 1
+    # Wait for the X socket to be connectable (up to 5 s) instead of a
+    # fixed sleep; on loaded CI runners Xvfb can take a moment to start.
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      if DISPLAY=:99 timeout 2 xdpyinfo >/dev/null 2>&1; then
+        break
+      fi
+      if ! kill -0 "$XVFB_PID" 2>/dev/null; then
+        echo "ERROR: Xvfb :99 exited during startup" >&2
+        break
+      fi
+      sleep 0.5
+    done
     gcc -o out/xwin_helper xwin_helper.c -lX11 2>/dev/null
     gcc -o out/xkeycap xkeycap.c -lX11 2>/dev/null
     gcc -o out/xshape_probe xshape_probe.c -lX11 -lXext 2>/dev/null
