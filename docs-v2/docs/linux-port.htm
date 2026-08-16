@@ -29,6 +29,31 @@ Windows-specific behavior are not part of this port.</p>
     v2 feature set.</li>
 </ul>
 
+<h2>Examples in this documentation</h2>
+<p>These pages mirror the official AutoHotkey v2 documentation, so their
+examples fall into three groups on Linux:</p>
+<ul>
+  <li><b>Run as-is.</b> Pure-language examples (variables, loops, strings,
+    math, files, objects, RegEx, ...) run unchanged.  Windows-style paths
+    like <code>C:\...</code> are treated as plain (oddly named) files on
+    Linux; use Linux paths (<code>/tmp/...</code>, <code>A_Desktop</code>,
+    <code>~</code>) in your own scripts.</li>
+  <li><b>Platform-adapted.</b> Pages for DllCall and the COM functions
+    (<code>ComObject</code>, <code>ComObjGet</code>, ...) add a Linux
+    example block at the top of their Examples section that uses native
+    <b>.so</b> libraries or the <b>D-Bus</b> bus; the original Windows
+    examples are kept for reference only.</li>
+  <li><b>Not available on Linux.</b> Examples using Windows-only features
+    (GUI windows via <code>Gui</code>/<code>GuiControl</code>/<code>Menu</code>,
+    <code>Sound*</code>, <code>TrayTip</code>, <code>SendMessage</code>/
+    <code>PostMessage</code>/<code>OnMessage</code>, <code>Hotstring</code>,
+    <code>WinSetRegion</code>, <code>ImageSearch</code>, ...) are kept for
+    reference; calling those functions raises a clear error.  Many examples
+    elsewhere are also short <em>snippets</em> that depend on context
+    (a preceding variable, a hotkey label, a window with a specific title);
+    they illustrate syntax rather than being standalone programs.</li>
+</ul>
+
 <h2>What works on Linux</h2>
 <p>All <b>327</b> built-in functions listed in the worklist are implemented
 (0 not implemented); 795 doc-check assertions pass under Xvfb. The port has

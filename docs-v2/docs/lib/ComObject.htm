@@ -65,6 +65,31 @@
 
 <h2 id="Examples">Examples</h2>
 <p>For a long list of v1.1 examples, see <a href="https://www.autohotkey.com/board/topic/56987-">this archived forum thread</a>.</p>
+<div class="ex" id="ExLinux">
+<p><a class="ex_number" href="#ExLinux"></a> <b>Linux:</b> COM is implemented over the D-Bus desktop bus on this port.
+<code>ComObject("service")</code> creates a proxy for a bus service; method
+calls and property access map to D-Bus.  The Windows examples below
+(Internet Explorer, Active Desktop) cannot run on Linux.</p>
+<pre>; Create a proxy for the D-Bus daemon itself.
+bus := ComObject("org.freedesktop.DBus")
+
+; Call a method: GetId() returns the bus id.
+id := bus.GetId()
+MsgBox "bus id: " id  <em>; e.g. 07ab...  (non-empty)</em>
+
+; ListNames() returns an Array of service names (string array).
+names := bus.ListNames()
+MsgBox "services: " names.Length
+for name in names
+    OutputDebug name
+
+; Property access is supported via org.freedesktop.DBus.Properties;
+; calling an unknown member raises an OSError rather than crashing.
+try
+    bus.NoSuchMethod()
+catch
+    MsgBox "unknown member raised an error"</pre>
+</div>
 <div class="ex" id="ExIE">
 <p><a class="ex_number" href="#ExIE"></a> Launches an instance of Internet Explorer, makes it visible and navigates to a website.</p>
 <pre>ie := ComObject("InternetExplorer.Application")

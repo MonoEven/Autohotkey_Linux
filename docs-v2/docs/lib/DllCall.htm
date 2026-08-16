@@ -210,6 +210,29 @@ result := DllCall("CharLower", "<strong><u>Str</u></strong>", DllCall("CharUpper
 <p><a href="../Compat.htm#DllCall">Binary Compatibility</a>, <a href="Buffer.htm">Buffer object</a>, <a href="ComCall.htm">ComCall</a>, <a href="PostMessage.htm">PostMessage</a>, <a href="OnMessage.htm">OnMessage</a>, <a href="CallbackCreate.htm">CallbackCreate</a>, <a href="Run.htm">Run</a>, <a href="VarSetStrCapacity.htm">VarSetStrCapacity</a>, <a href="../Functions.htm">Functions</a>, <a href="SysGet.htm">SysGet</a>, <a href="_DllLoad.htm">#DllLoad</a>, <a href="https://learn.microsoft.com/windows/win32/apiindex/windows-api-list">Windows API Index</a></p>
 
 <h2 id="Examples">Examples</h2>
+<div class="ex" id="ExLinux">
+<p><a class="ex_number" href="#ExLinux"></a> <b>Linux:</b> the examples below call functions in native Linux shared
+objects (<b>.so</b>) and run on this port.  The Windows API examples that
+follow (<code>MessageBox</code>, <code>SystemParametersInfo</code>,
+<code>wsprintf</code>, ...) are kept for reference but cannot run on Linux;
+see the <a href="../linux-port.htm">Linux port notes</a>.</p>
+<pre>; Call abs() from libc: returns the absolute value.
+result := DllCall("abs", "Int", -42)
+MsgBox result  <em>; 42</em>
+
+; strlen() on a UTF-8 string ("Str" == UTF-8 on Linux).
+MsgBox DllCall("strlen", "Str", "hello")  <em>; 5</em>
+
+; Floor a double via libm (specify the .so and the return type).
+MsgBox DllCall("libm.so.6\floor", "Double", 3.7, "Double")  <em>; 3.0</em>
+
+; Output parameters use &amp;Var like upstream v2; time() writes its result
+; through a pointer.
+t := 0
+DllCall("time", "Int64*", &amp;t)
+MsgBox "unix time: " t  <em>; e.g. 1755300000</em></pre>
+</div>
+
 <div class="ex" id="ExMessageBox">
 <p><a class="ex_number" href="#ExMessageBox"></a> Calls the Windows API function "MessageBox" and reports which button the user presses.</p>
 <pre>WhichButton := DllCall("MessageBox", "Int", 0, "Str", "Press Yes or No", "Str", "Title of box", "Int", 4)
