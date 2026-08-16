@@ -29,8 +29,15 @@
 #include <map>
 #include <dirent.h>
 #include <sys/statvfs.h>
+#include <sys/stat.h>
 #include <sys/resource.h>
+#include <sys/socket.h>
+#include <sys/wait.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <arpa/inet.h>
 #include <unistd.h>
+#include <X11/Xlib.h>
 
 // ---------------------------------------------------------------------------
 // Declarations of native implementations from already-linked translation
@@ -1337,6 +1344,941 @@ static void LinuxSetPersistentStrResult(ResultToken &aResultToken, const char *a
 	aResultToken.SetValue(persistent, w.size());
 }
 
+// ---------------------------------------------------------------------------
+// Round 5: settings / process / file ops / system / network modules.
+// Semantics follow docs-v2 (Return Value / Error Handling sections) and the
+// upstream implementations in lib/vars.cpp, lib/process.cpp, lib/env.cpp,
+// lib/drive.cpp, lib/sound.cpp and script_autoit.cpp.
+// ---------------------------------------------------------------------------
+
+static LPTSTR sCoordModes[] = COORD_MODES; // "Client","Window","Screen".
+static LPTSTR sSendModes[] = SEND_MODES;   // "Event","Input","Play","InputThenPlay".
+
+static void LinuxSetStrRet(ResultToken &aResultToken, StrRet &aRet)
+{
+	LinuxCopyStrRet(aResultToken, aRet);
+}
+
+// ---- Settings module ----
+
+BIF_DECL(BIF_Linux_CoordMode)
+{
+	TCHAR cmd_buf[64];
+	LPTSTR cmd = TokenToString(*aParam[0], cmd_buf, nullptr);
+	CoordModeType shift = Line::ConvertCoordModeCmd(cmd ? cmd : cmd_buf);
+	if (shift == COORD_MODE_INVALID)
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	CoordModeType mode = COORD_MODE_SCREEN;
+	if (aParamCount > 1 && !ParamIndexIsOmitted(1))
+	{
+		TCHAR mode_buf[64];
+		LPTSTR m = TokenToString(*aParam[1], mode_buf, nullptr);
+		mode = Line::ConvertCoordMode(m ? m : mode_buf);
+		if (mode == COORD_MODE_INVALID)
+		{
+			FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(1), 0);
+			return;
+		}
+	}
+	// Docs: returns the area that TargetType was previously relative to.
+	aResultToken.SetValue(sCoordModes[(g->CoordMode >> shift) & COORD_MODE_MASK]);
+	g->CoordMode = (g->CoordMode & ~(COORD_MODE_MASK << shift)) | (mode << shift);
+}
+
+BIF_DECL(BIF_Linux_DetectHiddenWindows)
+{
+	// Docs: returns the previous setting (0/1).
+	aResultToken.SetValue(g->DetectHiddenWindows ? 1 : 0);
+	g->DetectHiddenWindows = TokenToBOOL(*aParam[0]);
+}
+
+BIF_DECL(BIF_Linux_DetectHiddenText)
+{
+	aResultToken.SetValue(g->DetectHiddenText ? 1 : 0);
+	g->DetectHiddenText = TokenToBOOL(*aParam[0]);
+}
+
+BIF_DECL(BIF_Linux_SetTitleMatchMode)
+{
+	TCHAR mode_buf[64];
+	LPTSTR m = TokenToString(*aParam[0], mode_buf, nullptr);
+	TitleMatchModes mode = Line::ConvertTitleMatchMode(m ? m : mode_buf);
+	switch (mode)
+	{
+	case FIND_FAST:
+	case FIND_SLOW:
+		// Docs: returns the previous speed ("Fast"/"Slow").
+		aResultToken.SetValue(g->TitleFindFast ? _T("Fast") : _T("Slow"));
+		g->TitleFindFast = (mode == FIND_FAST);
+		return;
+	case MATCHMODE_INVALID:
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	default:
+		// Docs: returns the previous match mode (1/2/3 or "RegEx").
+		if (g->TitleMatchMode == FIND_REGEX)
+			aResultToken.SetValue(_T("RegEx"));
+		else
+			aResultToken.SetValue((__int64)g->TitleMatchMode);
+		g->TitleMatchMode = mode;
+	}
+}
+
+BIF_DECL(BIF_Linux_SetKeyDelay)
+{
+	int slot0 = 0, slot1 = 0;
+	optl<int> delay = LinuxOptInt(slot0, aParam, aParamCount, 0);
+	optl<int> duration = LinuxOptInt(slot1, aParam, aParamCount, 1);
+	if (delay.has_value() && *delay < -1)
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	if (duration.has_value() && *duration < -1)
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(1), 0);
+		return;
+	}
+	bool play = false;
+	if (aParamCount > 2 && !ParamIndexIsOmitted(2))
+	{
+		TCHAR mode_buf[64];
+		LPTSTR m = TokenToString(*aParam[2], mode_buf, nullptr);
+		if (!_tcsicmp(m ? m : mode_buf, _T("Play")))
+			play = true;
+		else if ((m ? m : mode_buf)[0]) // Anything other than "Play" or "" is invalid.
+		{
+			FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(2), 0);
+			return;
+		}
+	}
+	if (play)
+	{
+		if (delay.has_value())
+			g->KeyDelayPlay = *delay;
+		if (duration.has_value())
+			g->PressDurationPlay = *duration;
+	}
+	else
+	{
+		if (delay.has_value())
+			g->KeyDelay = *delay;
+		if (duration.has_value())
+			g->PressDuration = *duration;
+	}
+}
+
+BIF_DECL(BIF_Linux_SetMouseDelay)
+{
+	int delay = (int)TokenToInt64(*aParam[0]);
+	if (delay < -1)
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	bool play = false;
+	if (aParamCount > 1 && !ParamIndexIsOmitted(1))
+	{
+		TCHAR mode_buf[64];
+		LPTSTR m = TokenToString(*aParam[1], mode_buf, nullptr);
+		if (!_tcsicmp(m ? m : mode_buf, _T("Play")))
+			play = true;
+		else if ((m ? m : mode_buf)[0])
+		{
+			FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(1), 0);
+			return;
+		}
+	}
+	// Docs: returns the previous delay.
+	if (play)
+	{
+		aResultToken.SetValue((__int64)g->MouseDelayPlay);
+		g->MouseDelayPlay = delay;
+	}
+	else
+	{
+		aResultToken.SetValue((__int64)g->MouseDelay);
+		g->MouseDelay = delay;
+	}
+}
+
+BIF_DECL(BIF_Linux_SetWinDelay)
+{
+	int delay = (int)TokenToInt64(*aParam[0]);
+	if (delay < -1)
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	aResultToken.SetValue((__int64)g->WinDelay);
+	g->WinDelay = delay;
+}
+
+BIF_DECL(BIF_Linux_SetControlDelay)
+{
+	int delay = (int)TokenToInt64(*aParam[0]);
+	if (delay < -1)
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	aResultToken.SetValue((__int64)g->ControlDelay);
+	g->ControlDelay = delay;
+}
+
+BIF_DECL(BIF_Linux_SetDefaultMouseSpeed)
+{
+	int speed = (int)TokenToInt64(*aParam[0]);
+	if (speed < 0 || speed > MAX_MOUSE_SPEED)
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	aResultToken.SetValue((__int64)g->DefaultMouseSpeed);
+	g->DefaultMouseSpeed = (UCHAR)speed;
+}
+
+BIF_DECL(BIF_Linux_SendMode)
+{
+	TCHAR mode_buf[64];
+	LPTSTR m = TokenToString(*aParam[0], mode_buf, nullptr);
+	SendModes new_mode = Line::ConvertSendMode(m ? m : mode_buf, SM_INVALID);
+	if (new_mode == SM_INVALID)
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	// Docs: returns the previous send mode.
+	aResultToken.SetValue(sSendModes[g->SendMode]);
+	g->SendMode = new_mode;
+}
+
+BIF_DECL(BIF_Linux_SendLevel)
+{
+	int level = (int)TokenToInt64(*aParam[0]);
+	if (!SendLevelIsValid(level))
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	aResultToken.SetValue((__int64)g->SendLevel);
+	g->SendLevel = (SendLevelType)level;
+}
+
+BIF_DECL(BIF_Linux_SetRegView)
+{
+	TCHAR view_buf[32];
+	LPTSTR v = TokenToString(*aParam[0], view_buf, nullptr);
+	DWORD reg_view = Line::RegConvertView(v ? v : view_buf);
+	if (reg_view == (DWORD)-1)
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	// Docs: returns the previous setting.
+	switch (g->RegView)
+	{
+	case KEY_WOW64_32KEY: aResultToken.SetValue(_T("32")); break;
+	case KEY_WOW64_64KEY: aResultToken.SetValue(_T("64")); break;
+	default: aResultToken.SetValue(_T("Default")); break;
+	}
+	if (sizeof(void *) == 8)
+		g->RegView = reg_view;
+}
+
+BIF_DECL(BIF_Linux_SetStoreCapsLockMode)
+{
+	aResultToken.SetValue(g->StoreCapslockMode ? 1 : 0);
+	g->StoreCapslockMode = TokenToBOOL(*aParam[0]);
+}
+
+BIF_DECL(BIF_Linux_FileEncoding)
+{
+	UINT new_encoding = Line::ConvertFileEncoding(*aParam[0]);
+	if (new_encoding == (UINT)-1)
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	// Docs: returns the previous setting as a readable string.
+	LPTSTR enc;
+	switch (g->Encoding)
+	{
+	case CP_UTF8:               enc = _T("UTF-8");      break;
+	case CP_UTF8 | CP_AHKNOBOM: enc = _T("UTF-8-RAW");  break;
+	case CP_UTF16:              enc = _T("UTF-16");     break;
+	case CP_UTF16 | CP_AHKNOBOM: enc = _T("UTF-16-RAW"); break;
+	default:
+	{
+		TCHAR *buf = aResultToken.buf;
+		buf[0] = _T('C');
+		buf[1] = _T('P');
+		_itot(g->Encoding, buf + 2, 10);
+		aResultToken.SetValue(buf);
+		g->Encoding = new_encoding;
+		return;
+	}
+	}
+	aResultToken.SetValue(enc);
+	g->Encoding = new_encoding;
+}
+
+// ---- Process module (/proc based; lib/process.cpp semantics) ----
+
+// Resolve the PIDOrName parameter: omitted -> own PID; numeric -> PID;
+// otherwise the first (case-insensitive) name match.  Returns 0 if not found.
+static pid_t LinuxResolveProcess(ExprTokenType *aParam[], int aParamCount)
+{
+	if (aParamCount == 0 || ParamIndexIsOmitted(0))
+		return getpid();
+	char name_buf[512];
+	std::string target = LinuxNarrowOf(aParam, aParamCount, 0, name_buf, sizeof(name_buf));
+	if (target.empty())
+		return getpid();
+	if (isdigit((unsigned char)target[0]))
+	{
+		pid_t pid = (pid_t)atol(target.c_str());
+		return LinuxProcessAlive(pid) ? pid : 0;
+	}
+	// Docs: "The name is not case-sensitive" and "only the first process will
+	// be operated upon".
+	size_t slash = target.find_last_of('/');
+	std::string wanted = slash != std::string::npos ? target.substr(slash + 1) : target;
+	std::string wl;
+	for (char c : wanted)
+		wl += (char)tolower((unsigned char)c);
+	DIR *dir = opendir("/proc");
+	if (!dir)
+		return 0;
+	pid_t found = 0;
+	while (struct dirent *ent = readdir(dir))
+	{
+		if (!isdigit((unsigned char)ent->d_name[0]))
+			continue;
+		std::ifstream f((std::string("/proc/") + ent->d_name + "/comm").c_str());
+		if (!f)
+			continue;
+		std::string name;
+		std::getline(f, name);
+		std::string nl;
+		for (char c : name)
+			nl += (char)tolower((unsigned char)c);
+		if (nl == wl)
+		{
+			pid_t candidate = (pid_t)atol(ent->d_name);
+			if (LinuxProcessAlive(candidate))
+			{
+				found = candidate;
+				break;
+			}
+		}
+	}
+	closedir(dir);
+	return found;
+}
+
+static bool LinuxProcName(pid_t aPid, std::string &aName)
+{
+	std::ifstream f((std::string("/proc/") + std::to_string(aPid) + "/comm").c_str());
+	if (!f)
+		return false;
+	std::getline(f, aName);
+	return !aName.empty();
+}
+
+static bool LinuxProcParent(pid_t aPid, pid_t &aParent)
+{
+	std::ifstream f((std::string("/proc/") + std::to_string(aPid) + "/stat").c_str());
+	if (!f)
+		return false;
+	std::string stat;
+	std::getline(f, stat);
+	size_t close_paren = stat.rfind(')');
+	if (close_paren == std::string::npos || close_paren + 2 >= stat.size())
+		return false;
+	std::istringstream ss(stat.substr(close_paren + 2));
+	char state = 0;
+	pid_t ppid = 0;
+	ss >> state >> ppid;
+	aParent = ppid;
+	return true;
+}
+
+static bool LinuxProcExe(pid_t aPid, std::string &aPath)
+{
+	char buf[4096];
+	ssize_t n = readlink((std::string("/proc/") + std::to_string(aPid) + "/exe").c_str(), buf, sizeof(buf) - 1);
+	if (n <= 0)
+		return false;
+	buf[n] = '\0';
+	aPath = buf;
+	return true;
+}
+
+BIF_DECL(BIF_Linux_ProcessGetName)
+{
+	pid_t pid = LinuxResolveProcess(aParam, aParamCount);
+	if (!pid)
+	{
+		// Docs: TargetError if the process could not be found.
+		aResultToken.Error(_T("The specified process could not be found."), _T(""), ErrorPrototype::Target);
+		return;
+	}
+	std::string name;
+	if (!LinuxProcName(pid, name))
+	{
+		aResultToken.Error(_T("The process name could not be retrieved."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	LinuxSetPersistentStrResult(aResultToken, name.c_str());
+}
+
+BIF_DECL(BIF_Linux_ProcessGetPath)
+{
+	pid_t pid = LinuxResolveProcess(aParam, aParamCount);
+	if (!pid)
+	{
+		aResultToken.Error(_T("The specified process could not be found."), _T(""), ErrorPrototype::Target);
+		return;
+	}
+	std::string path;
+	if (!LinuxProcExe(pid, path))
+	{
+		aResultToken.Error(_T("The process path could not be retrieved."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	LinuxSetPersistentStrResult(aResultToken, path.c_str());
+}
+
+BIF_DECL(BIF_Linux_ProcessGetParent)
+{
+	pid_t pid = LinuxResolveProcess(aParam, aParamCount);
+	if (!pid)
+	{
+		aResultToken.Error(_T("The specified process could not be found."), _T(""), ErrorPrototype::Target);
+		return;
+	}
+	pid_t parent = 0;
+	if (!LinuxProcParent(pid, parent))
+	{
+		aResultToken.Error(_T("The parent process could not be retrieved."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	aResultToken.SetValue((__int64)parent);
+}
+
+// ---- File ops (lib/file.cpp native impls already linked) ----
+
+FResult FileCopy(StrArg aSource, StrArg aDest, optl<int> aFlag);
+FResult FileMove(StrArg aSource, StrArg aDest, optl<int> aFlag);
+FResult FileInstall(StrArg aSource, StrArg aDest, optl<int> aFlag);
+
+static void LinuxFileCopyMove(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount, bool aMove)
+{
+	TCHAR s_buf[4096], d_buf[4096];
+	LPTSTR s = TokenToString(*aParam[0], s_buf, nullptr);
+	LPTSTR d = TokenToString(*aParam[1], d_buf, nullptr);
+	int slot = 0;
+	FResult fr = aMove
+		? FileMove(s ? s : s_buf, d ? d : d_buf, LinuxOptInt(slot, aParam, aParamCount, 2))
+		: FileCopy(s ? s : s_buf, d ? d : d_buf, LinuxOptInt(slot, aParam, aParamCount, 2));
+	if (FAILED(fr))
+		FResultToError(aResultToken, aParam, aParamCount, fr, 0);
+}
+
+BIF_DECL(BIF_Linux_FileCopy)
+{
+	LinuxFileCopyMove(aResultToken, aParam, aParamCount, false);
+}
+
+BIF_DECL(BIF_Linux_FileMove)
+{
+	LinuxFileCopyMove(aResultToken, aParam, aParamCount, true);
+}
+
+BIF_DECL(BIF_Linux_FileInstall)
+{
+	TCHAR s_buf[4096], d_buf[4096];
+	LPTSTR s = TokenToString(*aParam[0], s_buf, nullptr);
+	LPTSTR d = TokenToString(*aParam[1], d_buf, nullptr);
+	int slot = 0;
+	// Docs: in an uncompiled script the source file is copied to the target.
+	FResult fr = FileInstall(s ? s : s_buf, d ? d : d_buf, LinuxOptInt(slot, aParam, aParamCount, 2));
+	if (FAILED(fr))
+		FResultToError(aResultToken, aParam, aParamCount, fr, 0);
+}
+
+// ---- FileRecycle / FileRecycleEmpty (XDG Trash specification) ----
+
+static std::string LinuxNarrow(const wchar_t *aWide)
+{
+	char buf[4096];
+	if (wcstombs(buf, aWide, sizeof(buf)) == (size_t)-1)
+		buf[0] = '\0';
+	buf[sizeof(buf) - 1] = '\0';
+	return std::string(buf);
+}
+
+static void LinuxTrashDirs(std::string &aFilesDir, std::string &aInfoDir)
+{
+	const char *xdg = std::getenv("XDG_DATA_HOME");
+	std::string base;
+	if (xdg && *xdg)
+		base = xdg;
+	else
+		base = std::string(std::getenv("HOME") && *std::getenv("HOME") ? std::getenv("HOME") : "/tmp")
+			+ "/.local/share";
+	aFilesDir = base + "/Trash/files";
+	aInfoDir = base + "/Trash/info";
+}
+
+// Unique trash name: append ".<n>" while the target exists.
+static std::string LinuxUniqueTrashName(const std::string &aDir, const std::string &aBase)
+{
+	if (!std::filesystem::exists(aDir + "/" + aBase))
+		return aBase;
+	for (int i = 1; i < 10000; ++i)
+	{
+		std::string candidate = aBase + "." + std::to_string(i);
+		if (!std::filesystem::exists(aDir + "/" + candidate))
+			return candidate;
+	}
+	return aBase + "." + std::to_string(::getpid());
+}
+
+BIF_DECL(BIF_Linux_FileRecycle)
+{
+	TCHAR pat_buf[4096];
+	LPTSTR pat = TokenToString(*aParam[0], pat_buf, nullptr);
+	std::wstring pattern(pat ? pat : pat_buf);
+	if (pattern.empty())
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	std::string files_dir, info_dir;
+	LinuxTrashDirs(files_dir, info_dir);
+	std::filesystem::create_directories(files_dir);
+	std::filesystem::create_directories(info_dir);
+
+	WIN32_FIND_DATA findData;
+	HANDLE hSearch = FindFirstFile(pattern.c_str(), &findData);
+	if (hSearch == INVALID_HANDLE_VALUE)
+	{
+		// Docs: an exception is thrown on failure (a no-match pattern is not
+		// a failure per the FileCopy/FileMove convention, but FileRecycle has
+		// no such exception, so treat a literal missing file as failure).
+		if (pattern.find_first_of(L"?*") == std::wstring::npos)
+			aResultToken.Error(_T("The file could not be recycled."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	int failures = 0;
+	do
+	{
+		if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+			continue;
+		// Rebuild the full path of the matched file.
+		std::wstring spec = pattern;
+		size_t slash = spec.find_last_of(L'/');
+		std::wstring dir_ws = slash == std::wstring::npos ? L"." : (slash == 0 ? L"/" : spec.substr(0, slash));
+		std::wstring full_ws = dir_ws + L"/" + findData.cFileName;
+		std::string full = LinuxNarrow(full_ws.c_str());
+		std::string name = LinuxNarrow(findData.cFileName);
+		std::string trash_name = LinuxUniqueTrashName(files_dir, name);
+		try
+		{
+			std::filesystem::rename(full, files_dir + "/" + trash_name);
+			// Write the .trashinfo metadata (Path must be absolute).
+			char abs_buf[4096];
+			if (!realpath(full.c_str(), abs_buf))
+				strcpy(abs_buf, full.c_str());
+			// DeletionDate: YYYY-MM-DDThh:mm:ss in local time.
+			time_t now = time(nullptr);
+			struct tm tmv;
+			localtime_r(&now, &tmv);
+			char date_buf[32];
+			strftime(date_buf, sizeof(date_buf), "%Y-%m-%dT%H:%M:%S", &tmv);
+			std::ofstream info(info_dir + "/" + trash_name + ".trashinfo", std::ios::binary | std::ios::trunc);
+			if (info)
+			{
+				info << "[Trash Info]\n";
+				info << "Path=" << abs_buf << "\n";
+				info << "DeletionDate=" << date_buf << "\n";
+			}
+		}
+		catch (...)
+		{
+			++failures;
+		}
+	} while (FindNextFile(hSearch, &findData));
+	FindClose(hSearch);
+	if (failures)
+		aResultToken.Error(_T("The file could not be recycled."), _T(""), ErrorPrototype::OS);
+}
+
+BIF_DECL(BIF_Linux_FileRecycleEmpty)
+{
+	(void)aParam; (void)aParamCount; // Drive parameter: no equivalent on Linux.
+	std::string files_dir, info_dir;
+	LinuxTrashDirs(files_dir, info_dir);
+	try
+	{
+		if (std::filesystem::exists(files_dir))
+			std::filesystem::remove_all(files_dir);
+		if (std::filesystem::exists(info_dir))
+			std::filesystem::remove_all(info_dir);
+	}
+	catch (...)
+	{
+		aResultToken.Error(_T("The recycle bin could not be emptied."), _T(""), ErrorPrototype::OS);
+	}
+}
+
+BIF_DECL(BIF_Linux_FileGetVersion)
+{
+	// Docs: "Most non-executable files (and even some EXEs) have no version,
+	// and thus an error will be thrown."  Linux files have no version
+	// resource, so an OSError is thrown (A_LastError = ERROR_FILE_NOT_FOUND
+	// for a missing file, ERROR_RESOURCE_TYPE_NOT_FOUND otherwise).
+	TCHAR path_buf[4096];
+	LPTSTR path = _T("");
+	if (aParamCount > 0 && !ParamIndexIsOmitted(0))
+		path = TokenToString(*aParam[0], path_buf, nullptr);
+	else if (g && g->mLoopFile)
+		path = g->mLoopFile->file_path;
+	if (!path || !*path)
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	std::string narrow = LinuxNarrow(path);
+	struct stat st;
+	if (stat(narrow.c_str(), &st) != 0)
+	{
+		g->LastError = 2; // ERROR_FILE_NOT_FOUND.
+		SetLastError(2);
+		aResultToken.Error(_T("The specified file does not exist."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	g->LastError = 1813; // ERROR_RESOURCE_TYPE_NOT_FOUND.
+	SetLastError(1813);
+	aResultToken.Error(_T("The file has no version information."), _T(""), ErrorPrototype::OS);
+}
+
+// ---- SysGet (X11-backed; 0 without a display) ----
+
+int LinuxGetSystemMetric(int aIndex)
+{
+	// Open a fresh connection per call so DISPLAY changes take effect.
+	Display *dpy = XOpenDisplay(nullptr);
+	Bool has_dpy = dpy != nullptr;
+	int w = 0, h = 0;
+	if (has_dpy)
+	{
+		w = DisplayWidth(dpy, DefaultScreen(dpy));
+		h = DisplayHeight(dpy, DefaultScreen(dpy));
+	}
+	switch (aIndex)
+	{
+	case 0:  return w;                       // SM_CXSCREEN
+	case 1:  return h;                       // SM_CYSCREEN
+	case 4:  return has_dpy ? 25 : 0;        // SM_CYCAPTION (typical title bar height)
+	case 11: return 32;                      // SM_CXICON
+	case 12: return 32;                      // SM_CYICON
+	case 19: return 1;                       // SM_MOUSEPRESENT
+	case 43: return 3;                       // SM_CMOUSEBUTTONS
+	case 63: return 1;                       // SM_NETWORK
+	case 67: return 0;                       // SM_CLEANBOOT
+	case 75: return has_dpy ? 1 : 0;         // SM_MOUSEWHEELPRESENT
+	case 78: return w;                       // SM_CXVIRTUALSCREEN
+	case 79: return h;                       // SM_CYVIRTUALSCREEN
+	case 80: return has_dpy ? 1 : 0;         // SM_CMONITORS
+	case 91: return has_dpy ? 1 : 0;         // SM_MOUSEHORIZONTALWHEELPRESENT
+	case 0x2002: return 1;                   // SM_CARETBLINKINGENABLED
+	default: return 0;                       // Everything else (docs: 0 when unsupported).
+	}
+}
+
+BIF_DECL(BIF_Linux_SysGet)
+{
+	int index = (int)TokenToInt64(*aParam[0]);
+	aResultToken.SetValue((__int64)LinuxGetSystemMetric(index));
+}
+
+// ---- SysGetIPAddresses (getifaddrs; IPv4 only, per docs) ----
+
+BIF_DECL(BIF_Linux_SysGetIPAddresses)
+{
+	Array *addresses = Array::Create();
+	if (!addresses)
+	{
+		aResultToken.Error(_T("Out of memory."), _T(""), ErrorPrototype::Memory);
+		return;
+	}
+	struct ifaddrs *ifa = nullptr;
+	if (getifaddrs(&ifa) == 0)
+	{
+		for (struct ifaddrs *p = ifa; p; p = p->ifa_next)
+		{
+			if (!p->ifa_addr || p->ifa_addr->sa_family != AF_INET)
+				continue;
+			char host[INET_ADDRSTRLEN];
+			if (!inet_ntop(AF_INET, &((struct sockaddr_in *)p->ifa_addr)->sin_addr, host, sizeof(host)))
+				continue;
+			wchar_t wbuf[64];
+			if (mbstowcs(wbuf, host, 63) == (size_t)-1)
+				continue;
+			wbuf[63] = L'\0';
+			addresses->Append(wbuf);
+		}
+		freeifaddrs(ifa);
+	}
+	aResultToken.SetValue(addresses);
+}
+
+// ---- Download (curl/wget; saves the server's error page on HTTP errors,
+// matching the documented Windows behaviour) ----
+
+static int LinuxRunCommand(const std::string &aCommand)
+{
+	int rc = system(aCommand.c_str());
+	if (rc == -1)
+		return -1;
+	if (WIFEXITED(rc))
+		return WEXITSTATUS(rc);
+	return -1;
+}
+
+BIF_DECL(BIF_Linux_Download)
+{
+	TCHAR url_buf[4096], file_buf[4096];
+	LPTSTR url = TokenToString(*aParam[0], url_buf, nullptr);
+	LPTSTR file = TokenToString(*aParam[1], file_buf, nullptr);
+	const wchar_t *u = url ? url : url_buf;
+	// Upstream allows a leading "*<flags> " token to override options; skip it.
+	if (*u == L'*')
+	{
+		++u;
+		while (*u && *u != L' ' && *u != L'\t')
+			++u;
+		while (*u == L' ' || *u == L'\t')
+			++u;
+	}
+	std::string url_n = LinuxNarrow(u);
+	std::string file_n = LinuxNarrow(file ? file : file_buf);
+	if (url_n.empty() || file_n.empty())
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(url_n.empty() ? 0 : 1), 0);
+		return;
+	}
+	// Quote for the shell.
+	auto quote = [](const std::string &s) -> std::string
+	{
+		std::string out = "'";
+		for (char c : s)
+		{
+			if (c == '\'')
+				out += "'\\''";
+			else
+				out += c;
+		}
+		out += "'";
+		return out;
+	};
+	std::string cmd;
+	const char *curl = "/usr/bin/curl", *wget = "/usr/bin/wget";
+	if (access(curl, X_OK) == 0)
+		cmd = std::string(curl) + " -sSL " + quote(url_n) + " -o " + quote(file_n);
+	else if (access(wget, X_OK) == 0)
+		cmd = std::string(wget) + " -q " + quote(url_n) + " -O " + quote(file_n);
+	else
+	{
+		aResultToken.Error(_T("No download tool (curl/wget) is installed."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	if (LinuxRunCommand(cmd) != 0)
+		aResultToken.Error(_T("The download failed."), _T(""), ErrorPrototype::OS);
+}
+
+// ---- Shutdown (systemctl/loginctl) ----
+
+BIF_DECL(BIF_Linux_Shutdown)
+{
+	int flags = (int)TokenToInt64(*aParam[0]);
+	const char *cmd;
+	if (flags & 2)
+		cmd = "systemctl reboot";        // EWX_REBOOT.
+	else if (flags & 8)
+		cmd = "systemctl poweroff";      // EWX_POWEROFF.
+	else if (flags & 1)
+		cmd = "systemctl poweroff";      // EWX_SHUTDOWN.
+	else
+		cmd = "loginctl terminate-user $USER"; // EWX_LOGOFF.
+	if (LinuxRunCommand(cmd) != 0)
+		aResultToken.Error(_T("The system command failed."), _T(""), ErrorPrototype::OS);
+}
+
+// ---- Drive label/lock/eject (external tools; device resolved via /proc) ----
+
+// Resolve a drive spec ("/", "/mnt/x", "/dev/sda1") to device + fstype.
+static bool LinuxDriveResolve(const std::string &aDrive, std::string &aDevice, std::string &aFstype)
+{
+	if (aDrive.size() == 2 && aDrive[1] == ':')
+		return false; // Windows drive letters have no Linux equivalent.
+	if (aDrive.rfind("/dev/", 0) == 0)
+	{
+		aDevice = aDrive;
+		// Find the filesystem that uses this device.
+		for (auto &m : LinuxMounts())
+			if (m.device == aDrive)
+			{
+				aFstype = m.fstype;
+				return true;
+			}
+		aFstype = "";
+		return true;
+	}
+	// Mount point lookup.
+	for (auto &m : LinuxMounts())
+		if (m.mount_point == aDrive || (aDrive + "/") == m.mount_point)
+		{
+			aDevice = m.device;
+			aFstype = m.fstype;
+			return true;
+		}
+	return false;
+}
+
+BIF_DECL(BIF_Linux_DriveSetLabel)
+{
+	char drive_buf[512];
+	std::string drive = LinuxNarrowOf(aParam, aParamCount, 0, drive_buf, sizeof(drive_buf));
+	std::string device, fstype;
+	if (!LinuxDriveResolve(drive, device, fstype))
+	{
+		aResultToken.Error(_T("The specified drive does not exist."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	TCHAR label_buf[512];
+	LPTSTR label = aParamCount > 1 ? TokenToString(*aParam[1], label_buf, nullptr) : nullptr;
+	std::string label_n = LinuxNarrow(label ? label : L"");
+	const char *tool = nullptr;
+	if (fstype.rfind("ext", 0) == 0)
+		tool = "/usr/sbin/e2label";
+	else if (fstype == "vfat" || fstype == "exfat" || fstype == "msdos")
+		tool = "/usr/sbin/fatlabel";
+	if (!tool || access(tool, X_OK) != 0)
+	{
+		aResultToken.Error(_T("The filesystem of this drive does not support labels."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	auto quote = [](const std::string &s) -> std::string
+	{
+		std::string out = "'";
+		for (char c : s)
+		{
+			if (c == '\'')
+				out += "'\\''";
+			else
+				out += c;
+		}
+		out += "'";
+		return out;
+	};
+	if (LinuxRunCommand(std::string(tool) + " " + quote(device) + " " + quote(label_n)) != 0)
+		aResultToken.Error(_T("Failed to set the volume label."), _T(""), ErrorPrototype::OS);
+}
+
+BIF_DECL(BIF_Linux_DriveEject)
+{
+	char drive_buf[512];
+	std::string drive = LinuxNarrowOf(aParam, aParamCount, 0, drive_buf, sizeof(drive_buf));
+	if (drive.empty())
+		drive = "/";
+	std::string device, fstype;
+	if (!LinuxDriveResolve(drive, device, fstype))
+	{
+		aResultToken.Error(_T("The specified drive does not exist."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	if (access("/usr/bin/eject", X_OK) != 0
+		|| LinuxRunCommand(std::string("/usr/bin/eject ") + device) != 0)
+		aResultToken.Error(_T("The drive could not be ejected."), _T(""), ErrorPrototype::OS);
+}
+
+BIF_DECL(BIF_Linux_DriveRetract)
+{
+	char drive_buf[512];
+	std::string drive = LinuxNarrowOf(aParam, aParamCount, 0, drive_buf, sizeof(drive_buf));
+	if (drive.empty())
+		drive = "/";
+	std::string device, fstype;
+	if (!LinuxDriveResolve(drive, device, fstype))
+	{
+		aResultToken.Error(_T("The specified drive does not exist."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	if (access("/usr/bin/eject", X_OK) != 0
+		|| LinuxRunCommand(std::string("/usr/bin/eject -t ") + device) != 0)
+		aResultToken.Error(_T("The drive could not be retracted."), _T(""), ErrorPrototype::OS);
+}
+
+BIF_DECL(BIF_Linux_DriveLock)
+{
+	char drive_buf[512];
+	std::string drive = LinuxNarrowOf(aParam, aParamCount, 0, drive_buf, sizeof(drive_buf));
+	std::string device, fstype;
+	if (!LinuxDriveResolve(drive, device, fstype))
+	{
+		aResultToken.Error(_T("The specified drive does not exist."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	if (access("/usr/bin/udisksctl", X_OK) != 0
+		|| LinuxRunCommand(std::string("/usr/bin/udisksctl lock -b ") + device) != 0)
+		aResultToken.Error(_T("The drive does not support locking."), _T(""), ErrorPrototype::OS);
+}
+
+BIF_DECL(BIF_Linux_DriveUnlock)
+{
+	char drive_buf[512];
+	std::string drive = LinuxNarrowOf(aParam, aParamCount, 0, drive_buf, sizeof(drive_buf));
+	std::string device, fstype;
+	if (!LinuxDriveResolve(drive, device, fstype))
+	{
+		aResultToken.Error(_T("The specified drive does not exist."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	if (access("/usr/bin/udisksctl", X_OK) != 0
+		|| LinuxRunCommand(std::string("/usr/bin/udisksctl unlock -b ") + device) != 0)
+		aResultToken.Error(_T("The drive does not support unlocking."), _T(""), ErrorPrototype::OS);
+}
+
+// ---- SoundPlay (aplay/paplay) ----
+
+BIF_DECL(BIF_Linux_SoundPlay)
+{
+	TCHAR f_buf[4096];
+	LPTSTR f = TokenToString(*aParam[0], f_buf, nullptr);
+	std::string file = LinuxNarrow(f ? f : f_buf);
+	if (file.empty())
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	// Wait is ignored on Linux: the call is synchronous either way (the docs
+	// only require that Wait=1 waits for completion, which is what we do).
+	const char *player = nullptr;
+	if (access("/usr/bin/paplay", X_OK) == 0)
+		player = "/usr/bin/paplay";
+	else if (access("/usr/bin/aplay", X_OK) == 0)
+		player = "/usr/bin/aplay";
+	if (!player || LinuxRunCommand(std::string(player) + " " + file) != 0)
+		aResultToken.Error(_T("The sound could not be played."), _T(""), ErrorPrototype::OS);
+}
+
 struct LinuxMdFuncEntry
 {
 	LPCTSTR name;
@@ -1388,17 +2330,17 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_NI(ControlSetText, 5, 5),
 	LMD_NI(ControlShow, 4, 4),
 	LMD_NI(ControlShowDropDown, 4, 4),
-	LMD_NI(CoordMode, 1, 2),
+	LMD_IMPL(CoordMode, BIF_Linux_CoordMode, 1, 2),
 	LMD_IMPL(Critical, BIF_Linux_Critical, 0, 1),
 	LMD_IMPL(DateAdd, BIF_Linux_DateAdd, 3, 3),
 	LMD_IMPL(DateDiff, BIF_Linux_DateDiff, 3, 3),
-	LMD_NI(DetectHiddenText, 0, 1),
-	LMD_NI(DetectHiddenWindows, 0, 1),
+	LMD_IMPL(DetectHiddenText, BIF_Linux_DetectHiddenText, 1, 1),
+	LMD_IMPL(DetectHiddenWindows, BIF_Linux_DetectHiddenWindows, 1, 1),
 	LMD_IMPL(DirCopy, BIF_Linux_DirCopy, 2, 3),
 	LMD_IMPL(DirMove, BIF_Linux_DirMove, 2, 3),
 	LMD_NI(DirSelect, 0, 3),
-	LMD_NI(Download, 2, 2),
-	LMD_NI(DriveEject, 0, 1),
+	LMD_IMPL(Download, BIF_Linux_Download, 2, 2),
+	LMD_IMPL(DriveEject, BIF_Linux_DriveEject, 0, 1),
 	LMD_IMPL(DriveGetCapacity, BIF_Linux_DriveGetCapacity, 1, 1),
 	LMD_IMPL(DriveGetFilesystem, BIF_Linux_DriveGetFilesystem, 1, 1),
 	LMD_IMPL(DriveGetLabel, BIF_Linux_DriveGetLabel, 1, 1),
@@ -1408,10 +2350,10 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(DriveGetStatus, BIF_Linux_DriveGetStatus, 1, 1),
 	LMD_IMPL(DriveGetStatusCD, BIF_Linux_DriveGetStatusCD, 0, 1),
 	LMD_IMPL(DriveGetType, BIF_Linux_DriveGetType, 1, 1),
-	LMD_NI(DriveLock, 1, 1),
-	LMD_NI(DriveRetract, 0, 1),
-	LMD_NI(DriveSetLabel, 1, 2),
-	LMD_NI(DriveUnlock, 1, 1),
+	LMD_IMPL(DriveLock, BIF_Linux_DriveLock, 1, 1),
+	LMD_IMPL(DriveRetract, BIF_Linux_DriveRetract, 0, 1),
+	LMD_IMPL(DriveSetLabel, BIF_Linux_DriveSetLabel, 1, 2),
+	LMD_IMPL(DriveUnlock, BIF_Linux_DriveUnlock, 1, 1),
 	LMD_NI(Edit, 0, 0),
 	LMD_NI(EditGetCurrentCol, 4, 4),
 	LMD_NI(EditGetCurrentLine, 4, 4),
@@ -1423,18 +2365,18 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(EnvSet, BIF_Linux_EnvSet, 1, 2),
 	LMD_IMPL(Exit, BIF_Linux_Exit, 0, 1),
 	LMD_IMPL(ExitApp, BIF_Linux_ExitApp, 0, 1),
-	LMD_NI(FileCopy, 2, 3),
+	LMD_IMPL(FileCopy, BIF_Linux_FileCopy, 2, 3),
 	LMD_NI(FileCreateShortcut, 2, 8),
-	LMD_NI(FileEncoding, 0, 1),
+	LMD_IMPL(FileEncoding, BIF_Linux_FileEncoding, 1, 1),
 	LMD_IMPL(FileGetAttrib, BIF_Linux_FileGetAttrib, 0, 1),
 	LMD_NI(FileGetShortcut, 1, 8),
 	LMD_IMPL(FileGetSize, BIF_Linux_FileGetSize, 0, 2),
 	LMD_IMPL(FileGetTime, BIF_Linux_FileGetTime, 0, 2),
-	LMD_NI(FileGetVersion, 0, 1),
-	LMD_NI(FileInstall, 2, 3),
-	LMD_NI(FileMove, 2, 3),
-	LMD_NI(FileRecycle, 1, 1),
-	LMD_NI(FileRecycleEmpty, 0, 1),
+	LMD_IMPL(FileGetVersion, BIF_Linux_FileGetVersion, 0, 1),
+	LMD_IMPL(FileInstall, BIF_Linux_FileInstall, 2, 3),
+	LMD_IMPL(FileMove, BIF_Linux_FileMove, 2, 3),
+	LMD_IMPL(FileRecycle, BIF_Linux_FileRecycle, 1, 1),
+	LMD_IMPL(FileRecycleEmpty, BIF_Linux_FileRecycleEmpty, 0, 1),
 	LMD_NI(FileSelect, 0, 4),
 	LMD_IMPL(FileSetAttrib, BIF_Linux_FileSetAttrib, 1, 3),
 	LMD_IMPL(FileSetTime, BIF_Linux_FileSetTime, 0, 4),
@@ -1496,9 +2438,9 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_NI(PostMessage, 2, 8),
 	LMD_IMPL(ProcessClose, BIF_Linux_ProcessClose, 1, 1),
 	LMD_IMPL(ProcessExist, BIF_Linux_ProcessExist, 0, 1),
-	LMD_NI(ProcessGetName, 0, 1),
-	LMD_NI(ProcessGetParent, 0, 1),
-	LMD_NI(ProcessGetPath, 0, 1),
+	LMD_IMPL(ProcessGetName, BIF_Linux_ProcessGetName, 0, 1),
+	LMD_IMPL(ProcessGetParent, BIF_Linux_ProcessGetParent, 0, 1),
+	LMD_IMPL(ProcessGetPath, BIF_Linux_ProcessGetPath, 0, 1),
 	LMD_IMPL(ProcessSetPriority, BIF_Linux_ProcessSetPriority, 1, 2),
 	LMD_IMPL(ProcessWait, BIF_Linux_ProcessWait, 1, 2),
 	LMD_IMPL(ProcessWaitClose, BIF_Linux_ProcessWaitClose, 1, 2),
@@ -1508,34 +2450,34 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_NI(Send, 1, 1),
 	LMD_NI(SendEvent, 1, 1),
 	LMD_NI(SendInput, 1, 1),
-	LMD_NI(SendLevel, 1, 1),
+	LMD_IMPL(SendLevel, BIF_Linux_SendLevel, 1, 1),
 	LMD_NI(SendMessage, 3, 9),
-	LMD_NI(SendMode, 1, 1),
+	LMD_IMPL(SendMode, BIF_Linux_SendMode, 1, 1),
 	LMD_NI(SendPlay, 1, 1),
 	LMD_NI(SendText, 1, 1),
 	LMD_NI(SetCapsLockState, 0, 1),
-	LMD_NI(SetControlDelay, 1, 1),
-	LMD_NI(SetDefaultMouseSpeed, 1, 1),
-	LMD_NI(SetKeyDelay, 0, 3),
-	LMD_NI(SetMouseDelay, 1, 2),
+	LMD_IMPL(SetControlDelay, BIF_Linux_SetControlDelay, 1, 1),
+	LMD_IMPL(SetDefaultMouseSpeed, BIF_Linux_SetDefaultMouseSpeed, 1, 1),
+	LMD_IMPL(SetKeyDelay, BIF_Linux_SetKeyDelay, 0, 3),
+	LMD_IMPL(SetMouseDelay, BIF_Linux_SetMouseDelay, 1, 2),
 	LMD_NI(SetNumLockState, 0, 1),
-	LMD_NI(SetRegView, 1, 1),
+	LMD_IMPL(SetRegView, BIF_Linux_SetRegView, 1, 1),
 	LMD_NI(SetScrollLockState, 0, 1),
-	LMD_NI(SetStoreCapsLockMode, 0, 1),
+	LMD_IMPL(SetStoreCapsLockMode, BIF_Linux_SetStoreCapsLockMode, 1, 1),
 	LMD_NI(SetTimer, 0, 3),
-	LMD_NI(SetTitleMatchMode, 1, 1),
-	LMD_NI(SetWinDelay, 1, 1),
+	LMD_IMPL(SetTitleMatchMode, BIF_Linux_SetTitleMatchMode, 1, 1),
+	LMD_IMPL(SetWinDelay, BIF_Linux_SetWinDelay, 1, 1),
 	LMD_IMPL(SetWorkingDir, BIF_Linux_SetWorkingDir, 1, 1),
-	LMD_NI(Shutdown, 1, 1),
+	LMD_IMPL(Shutdown, BIF_Linux_Shutdown, 1, 1),
 	LMD_IMPL(Sleep, BIF_Linux_Sleep, 1, 1),
 	LMD_IMPL(SoundBeep, BIF_Linux_SoundBeep, 0, 2),
-	LMD_NI(SoundPlay, 1, 2),
+	LMD_IMPL(SoundPlay, BIF_Linux_SoundPlay, 1, 2),
 	LMD_NI(StatusBarGetText, 0, 5),
 	LMD_NI(StatusBarWait, 0, 8),
 	LMD_IMPL(StrSplit, BIF_Linux_StrSplit, 1, 4),
 	LMD_IMPL(Suspend, BIF_Linux_Suspend, 0, 1),
-	LMD_NI(SysGet, 1, 1),
-	LMD_NI(SysGetIPAddresses, 0, 0),
+	LMD_IMPL(SysGet, BIF_Linux_SysGet, 1, 1),
+	LMD_IMPL(SysGetIPAddresses, BIF_Linux_SysGetIPAddresses, 0, 0),
 	LMD_IMPL(Thread, BIF_Linux_Thread, 1, 3),
 	LMD_NI(ToolTip, 0, 4),
 	LMD_IMPL(TraySetIcon, BIF_Linux_TraySetIcon, 0, 3),

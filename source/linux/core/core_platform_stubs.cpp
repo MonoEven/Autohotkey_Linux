@@ -376,26 +376,208 @@ bool Line::Util_RemoveDir(LPCTSTR aSrc, bool)
 	}
 }
 
+// Expand a destination pattern with a matched source filename (port of
+// Line::Util_ExpandFilenameWildcard/Part from script_autoit.cpp):
+//   copy one.two.three  *.txt     = one.two   .txt
+//   copy one.two.three  *.*.txt   = one.two.  .txt  (extra asterisks removed)
+//   copy one.two        test      = test
+static void LinuxExpandDestWildcard(const std::wstring &aSrcName, const std::wstring &aDestPattern, std::wstring &aOut)
+{
+	if (aDestPattern.find(L'*') == std::wstring::npos)
+	{
+		aOut = aDestPattern;
+		return;
+	}
+	auto split_ext = [](const std::wstring &s, std::wstring &file, std::wstring &ext)
+	{
+		size_t dot = s.find_last_of(L'.');
+		size_t slash = s.find_last_of(L'/');
+		if (dot != std::wstring::npos && (slash == std::wstring::npos || dot > slash))
+		{
+			file = s.substr(0, dot);
+			ext = s.substr(dot + 1);
+		}
+		else
+		{
+			file = s;
+			ext.clear();
+		}
+	};
+	// Replace the first '*' with the source part, remove any other '*'.
+	auto expand_part = [](const std::wstring &src, const std::wstring &dst) -> std::wstring
+	{
+		size_t star = dst.find(L'*');
+		if (star == std::wstring::npos)
+			return dst;
+		std::wstring out = dst.substr(0, star);
+		out += src;
+		for (size_t i = star + 1; i < dst.size(); ++i)
+			if (dst[i] != L'*')
+				out += dst[i];
+		return out;
+	};
+	std::wstring src_file, src_ext, dst_file, dst_ext;
+	split_ext(aSrcName, src_file, src_ext);
+	split_ext(aDestPattern, dst_file, dst_ext);
+	std::wstring expanded = expand_part(src_file, dst_file);
+	if (!src_ext.empty() || !dst_ext.empty())
+	{
+		// Always include the source extension if the destination extension is blank.
+		std::wstring dst_ext2 = dst_ext.empty() ? L"*" : dst_ext;
+		std::wstring ext_expanded = expand_part(src_ext, dst_ext2);
+		if (!ext_expanded.empty())
+		{
+			expanded += L'.';
+			expanded += ext_expanded;
+		}
+	}
+	aOut = expanded;
+}
+
+// Copy or move files with wildcard support (mirrors Line::Util_CopyFile in
+// script_autoit.cpp).  Returns the number of files that failed.
 int Line::Util_CopyFile(LPCTSTR aSrc, LPCTSTR aDst, bool aOverwrite, bool aMove, DWORD &aLastError)
 {
-	char src[4096], dst[4096];
-	if (!WideToPath(aSrc, src, sizeof(src)) || !WideToPath(aDst, dst, sizeof(dst)))
+	if (!aSrc || !aDst || !*aSrc || !*aDst)
 	{
 		aLastError = ERROR_INVALID_PARAMETER;
 		return 0;
 	}
-	try
+	std::wstring src(aSrc), dst(aDst);
+	for (auto &c : src)
+		if (c == L'\\')
+			c = L'/';
+	for (auto &c : dst)
+		if (c == L'\\')
+			c = L'/';
+	// Strip trailing slashes (keep root "/").
+	while (src.size() > 1 && src.back() == L'/')
+		src.pop_back();
+	while (dst.size() > 1 && dst.back() == L'/')
+		dst.pop_back();
+	// If the source or dest is a directory, append "/*" (upstream appends \*.*).
+	auto is_dir = [](const std::wstring &p) -> bool
 	{
-		auto opts = aOverwrite ? std::filesystem::copy_options::overwrite_existing
-			: std::filesystem::copy_options::none;
-		std::filesystem::copy_file(src, dst, opts);
-		if (aMove)
-			std::filesystem::remove(src);
-		return 1;
-	}
-	catch (...)
+		char narrow[4096];
+		if (wcstombs(narrow, p.c_str(), sizeof(narrow)) == (size_t)-1)
+			return false;
+		struct stat st;
+		return stat(narrow, &st) == 0 && S_ISDIR(st.st_mode);
+	};
+	if (is_dir(src))
+		src += L"/*";
+	if (is_dir(dst))
+		dst += L"/*";
+
+	size_t src_slash = src.find_last_of(L'/');
+	std::wstring src_dir = src_slash == std::wstring::npos ? L"." : src.substr(0, src_slash);
+	if (src_dir.empty())
+		src_dir = L"/";
+	std::wstring src_pattern = src_slash == std::wstring::npos ? src : src.substr(src_slash + 1);
+	size_t dst_slash = dst.find_last_of(L'/');
+	std::wstring dst_dir = dst_slash == std::wstring::npos ? L"." : dst.substr(0, dst_slash);
+	if (dst_dir.empty())
+		dst_dir = L"/";
+	std::wstring dst_pattern = dst_slash == std::wstring::npos ? dst : dst.substr(dst_slash + 1);
+
+	WIN32_FIND_DATA findData;
+	HANDLE hSearch = FindFirstFile(src.c_str(), &findData);
+	if (hSearch == INVALID_HANDLE_VALUE)
 	{
-		aLastError = ERROR_ALREADY_EXISTS;
-		return 0;
+		aLastError = 2; // ERROR_FILE_NOT_FOUND.
+		// Indicate failure only if there were no wildcards (docs: copying a
+		// wildcard pattern that matches nothing is a success).
+		return src_pattern.find_first_of(L"?*") == std::wstring::npos ? 1 : 0;
 	}
+	aLastError = 0; // Set default; overridden only when a failure occurs.
+
+	auto narrow_of = [](const std::wstring &w, char *aBuf, size_t aBufSize) -> bool
+	{
+		if (wcstombs(aBuf, w.c_str(), aBufSize) == (size_t)-1)
+		{
+			aBuf[0] = '\0';
+			return false;
+		}
+		aBuf[aBufSize - 1] = '\0';
+		return true;
+	};
+
+	int failure_count = 0;
+	do
+	{
+		if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+			continue; // Only files are copied/moved.
+		std::wstring srcname = findData.cFileName;
+		std::wstring src_full = src_dir + L"/" + srcname;
+		std::wstring dest_full;
+		if (dst_pattern.find_first_of(L"?*") == std::wstring::npos)
+			dest_full = dst; // No wildcard in dest: use it verbatim.
+		else
+		{
+			std::wstring expanded;
+			LinuxExpandDestWildcard(srcname, dst_pattern, expanded);
+			dest_full = dst_dir + L"/" + expanded;
+		}
+		char s8[4096], d8[4096];
+		if (!narrow_of(src_full, s8, sizeof(s8)) || !narrow_of(dest_full, d8, sizeof(d8)))
+		{
+			aLastError = ERROR_INVALID_PARAMETER;
+			++failure_count;
+			continue;
+		}
+		try
+		{
+			// Copy/move onto itself: report success (equivalent() throws if
+			// either path does not exist, so guard it).
+			bool same_file = false;
+			try
+			{
+				same_file = std::filesystem::equivalent(s8, d8);
+			}
+			catch (...)
+			{
+				same_file = false;
+			}
+			if (same_file)
+				continue;
+			if (aMove)
+			{
+				// rename() first (works for same-volume moves); fall back to
+				// copy+remove for cross-device moves.
+				bool did_rename = false;
+				try
+				{
+					if (std::filesystem::exists(d8) && !aOverwrite)
+						throw std::runtime_error("exists");
+					std::filesystem::rename(s8, d8);
+					did_rename = true;
+				}
+				catch (const std::filesystem::filesystem_error &)
+				{
+					// EXDEV or similar: fall through to copy + remove.
+				}
+				if (!did_rename)
+				{
+					if (std::filesystem::exists(d8) && !aOverwrite)
+						throw std::runtime_error("exists");
+					auto opts = std::filesystem::copy_options::overwrite_existing;
+					std::filesystem::copy_file(s8, d8, opts);
+					std::filesystem::remove(s8);
+				}
+			}
+			else
+			{
+				auto opts = aOverwrite ? std::filesystem::copy_options::overwrite_existing
+					: std::filesystem::copy_options::none;
+				std::filesystem::copy_file(s8, d8, opts);
+			}
+		}
+		catch (...)
+		{
+			aLastError = ERROR_ALREADY_EXISTS;
+			++failure_count;
+		}
+	} while (FindNextFile(hSearch, &findData));
+	FindClose(hSearch);
+	return failure_count;
 }

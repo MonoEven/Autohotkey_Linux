@@ -51,19 +51,13 @@ BIF_DECL(BIF_WinExistActive)
 }
 
 LINUX_BIV_STUB_RW(BIV_AllowMainWindow)
-LINUX_BIV_STUB_RW(BIV_CoordMode)
 LINUX_BIV_STUB(BIV_Cursor)
-LINUX_BIV_STUB_RW(BIV_DefaultMouseSpeed)
-LINUX_BIV_STUB_RW(BIV_DetectHiddenText)
-LINUX_BIV_STUB_RW(BIV_DetectHiddenWindows)
 LINUX_BIV_STUB(BIV_EndChar)
-LINUX_BIV_STUB_RW(BIV_FileEncoding)
 LINUX_BIV_STUB_RW(BIV_Hotkey)
 LINUX_BIV_STUB(BIV_IconFile)
 LINUX_BIV_STUB_RW(BIV_IconHidden)
 LINUX_BIV_STUB(BIV_IconNumber)
 LINUX_BIV_STUB_RW(BIV_IconTip)
-LINUX_BIV_STUB_RW(BIV_ListLines)
 
 // --- Built-in variables with real doc semantics on Linux ---
 
@@ -356,23 +350,252 @@ BIV_DECL_R(BIV_ThisFunc)
 {
 	aResultToken.SetValue(g && g->CurrentFunc ? g->CurrentFunc->mName : _T(""));
 }
+
+// --- Settings built-in variables (semantics per docs; mirrors lib/vars.cpp) ---
+
+// Returns the previous setting (read side) for the x-delay variables.
+static int &LinuxBIVxDelay(LPTSTR aVarName)
+{
+	switch (ctoupper(aVarName[2])) // a_X...
+	{
+	case 'K':
+		if (ctolower(aVarName[6]) == 'e') // a_keydE...
+		{
+			if (aVarName[10]) // a_keydelayP...
+				return g->KeyDelayPlay;
+			else
+				return g->KeyDelay;
+		}
+		else // a_keydU...
+		{
+			if (aVarName[13]) // a_keydurationP...
+				return g->PressDurationPlay;
+			else
+				return g->PressDuration;
+		}
+	case 'M':
+		if (aVarName[12]) // a_mousedelayP...
+			return g->MouseDelayPlay;
+		else
+			return g->MouseDelay;
+	case 'W':
+		return g->WinDelay;
+	default:
+		return g->ControlDelay;
+	}
+}
+
+BIV_DECL_R(BIV_xDelay)
+{
+	aResultToken.SetValue((__int64)LinuxBIVxDelay(aVarName));
+}
+void BIV_xDelay_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
+{
+	(void)aResultToken;
+	LinuxBIVxDelay(aVarName) = (int)TokenToInt64(aValue);
+}
+
+BIV_DECL_R(BIV_DefaultMouseSpeed)
+{
+	aResultToken.SetValue((__int64)g->DefaultMouseSpeed);
+}
+void BIV_DefaultMouseSpeed_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
+{
+	(void)aResultToken; (void)aVarName;
+	g->DefaultMouseSpeed = (int)TokenToInt64(aValue);
+}
+
+BIV_DECL_R(BIV_CoordMode)
+{
+	static LPTSTR sCoordModes[] = COORD_MODES;
+	// aVarName is "A_CoordMode<Name>"; "A_CoordMode" is 11 chars.
+	CoordModeType shift = Line::ConvertCoordModeCmd(aVarName + 11);
+	aResultToken.SetValue(sCoordModes[(g->CoordMode >> shift) & COORD_MODE_MASK]);
+}
+void BIV_CoordMode_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
+{
+	CoordModeType shift = Line::ConvertCoordModeCmd(aVarName + 11);
+	TCHAR mode_buf[64];
+	LPTSTR m = TokenToString(aValue, mode_buf, nullptr);
+	CoordModeType mode = Line::ConvertCoordMode(m ? m : mode_buf);
+	if (mode == COORD_MODE_INVALID)
+		aResultToken.Error(_T("Invalid value."), _T(""), ErrorPrototype::Value);
+	else
+		g->CoordMode = (g->CoordMode & ~(COORD_MODE_MASK << shift)) | (mode << shift);
+}
+
+BIV_DECL_R(BIV_DetectHiddenWindows)
+{
+	aResultToken.SetValue(g->DetectHiddenWindows ? 1 : 0);
+}
+void BIV_DetectHiddenWindows_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
+{
+	(void)aResultToken; (void)aVarName;
+	g->DetectHiddenWindows = TokenToBOOL(aValue);
+}
+
+BIV_DECL_R(BIV_DetectHiddenText)
+{
+	aResultToken.SetValue(g->DetectHiddenText ? 1 : 0);
+}
+void BIV_DetectHiddenText_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
+{
+	(void)aResultToken; (void)aVarName;
+	g->DetectHiddenText = TokenToBOOL(aValue);
+}
+
+BIV_DECL_R(BIV_TitleMatchMode)
+{
+	if (g->TitleMatchMode == FIND_REGEX)
+		aResultToken.SetValue(_T("RegEx"));
+	else
+		aResultToken.SetValue((__int64)g->TitleMatchMode);
+}
+void BIV_TitleMatchMode_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
+{
+	(void)aVarName;
+	TCHAR mode_buf[64];
+	LPTSTR m = TokenToString(aValue, mode_buf, nullptr);
+	TitleMatchModes mode = Line::ConvertTitleMatchMode(m ? m : mode_buf);
+	if (mode == FIND_FAST || mode == FIND_SLOW)
+		g->TitleFindFast = (mode == FIND_FAST);
+	else if (mode == MATCHMODE_INVALID)
+		aResultToken.Error(_T("Invalid value."), _T(""), ErrorPrototype::Value);
+	else
+		g->TitleMatchMode = mode;
+}
+
+BIV_DECL_R(BIV_TitleMatchModeSpeed)
+{
+	aResultToken.SetValue(g->TitleFindFast ? _T("Fast") : _T("Slow"));
+}
+
+BIV_DECL_R(BIV_SendMode)
+{
+	static LPTSTR sSendModes[] = SEND_MODES;
+	aResultToken.SetValue(sSendModes[g->SendMode]);
+}
+void BIV_SendMode_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
+{
+	(void)aVarName;
+	TCHAR mode_buf[64];
+	LPTSTR m = TokenToString(aValue, mode_buf, nullptr);
+	SendModes mode = Line::ConvertSendMode(m ? m : mode_buf, SM_INVALID);
+	if (mode == SM_INVALID)
+		aResultToken.Error(_T("Invalid value."), _T(""), ErrorPrototype::Value);
+	else
+		g->SendMode = mode;
+}
+
+BIV_DECL_R(BIV_SendLevel)
+{
+	aResultToken.SetValue((__int64)g->SendLevel);
+}
+void BIV_SendLevel_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
+{
+	(void)aVarName;
+	int level = (int)TokenToInt64(aValue);
+	if (!SendLevelIsValid(level))
+		aResultToken.Error(_T("Invalid value."), _T(""), ErrorPrototype::Value);
+	else
+		g->SendLevel = (SendLevelType)level;
+}
+
+BIV_DECL_R(BIV_StoreCapsLockMode)
+{
+	aResultToken.SetValue(g->StoreCapslockMode ? 1 : 0);
+}
+void BIV_StoreCapsLockMode_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
+{
+	(void)aResultToken; (void)aVarName;
+	g->StoreCapslockMode = TokenToBOOL(aValue);
+}
+
+BIV_DECL_R(BIV_RegView)
+{
+	switch (g->RegView)
+	{
+	case KEY_WOW64_32KEY: aResultToken.SetValue(_T("32")); break;
+	case KEY_WOW64_64KEY: aResultToken.SetValue(_T("64")); break;
+	default: aResultToken.SetValue(_T("Default")); break;
+	}
+}
+void BIV_RegView_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
+{
+	(void)aVarName;
+	TCHAR view_buf[32];
+	LPTSTR v = TokenToString(aValue, view_buf, nullptr);
+	DWORD reg_view = Line::RegConvertView(v ? v : view_buf);
+	if (reg_view == (DWORD)-1)
+		aResultToken.Error(_T("Invalid value."), _T(""), ErrorPrototype::Value);
+	else if (sizeof(void *) == 8)
+		g->RegView = reg_view;
+}
+
+BIV_DECL_R(BIV_FileEncoding)
+{
+	LPTSTR enc;
+	switch (g->Encoding)
+	{
+	case CP_UTF8:               enc = _T("UTF-8");      break;
+	case CP_UTF8 | CP_AHKNOBOM: enc = _T("UTF-8-RAW");  break;
+	case CP_UTF16:              enc = _T("UTF-16");     break;
+	case CP_UTF16 | CP_AHKNOBOM: enc = _T("UTF-16-RAW"); break;
+	default:
+	{
+		TCHAR *buf = aResultToken.buf;
+		buf[0] = _T('C');
+		buf[1] = _T('P');
+		_itot(g->Encoding, buf + 2, 10);
+		aResultToken.SetValue(buf);
+		return;
+	}
+	}
+	aResultToken.SetValue(enc);
+}
+void BIV_FileEncoding_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
+{
+	(void)aVarName;
+	UINT new_encoding = Line::ConvertFileEncoding(aValue);
+	if (new_encoding == (UINT)-1)
+		aResultToken.Error(_T("Invalid value."), _T(""), ErrorPrototype::Value);
+	else
+		g->Encoding = new_encoding;
+}
+
+BIV_DECL_R(BIV_ListLines)
+{
+	aResultToken.SetValue(g->ListLinesIsEnabled ? 1 : 0);
+}
+void BIV_ListLines_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
+{
+	(void)aResultToken; (void)aVarName;
+	g->ListLinesIsEnabled = TokenToBOOL(aValue);
+}
+
+// Screen metrics: shared with the SysGet implementation in core_mdfunc_linux.cpp.
+int LinuxGetSystemMetric(int aIndex);
+
+BIV_DECL_R(BIV_ScreenWidth_Height)
+{
+	// aVarName is "A_ScreenWidth"/"A_ScreenHeight": 'W'/'H' is at index 8.
+	int index = ctoupper(aVarName[8]) == 'W' ? 0 : 1;
+	aResultToken.SetValue((__int64)LinuxGetSystemMetric(index));
+}
+
+BIV_DECL_R(BIV_ScreenDPI)
+{
+	aResultToken.SetValue((__int64)(g_ScreenDPI ? g_ScreenDPI : 96));
+}
+
 LINUX_BIV_STUB(BIV_PriorHotkey)
 LINUX_BIV_STUB(BIV_PriorKey)
-LINUX_BIV_STUB_RW(BIV_RegView)
-LINUX_BIV_STUB(BIV_ScreenDPI)
-LINUX_BIV_STUB(BIV_ScreenWidth_Height)
-LINUX_BIV_STUB_RW(BIV_SendLevel)
-LINUX_BIV_STUB_RW(BIV_SendMode)
 LINUX_BIV_STUB(BIV_SpecialFolderPath)
-LINUX_BIV_STUB_RW(BIV_StoreCapsLockMode)
 LINUX_BIV_STUB(BIV_ThisHotkey)
 LINUX_BIV_STUB(BIV_TimeIdle)
 LINUX_BIV_STUB(BIV_TimeSincePriorHotkey)
 LINUX_BIV_STUB(BIV_TimeSinceThisHotkey)
-LINUX_BIV_STUB_RW(BIV_TitleMatchMode)
-LINUX_BIV_STUB(BIV_TitleMatchModeSpeed)
 LINUX_BIV_STUB(BIV_TrayMenu)
-LINUX_BIV_STUB_RW(BIV_xDelay)
 
 // MsgBox built-in.  Uses the real MsgBox machinery from window.cpp/script2.cpp
 // (options/title/timeout parsing, button result strings); the compat
@@ -1275,6 +1498,60 @@ static void LinuxSetPersistentString(ResultToken &aResultToken, LPTSTR aString)
 	aResultToken.SetValue(persistent, n);
 }
 
+// Set the result from an already-decoded wide string (SimpleHeap copy).
+static void LinuxSetResultFromWide(ResultToken &aResultToken, const std::wstring &aWide)
+{
+	if (aWide.empty())
+	{
+		aResultToken.SetValue(_T(""));
+		return;
+	}
+	LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((aWide.size() + 1) * sizeof(TCHAR));
+	tmemcpy(persistent, aWide.c_str(), aWide.size() + 1);
+	aResultToken.SetValue(persistent, aWide.size());
+}
+
+// Append one code point as UTF-16LE bytes.
+static void LinuxAppendUtf16LE(std::string &aOut, unsigned int aCp)
+{
+	if (aCp >= 0x10000)
+	{
+		aCp -= 0x10000;
+		unsigned int hi = 0xD800 + (aCp >> 10);
+		unsigned int lo = 0xDC00 + (aCp & 0x3FF);
+		aOut += (char)(hi & 0xFF);
+		aOut += (char)((hi >> 8) & 0xFF);
+		aOut += (char)(lo & 0xFF);
+		aOut += (char)((lo >> 8) & 0xFF);
+	}
+	else
+	{
+		aOut += (char)(aCp & 0xFF);
+		aOut += (char)((aCp >> 8) & 0xFF);
+	}
+}
+
+// Decode UTF-16LE bytes (surrogate pairs included) into wide characters.
+static void LinuxDecodeUtf16LE(const std::string &aBytes, std::wstring &aWide)
+{
+	size_t i = 0;
+	while (i + 1 < aBytes.size())
+	{
+		unsigned int cp = (unsigned char)aBytes[i] | ((unsigned int)(unsigned char)aBytes[i + 1] << 8);
+		i += 2;
+		if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < aBytes.size())
+		{
+			unsigned int lo = (unsigned char)aBytes[i] | ((unsigned int)(unsigned char)aBytes[i + 1] << 8);
+			if (lo >= 0xDC00 && lo <= 0xDFFF)
+			{
+				cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+				i += 2;
+			}
+		}
+		aWide += (wchar_t)cp;
+	}
+}
+
 BIF_DECL(BIF_DirCreate)
 {
 	if (aParamCount < 1)
@@ -1345,12 +1622,34 @@ BIF_DECL(BIF_FileAppend)
 	if (!text)
 		text = text_buf;
 	std::ofstream ofs(path, std::ios::app | std::ios::binary);
-	if (ofs)
+	if (!ofs)
+		return;
+	// Docs: FileEncoding sets the default encoding used by FileAppend.
+	// UTF-8/UTF-16 write a BOM when creating a new (empty) file; the -RAW
+	// variants never write a BOM; CP0 is the locale encoding (UTF-8 here).
+	UINT enc = g ? g->Encoding : 0;
+	bool utf16 = (enc == CP_UTF16 || enc == (CP_UTF16 | CP_AHKNOBOM));
+	bool with_bom = (enc == CP_UTF16 || enc == CP_UTF8);
+	if (with_bom && ofs.tellp() == 0) // Only for a new/empty file.
+	{
+		if (utf16)
+			ofs.write("\xFF\xFE", 2);
+		else
+			ofs.write("\xEF\xBB\xBF", 3);
+	}
+	if (utf16)
+	{
+		std::string bytes;
+		for (const wchar_t *p = text; *p; ++p)
+			LinuxAppendUtf16LE(bytes, (unsigned int)*p);
+		ofs.write(bytes.data(), (std::streamsize)bytes.size());
+	}
+	else
 	{
 		char mb[4096];
 		size_t n = wcstombs(mb, text, sizeof(mb));
 		if (n != (size_t)-1)
-			ofs.write(mb, n);
+			ofs.write(mb, (std::streamsize)n);
 	}
 }
 
@@ -1412,7 +1711,13 @@ BIF_DECL(BIF_FileRead)
 	FILE *f = fopen(path, "rb");
 	if (!f)
 	{
-		aResultToken.SetValue(_T(""));
+		// Docs: OSError is thrown if the file cannot be opened for reading.
+		if (g)
+		{
+			g->LastError = 2; // ERROR_FILE_NOT_FOUND.
+			SetLastError(2);
+		}
+		aResultToken.Error(_T("The system cannot find the file specified."), _T(""), ErrorPrototype::OS);
 		return;
 	}
 	fseek(f, 0, SEEK_END);
@@ -1426,7 +1731,31 @@ BIF_DECL(BIF_FileRead)
 		content.resize(got);
 	}
 	fclose(f);
-	SetResultFromUtf8(aResultToken, content);
+	// Docs: FileEncoding sets the default encoding used by FileRead; a BOM in
+	// the file overrides the default.  UTF-16 (LE) is decoded with surrogate
+	// support; everything else is treated as UTF-8 (the Linux locale encoding).
+	UINT enc = g ? g->Encoding : 0;
+	size_t off = 0;
+	if (content.size() >= 3 && (unsigned char)content[0] == 0xEF && (unsigned char)content[1] == 0xBB && (unsigned char)content[2] == 0xBF)
+	{
+		off = 3;
+		enc = CP_UTF8;
+	}
+	else if (content.size() >= 2 && (unsigned char)content[0] == 0xFF && (unsigned char)content[1] == 0xFE)
+	{
+		off = 2;
+		enc = CP_UTF16;
+	}
+	if (enc == CP_UTF16 || enc == (CP_UTF16 | CP_AHKNOBOM))
+	{
+		std::wstring wide;
+		LinuxDecodeUtf16LE(content.substr(off), wide);
+		LinuxSetResultFromWide(aResultToken, wide);
+	}
+	else
+	{
+		SetResultFromUtf8(aResultToken, content.substr(off));
+	}
 }
 // Keep the preprocessor namespace clean.
 #undef LINUX_BIF_STUB

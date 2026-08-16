@@ -13,6 +13,18 @@ case "$BIN" in
 esac
 mkdir -p out
 
+# assert_sys downloads from a local HTTP server (Download assertions).
+HTTP_PORT=18765
+HTTP_DIR=/tmp/ahk_dc_http
+if command -v python3 >/dev/null 2>&1; then
+  mkdir -p "$HTTP_DIR"
+  printf 'AHK_DC_DOWNLOAD' > "$HTTP_DIR/serve.txt"
+  python3 -m http.server "$HTTP_PORT" --directory "$HTTP_DIR" >/dev/null 2>&1 &
+  HTTP_PID=$!
+  sleep 0.5
+  trap 'kill $HTTP_PID 2>/dev/null' EXIT
+fi
+
 pass=0; fail=0
 for ahk in assert_*.ahk; do
   base="${ahk%.ahk}"

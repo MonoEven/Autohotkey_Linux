@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **302 / 302 断言通过** (普通构建与 ASan 构建均通过;25 项 headless 回归测试亦全部通过)
+- **结果**: **408 / 408 断言通过** (普通构建与 ASan 构建均通过;25 项 headless 回归测试亦全部通过)
 
 ---
 
@@ -14,7 +14,7 @@
 | 文件 | 作用 |
 |---|---|
 | `tests/doccheck/extract_docs.py` | 解析 `docs-v2/docs/lib/*.htm`,提取每个函数的名称/描述/语法/参数/返回值/示例 → `doc_index.tsv`(352 个函数条目) |
-| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(137 个已实现,177 个未实现) |
+| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(187 个已实现,139 个未实现) |
 | `tests/doccheck/assert_*.ahk` | 按模块编写的实测脚本(每个断言输出 `name=value` 行,取自官方文档语义) |
 | `tests/doccheck/assert_*_expect.txt` | 与文档语义对应的期望值 |
 | `tests/doccheck/run_check.sh` | 运行全部断言并逐条比对(支持传入任意二进制路径,如 `run_check.sh build-asan/ahk_core`) |
@@ -32,12 +32,13 @@
 | 二进制互操作 (NumGet/NumPut/StrGet/StrPut/Buffer) | `assert_interop.ahk` | 20 |
 | 正则 (RegExMatch/RegExReplace/~= 运算符/命名子组) | `assert_regex.ahk` | 22 |
 | 注册表 (RegRead/RegWrite/RegDelete/RegDeleteKey/RegCreateKey) | `assert_registry.ahk` | 19 |
-| **合计** | | **302** |
+| 系统/设置/进程/文件操作/网络 (CoordMode/DetectHidden*/Set*Delay/SendMode/SendLevel/SetRegView/FileEncoding/SetStoreCapsLockMode/ProcessGet*/FileCopy/FileMove/FileInstall/FileRecycle/FileGetVersion/SysGet/SysGetIPAddresses/Download/Drive*/SoundPlay) | `assert_sys.ahk` | 106 |
+| **合计** | | **408** |
 
 复现命令:
 
 ```bash
-bash tests/doccheck/run_check.sh                # 普通构建
+bash tests/doccheck/run_check.sh                # 普通构建(自动启动本地 HTTP 服务供 Download 断言)
 bash tests/doccheck/run_check.sh build-asan/ahk_core   # ASan 构建
 bash tests/run_tests.sh                         # 25 项 headless 回归
 ```
@@ -152,6 +153,26 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 - **设计**: Linux 无注册表,移植版以 `$XDG_CONFIG_HOME/autohotkey-registry.txt`(默认 `~/.config/...`)存放虚拟注册表:INI 风格 `[键路径]` 节 + `名称=类型:值` 行(`@` 为默认值),值内反斜杠/换行/`=` 转义;REG_DWORD 存十进制、REG_BINARY 存大写十六进制、REG_MULTI_SZ 以换行分隔。
 - **语义对照文档实现**: 根键全称/缩写(HKCU/HKLM/...)规范化;ValueName 省略读写默认值;RegRead 缺值有 Default 返回 Default、无则抛 OSError(LastError=2);REG_DWORD 读为正十进制、REG_BINARY 读为十六进制串、REG_MULTI_SZ 读为 `\n` 结尾组件;RegWrite 返回写入字节数;RegDelete 删命名值、缺值抛错;RegDeleteKey 递归删除键与子键;非法根键/类型抛 OSError;REG_BINARY 支持 Buffer 输入。
 
+### 2.21 FileAppend/FileRead 忽略 FileEncoding 默认编码(本轮)
+- **现象**: `FileEncoding("UTF-16")` 后 `FileAppend` 写出的仍是 UTF-8。
+- **根因**: Linux 的 `BIF_FileAppend`/`BIF_FileRead` 是简化实现,固定用 UTF-8(wcstombs/fread),从不读取 `g->Encoding`。
+- **修复**: 按文档实现默认编码语义——FileAppend 在新建(空)文件时按 `UTF-8`/`UTF-16` 写 BOM(`-RAW` 变体不写),UTF-16 内容以手写 UTF-16LE 编码(支持代理对)写出;FileRead 先做 BOM 探测(BOM 覆盖默认),UTF-16 以代理对感知的 UTF-16LE 解码,其余按 UTF-8;同时补上文档要求的"文件不存在抛 OSError"行为(此前静默返回空串)。
+
+### 2.22 FileCopy/FileMove 通配符与目录目标缺失(本轮)
+- **现象**: FileCopy/FileMove 为 no-op 桩;接入 lib/file.cpp 后其底层 `Line::Util_CopyFile` 桩既不支持 `*.txt` 通配、也不支持目标为目录、返回值语义还与上游相反。
+- **修复**: 按 script_autoit.cpp 上游语义重写:`FindFirstFile` 枚举匹配(大小写不敏感通配),目录源/目标自动追加 `/*`,目标含通配时按 `Util_ExpandFilenameWildcard` 语义展开(`*.txt`→源文件名;多余 `*` 去除),无通配且无匹配抛错、有通配无匹配视为成功(文档),move 优先 `rename`、跨设备回退复制+删除,失败计数经 `Error.Extra` 上报;`FileInstall`(未编译脚本=复制文件)、`FileRecycle`/`FileRecycleEmpty`(XDG Trash 规范:文件移入 `Trash/files` + 写 `.trashinfo`,重复名自动加 `.N` 后缀)同期接入;`FileGetVersion` 按文档"文件缺少版本信息时抛 OSError"实现(Linux 文件普遍无版本资源)。
+
+### 2.23 设置/进程/系统/网络模块批量接入(本轮)
+- **实现**: 按 lib/vars.cpp/lib/env.cpp/lib/process.cpp/script_autoit.cpp 原语义实现:
+  - 设置模块 13 函数(CoordMode/DetectHiddenWindows/DetectHiddenText/SetTitleMatchMode/SetKeyDelay/SetMouseDelay/SetWinDelay/SetControlDelay/SetDefaultMouseSpeed/SendMode/SendLevel/SetRegView/SetStoreCapsLockMode),全部"返回先前值/设置",参数校验抛 ValueError(与上游 ParamError 一致);默认值经实测与上游 `global_set_defaults` 逐一吻合(KeyDelay=10、MouseDelay=10、MouseDelayPlay=-1、WinDelay=100、ControlDelay=20、DefaultMouseSpeed=2、SendMode=Input、TitleMatchMode=2、DetectHiddenText=1、StoreCapsLockMode=1 等);
+  - 对应 15 个 A_* 内置变量(BIV)真实实现(A_CoordMode*/A_DetectHidden*/A_TitleMatchMode/Speed/A_KeyDelay*/A_KeyDuration*/A_MouseDelay*/A_WinDelay/A_ControlDelay/A_DefaultMouseSpeed/A_SendMode/A_SendLevel/A_RegView/A_FileEncoding/A_StoreCapsLockMode/A_ListLines/A_ScreenWidth/Height/DPI);
+  - 进程模块:ProcessGetName/ProcessGetPath(/proc/comm、/proc/<pid>/exe readlink)、ProcessGetParent(/proc/<pid>/stat 第 4 字段),名称匹配大小写不敏感、按文档抛 TargetError(找不到)/OSError(读取失败);
+  - SysGet:SM_* 常量经 X11 实现(有显示时返回真实屏幕尺寸/监视器数,无显示时 0;SM_CMOUSEBUTTONS=3、SM_MOUSEPRESENT=1、SM_NETWORK=1、SM_CARETBLINKINGENABLED=1 等与平台无关项恒定);SysGetIPAddresses:getifaddrs 返回 IPv4 数组(含 127.0.0.1);
+  - Download:curl/wget 下载,HTTP 错误页照文档"保存错误页而非报错"保存,目标路径不可写抛 OSError;Shutdown:EWX_* 标志映射 systemctl/loginctl(未在测试中实际执行,防误关机);
+  - DriveSetLabel/e2label+fatlabel、DriveEject/Retract/eject、DriveLock/Unlock/udisksctl(设备经 /proc/mounts 由挂载点解析);SoundPlay:paplay/aplay;失败均按文档抛 OSError;
+  - run_check.sh 自动启动本地 python http.server(:18765)供 Download 断言,退出时清理。
+- **实测环境注意**: 文件操作断言的工作目录放在 /tmp(ext4)——DrvFS(/mnt/f)存在陈旧目录项缓存,创建文件后立即 stat/复制偶发失败(首次运行通过、后续复现,`copy_file` 报文件已存在),与解释器无关。
+
 ---
 
 ## 3. 测试预期修正(文档语义确认,非移植缺陷)
@@ -172,6 +193,8 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 | `obj["nope"]` 抛 UnsetItemError | `__Item` 为 Map 时,缺键读值按文档抛错 |
 | `Array.Delete/RemoveAt` 结果 20、枚举和 55 | `[5,10,20,30].RemoveAt(2)` → `[5,20,30]` |
 | 变量名 `p`/`P`、`instr`/`InStr` 冲突报错 | v2 变量名大小写不敏感、函数名被保留——测试变量改名而非移植问题 |
+| `SetTitleMatchMode("Slow")` 返回 `"Fast"` | 文档:返回"被修改的那个设置"的先前值——匹配模式(2/3/RegEx)与搜索速度(Fast/Slow)是独立设置;模式为 RegEx 时改速度,返回的是先前速度 |
+| `SetMouseDelay(30,"Play")` 返回 `-1` | 默认 `A_MouseDelayPlay=-1`(上游 `global_set_defaults`),与普通 `A_MouseDelay=10` 不同 |
 
 ---
 
@@ -189,15 +212,21 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 | 注册表 (RegRead/RegWrite/RegDelete/RegDeleteKey/RegCreateKey) | ✅ 19/19 | 文件虚拟注册表,参数语义/返回值/错误行为对照文档 |
 | 日期时间 (DateAdd/Diff/FormatTime/A_Now/A_YYYY 等) | ✅ 33/33 | 与文档 TimeUnits/Format 语义一致 |
 | 通用 (Env/WorkingDir/Sleep/MsgBox/Process/Run/RunWait/Drive/Ini/Clipboard/GetKeyName/A_* 变量) | ✅ 50/50 | 本轮补齐 A_Args/A_LastError/A_Is*/A_Line*/A_ComputerName/A_UserName/A_OSVersion/A_Language/A_MyDocuments/A_AhkPath 等 |
-| 未实现模块 (GUI/GuiCtrl/COM/DllCall/窗口管理/热键系统/剪贴板监听等 172 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
+| 系统/设置 (CoordMode/DetectHidden*/SetTitleMatchMode/Set*Delay/SendMode/SendLevel/SetRegView/FileEncoding/SetStoreCapsLockMode + 15 个 A_* 设置变量) | ✅ 37/37 | 返回值=先前设置、默认值逐一对照上游 `global_set_defaults`,非法参数抛 ValueError |
+| 进程 (ProcessGetName/ProcessGetParent/ProcessGetPath) | ✅ 10/10 | /proc 实现,大小写不敏感名称匹配,找不到抛 TargetError |
+| 文件操作 (FileCopy/FileMove/FileInstall/FileRecycle/FileRecycleEmpty/FileGetVersion) | ✅ 22/22 | 通配符/目录目标/覆盖标志/Error.Extra 失败计数;XDG Trash;FileGetVersion 按文档对无版本信息文件抛 OSError |
+| 系统信息/网络 (SysGet/SysGetIPAddresses/A_ScreenWidth/Height/DPI) | ✅ 13/13 | X11 后端(无显示时屏幕指标为 0,1024x768 Xvfb 实测通过);IPv4 数组含回环 |
+| 下载 (Download) | ✅ 3/3 | 本地 HTTP 服务实测:内容一致、404 保存错误页(文档)、坏路径 OSError |
+| 驱动器/声音错误路径 (DriveSetLabel/DriveEject/DriveLock/DriveUnlock/DriveRetract/SoundPlay) | ✅ 6/6 | 不存在设备/无播放器按文档抛 OSError(Shutdown 已实现但测试中不实际执行,防误关机) |
+| 未实现模块 (GUI/GuiCtrl/COM/DllCall/窗口管理/热键系统/剪贴板监听等 139 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
 
 ## 5. 回归与构建验证
 
 ```
 普通构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh PASS=302 FAIL=0
+          tests/doccheck/run_check.sh PASS=408 FAIL=0
 ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh PASS=302 FAIL=0
+          tests/doccheck/run_check.sh PASS=408 FAIL=0
 ```
 
 ## 6. 本轮改动文件
@@ -222,3 +251,7 @@ ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
 - `source/linux/core/core_platform_stubs.cpp`:`Script::CurrentLine/CurrentFile` 真实实现
 - `source/linux/core/main_linux.cpp`:`A_Args` 启动填充、`mOurEXE`(/proc/self/exe)
 - `tests/doccheck/*`:断言脚本与期望值按文档修正,新增 assert_interop、assert_regex、assert_registry 套件,run_check.sh 支持按套件传参,worklist 重新生成(154 IMPL / 172 NOT_IMPL)
+- `source/linux/core/core_mdfunc_linux.cpp`(本轮):设置/进程/文件操作/系统/网络/驱动器/声音 33 个 BIF 包装(LMD_NI → LMD_IMPL);SysGet(X11)、SysGetIPAddresses(getifaddrs)、Download(curl/wget)、FileRecycle/FileRecycleEmpty(XDG Trash)、FileGetVersion、Shutdown、Drive*(外部工具)、SoundPlay(paplay/aplay)
+- `source/linux/core/core_builtin_stubs.cpp`(本轮):设置类 15 个 BIV 真实实现(A_CoordMode*/A_DetectHidden*/A_TitleMatchMode*/A_KeyDelay*/A_KeyDuration*/A_MouseDelay*/A_WinDelay/A_ControlDelay/A_DefaultMouseSpeed/A_SendMode/A_SendLevel/A_RegView/A_FileEncoding/A_StoreCapsLockMode/A_ListLines/A_ScreenWidth/Height/DPI);**FileAppend/FileRead 支持 FileEncoding 默认编码(BOM 探测/写入、UTF-16LE 代理对编解码、缺文件抛 OSError)**
+- `source/linux/core/core_platform_stubs.cpp`(本轮):`Line::Util_CopyFile` 按上游语义重写(通配符/目录目标/失败计数/跨设备移动)
+- `tests/doccheck/assert_sys.ahk` / `assert_sys_expect.txt`(新增,106 断言);`run_check.sh` 自动启动/清理本地 HTTP 服务;worklist 重新生成(**187 IMPL / 139 NOT_IMPL**)
