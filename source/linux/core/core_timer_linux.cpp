@@ -19,8 +19,10 @@
 #include "../../script.h"
 #include "../../globaldata.h"
 #include "../../script_func_impl.h"
+#include "../../hotkey.h"
 #include "core_timer_linux.h"
 #include "core_win_linux.h"
+#include "core_hotkey_linux.h"
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
@@ -28,6 +30,7 @@
 #include <cstring>
 #include <cstdio>
 #include <string>
+#include <poll.h>
 
 void ScriptSleep(int aDelay);
 
@@ -105,10 +108,12 @@ bool LinuxCheckScriptTimers()
 
 void LinuxRunMainLoop()
 {
+	Display *d = nullptr;
 	while (!g_script.mPendingExitCode)
 	{
 		// Sleep until the next due timer (bounded at 50 ms so new timers and
-		// exit requests are noticed quickly).
+		// exit requests are noticed quickly); when hotkeys exist, wait on the
+		// X connection instead so key events are dispatched promptly.
 		int sleep_ms = 50;
 		if (g_script.mTimerEnabledCount)
 		{
@@ -131,7 +136,17 @@ void LinuxRunMainLoop()
 					sleep_ms = 1;
 			}
 		}
-		ScriptSleep(sleep_ms);
+		if (Hotkey::sHotkeyCount && (d = LinuxX11Display()))
+		{
+			struct pollfd pfd;
+			pfd.fd = ConnectionNumber(d);
+			pfd.events = POLLIN;
+			pfd.revents = 0;
+			if (poll(&pfd, 1, sleep_ms) > 0)
+				LinuxDispatchHotkeys(d);
+		}
+		else
+			ScriptSleep(sleep_ms);
 		LinuxCheckScriptTimers();
 	}
 }

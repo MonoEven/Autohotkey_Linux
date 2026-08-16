@@ -722,6 +722,11 @@ bool LinuxButtonFromNameEx(const wchar_t *aName, unsigned int &aBtn)
 	return LinuxButtonFromName(aName, aBtn);
 }
 
+KeyCode LinuxKeycodeForVkEx(Display *d, vk_type aVK)
+{
+	return LinuxKeycodeForVk(d, aVK);
+}
+
 // ---------------------------------------------------------------------------
 // MouseMove / MouseClick / MouseClickDrag / MouseGetPos
 // ---------------------------------------------------------------------------

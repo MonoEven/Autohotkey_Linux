@@ -74,6 +74,7 @@ add_executable(ahk_core
     core_screen_linux.cpp
     core_display_linux.cpp
     core_timer_linux.cpp
+    core_hotkey_linux.cpp
     core_platform_stubs.cpp
     main_linux.cpp
     ../gui/x11_gui.cpp

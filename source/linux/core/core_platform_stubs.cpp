@@ -11,6 +11,9 @@
 #include "../../WinGroup.h"
 #include "../../globaldata.h"
 #include "core_timer_linux.h"
+#include "core_win_linux.h"
+#include "core_hotkey_linux.h"
+#include <X11/Xlib.h>
 
 // --- application/message pump ---
 bool MsgSleep(int aDuration, MessageMode)
@@ -18,11 +21,15 @@ bool MsgSleep(int aDuration, MessageMode)
 	// Real sleep so that Sleep() and other timing-sensitive code behaves
 	// correctly on Linux.  When the script has enabled timers, fire due
 	// timers during the wait (docs: timed functions run even while the
-	// script is waiting for a window or busy with another task).
+	// script is waiting for a window or busy with another task); hotkey
+	// events are dispatched too.
 	if (aDuration <= 0)
 	{
 		if (g_script.mTimerEnabledCount)
 			LinuxCheckScriptTimers();
+		if (Hotkey::sHotkeyCount)
+			if (Display *d = LinuxX11Display())
+				LinuxDispatchHotkeys(d);
 		return true;
 	}
 	DWORD end = GetTickCount() + (DWORD)aDuration;
@@ -30,6 +37,9 @@ bool MsgSleep(int aDuration, MessageMode)
 	{
 		if (g_script.mTimerEnabledCount)
 			LinuxCheckScriptTimers();
+		if (Hotkey::sHotkeyCount)
+			if (Display *d = LinuxX11Display())
+				LinuxDispatchHotkeys(d);
 		DWORD now = GetTickCount();
 		if (now >= end)
 			break;
@@ -109,7 +119,18 @@ VOID CALLBACK RefreshInterruptibility(HWND, UINT, UINT_PTR, DWORD) {}
 // --- keyboard / mouse / hook ---
 void AddRemoveHooks(HookType, bool) {}
 void ChangeHookState(Hotkey **, int, HookType, HookType) {}
-bool HookAdjustMaxHotkeys(Hotkey **&, int &, int) { return false; }
+bool HookAdjustMaxHotkeys(Hotkey **&aArray, int &aMax, int aNewMax)
+{
+	// Real realloc: the upstream hook code grows the hotkey array through
+	// this function; the old stub returned false which surfaced as a bogus
+	// "Out of memory" in Hotkey::AddHotkey.
+	auto new_array = (Hotkey **)realloc(aArray, (size_t)aNewMax * sizeof(Hotkey *));
+	if (!new_array)
+		return false;
+	aArray = new_array;
+	aMax = aNewMax;
+	return true;
+}
 HookType GetActiveHooks() { return (HookType)0; }
 void GetHookStatus(LPTSTR aBuf, int aBufSize) { if (aBuf && aBufSize > 0) aBuf[0] = 0; }
 void WaitHookIdle() {}

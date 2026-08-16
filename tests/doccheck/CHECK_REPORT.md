@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **628 / 628 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 26 项、定时器/悬浮提示模块 11 项实测与 headless 显示/快捷方式模块 15 项;25 项 headless 回归测试亦全部通过)
+- **结果**: **638 / 638 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 26 项、定时器/悬浮提示模块 11 项、热键模块 10 项实测与 headless 显示/快捷方式模块 15 项;25 项 headless 回归测试亦全部通过)
 
 ---
 
@@ -14,7 +14,7 @@
 | 文件 | 作用 |
 |---|---|
 | `tests/doccheck/extract_docs.py` | 解析 `docs-v2/docs/lib/*.htm`,提取每个函数的名称/描述/语法/参数/返回值/示例 → `doc_index.tsv`(352 个函数条目) |
-| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(301 个已实现,28 个未实现) |
+| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(302 个已实现,27 个未实现) |
 | `tests/doccheck/assert_*.ahk` | 按模块编写的实测脚本(每个断言输出 `name=value` 行,取自官方文档语义) |
 | `tests/doccheck/assert_*_expect.txt` | 与文档语义对应的期望值 |
 | `tests/doccheck/run_check.sh` | 运行全部断言并逐条比对(支持传入任意二进制路径,如 `run_check.sh build-asan/ahk_core`) |
@@ -39,7 +39,8 @@
 | 显示器/像素/状态栏 (MonitorGet/GetCount/GetName/GetPrimary/GetWorkArea + PixelGetColor/PixelSearch + StatusBarGetText/StatusBarWait,XRandR/Xinerama + XGetImage 后端) | `assert_monitor.ahk` | 26 |
 | 显示/快捷方式 (FileCreateShortcut/FileGetShortcut + ListVars/ListHotkeys/KeyHistory,.desktop/.url 与 headless 输出) | `assert_display.ahk` | 15 |
 | 定时器/悬浮提示 (SetTimer + ToolTip,主循环 + X11 override-redirect 窗口) | `assert_timer.ahk` | 11 |
-| **合计** | | **628** |
+| 热键 (Hotkey + XGrabKey 激活) | `assert_hotkey.ahk` | 10 |
+| **合计** | | **638** |
 
 复现命令:
 
@@ -245,6 +246,14 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 - **测试设施**: `assert_timer.ahk`/`assert_timer_expect.txt`(新增,11 断言:周期触发、停止、默认 250ms、负周期仅一次、省略函数引用当前定时器、非法函数对象报错、ToolTip 返回 HWND/标题/同窗更新/坐标/隐藏);`run_check.sh --xvfb` 运行。
 - **本轮修复的真实缺陷**: ① InitNewThread/ResumeUnderlyingThread 原为 no-op 桩(定时器/热键线程无法建立)——完整移植上游实现;② MsgSleep 原为纯 nanosleep(等待期间定时器不触发)——按文档在等待中触发;③ ToolTip 返回值按 md_func 声明为 HWND,须经 LMD 表返回。
 
+### 2.31 热键模块(XGrabKey 激活,本轮)
+- **实现**: 新增 `core_hotkey_linux.cpp`(Hotkey 函数接入 + X 热键激活),按 docs-v2 与上游语义:
+  - **Hotkey 函数**:接入上游 `BIF_Hotkey`(script2.cpp,完整支持:函数对象/On/Off/Toggle/AltTab 动作、B0/S0/Pn/Tn/In 等选项、更新既有热键、HotIf 变体)——上游解析与注册逻辑全部复用,仅激活机制改为 Linux;
+  - **激活**:每个热键经 `XGrabKey` 在根窗口上注册(键码由 vk 经键表换算;MOD_CONTROL/SHIFT/ALT/WIN → Control/Shift/Mod1/Mod4 掩码;同时注册带/不带 CapsLock、NumLock 的组合,避免锁定键阻碍触发);事件在**主循环**(poll 等待 X 连接,超时=下一定时器到期)与 **MsgSleep 等待期间**(10ms 切片)派发——与文档"热键在脚本等待时也可触发"一致;
+  - **匹配与执行**:KeyPress 触发按下型热键、KeyRelease 触发 `Key up` 热键(文档);修饰键状态须与热键完全一致(文档:默认不允许多余修饰键);命中变体经上游 `FindVariant`(HotIf 准则)+ `PerformInNewThreadMadeByCaller`(节流保护 + 以热键名作参数执行回调,`A_ThisHotkey` 语义);鼠标键/扫描码/前缀(`A & B`)热键在 X11 无对应,不注册(文档化限制)。
+- **测试设施**: `assert_hotkey.ahk`/`assert_hotkey_expect.txt`(新增,10 断言:单键触发、Ctrl/Shift/Alt 组合、多余修饰键不触发(文档)、On/Off 动作、Key up 热键、非法键名 ValueError、热键使脚本保持运行且与定时器共存——组合以 Send 的 `^{F8}` 形式发送,XTEST 事件经抓取回到脚本并被派发);`run_check.sh --xvfb` 运行。
+- **本轮修复的真实缺陷**: ① `HookAdjustMaxHotkeys` 桩返回 false → `Hotkey::AddHotkey` 报伪"Out of memory"——改为真实 realloc(上游钩子代码经此函数扩容热键数组);② 测试脚本变量与回调函数同名(`h1` 与 `H1`,v2 名称大小写不敏感 → 函数名保留,变量冲突报错)——改名,属测试脚本问题非移植缺陷;③ `Send("^F8")` 按文档语义是 Ctrl+文本"F8"(修饰符只作用于下一个键),组合键应写 `Send("^{F8}")`——测试脚本修正。
+
 ---
 
 ## 3. 测试预期修正(文档语义确认,非移植缺陷)
@@ -300,16 +309,17 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 | 调试显示 (ListVars/ListHotkeys/KeyHistory) | ✅ 6/6 | headless 实测:ListVars 输出含全部全局变量(名称+值)、ListHotkeys/KeyHistory 输出与 MaxEvents 校验(0..500 抛 ValueError) |
 | 定时器 (SetTimer + 主循环) | ✅ 6/6 | headless 实测:周期触发(等待期间也触发,文档)、Period 0 删除、默认 250ms、负周期仅运行一次、省略函数=当前定时器、非法函数对象报错 |
 | 悬浮提示 (ToolTip) | ✅ 5/5 | Xvfb 下实测:返回 HWND、窗口标题=文本、同索引更新复用窗口、坐标、空白隐藏并返回 0 |
-| 未实现模块 (GUI/GuiCtrl/COM/DllCall/热键系统/剪贴板监听/Edit*/SendMessage/PostMessage/Hotkey/Hotstring/OnMessage/ImageSearch/DirSelect/FileSelect 等 28 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
+| 热键 (Hotkey) | ✅ 10/10 | Xvfb 下以 Send 触发实测:单键与 ^/+/! 组合、多余修饰键不触发(文档)、On/Off 动作、Key up、非法键名 ValueError、热键保持脚本运行并与定时器共存 |
+| 未实现模块 (GUI/GuiCtrl/COM/DllCall/Hotstring/剪贴板监听/Edit*/SendMessage/PostMessage/OnMessage/ImageSearch/DirSelect/FileSelect 等 27 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
 
 ## 5. 回归与构建验证
 
 ```
 普通构建: tests/run_tests.sh        PASS=25 FAIL=0
           tests/doccheck/run_check.sh PASS=423 FAIL=0 (headless)
-          tests/doccheck/run_check.sh --xvfb PASS=628 FAIL=0 (含窗口 67 + 输入 40 + 控件 62 + 显示器/像素/状态栏 26 + 显示/快捷方式 15 + 定时器/悬浮提示 11)
+          tests/doccheck/run_check.sh --xvfb PASS=638 FAIL=0 (含窗口 67 + 输入 40 + 控件 62 + 显示器/像素/状态栏 26 + 显示/快捷方式 15 + 定时器/悬浮提示 11 + 热键 10)
 ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=628 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=638 FAIL=0
 ```
 
 ## 6. 本轮改动文件
@@ -370,3 +380,10 @@ ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
 - `source/linux/core/core_mdfunc_linux.cpp`(本轮):SetTimer/ToolTip 由 LMD_NI 翻转 LMD_IMPL
 - `source/linux/core/CMakeLists.txt`(本轮):加入 `core_timer_linux.cpp`
 - `tests/doccheck/assert_timer.ahk`/`assert_timer_expect.txt`(新增,11 断言);`run_check.sh --xvfb` 运行 assert_timer;worklist 重新生成(**301 IMPL / 28 NOT_IMPL**)
+- `source/linux/core/core_hotkey_linux.cpp` / `.h`(新增,本轮):Hotkey 函数接入上游 BIF_Hotkey + XGrabKey 激活(X11 掩码映射、锁定键变体抓取、主循环 poll 派发、MsgSleep 等待期派发、FindVariant/PerformInNewThreadMadeByCaller 执行)
+- `source/linux/core/core_platform_stubs.cpp`(本轮):`HookAdjustMaxHotkeys` 由恒 false 桩改为真实 realloc(修复 Hotkey::AddHotkey 伪 OOM);MsgSleep 派发热键事件
+- `source/linux/core/core_timer_linux.cpp`(本轮):主循环在有热键时以 poll 等待 X 连接
+- `source/linux/core/core_input_linux.cpp` / `.h`(本轮):导出 `LinuxKeycodeForVkEx`
+- `source/linux/core/core_mdfunc_linux.cpp`(本轮):Hotkey 由 LMD_NI 翻转 LMD_IMPL
+- `source/linux/core/CMakeLists.txt`(本轮):加入 `core_hotkey_linux.cpp`
+- `tests/doccheck/assert_hotkey.ahk`/`assert_hotkey_expect.txt`(新增,10 断言);`run_check.sh --xvfb` 运行 assert_hotkey;worklist 重新生成(**302 IMPL / 27 NOT_IMPL**)

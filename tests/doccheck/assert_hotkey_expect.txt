@@ -1,0 +1,10 @@
+hk_f7=1
+hk_ctrl=1
+hk_mods_exact=1
+hk_shift=1
+hk_alt=1
+hk_off=1
+hk_on=1
+hk_up=1
+hk_badkey=1
+hk_with_timer=1

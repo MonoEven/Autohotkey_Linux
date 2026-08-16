@@ -24,6 +24,7 @@
 #include "core_screen_linux.h"
 #include "core_display_linux.h"
 #include "core_timer_linux.h"
+#include "core_hotkey_linux.h"
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -2401,7 +2402,7 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(HotIfWinExist, BIF_Linux_HotIfWinExist, 0, 2),
 	LMD_IMPL(HotIfWinNotActive, BIF_Linux_HotIfWinNotActive, 0, 2),
 	LMD_IMPL(HotIfWinNotExist, BIF_Linux_HotIfWinNotExist, 0, 2),
-	LMD_NI(Hotkey, 1, 3),
+	LMD_IMPL(Hotkey, BIF_Linux_Hotkey, 1, 3),
 	LMD_NI(Hotstring, 1, 3),
 	LMD_NI(IL_Add, 2, 4),
 	LMD_NI(IL_Create, 0, 3),

@@ -28,3 +28,4 @@ void LinuxFakeMotionEvent(Display *d, int aX, int aY);
 void LinuxSendKeysString(Display *d, const wchar_t *aKeys);
 void LinuxSendCharsString(Display *d, const wchar_t *aKeys);
 bool LinuxButtonFromNameEx(const wchar_t *aName, unsigned int &aBtn);
+KeyCode LinuxKeycodeForVkEx(Display *d, vk_type aVK);
