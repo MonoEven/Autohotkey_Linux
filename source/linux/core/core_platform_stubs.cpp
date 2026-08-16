@@ -13,6 +13,7 @@
 #include "core_timer_linux.h"
 #include "core_win_linux.h"
 #include "core_hotkey_linux.h"
+#include "core_wayland_linux.h"
 #include <X11/Xlib.h>
 
 // --- application/message pump ---
@@ -22,7 +23,8 @@ bool MsgSleep(int aDuration, MessageMode)
 	// correctly on Linux.  When the script has enabled timers, fire due
 	// timers during the wait (docs: timed functions run even while the
 	// script is waiting for a window or busy with another task); hotkey
-	// events are dispatched too.
+	// events are dispatched too, and Wayland events are pumped in Wayland
+	// mode (xdg configure acks etc.).
 	if (aDuration <= 0)
 	{
 		if (g_script.mTimerEnabledCount)
@@ -30,6 +32,8 @@ bool MsgSleep(int aDuration, MessageMode)
 		if (Hotkey::sHotkeyCount)
 			if (Display *d = LinuxX11Display())
 				LinuxDispatchHotkeys(d);
+		if (LinuxWaylandActive())
+			LinuxWaylandDispatch();
 		return true;
 	}
 	DWORD end = GetTickCount() + (DWORD)aDuration;
@@ -40,6 +44,8 @@ bool MsgSleep(int aDuration, MessageMode)
 		if (Hotkey::sHotkeyCount)
 			if (Display *d = LinuxX11Display())
 				LinuxDispatchHotkeys(d);
+		if (LinuxWaylandActive())
+			LinuxWaylandDispatch();
 		DWORD now = GetTickCount();
 		if (now >= end)
 			break;

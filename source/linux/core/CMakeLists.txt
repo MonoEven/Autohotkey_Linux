@@ -56,6 +56,32 @@ target_include_directories(ahk_core_objects PRIVATE
 
 target_compile_options(ahk_core_objects PRIVATE -fpermissive -Wno-jump-misses-init)
 
+# Wayland backend: xdg-shell + virtual keyboard/pointer protocols.  The
+# protocol XMLs are vendored in ../wayland/protocols; wayland-scanner
+# generates client code at build time.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
+find_program(WAYLAND_SCANNER_EXE wayland-scanner REQUIRED)
+set(WL_PROTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../wayland/protocols")
+set(WL_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/wl_gen")
+file(MAKE_DIRECTORY "${WL_GEN_DIR}")
+set(WL_PROTO_NAMES
+  xdg-shell
+  virtual-keyboard-unstable-v1
+  wlr-virtual-pointer-unstable-v1
+)
+set(WL_GEN_SOURCES "")
+foreach(p ${WL_PROTO_NAMES})
+  add_custom_command(
+    OUTPUT "${WL_GEN_DIR}/${p}-protocol.h" "${WL_GEN_DIR}/${p}-protocol.c"
+    COMMAND ${WAYLAND_SCANNER_EXE} client-header "${WL_PROTO_DIR}/${p}.xml" "${WL_GEN_DIR}/${p}-protocol.h"
+    COMMAND ${WAYLAND_SCANNER_EXE} private-code "${WL_PROTO_DIR}/${p}.xml" "${WL_GEN_DIR}/${p}-protocol.c"
+    DEPENDS "${WL_PROTO_DIR}/${p}.xml"
+  )
+  list(APPEND WL_GEN_SOURCES "${WL_GEN_DIR}/${p}-protocol.c")
+endforeach()
+
 add_executable(ahk_core
     ../../ahkversion.cpp
     ../../SimpleHeap.cpp
@@ -77,13 +103,18 @@ add_executable(ahk_core
     core_timer_linux.cpp
     core_hotkey_linux.cpp
     core_platform_stubs.cpp
+    core_wayland_linux.cpp
     main_linux.cpp
     ../gui/x11_gui.cpp
+    ${WL_GEN_SOURCES}
 )
 
 target_include_directories(ahk_core PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../..
     ${CMAKE_CURRENT_SOURCE_DIR}/../compat
+    ${WL_GEN_DIR}
+    ${WAYLAND_CLIENT_INCLUDE_DIRS}
+    ${XKBCOMMON_INCLUDE_DIRS}
 )
 
 target_compile_options(ahk_core PRIVATE -fpermissive -Wno-jump-misses-init)
@@ -93,4 +124,4 @@ find_library(XTST_LIBRARY Xtst REQUIRED)
 find_library(XRANDR_LIBRARY Xrandr REQUIRED)
 find_library(XINERAMA_LIBRARY Xinerama REQUIRED)
 find_library(XEXT_LIBRARY Xext REQUIRED)
-target_link_libraries(ahk_core PRIVATE X11::X11 ahk_pcre16 ${XTST_LIBRARY} ${XRANDR_LIBRARY} ${XINERAMA_LIBRARY} ${XEXT_LIBRARY})
+target_link_libraries(ahk_core PRIVATE X11::X11 ahk_pcre16 ${XTST_LIBRARY} ${XRANDR_LIBRARY} ${XINERAMA_LIBRARY} ${XEXT_LIBRARY} PkgConfig::WAYLAND_CLIENT PkgConfig::XKBCOMMON)

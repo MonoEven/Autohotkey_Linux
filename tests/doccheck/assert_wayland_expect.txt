@@ -1,0 +1,13 @@
+wl_send_a=1
+wl_send_shift=1
+wl_send_ctrl=1
+wl_send_text=1
+wl_mouse=1
+wl_mousemove=1
+wl_gks=1
+wl_tip_hwnd=1
+wl_tip_mapped=1
+wl_wintitle=1
+wl_hotkey=1
+wl_pixel=1
+wl_wsr=1

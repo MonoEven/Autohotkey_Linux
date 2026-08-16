@@ -18,6 +18,7 @@
 #include "../../globaldata.h"
 #include "../../script_func_impl.h"
 #include "core_win_linux.h" // LinuxX11ActiveWindow
+#include "core_wayland_linux.h"
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
@@ -219,11 +220,13 @@ SHORT GetAsyncKeyState(int aVK)
 }
 
 // ---------------------------------------------------------------------------
-// XTEST helpers
+// XTEST helpers (Wayland virtual keyboard/pointer used when no X display)
 // ---------------------------------------------------------------------------
 
 static void LinuxFakeKey(Display *d, vk_type aVK, bool aDown)
 {
+	if (!d && LinuxWaylandKeyEvent((unsigned)aVK, aDown))
+		return; // Wayland virtual keyboard.
 	KeyCode kc = LinuxKeycodeForVk(d, aVK);
 	if (!kc)
 		return;
@@ -233,12 +236,28 @@ static void LinuxFakeKey(Display *d, vk_type aVK, bool aDown)
 
 static void LinuxFakeButton(Display *d, unsigned int aButton, bool aDown)
 {
+	if (!d)
+	{
+		if (aButton >= 4 && aButton <= 7)
+		{
+			LinuxWaylandWheelEvent(aButton, aDown);
+			return;
+		}
+		if (LinuxWaylandButtonEvent(aButton, aDown))
+			return;
+		return; // Unsupported button on Wayland: no-op (documented).
+	}
 	XTestFakeButtonEvent(d, aButton, aDown ? True : False, CurrentTime);
 	XFlush(d);
 }
 
 static void LinuxFakeMotion(Display *d, int aX, int aY)
 {
+	if (!d)
+	{
+		LinuxWaylandMotionTo(aX, aY);
+		return;
+	}
 	XTestFakeMotionEvent(d, DefaultScreen(d), aX, aY, CurrentTime);
 	XFlush(d);
 }
@@ -386,6 +405,31 @@ static void LinuxSendVk(Display *d, vk_type aVK, int aCount)
 	}
 }
 
+// ASCII char -> Win32 vk for the unshifted base character (US layout).
+// aChar is the lower-case base (LinuxCharBase); letters become their
+// upper-case vk (0x41-0x5A) so they don't collide with the numpad vks
+// (0x60-0x69); digits map 1:1.
+static vk_type LinuxCharVk(wchar_t c)
+{
+	if (c >= L'a' && c <= L'z')
+		return (vk_type)(c - L'a' + L'A');
+	switch (c)
+	{
+	case L'`': return 0xC0;
+	case L'-': return 0xBD;
+	case L'=': return 0xBB;
+	case L'[': return 0xDB;
+	case L']': return 0xDD;
+	case L'\\': return 0xDC;
+	case L';': return 0xBA;
+	case L'\'': return 0xDE;
+	case L',': return 0xBC;
+	case L'.': return 0xBE;
+	case L'/': return 0xBF;
+	}
+	return (vk_type)(unsigned)c;
+}
+
 // Send a literal character.
 static void LinuxSendChar(Display *d, wchar_t aChar, LinuxHeldMods &aHeld)
 {
@@ -404,9 +448,6 @@ static void LinuxSendChar(Display *d, wchar_t aChar, LinuxHeldMods &aHeld)
 		return; // Non-ASCII: no reliable keysym on a US layout.
 	// Shifted characters are not directly mapped; use the base keycode.
 	wchar_t base = LinuxCharBase(aChar);
-	KeyCode kc = XKeysymToKeycode(d, (KeySym)(unsigned int)base);
-	if (!kc)
-		return;
 	bool need_shift = LinuxCharNeedsShift(aChar);
 	bool added_shift = false;
 	if (need_shift && !aHeld.shift)
@@ -415,10 +456,24 @@ static void LinuxSendChar(Display *d, wchar_t aChar, LinuxHeldMods &aHeld)
 		aHeld.shift = true;
 		added_shift = true;
 	}
-	XTestFakeKeyEvent(d, kc, True, CurrentTime);
-	XFlush(d);
-	XTestFakeKeyEvent(d, kc, False, CurrentTime);
-	XFlush(d);
+	if (!d)
+	{
+		// Wayland virtual keyboard (no X display).
+		vk_type vk = LinuxCharVk(base);
+		LinuxFakeKey(nullptr, vk, true);
+		LinuxFakeKey(nullptr, vk, false);
+	}
+	else
+	{
+		KeyCode kc = XKeysymToKeycode(d, (KeySym)(unsigned int)base);
+		if (kc)
+		{
+			XTestFakeKeyEvent(d, kc, True, CurrentTime);
+			XFlush(d);
+			XTestFakeKeyEvent(d, kc, False, CurrentTime);
+			XFlush(d);
+		}
+	}
 	if (added_shift)
 	{
 		LinuxFakeKey(d, 0x10, false);
@@ -663,9 +718,9 @@ static void LinuxMouseCoords(Display *d, int aX, int aY, int &aOutX, int &aOutY)
 static void LinuxSendWrapper(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount, bool aRaw)
 {
 	Display *d = LinuxInputDisplay();
-	if (!d)
+	if (!d && !LinuxWaylandActive())
 	{
-		aResultToken.Error(_T("No X display is available."), _T(""), ErrorPrototype::OS);
+		aResultToken.Error(_T("No X display or Wayland display is available."), _T(""), ErrorPrototype::OS);
 		return;
 	}
 	TCHAR keys_buf[65536];
@@ -743,9 +798,9 @@ static void LinuxQueryPointer(Display *d, int &aX, int &aY)
 BIF_DECL(BIF_Linux_MouseMove)
 {
 	Display *d = LinuxInputDisplay();
-	if (!d)
+	if (!d && !LinuxWaylandActive())
 	{
-		aResultToken.Error(_T("No X display is available."), _T(""), ErrorPrototype::OS);
+		aResultToken.Error(_T("No X display or Wayland display is available."), _T(""), ErrorPrototype::OS);
 		return;
 	}
 	int x = (int)TokenToInt64(*aParam[0]);
@@ -757,23 +812,37 @@ BIF_DECL(BIF_Linux_MouseMove)
 		LPTSTR rel = TokenToString(*aParam[3], r_buf, nullptr);
 		if (rel && !_tcsicmp(rel, _T("R")))
 		{
-			int cx, cy;
-			LinuxQueryPointer(d, cx, cy);
-			x += cx;
-			y += cy;
+			if (d)
+			{
+				int cx, cy;
+				LinuxQueryPointer(d, cx, cy);
+				x += cx;
+				y += cy;
+			}
+			else
+			{
+				// Wayland: relative motion by the given amounts.
+				LinuxWaylandMotionEvent(x, y);
+				return;
+			}
 		}
 	}
-	int sx, sy;
-	LinuxMouseCoords(d, x, y, sx, sy);
-	LinuxFakeMotion(d, sx, sy);
+	if (d)
+	{
+		int sx, sy;
+		LinuxMouseCoords(d, x, y, sx, sy);
+		LinuxFakeMotion(d, sx, sy);
+	}
+	else
+		LinuxFakeMotion(nullptr, x, y); // Absolute intent via tracked position.
 }
 
 BIF_DECL(BIF_Linux_MouseClick)
 {
 	Display *d = LinuxInputDisplay();
-	if (!d)
+	if (!d && !LinuxWaylandActive())
 	{
-		aResultToken.Error(_T("No X display is available."), _T(""), ErrorPrototype::OS);
+		aResultToken.Error(_T("No X display or Wayland display is available."), _T(""), ErrorPrototype::OS);
 		return;
 	}
 	TCHAR btn_buf[32], duo_buf[32], rel_buf[16];
@@ -795,14 +864,31 @@ BIF_DECL(BIF_Linux_MouseClick)
 	{
 		if (relative && !_tcsicmp(relative, _T("R")))
 		{
-			int cx, cy;
-			LinuxQueryPointer(d, cx, cy);
-			x += cx;
-			y += cy;
+			if (d)
+			{
+				int cx, cy;
+				LinuxQueryPointer(d, cx, cy);
+				x += cx;
+				y += cy;
+			}
+			else
+			{
+				// Wayland: relative motion by the given amounts.
+				LinuxWaylandMotionEvent(x, y);
+				x = -1;
+			}
 		}
-		int sx, sy;
-		LinuxMouseCoords(d, x, y, sx, sy);
-		LinuxFakeMotion(d, sx, sy);
+		if (x >= 0)
+		{
+			if (d)
+			{
+				int sx, sy;
+				LinuxMouseCoords(d, x, y, sx, sy);
+				LinuxFakeMotion(d, sx, sy);
+			}
+			else
+				LinuxFakeMotion(nullptr, x, y);
+		}
 	}
 	vk_type bvk;
 	sc_type bsc;
@@ -843,9 +929,9 @@ BIF_DECL(BIF_Linux_MouseClick)
 BIF_DECL(BIF_Linux_MouseClickDrag)
 {
 	Display *d = LinuxInputDisplay();
-	if (!d)
+	if (!d && !LinuxWaylandActive())
 	{
-		aResultToken.Error(_T("No X display is available."), _T(""), ErrorPrototype::OS);
+		aResultToken.Error(_T("No X display or Wayland display is available."), _T(""), ErrorPrototype::OS);
 		return;
 	}
 	TCHAR btn_buf[32], rel_buf[16];
@@ -871,20 +957,30 @@ BIF_DECL(BIF_Linux_MouseClickDrag)
 		aResultToken.Error(_T("Invalid button name."), _T(""), ErrorPrototype::Value);
 		return;
 	}
-	if (relative && !_tcsicmp(relative, _T("R")))
+	if (relative && !_tcsicmp(relative, _T("R")) && d) // Wayland: cannot query the pointer.
 	{
 		int cx, cy;
 		LinuxQueryPointer(d, cx, cy);
 		x1 += cx; y1 += cy;
 		x2 += cx; y2 += cy;
 	}
-	int sx1, sy1, sx2, sy2;
-	LinuxMouseCoords(d, x1, y1, sx1, sy1);
-	LinuxMouseCoords(d, x2, y2, sx2, sy2);
-	LinuxFakeMotion(d, sx1, sy1);
-	LinuxFakeButton(d, btn, true);
-	LinuxFakeMotion(d, sx2, sy2);
-	LinuxFakeButton(d, btn, false);
+	if (d)
+	{
+		int sx1, sy1, sx2, sy2;
+		LinuxMouseCoords(d, x1, y1, sx1, sy1);
+		LinuxMouseCoords(d, x2, y2, sx2, sy2);
+		LinuxFakeMotion(d, sx1, sy1);
+		LinuxFakeButton(d, btn, true);
+		LinuxFakeMotion(d, sx2, sy2);
+		LinuxFakeButton(d, btn, false);
+	}
+	else
+	{
+		LinuxFakeMotion(nullptr, x1, y1);
+		LinuxFakeButton(nullptr, btn, true);
+		LinuxFakeMotion(nullptr, x2, y2);
+		LinuxFakeButton(nullptr, btn, false);
+	}
 }
 
 BIF_DECL(BIF_Linux_MouseGetPos)

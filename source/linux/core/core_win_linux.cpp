@@ -16,6 +16,7 @@
 #include "../../script.h"
 #include "../../globaldata.h"
 #include "../../script_func_impl.h"
+#include "core_wayland_linux.h"
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
@@ -777,7 +778,11 @@ static Window LinuxWinTarget(ResultToken &aResultToken, ExprTokenType *aParam[],
 	Display *d = LinuxWinDisplay();
 	if (!d)
 	{
-		aResultToken.Error(_T("No X display is available."), _T(""), ErrorPrototype::Target);
+		// Wayland clients cannot enumerate other clients' windows; the
+		// message makes the X11-only surface explicit (documented).
+		aResultToken.Error(LinuxWaylandActive()
+			? _T("Window management is not available on Wayland (Wayland clients cannot enumerate windows); use XWayland.")
+			: _T("No X display is available."), _T(""), ErrorPrototype::Target);
 		return 0;
 	}
 	LinuxWinCriteria c;
@@ -908,7 +913,11 @@ static Window LinuxWinFindTarget(ResultToken &aResultToken, ExprTokenType *aPara
 	Display *d = LinuxWinDisplay();
 	if (!d)
 	{
-		aResultToken.Error(_T("No X display is available."), _T(""), ErrorPrototype::Target);
+		// Wayland clients cannot enumerate other clients' windows; the
+		// message makes the X11-only surface explicit (documented).
+		aResultToken.Error(LinuxWaylandActive()
+			? _T("Window management is not available on Wayland (Wayland clients cannot enumerate windows); use XWayland.")
+			: _T("No X display is available."), _T(""), ErrorPrototype::Target);
 		return 0;
 	}
 	LinuxWinCriteria c;

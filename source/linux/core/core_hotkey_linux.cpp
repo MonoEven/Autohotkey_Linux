@@ -23,6 +23,7 @@
 #include "../../hotkey.h"
 #include "core_hotkey_linux.h"
 #include "core_win_linux.h"
+#include "core_wayland_linux.h"
 #include "core_input_linux.h"
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
@@ -131,6 +132,13 @@ FResult BIF_Hotkey(StrArg aName, ExprTokenType *aAction, optl<StrArg> aOptions);
 BIF_DECL(BIF_Linux_Hotkey)
 {
 	// (In String KeyName), (In_Opt Variant Action), (In_Opt String Options).
+	// Hotkeys need global key grabbing (XGrabKey); Wayland has no global
+	// hotkey protocol, so they are unavailable there (documented).
+	if (!LinuxX11Display() && LinuxWaylandActive())
+	{
+		aResultToken.Error(_T("Hotkeys are not available on Wayland (no global hotkey protocol); use XWayland."), _T(""), ErrorPrototype::OS);
+		return;
+	}
 	TCHAR name_buf[1024];
 	LPTSTR name = TokenToString(*aParam[0], name_buf, nullptr);
 	TCHAR opt_buf[256];

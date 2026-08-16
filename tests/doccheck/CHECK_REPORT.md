@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **663 / 663 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 26 项、定时器/悬浮提示模块 11 项、热键模块 10 项实测,headless 显示/快捷方式模块 15 项与未实现函数错误行为模块 25 项;25 项 headless 回归测试亦全部通过)
+- **结果**: **795 / 795 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 26 项、窗口形状模块 19 项实测,与 headless 各模块;26 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 13 项** 与 **XWayland 回退 193 项** 独立套件通过(见第 10 节)
 
 ---
 
@@ -14,7 +14,7 @@
 | 文件 | 作用 |
 |---|---|
 | `tests/doccheck/extract_docs.py` | 解析 `docs-v2/docs/lib/*.htm`,提取每个函数的名称/描述/语法/参数/返回值/示例 → `doc_index.tsv`(352 个函数条目) |
-| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(302 个已实现,26 个未实现) |
+| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(327 个已实现,0 个未实现) |
 | `tests/doccheck/assert_*.ahk` | 按模块编写的实测脚本(每个断言输出 `name=value` 行,取自官方文档语义) |
 | `tests/doccheck/assert_*_expect.txt` | 与文档语义对应的期望值 |
 | `tests/doccheck/run_check.sh` | 运行全部断言并逐条比对(支持传入任意二进制路径,如 `run_check.sh build-asan/ahk_core`) |
@@ -40,8 +40,14 @@
 | 显示/快捷方式 (FileCreateShortcut/FileGetShortcut + ListVars/ListHotkeys/KeyHistory,.desktop/.url 与 headless 输出) | `assert_display.ahk` | 15 |
 | 定时器/悬浮提示 (SetTimer + ToolTip,主循环 + X11 override-redirect 窗口) | `assert_timer.ahk` | 11 |
 | 热键 (Hotkey + XGrabKey 激活) | `assert_hotkey.ahk` | 10 |
-| 未实现函数错误行为 (26 个无法移植函数的明确报错校验) | `assert_notimpl.ahk` | 25 |
-| **合计** | | **663** |
+| 编辑/列表 (Edit/EditGet*/EditPaste + ListViewGetContent,虚拟编辑/列表状态) | `assert_edit.ahk` | 47 |
+| 文件对话框 (FileSelect/DirSelect,内置 X11 路径输入对话框 + 无显示 stdin 回退) | `assert_dialog.ahk` | 16 |
+| 消息/热字串/RunAs (OnMessage/SendMessage/PostMessage/MenuSelect/Hotstring/RunAs) | `assert_msg.ahk` | 49 |
+| 图像 (LoadPicture/IL_*/ImageSearch,BMP/PPM 解码 + XGetImage 屏幕匹配) | `assert_image.ahk` | 26 |
+| 窗口形状 (WinSetRegion,X11 SHAPE 扩展;xshape_probe 端到端验证) | `assert_shape.ahk` | 19 |
+| **合计 (X11/headless)** | | **795** |
+| Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端、ToolTip xdg 窗口、X11 专属表面报错) | `assert_wayland.ahk` | 13 |
+| **合计 (Wayland)** | | **808** |
 
 复现命令:
 
@@ -49,7 +55,9 @@
 bash tests/doccheck/run_check.sh                # 普通构建(自动启动本地 HTTP 服务供 Download 断言)
 bash tests/doccheck/run_check.sh --xvfb         # 含窗口模块(Xvfb :99 + xwin_helper 测试窗口)
 bash tests/doccheck/run_check.sh build-asan/ahk_core   # ASan 构建
-bash tests/run_tests.sh                         # 25 项 headless 回归
+bash tests/run_tests.sh                         # 26 项 headless 回归
+bash tests/doccheck/wayland_run.sh [bin]        # Wayland 模式(sway headless + 虚拟键盘端到端)
+bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 XWayland 上跑 X11 套件)
 ```
 
 ---
@@ -322,12 +330,49 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 ## 5. 回归与构建验证
 
 ```
-普通构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh PASS=448 FAIL=0 (headless,含未实现函数错误行为 25)
-          tests/doccheck/run_check.sh --xvfb PASS=663 FAIL=0 (含窗口 67 + 输入 40 + 控件 62 + 显示器/像素/状态栏 26 + 显示/快捷方式 15 + 定时器/悬浮提示 11 + 热键 10 + 未实现函数 25)
-ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=663 FAIL=0
+普通构建: tests/run_tests.sh        PASS=26 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=795 FAIL=0
+          tests/doccheck/wayland_run.sh PASS=13 FAIL=0 (Wayland 模式)
+          tests/doccheck/wayland_run.sh --xwayland PASS=193 FAIL=0 (XWayland 回退)
+ASan 构建: tests/run_tests.sh        PASS=26 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=795 FAIL=0
+          tests/doccheck/wayland_run.sh PASS=13 FAIL=0
+          tests/doccheck/wayland_run.sh --xwayland PASS=193 FAIL=0
 ```
+
+## 5.5 Wayland 后端(第 20 轮)
+
+显示层选择:X11 优先(有 DISPLAY 即可用,亦覆盖 XWayland);无 X11 但
+`WAYLAND_DISPLAY` 可连接时启用 Wayland 层(`core_wayland_linux.cpp`):
+
+- **输入模拟**:`Send`/`Mouse*` 在纯 Wayland 下经 `zwp_virtual_keyboard_v1`
+  与 `zwlr_virtual_pointer_manager_v1` 注入;vk→evdev 键码内置映射(无服务器
+  往返);keymap 经 xkbcommon 编译后通过 `keymap` 请求下发;修饰键按下后
+  roundtrip 确保 compositor 先更新修饰状态。**端到端验证**:sway(headless)
+  的 `bindsym a / Shift_L / Control_L` 钩子在收到虚拟键盘事件后创建标记文件,
+  `assert_wayland` 断言标记存在。指针运动为相对移动(Wayland 客户端无法绝对
+  定位指针,文档化)。
+- **窗口**:ToolTip 在纯 Wayland 下创建 xdg-shell toplevel(文本为标题);首次
+  commit 不携带 buffer,收到 configure 后 ack 并附加 1x1 shm buffer 再 commit
+  (xdg-shell 规范:`unconfigured buffer` 协议错误)。`wayland_run.sh` 经
+  swaymsg 验证窗口被 sway map。
+- **X11 专属表面**:窗口管理(Win*)、热键(XGrabKey)、像素/显示器访问在纯
+  Wayland 下不可用(Wayland 客户端无法枚举其他窗口、无全局热键协议),抛出
+  明确错误(消息含 "use XWayland" 提示);GetKeyState 返回 0(无法查询 seat);
+  对话框走无显示 stdin 回退。
+- **XWayland 回退**:`wayland_run.sh --xwayland` 在 sway 的 XWayland 上运行
+  X11 套件(控件/编辑/对话框/消息/形状 193 项全过),验证 X11 后端在 Wayland
+  之上完整可用。排除项(均为 compositor 局限,参考客户端行为一致):
+  `assert_hotkey`(sway 不实现 XGrabKey)、`assert_image`(XWayland 上大区域
+  XGetImage 挂起)、`assert_win/input/monitor`(断言依赖无 WM 的 Xvfb 语义)。
+- **测试钩子**:`AHK_WL_EVLOG` 记录本客户端表面收到的键盘/指针事件
+  (与 `AHK_*_AUTOCLOSE_MS` 同类测试设施)。
+- 依赖:libwayland-client、wayland-protocols(xdg-shell)、xkbcommon;协议 XML
+  已 vendor 于 `source/linux/wayland/protocols/`,构建时经 wayland-scanner
+  生成客户端代码。
+- WSL 注意:`/tmp/.X11-unix` 可能是 WSLg 的只读挂载,sway 的 XWayland 因此
+  无法启动;`wayland_run.sh --xwayland` 会先尝试 remount,失败则安全跳过
+  (绝不把测试窗口弹到用户桌面)。
 
 ## 6. 本轮改动文件
 
@@ -396,3 +441,11 @@ ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
 - `tests/doccheck/assert_hotkey.ahk`/`assert_hotkey_expect.txt`(新增,10 断言);`run_check.sh --xvfb` 运行 assert_hotkey;worklist 重新生成(**302 IMPL / 27 NOT_IMPL**)
 - `source/linux/core/core_mdfunc_linux.cpp`(本轮):删除 SetNumLockState 残留的重复 LMD_NI 条目(round-7 翻转时遗留)
 - `tests/doccheck/assert_notimpl.ahk`/`assert_notimpl_expect.txt`(新增,25 断言:26 个无法移植函数逐一验证抛出清晰的 "not been ported to Linux" 错误);`run_check.sh` headless 运行;worklist 重新生成(**302 IMPL / 26 NOT_IMPL**)
+- **rounds 14–19(25 个函数全部实现,0 NOT_IMPL)**:
+  - `source/linux/core/core_ctrl_linux.cpp` / `.h`(round 14):Edit/EditGetCurrentCol/EditGetCurrentLine/EditGetLine/EditGetLineCount/EditGetSelectedText/EditPaste(虚拟光标/选区状态 + 真实文本属性;ControlSetText 重置光标=WM_SETTEXT 语义,EditPaste=EM_REPLACESEL 语义)与 ListViewGetContent(完整选项语法 Count/Count Col/Count Selected/Count Focused/ColN/Selected/Focused、行 LF/列 TAB、ColN 越界 ValueError、虚拟行经 ControlAddItem/ControlDeleteItem 文档化扩展);`assert_edit.ahk`(47 断言)
+  - `source/linux/gui/x11_gui.cpp` / `.h`(round 15):`LinuxEntryDialog` 从 InputBox 抽出共享,新增 `LinuxFileDialog`(X11 路径输入对话框 + 无显示 stdin 回退,多选读至空行);`BIF_Linux_FileSelect/DirSelect`(D/M/S 选项字母与数值标志按上游校验:非数字 ValueError、D+Filter ValueError、RootDir\Filename 拆分、root*initial、默认 $HOME);`assert_dialog.ahk`(16 断言)+ t25 无头 stdin 回归
+  - `source/linux/core/core_mdfunc_linux.cpp`(round 16):OnMessage(上游 BIF 适配,监视器存储、回调 4 参数校验、MaxThreads 0/-1)、SendMessage/PostMessage(MsgNumber 0..0xFFFFFFFF 校验、wParam/lParam 整数或带 Ptr 对象、目标解析 TargetError、返回 DefWindowProc 默认回复 0、Timeout 接受)、MenuSelect(解析目标后按文档抛 "does not have a standard Win32 menu" TargetError——X11 窗口不可能有 Win32 菜单);修复空 WinText 不再被当作过滤条件;`assert_msg.ahk`(26 断言)
+  - `source/linux/core/core_mdfunc_linux.cpp`(round 17):Hotstring 上游 BIF 适配(注册/修改/OnOff/Toggle/EndChars/MouseReset/Reset 全语义)、RunAs(凭证存储,`Script::DoRunAs` 桩改为按上游抛 "Launch Error (possibly related to RunAs)"——此前静默失败无错误);`assert_msg.ahk` 增补 23 断言
+  - `source/linux/core/core_image_linux.cpp` / `.h`(round 18,新增):图像存储(稳定句柄)、BMP(24/32 位 BI_RGB)与 PPM(P6/P3)解码、最近邻缩放;LoadPicture(Wn/Hn、-1 保持纵横比、Icon/GDI+ 接受、OutImageType、失败返回 0)、IL_Create/IL_Add/IL_Destroy(列表句柄、1 基索引、零句柄 ValueError)、ImageSearch(CoordMode Pixel、XGetImage 抓屏、精确与 *N 容差、*wN/*hN/*IconN/*Trans 选项、未命中置空输出、ValueError/OSError);`assert_image.ahk`(26 断言)
+  - `source/linux/core/core_win_linux.cpp`(round 19):WinSetRegion 经 X11 SHAPE 扩展真实实现(选项语法照上游:坐标对/Wn/Hn/E/R/Rw-h/Wind;扫描线矩形集:椭圆/圆角/偶奇多边形;空选项恢复;ValueError/OSError/TargetError);`xshape_probe.c` 端到端验证;`assert_shape.ahk`(19 断言);GuiFromHwnd/GuiCtrlFromHwnd/MenuFromHandle 按文档空串分支恒返回 ""(移植版无 Gui/菜单对象);`assert_notimpl` 套件移除(0 NOT_IMPL)
+- **round 20(Wayland 后端)**:见第 5.5 节;`source/linux/core/core_wayland_linux.cpp` / `.h`(新增)、`source/linux/wayland/protocols/`(xdg-shell/virtual-keyboard/wlr-virtual-pointer XML,vendor)、`core_input_linux.cpp`(XTEST 原语加 Wayland 分支、SendChar 字符→vk 映射含小写字母去冲突)、`core_timer_linux.cpp`(ToolTip xdg 窗口、主循环 Wayland poll)、`core_platform_stubs.cpp`(MsgSleep 派发 Wayland)、`core_hotkey_linux.cpp`(Wayland 守卫)、`core_win_linux.cpp`(Wayland 明确错误消息)、`CMakeLists.txt`(wayland-client/xkbcommon + wayland-scanner 生成);`assert_wayland.ahk`/`wayland_run.sh`(13 断言 + XWayland 回退 193 断言);worklist 重新生成(**327 IMPL / 0 NOT_IMPL**)

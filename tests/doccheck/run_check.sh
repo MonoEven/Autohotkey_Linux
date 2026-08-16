@@ -106,6 +106,10 @@ for ahk in assert_*.ahk; do
     echo "SKIP: assert_shape (run with --xvfb)"
     continue
   fi
+  if [ "$base" = "assert_wayland" ]; then
+    echo "SKIP: assert_wayland (run with wayland_run.sh -- sway headless)"
+    continue
+  fi
   # Some suites need script arguments (e.g. assert_general checks A_Args);
   # run those with args instead of the plain invocation.
   case "$base" in

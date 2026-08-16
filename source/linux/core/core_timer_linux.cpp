@@ -23,6 +23,7 @@
 #include "core_timer_linux.h"
 #include "core_win_linux.h"
 #include "core_hotkey_linux.h"
+#include "core_wayland_linux.h"
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
@@ -145,6 +146,17 @@ void LinuxRunMainLoop()
 			if (poll(&pfd, 1, sleep_ms) > 0)
 				LinuxDispatchHotkeys(d);
 		}
+		else if (LinuxWaylandActive())
+		{
+			// Wayland mode: wait on the Wayland connection so xdg configure
+			// events are acknowledged promptly.
+			struct pollfd pfd;
+			pfd.fd = LinuxWaylandPollFd();
+			pfd.events = POLLIN;
+			pfd.revents = 0;
+			if (pfd.fd >= 0 && poll(&pfd, 1, sleep_ms) > 0)
+				LinuxWaylandDispatch();
+		}
 		else
 			ScriptSleep(sleep_ms);
 		LinuxCheckScriptTimers();
@@ -193,23 +205,28 @@ BIF_DECL(BIF_Linux_SetTimer)
 BIF_DECL(BIF_Linux_ToolTip)
 {
 	Display *d = LinuxX11Display();
-	if (!d)
+	if (!d && !LinuxWaylandActive())
 	{
-		aResultToken.Error(_T("No X display is available."), _T(""), ErrorPrototype::OS);
+		aResultToken.Error(_T("No X display or Wayland display is available."), _T(""), ErrorPrototype::OS);
 		return;
 	}
 	int index = aParamCount > 3 && !ParamIndexIsOmitted(3) ? (int)TokenToInt64(*aParam[3]) : 1;
 	if (index < 1 || index > 20)
 		index = 1;
-	static Window sTips[21] = {0};
+	static void *sTips[21] = {nullptr};
 	// Blank/omitted Text hides the tooltip (docs) and returns 0.
 	if (aParamCount == 0 || ParamIndexIsOmitted(0))
 	{
 		if (sTips[index])
 		{
-			XDestroyWindow(d, sTips[index]);
-			sTips[index] = 0;
-			XSync(d, False);
+			if (d)
+			{
+				XDestroyWindow(d, (Window)(intptr_t)sTips[index]);
+				XSync(d, False);
+			}
+			else
+				LinuxWaylandDestroyWindow((LinuxWaylandWindow *)sTips[index]);
+			sTips[index] = nullptr;
 		}
 		aResultToken.SetValue((__int64)0);
 		return;
@@ -221,8 +238,9 @@ BIF_DECL(BIF_Linux_ToolTip)
 		x = (int)TokenToInt64(*aParam[1]);
 	if (aParamCount > 2 && !ParamIndexIsOmitted(2))
 		y = (int)TokenToInt64(*aParam[2]);
-	// CoordMode ToolTip: CLIENT = relative to the active window's client area.
-	if (((g->CoordMode >> COORD_MODE_TOOLTIP) & COORD_MODE_MASK) == COORD_MODE_CLIENT && x >= 0 && y >= 0)
+	// CoordMode ToolTip: CLIENT = relative to the active window's client
+	// area (X11 only; Wayland has no active-window concept).
+	if (d && ((g->CoordMode >> COORD_MODE_TOOLTIP) & COORD_MODE_MASK) == COORD_MODE_CLIENT && x >= 0 && y >= 0)
 	{
 		Window active = LinuxX11ActiveWindow();
 		if (active)
@@ -236,7 +254,30 @@ BIF_DECL(BIF_Linux_ToolTip)
 			}
 		}
 	}
-	Window tip = sTips[index];
+	if (!d)
+	{
+		// Wayland: an xdg toplevel window whose title is the text (the
+		// compositor decides placement; documented).
+		size_t len = _tcslen(text);
+		unsigned w = (unsigned)(len * 8 + 16);
+		unsigned h = 40;
+		if (w < 120)
+			w = 120;
+		if (w > 600)
+			w = 600;
+		LinuxWaylandWindow *win = LinuxWaylandCreateWindow(text, (int)w, (int)h);
+		if (!win)
+		{
+			aResultToken.Error(_T("The tooltip window could not be created."), _T(""), ErrorPrototype::OS);
+			return;
+		}
+		if (sTips[index])
+			LinuxWaylandDestroyWindow((LinuxWaylandWindow *)sTips[index]);
+		sTips[index] = win;
+		aResultToken.SetValue((__int64)(intptr_t)win);
+		return;
+	}
+	Window tip = sTips[index] ? (Window)(intptr_t)sTips[index] : 0;
 	if (!tip)
 	{
 		// Estimate a size from the text length (no text metrics without a
@@ -254,7 +295,7 @@ BIF_DECL(BIF_Linux_ToolTip)
 		attrs.override_redirect = True;
 		attrs.save_under = True;
 		XChangeWindowAttributes(d, tip, CWOverrideRedirect | CWSaveUnder, &attrs);
-		sTips[index] = tip;
+		sTips[index] = (void *)(intptr_t)tip;
 	}
 	Atom utf8 = XInternAtom(d, "UTF8_STRING", False);
 	char utf8buf[131072];
