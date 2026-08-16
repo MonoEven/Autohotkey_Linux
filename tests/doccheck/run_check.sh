@@ -197,6 +197,14 @@ for ahk in assert_*.ahk; do
     else
       fail=$((fail+1))
       echo "FAIL: $base/$name want=[$want] got=[$got]"
+      # Diagnostics for flaky failures: show the raw lines around the
+      # assertion and the tail of the output file.
+      if [ "$fail" -le 12 ]; then
+        echo "  -- grep -n '^${name}=' '$outfile' (raw):"
+        grep -n "^${name}=" "$outfile" | head -3 | sed 's/^/  | /'
+        echo "  -- tail of $outfile:"
+        tail -4 "$outfile" | sed 's/^/  | /'
+      fi
     fi
   done < "$exp"
 done
