@@ -50,6 +50,16 @@ static int LinuxXErrorHandler(Display *, XErrorEvent *)
 	return 0;
 }
 
+// X11 connection-level (I/O) error handler.  The default Xlib handler
+// prints "X connection to :99 broken ..." to stderr and calls exit(1),
+// which corrupts doc-check output files (they share stderr via 2>&1) and
+// kills the interpreter on a transient server disconnect.  Return instead;
+// every X call checks its result, and LinuxWinDisplay reconnects below.
+static int LinuxXIOErrorHandler(Display *)
+{
+	return 0;
+}
+
 static Display *LinuxWinDisplay()
 {
 	static Display *sDpy = nullptr;
@@ -57,7 +67,10 @@ static Display *LinuxWinDisplay()
 	{
 		sDpy = XOpenDisplay(nullptr);
 		if (sDpy)
+		{
 			XSetErrorHandler(LinuxXErrorHandler);
+			XSetIOErrorHandler(LinuxXIOErrorHandler);
+		}
 	}
 	return sDpy;
 }
