@@ -13,7 +13,7 @@
 
 <h1>DllCall</h1>
 
-<div class="note-linux" style="background:#eef4fb;border-left:4px solid #3f5770;padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> DllCall calls functions in native Linux shared objects (<b>.so</b> files, resolved via dlopen/dlsym and called through libffi). Windows DLLs are not loadable. "Str" means a UTF-8 <code>char*</code> (same as AStr); "WStr" is UTF-16LE. Output parameters require a variable reference (<code>&amp;Var</code>), as in upstream v2.</div>
+<div class="note" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> DllCall calls functions in native Linux shared objects (<b>.so</b> files, resolved via dlopen/dlsym and called through libffi). Windows DLLs are not loadable. "Str" means a UTF-8 <code>char*</code> (same as AStr); "WStr" is UTF-16LE. Output parameters require a variable reference (<code>&amp;Var</code>), as in upstream v2.</div>
 
 <p>Calls a function inside a DLL, such as a standard Windows API function.</p>
 
