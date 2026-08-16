@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **595 / 595 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项与显示器/像素模块 18 项实测;25 项 headless 回归测试亦全部通过)
+- **结果**: **617 / 617 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素模块 26 项实测与 headless 显示/快捷方式模块 15 项;25 项 headless 回归测试亦全部通过)
 
 ---
 
@@ -14,7 +14,7 @@
 | 文件 | 作用 |
 |---|---|
 | `tests/doccheck/extract_docs.py` | 解析 `docs-v2/docs/lib/*.htm`,提取每个函数的名称/描述/语法/参数/返回值/示例 → `doc_index.tsv`(352 个函数条目) |
-| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(292 个已实现,37 个未实现) |
+| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(299 个已实现,30 个未实现) |
 | `tests/doccheck/assert_*.ahk` | 按模块编写的实测脚本(每个断言输出 `name=value` 行,取自官方文档语义) |
 | `tests/doccheck/assert_*_expect.txt` | 与文档语义对应的期望值 |
 | `tests/doccheck/run_check.sh` | 运行全部断言并逐条比对(支持传入任意二进制路径,如 `run_check.sh build-asan/ahk_core`) |
@@ -36,8 +36,9 @@
 | 窗口管理 (WinExist/WinActive/WinGet*/WinSet*/WinMove/WinClose/WinKill/WinWait*/WinActivate/WinMinimize/Maximize/Restore/Hide/Show/Redraw/Group*,X11 后端) | `assert_win.ahk` | 67 |
 | 输入模拟 (Send/SendEvent/SendInput/SendPlay/SendText/Click/MouseMove/MouseClick/MouseClickDrag/MouseGetPos/KeyWait/BlockInput/InstallKeybdHook/InstallMouseHook/SetCapsLockState/SetNumLockState/SetScrollLockState/GetKeyState,XTEST 后端) | `assert_input.ahk` | 40 |
 | 控件 (ControlGetText/SetText/GetPos/Move/GetHwnd/GetClassNN/Focus/GetFocus/GetSetStyle/ExStyle/GetSetEnabled/GetSetChecked/GetVisible/Show/Hide/Click/Send/SendText/Combo-List 系列/ShowHideDropDown + WinGetControls/WinGetControlsHwnd,X11 子窗口后端) | `assert_ctrl.ahk` | 62 |
-| 显示器/像素 (MonitorGet/GetCount/GetName/GetPrimary/GetWorkArea + PixelGetColor/PixelSearch,XRandR/Xinerama + XGetImage 后端) | `assert_monitor.ahk` | 18 |
-| **合计** | | **595** |
+| 显示器/像素/状态栏 (MonitorGet/GetCount/GetName/GetPrimary/GetWorkArea + PixelGetColor/PixelSearch + StatusBarGetText/StatusBarWait,XRandR/Xinerama + XGetImage 后端) | `assert_monitor.ahk` | 26 |
+| 显示/快捷方式 (FileCreateShortcut/FileGetShortcut + ListVars/ListHotkeys/KeyHistory,.desktop/.url 与 headless 输出) | `assert_display.ahk` | 15 |
+| **合计** | | **617** |
 
 复现命令:
 
@@ -225,6 +226,14 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 - **测试设施**: `xwin_helper.c` 新增 `-fill RRGGBB X Y W H` 实色矩形(像素断言用);`assert_monitor.ahk`/`assert_monitor_expect.txt`(新增,18 断言);`run_check.sh --xvfb` 运行 assert_monitor。
 - **本轮修复的真实缺陷(ASan 捕获)**: ① PixelGetColor 返回的十六进制串用栈缓冲区经 `aResultToken.SetValue` 传出——调用方在 BIF 返回后读取 → stack-use-after-return → 改经 `LinuxWinSetPersistentEx`(SimpleHeap 持久内存);② LinuxMonitorList 未释放 `XRRGetCrtcInfo` 结果 → LSan 泄漏导致 ASan 构建退出码 1 → 补 `XRRFreeCrtcInfo`;③ 测试脚手架交叉污染:assert_monitor 崩溃遗留的 xwin_helper 使 assert_win 的 `ahk_exe xwin_helper` 计数断言从 3 变 4——断言改为组合条件 `DocCheck ahk_exe xwin_helper`(同时顺带验证文档"条件可组合")。
 
+### 2.29 显示/快捷方式模块(.desktop/.url + headless 显示,本轮)
+- **实现**: 新增 `core_display_linux.cpp`(FileCreateShortcut/FileGetShortcut + StatusBarGetText/StatusBarWait + ListVars/ListHotkeys/KeyHistory),按 docs-v2 与上游语义:
+  - **FileCreateShortcut/FileGetShortcut**: `.url` 扩展名按文档生成 Internet 快捷方式(INI `[InternetShortcut] URL=` 格式,文档原文);其余扩展名生成 freedesktop `.desktop` 启动器(Exec= 目标+参数,目标含空格自动加引号;Path/Icon/Comment/Name 字段;Name 取目标基名)——即 Linux 上 `.lnk` 的对应物;FileGetShortcut 解析两种格式回填 目标/工作目录/参数/描述/图标 输出,图标序号/运行状态在 Linux 无对应返回 0/1,失败按文档抛 OSError;
+  - **StatusBarGetText/StatusBarWait**: 目标窗口后代中类名含 "statusbar" 的第一个子窗口(文档:标准状态栏 msctls_statusbar32);Part 1 = 栏文本(X11 单部件,Part>1 返回空),StatusBarWait 按 SetTitleMatchMode 匹配、默认 50ms 轮询、Timeout 省略=无限、返回 1/0,窗口/状态栏缺失按文档抛 TargetError;
+  - **ListVars/ListHotkeys/KeyHistory**: 上游经 ShowMainWindow 弹窗显示,Linux 移植版以 MsgBox(headless 输出到 stdout)展示——ListVars 经 `Script::mVars`(新增 friend 类 LinuxVarDump,与 Debugger.cpp 相同的普通/虚拟变量取值路径)枚举全部全局变量;KeyHistory 参数按上游校验 0..500 并存储最大值;ListHotkeys 显示空列表(Linux 无热键系统)。
+- **测试设施**: `assert_display.ahk`(headless,11 断言 + 4 项自由文本内容检查:ListVars 输出含变量名与值、ListHotkeys/KeyHistory 输出;run_check.sh 为 assert_display 增加内容模式比对);`assert_monitor.ahk` 增补状态栏断言(xwin_helper 增加 msctls_statusbar32 子窗口,7 断言)。
+- **本轮修复的真实缺陷**: ① ListVars 对普通变量误用 `Var::Get`(仅虚拟变量可用,普通变量须 `ToToken`,且 ResultToken 须先初始化——照 Debugger.cpp 的 GetPropertyValue 模式);② **Control 的 ClassNN 解析**:按"去尾数字再比较类名"实现会破坏类名本身以数字结尾的控件(如 `msctls_statusbar321` 被拆成类 `msctls_statusbar` + 序号 321)——改为上游 EnumControlFind 算法:以每个候选控件的类名长度取判据前缀做大小写不敏感比较,再以十进制字符串精确比较序号,天然兼容类名含数字。
+
 ---
 
 ## 3. 测试预期修正(文档语义确认,非移植缺陷)
@@ -275,16 +284,19 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 | 输入模拟 (Send/SendEvent/SendInput/SendPlay/SendText/Click/Mouse*/KeyWait/BlockInput/Install*Hook/Set*LockState/GetKeyState) | ✅ 40/40 | Xvfb 下以 xkeycap 实测:Send 事件序列(字面/Shift 合成/修饰符/按住/重复/Text)、Mouse 坐标/按钮/计数/按住、KeyWait 与 GetKeyState 状态、锁键开关、BlockInput On/Default/Off 阻断语义;XTEST 后端,无显示时按文档抛 OSError |
 | 控件 (ControlGetText/SetText/GetPos/Move/GetHwnd/GetClassNN/Focus/GetFocus/Style/Enabled/Checked/Visible/Click/Send/Combo-List/ShowDropDown + WinGetControls) | ✅ 62/62 | Xvfb 下以 xwin_helper 子窗口实测:ClassNN/HWND/文本三种标识与优先级、文本匹配随 TitleMatchMode、几何/移动、聚焦、点击与按键事件落到正确控件、样式位运算、启用/勾选/可见性、Combo 列表增删查选、文档规定的 TargetError/Error 错误路径 |
 | 显示器/像素 (MonitorGet/GetCount/GetName/GetPrimary/GetWorkArea/PixelGetColor/PixelSearch) | ✅ 18/18 | Xvfb 下以 XRandR/Xinerama + XGetImage 实测:单屏几何/名称/主显示器、越界 N 抛 ValueError、像素颜色十六进制串、PixelSearch 命中/未命中(输出置空)/Variation 容差/反向搜索、CoordMode Pixel Client 坐标 |
-| 未实现模块 (GUI/GuiCtrl/COM/DllCall/热键系统/剪贴板监听/Edit*/SendMessage/PostMessage/Hotkey/Hotstring/SetTimer/ToolTip/ImageSearch/DirSelect/FileSelect/OnMessage 等 37 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
+| 状态栏 (StatusBarGetText/StatusBarWait) | ✅ 7/7 | Xvfb 下以 msctls_statusbar32 子窗口实测:Part1=文本/Part>1=空、ControlSetText 联动、等待命中/超时、窗口缺失与无状态栏窗口抛 TargetError |
+| 快捷方式 (FileCreateShortcut/FileGetShortcut) | ✅ 9/9 | headless 实测:.desktop 生成与回读(目标/参数/工作目录/描述/图标、含空格目标引号)、.url Internet 快捷方式(文档 INI 格式)、缺失文件/坏目录抛 OSError |
+| 调试显示 (ListVars/ListHotkeys/KeyHistory) | ✅ 6/6 | headless 实测:ListVars 输出含全部全局变量(名称+值)、ListHotkeys/KeyHistory 输出与 MaxEvents 校验(0..500 抛 ValueError) |
+| 未实现模块 (GUI/GuiCtrl/COM/DllCall/热键系统/剪贴板监听/Edit*/SendMessage/PostMessage/Hotkey/Hotstring/SetTimer/ToolTip/ImageSearch/DirSelect/FileSelect/OnMessage 等 30 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
 
 ## 5. 回归与构建验证
 
 ```
 普通构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh PASS=408 FAIL=0 (headless)
-          tests/doccheck/run_check.sh --xvfb PASS=595 FAIL=0 (含窗口 67 + 输入 40 + 控件 62 + 显示器/像素 18)
+          tests/doccheck/run_check.sh PASS=423 FAIL=0 (headless)
+          tests/doccheck/run_check.sh --xvfb PASS=617 FAIL=0 (含窗口 67 + 输入 40 + 控件 62 + 显示器/像素/状态栏 26 + 显示/快捷方式 15)
 ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=595 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=617 FAIL=0
 ```
 
 ## 6. 本轮改动文件
@@ -333,3 +345,9 @@ ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
 - `source/linux/core/core_mdfunc_linux.cpp`(本轮):5 个 Monitor* 与 2 个 Pixel* BIF 由 LMD_NI 翻转 LMD_IMPL(PixelSearch 修正为 7-10 参数并注册 1/2 号输出变量)
 - `source/linux/core/CMakeLists.txt`(本轮):加入 `core_screen_linux.cpp`、链接 Xrandr/Xinerama
 - `tests/doccheck/xwin_helper.c`(本轮):新增 `-fill RRGGBB X Y W H` 实色矩形;`assert_monitor.ahk`/`assert_monitor_expect.txt`(新增,18 断言);`run_check.sh` 的 `--xvfb` 模式运行 assert_monitor;`assert_win.ahk` 的 ahk_exe 断言改为组合条件(防跨套件残留 helper 干扰);worklist 重新生成(**292 IMPL / 37 NOT_IMPL**)
+- `source/linux/core/core_display_linux.cpp` / `.h`(新增,本轮):显示/快捷方式模块——FileCreateShortcut/FileGetShortcut(.desktop/.url)、StatusBarGetText/StatusBarWait(状态栏子窗口 + 轮询匹配)、ListVars(经 Script friend 枚举全局变量)/ListHotkeys/KeyHistory(headless MsgBox 展示)
+- `source/linux/core/core_ctrl_linux.cpp`(本轮):ClassNN 解析改为上游 EnumControlFind 前缀算法(兼容类名以数字结尾,如 msctls_statusbar32);导出 `LinuxFindDescendantByClass`
+- `source/script.h`(本轮):`LinuxVarDump` friend(ListVars 枚举全局变量)
+- `source/linux/core/core_mdfunc_linux.cpp`(本轮):7 个 BIF 由 LMD_NI 翻转 LMD_IMPL(FileCreateShortcut/FileGetShortcut/StatusBarGetText/StatusBarWait/ListVars/ListHotkeys/KeyHistory)
+- `source/linux/core/CMakeLists.txt`(本轮):加入 `core_display_linux.cpp`
+- `tests/doccheck/assert_display.ahk`/`assert_display_expect.txt`/`assert_display_content.txt`(新增,headless 11+4 断言;run_check.sh 为 assert_display 增加自由文本内容比对);`assert_monitor.ahk` 增补 7 个状态栏断言(msctls_statusbar32 子窗口);worklist 重新生成(**299 IMPL / 30 NOT_IMPL**)

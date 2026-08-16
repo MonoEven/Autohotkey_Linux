@@ -3,6 +3,7 @@
 #pragma once
 
 #include "../../abi.h"
+#include <X11/Xlib.h>
 
 BIF_DECL(BIF_Linux_ControlAddItem);
 BIF_DECL(BIF_Linux_ControlChooseIndex);
@@ -40,3 +41,7 @@ BIF_DECL(BIF_Linux_ControlShowDropDown);
 // WinGetControls/WinGetControlsHwnd move here from core_win_linux.cpp.
 BIF_DECL(BIF_Linux_WinGetControls);
 BIF_DECL(BIF_Linux_WinGetControlsHwnd);
+
+// First descendant of aParent whose class contains aClassPart
+// (case-insensitive); 0 if none.  Used by StatusBarGetText/Wait.
+Window LinuxFindDescendantByClass(Display *d, Window aParent, const wchar_t *aClassPart);

@@ -1,0 +1,11 @@
+desktop_target=1
+desktop_dir=1
+desktop_args=1
+desktop_desc=1
+desktop_icon=1
+desktop_quoted=1
+url_target=1
+shortcut_missing=1
+shortcut_baddir=1
+keyhistory_bad=1
+DISPLAY_DONE=1

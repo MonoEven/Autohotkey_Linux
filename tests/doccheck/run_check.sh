@@ -106,6 +106,19 @@ for ahk in assert_*.ahk; do
   if [ "$base" = "assert_monitor" ]; then
     cp /tmp/ahk_dc_monitor_out.txt "out/${base}.txt" 2>/dev/null || true
   fi
+  # assert_display: the ListVars/ListHotkeys/KeyHistory dumps go to stdout;
+  # check the freeform content patterns from assert_display_content.txt.
+  if [ "$base" = "assert_display" ] && [ -f "assert_display_content.txt" ]; then
+    while IFS= read -r pat; do
+      [ -z "$pat" ] && continue
+      if grep -qF -- "$pat" "out/${base}.txt"; then
+        pass=$((pass+1))
+      else
+        fail=$((fail+1))
+        echo "FAIL: $base/content missing [$pat]"
+      fi
+    done < "assert_display_content.txt"
+  fi
   while IFS= read -r line; do
     [ -z "$line" ] && continue
     name="${line%%=*}"

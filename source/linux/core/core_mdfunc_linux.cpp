@@ -22,6 +22,7 @@
 #include "core_input_linux.h"
 #include "core_ctrl_linux.h"
 #include "core_screen_linux.h"
+#include "core_display_linux.h"
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -2370,10 +2371,10 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(Exit, BIF_Linux_Exit, 0, 1),
 	LMD_IMPL(ExitApp, BIF_Linux_ExitApp, 0, 1),
 	LMD_IMPL(FileCopy, BIF_Linux_FileCopy, 2, 3),
-	LMD_NI(FileCreateShortcut, 2, 8),
+	LMD_IMPL(FileCreateShortcut, BIF_Linux_FileCreateShortcut, 2, 9),
 	LMD_IMPL(FileEncoding, BIF_Linux_FileEncoding, 1, 1),
 	LMD_IMPL(FileGetAttrib, BIF_Linux_FileGetAttrib, 0, 1),
-	LMD_NI(FileGetShortcut, 1, 8),
+	LMD_IMPL(FileGetShortcut, BIF_Linux_FileGetShortcut, 1, 8, 2, 3, 4, 5, 6, 7, 8),
 	LMD_IMPL(FileGetSize, BIF_Linux_FileGetSize, 0, 2),
 	LMD_IMPL(FileGetTime, BIF_Linux_FileGetTime, 0, 2),
 	LMD_IMPL(FileGetVersion, BIF_Linux_FileGetVersion, 0, 1),
@@ -2412,12 +2413,11 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(InstallKeybdHook, BIF_Linux_InstallKeybdHook, 0, 2),
 	LMD_IMPL(InstallMouseHook, BIF_Linux_InstallMouseHook, 0, 2),
 	LMD_IMPL(IsLabel, BIF_Linux_IsLabel, 1, 1),
-	LMD_NI(KeyHistory, 0, 1),
+	LMD_IMPL(KeyHistory, BIF_Linux_KeyHistory, 0, 1),
 	LMD_IMPL(KeyWait, BIF_Linux_KeyWait, 1, 2),
-	LMD_NI(ListHotkeys, 0, 0),
+	LMD_IMPL(ListHotkeys, BIF_Linux_ListHotkeys, 0, 0),
 	LMD_IMPL(ListLines, BIF_Linux_ListLines, 0, 1),
-	LMD_NI(ListVars, 0, 0),
-	LMD_NI(ListViewGetContent, 0, 5),
+	LMD_IMPL(ListVars, BIF_Linux_ListVars, 0, 0),	LMD_NI(ListViewGetContent, 0, 5),
 	LMD_NI(LoadPicture, 1, 3),
 	LMD_NI(MenuFromHandle, 1, 1),
 	LMD_NI(MenuSelect, 1, 10),
@@ -2477,8 +2477,8 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(Sleep, BIF_Linux_Sleep, 1, 1),
 	LMD_IMPL(SoundBeep, BIF_Linux_SoundBeep, 0, 2),
 	LMD_IMPL(SoundPlay, BIF_Linux_SoundPlay, 1, 2),
-	LMD_NI(StatusBarGetText, 0, 5),
-	LMD_NI(StatusBarWait, 0, 8),
+	LMD_IMPL(StatusBarGetText, BIF_Linux_StatusBarGetText, 0, 5),
+	LMD_IMPL(StatusBarWait, BIF_Linux_StatusBarWait, 0, 8),
 	LMD_IMPL(StrSplit, BIF_Linux_StrSplit, 1, 4),
 	LMD_IMPL(Suspend, BIF_Linux_Suspend, 0, 1),
 	LMD_IMPL(SysGet, BIF_Linux_SysGet, 1, 1),

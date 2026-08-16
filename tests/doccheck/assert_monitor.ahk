@@ -10,7 +10,8 @@ FileDelete(WINOUT)
 Log(line) => FileAppend(line "`n", WINOUT)
 
 Run('out/xwin_helper -title MonWin -class DocCheck -x 100 -y 100 -w 300 -h 200'
-    ' -fill 336699 10 10 100 100 -fill 3367A9 130 10 100 100')
+    ' -fill 336699 10 10 100 100 -fill 3367A9 130 10 100 100'
+    ' -child StatusBar1 msctls_statusbar32 10 170 280 24')
 WinWait("MonWin",, 5)
 Sleep(300)
 
@@ -59,6 +60,28 @@ WinActivate("MonWin")
 Sleep(100)
 Log("pix_client=" (PixelGetColor(55, 55) = "0x336699" ? 1 : 0))
 CoordMode("Pixel", "Screen")
+
+; --- StatusBarGetText / StatusBarWait (docs: the standard status bar is the
+; msctls_statusbar32 common control; Part 1 is the text; Part > 1 = "" since
+; X11 bars have a single part; wait matches per TitleMatchMode). ---
+Log("sb_text=" (StatusBarGetText(1, "MonWin") = "StatusBar1" ? 1 : 0))
+Log("sb_part2=" (StatusBarGetText(2, "MonWin") = "" ? 1 : 0))
+ControlSetText("Ready", "msctls_statusbar321", "MonWin")
+Log("sb_set=" (StatusBarGetText(1, "MonWin") = "Ready" ? 1 : 0))
+Log("sb_wait=" (StatusBarWait("Ready", 2, 1, "MonWin") = 1 ? 1 : 0))
+Log("sb_wait_timeout=" (StatusBarWait("Nope", 0.3, 1, "MonWin") = 0 ? 1 : 0))
+try
+    StatusBarGetText(1, "NoSuchWindowPlease")
+catch TargetError
+    Log("sb_err_window=1")
+; A window without a status bar -> TargetError (docs).
+Run('out/xwin_helper -title PlainWin -class Plain -x 700 -y 500 -w 100 -h 80')
+WinWait("PlainWin",, 5)
+Sleep(200)
+try
+    StatusBarGetText(1, "PlainWin")
+catch TargetError
+    Log("sb_err_nobar=1")
 
 ; --- Cleanup. ---
 Run("pkill -f xwin_helper")

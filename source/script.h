@@ -2751,6 +2751,9 @@ private:
 #ifdef CONFIG_DEBUGGER
 	friend class Debugger;
 #endif
+#ifndef _WIN32
+	friend class LinuxVarDump; // Linux port: ListVars enumerates global vars.
+#endif
 #ifdef CONFIG_DLL
 	friend class AutoHotkeyLib;
 	friend class FuncCollection;

@@ -102,6 +102,20 @@ static void LinuxCtrlCollect(Display *d, Window aParent, std::vector<LinuxCtrlEn
 	XFree(children);
 }
 
+// First descendant whose class name contains aClassPart (case-insensitive),
+// depth-first; used by StatusBarGetText/Wait (docs: the standard status bar
+// is the msctls_statusbar32 common control).  Returns 0 if none.
+Window LinuxFindDescendantByClass(Display *d, Window aParent, const wchar_t *aClassPart)
+{
+	std::vector<LinuxCtrlEntry> ctrls;
+	LinuxCtrlCollect(d, aParent, ctrls);
+	std::wstring part(aClassPart ? aClassPart : L"");
+	for (auto &e : ctrls)
+		if (wcsstr(e.cls.c_str(), part.c_str()) != nullptr)
+			return e.win;
+	return 0;
+}
+
 // ClassNN (class + per-class sequence number) of aControl within aWindow.
 // The class comparison is case-insensitive and the sequence number is
 // compared as a decimal string, mirroring upstream EnumControlFind().
@@ -126,19 +140,6 @@ static bool LinuxCtrlClassNN(Display *d, Window aWindow, Window aControl, std::w
 		}
 	}
 	return false;
-}
-
-// Split "ClassNN" into class name + sequence number (trailing digits).
-static bool LinuxCtrlSplitClassNN(const std::wstring &aSpec, std::wstring &aClass, int &aNN)
-{
-	size_t p = aSpec.size();
-	while (p > 0 && iswdigit(aSpec[p - 1]))
-		--p;
-	if (p == 0 || p == aSpec.size())
-		return false; // Need both a class part and digits.
-	aClass = aSpec.substr(0, p);
-	aNN = (int)wcstol(aSpec.c_str() + p, nullptr, 10);
-	return true;
 }
 
 // Text matching per SetTitleMatchMode (1 prefix / 2 anywhere / 3 exact /
@@ -171,20 +172,23 @@ static Window LinuxCtrlFind(Display *d, Window aTargetWin, const std::wstring &a
 		return aHwnd;
 	std::vector<LinuxCtrlEntry> ctrls;
 	LinuxCtrlCollect(d, aTargetWin, ctrls);
-	// ClassNN: class (case-insensitive) + sequence number (decimal string).
-	std::wstring cls;
-	int nn = 0;
-	if (LinuxCtrlSplitClassNN(aSpec, cls, nn))
+	// ClassNN, upstream EnumControlFind() semantics: each child whose class
+	// name matches the criterion's leading part (case-insensitive) is
+	// counted, and the count is compared as a decimal string against the
+	// criterion's remainder.  This also handles class names that end in
+	// digits (e.g. "msctls_statusbar32" + 1 -> "msctls_statusbar321").
+	if (!aSpec.empty() && iswdigit(aSpec.back()))
 	{
 		int seq = 0;
 		for (auto &e : ctrls)
 		{
-			if (!_tcsicmp(e.cls.c_str(), cls.c_str()))
+			if (e.cls.size() < aSpec.size()
+				&& !_tcsnicmp(aSpec.c_str(), e.cls.c_str(), e.cls.size()))
 			{
 				++seq;
 				wchar_t num[32];
 				swprintf(num, 32, L"%d", seq);
-				if (!_tcscmp(num, aSpec.c_str() + cls.size()))
+				if (!_tcscmp(num, aSpec.c_str() + e.cls.size()))
 					return e.win;
 			}
 		}

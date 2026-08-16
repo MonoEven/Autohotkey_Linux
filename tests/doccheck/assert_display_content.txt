@@ -1,0 +1,4 @@
+MyVar: hello world
+Count: 42
+(no hotkeys)
+Max events: 100
