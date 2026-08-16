@@ -35,6 +35,15 @@ static int xerr_handler(Display *d, XErrorEvent *e)
     return 0;
 }
 
+static int xioerr_handler(Display *d)
+{
+    // Connection-level error (e.g. the runner kills us while we hold the
+    // X connection): stay silent -- our stderr is shared with the
+    // doc-check output file, and the default handler would print
+    // "X connection ... broken" into it.
+    return 0;
+}
+
 #define MAX_CHILDREN 32
 #define MAX_FILLS 32
 
@@ -131,7 +140,8 @@ int main(int argc, char **argv)
         fprintf(stderr, "xwin_helper: no display\n");
         return 1;
     }
-    XSetErrorHandler(xerr_handler); // Silence "X connection broken" on pkill.
+    XSetErrorHandler(xerr_handler);   // Silence protocol errors.
+    XSetIOErrorHandler(xioerr_handler); // Silence "X connection broken" on pkill.
     int screen = DefaultScreen(d);
     Window root = RootWindow(d, screen);
     Window win = XCreateSimpleWindow(d, root, x, y, w, h, 0,
