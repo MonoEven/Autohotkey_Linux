@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **408 / 408 断言通过** (普通构建与 ASan 构建均通过;25 项 headless 回归测试亦全部通过)
+- **结果**: **475 / 475 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项实测;25 项 headless 回归测试亦全部通过)
 
 ---
 
@@ -14,7 +14,7 @@
 | 文件 | 作用 |
 |---|---|
 | `tests/doccheck/extract_docs.py` | 解析 `docs-v2/docs/lib/*.htm`,提取每个函数的名称/描述/语法/参数/返回值/示例 → `doc_index.tsv`(352 个函数条目) |
-| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(187 个已实现,139 个未实现) |
+| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(236 个已实现,90 个未实现) |
 | `tests/doccheck/assert_*.ahk` | 按模块编写的实测脚本(每个断言输出 `name=value` 行,取自官方文档语义) |
 | `tests/doccheck/assert_*_expect.txt` | 与文档语义对应的期望值 |
 | `tests/doccheck/run_check.sh` | 运行全部断言并逐条比对(支持传入任意二进制路径,如 `run_check.sh build-asan/ahk_core`) |
@@ -33,12 +33,14 @@
 | 正则 (RegExMatch/RegExReplace/~= 运算符/命名子组) | `assert_regex.ahk` | 22 |
 | 注册表 (RegRead/RegWrite/RegDelete/RegDeleteKey/RegCreateKey) | `assert_registry.ahk` | 19 |
 | 系统/设置/进程/文件操作/网络 (CoordMode/DetectHidden*/Set*Delay/SendMode/SendLevel/SetRegView/FileEncoding/SetStoreCapsLockMode/ProcessGet*/FileCopy/FileMove/FileInstall/FileRecycle/FileGetVersion/SysGet/SysGetIPAddresses/Download/Drive*/SoundPlay) | `assert_sys.ahk` | 106 |
-| **合计** | | **408** |
+| 窗口管理 (WinExist/WinActive/WinGet*/WinSet*/WinMove/WinClose/WinKill/WinWait*/WinActivate/WinMinimize/Maximize/Restore/Hide/Show/Redraw/Group*,X11 后端) | `assert_win.ahk` | 67 |
+| **合计** | | **475** |
 
 复现命令:
 
 ```bash
 bash tests/doccheck/run_check.sh                # 普通构建(自动启动本地 HTTP 服务供 Download 断言)
+bash tests/doccheck/run_check.sh --xvfb         # 含窗口模块(Xvfb :99 + xwin_helper 测试窗口)
 bash tests/doccheck/run_check.sh build-asan/ahk_core   # ASan 构建
 bash tests/run_tests.sh                         # 25 项 headless 回归
 ```
@@ -173,6 +175,18 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
   - run_check.sh 自动启动本地 python http.server(:18765)供 Download 断言,退出时清理。
 - **实测环境注意**: 文件操作断言的工作目录放在 /tmp(ext4)——DrvFS(/mnt/f)存在陈旧目录项缓存,创建文件后立即 stat/复制偶发失败(首次运行通过、后续复现,`copy_file` 报文件已存在),与解释器无关。
 
+### 2.24 窗口管理模块(X11 后端,本轮)
+- **实现**: 新增 `core_win_linux.cpp`(HWND = X11 Window id),按 window.cpp/lib/win.cpp/lib/wait.cpp 语义实现 49 个函数 + WinExist/WinActive:
+  - **WinTitle 条件解析**: 标题 + `ahk_id/ahk_pid/ahk_class/ahk_exe/ahk_group`,按上游 SetCriteria 逐字移植;标题/类名大小写敏感(`_tcsstr/_tcscmp`)、`ahk_exe` 大小写不敏感(`_tcsicmp`,无斜杠时按进程名匹配);匹配模式 1 前缀/2 包含/3 精确/RegEx(复用捆绑 PCRE 的 `RegExMatch`);ExcludeTitle 同模式排除;DetectHiddenWindows 控制隐藏窗口可见性(X map_state);
+  - WinGetTitle/Class/PID/ProcessName/ProcessPath/ID/IDLast/Count/List/Pos/ClientPos/MinMax/Style/ExStyle/Text/Transparent/TransColor/Controls/ControlsHwnd:找不到窗口按文档抛 TargetError(WinGetList/Count 返回空数组/0);WinGetPos 输出参数 X/Y/W/H;
+  - WinActivate(XRaiseWindow+XSetInputFocus+_NET_ACTIVE_WINDOW)/WinActivateBottom/WinClose(WM_DELETE_WINDOW 协议,无则 XDestroyWindow,WaitTime 轮询)/WinKill(XKillClient)/WinMove/WinRedraw/WinHide/WinShow/WinMinimize/XIconifyWindow/WinMaximize(记忆原几何,恢复用)/WinRestore/WinMoveTop/Bottom/WinMinimizeAll[Undo];
+  - WinSetTitle(_NET_WM_NAME+WM_NAME,UTF-8)/WinSetAlwaysOnTop(_NET_WM_STATE_ABOVE,WinGetExStyle 反映 WS_EX_TOPMOST)/WinSetTransparent(_NET_WM_WINDOW_OPACITY,0-255 或 Off)/WinSetTransColor(校验 6 位十六进制,存虚拟状态)/WinSetEnabled/WinSetStyle/WinSetExStyle(`+`/`-`/覆盖 位操作,虚拟状态);
+  - WinWait/WinWaitActive/WinWaitNotActive/WinWaitClose:返回 HWND/0 或 1/0,Timeout 省略=无限(按 wait.cpp);GroupAdd/GroupActivate(visited 列表循环,与 WinGroup::Activate 一致,R 模式复位)/GroupClose(A 模式关全部)/GroupDeactivate(最小化除活动窗口外全部成员);
+  - X 连接缓存 + **忽略 X 协议错误的错误处理器**(XGetInputFocus 可能返回 PointerRoot(0x1),默认 Xlib 处理器会直接退出进程——实测 BadWindow 崩溃)。
+- **测试设施**: `xwin_helper.c` 测试客户端(Xvfb :99 下创建带 WM_NAME/WM_CLASS/_NET_WM_PID/WM_DELETE_WINDOW 的窗口,支持 -hidden/-focus/-ms);`run_check.sh --xvfb` 模式自动编译并启动,assert_win 以文件输出(有显示时 MsgBox 会阻塞),断言覆盖 条件匹配/获取/操作/等待/分组 全流程;
+- **本轮修复的真实缺陷**: ① WinGetCount/WinGetList 只收集到第一个匹配(查找函数在首匹配即返回);② `ahk_exe` 条件解析错位(关键字定位用 `find('_')`,被值里的下划线干扰);③ X 协议错误导致进程退出;④ 测试助手 `-hidden` 未生效(XMapWindow 无条件调用)。
+- **脚本运行语义确认**: 上游 `LoadFromFile` 会把工作目录切到脚本所在目录(Windows 同款行为),因此 Run 的相对路径以脚本目录为基准;长驻子进程持有管道导致 runner 等待 EOF 属测试脚手架问题,非解释器缺陷。
+
 ---
 
 ## 3. 测试预期修正(文档语义确认,非移植缺陷)
@@ -195,6 +209,7 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 | 变量名 `p`/`P`、`instr`/`InStr` 冲突报错 | v2 变量名大小写不敏感、函数名被保留——测试变量改名而非移植问题 |
 | `SetTitleMatchMode("Slow")` 返回 `"Fast"` | 文档:返回"被修改的那个设置"的先前值——匹配模式(2/3/RegEx)与搜索速度(Fast/Slow)是独立设置;模式为 RegEx 时改速度,返回的是先前速度 |
 | `SetMouseDelay(30,"Play")` 返回 `-1` | 默认 `A_MouseDelayPlay=-1`(上游 `global_set_defaults`),与普通 `A_MouseDelay=10` 不同 |
+| `WinShow` 对隐藏窗口抛 TargetError | 与 Windows 一致:隐藏窗口在 DetectHiddenWindows Off 时不可检测,先 `DetectHiddenWindows(1)` 再 WinShow |
 
 ---
 
@@ -218,15 +233,17 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 | 系统信息/网络 (SysGet/SysGetIPAddresses/A_ScreenWidth/Height/DPI) | ✅ 13/13 | X11 后端(无显示时屏幕指标为 0,1024x768 Xvfb 实测通过);IPv4 数组含回环 |
 | 下载 (Download) | ✅ 3/3 | 本地 HTTP 服务实测:内容一致、404 保存错误页(文档)、坏路径 OSError |
 | 驱动器/声音错误路径 (DriveSetLabel/DriveEject/DriveLock/DriveUnlock/DriveRetract/SoundPlay) | ✅ 6/6 | 不存在设备/无播放器按文档抛 OSError(Shutdown 已实现但测试中不实际执行,防误关机) |
-| 未实现模块 (GUI/GuiCtrl/COM/DllCall/窗口管理/热键系统/剪贴板监听等 139 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
+| 窗口管理 (WinExist/WinActive/WinGet*/WinSet*/WinMove/WinClose/WinKill/WinWait*/WinActivate/WinMinimize/Maximize/Restore/Hide/Show/Redraw/Group*) | ✅ 67/67 | Xvfb 下以 xwin_helper 实测:条件匹配(标题/类/exe/pid/id/RegEx/排除)、几何/样式/透明度/置顶、隐藏与 DetectHiddenWindows 联动、关闭/强杀/等待、分组循环 |
+| 未实现模块 (GUI/GuiCtrl/COM/DllCall/热键系统/剪贴板监听/Control*/Input/Send 等 90 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
 
 ## 5. 回归与构建验证
 
 ```
 普通构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh PASS=408 FAIL=0
+          tests/doccheck/run_check.sh PASS=408 FAIL=0 (headless)
+          tests/doccheck/run_check.sh --xvfb PASS=475 FAIL=0 (含窗口模块)
 ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh PASS=408 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=475 FAIL=0
 ```
 
 ## 6. 本轮改动文件
@@ -255,3 +272,7 @@ ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
 - `source/linux/core/core_builtin_stubs.cpp`(本轮):设置类 15 个 BIV 真实实现(A_CoordMode*/A_DetectHidden*/A_TitleMatchMode*/A_KeyDelay*/A_KeyDuration*/A_MouseDelay*/A_WinDelay/A_ControlDelay/A_DefaultMouseSpeed/A_SendMode/A_SendLevel/A_RegView/A_FileEncoding/A_StoreCapsLockMode/A_ListLines/A_ScreenWidth/Height/DPI);**FileAppend/FileRead 支持 FileEncoding 默认编码(BOM 探测/写入、UTF-16LE 代理对编解码、缺文件抛 OSError)**
 - `source/linux/core/core_platform_stubs.cpp`(本轮):`Line::Util_CopyFile` 按上游语义重写(通配符/目录目标/失败计数/跨设备移动)
 - `tests/doccheck/assert_sys.ahk` / `assert_sys_expect.txt`(新增,106 断言);`run_check.sh` 自动启动/清理本地 HTTP 服务;worklist 重新生成(**187 IMPL / 139 NOT_IMPL**)
+- `source/linux/core/core_win_linux.cpp` / `core_win_linux.h`(新增,本轮):X11 窗口模块——WinTitle 条件解析(ahk_id/pid/class/exe/group + 模式 1/2/3/RegEx + ExcludeTitle)、窗口枚举/信息/匹配、Win* 49 个 BIF(获取/操作/等待/分组)、虚拟状态(样式/置顶/透明度)、EWMH 属性发布、忽略 X 错误处理器
+- `source/linux/core/core_builtin_stubs.cpp`(本轮):`BIF_WinExistActive` 桩移除,改由 core_win_linux.cpp 实现
+- `source/linux/core/CMakeLists.txt`(本轮):加入 `core_win_linux.cpp`
+- `tests/doccheck/xwin_helper.c`(新增):X11 测试窗口客户端;`assert_win.ahk`/`assert_win_expect.txt`(新增,67 断言);`run_check.sh` 新增 `--xvfb` 模式(Xvfb :99 + 编译助手 + 文件输出比对);worklist 重新生成(**236 IMPL / 90 NOT_IMPL**)

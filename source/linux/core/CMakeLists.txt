@@ -68,6 +68,7 @@ add_executable(ahk_core
     core_builtin_stubs.cpp
     core_mdfunc_linux.cpp
     core_file_linux.cpp
+    core_win_linux.cpp
     core_platform_stubs.cpp
     main_linux.cpp
     ../gui/x11_gui.cpp

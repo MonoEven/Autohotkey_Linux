@@ -41,14 +41,7 @@ LINUX_BIF_STUB(BIF_ComObjValue)
 LINUX_BIF_STUB(BIF_DllCall)
 LINUX_BIF_STUB(BIF_Sound)
 
-// WinExist/WinActive: no X11 window backend yet, so no window ever matches.
-// Per the docs both return an empty string when no window is found.
-BIF_DECL(BIF_WinExistActive)
-{
-	(void)aParam;
-	(void)aParamCount;
-	aResultToken.SetValue(_T(""));
-}
+// WinExist/WinActive: implemented in core_win_linux.cpp (X11 window backend).
 
 LINUX_BIV_STUB_RW(BIV_AllowMainWindow)
 LINUX_BIV_STUB(BIV_Cursor)
