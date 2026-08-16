@@ -47,17 +47,18 @@ examples fall into three groups on Linux:</p>
     (GUI windows via <code>Gui</code>/<code>GuiControl</code>/<code>Menu</code>,
     <code>Sound*</code>, <code>TrayTip</code>, <code>SendMessage</code>/
     <code>PostMessage</code>/<code>OnMessage</code>, <code>Hotstring</code>,
-    <code>WinSetRegion</code>, <code>ImageSearch</code>, ...) are kept for
-    reference; calling those functions raises a clear error.  Many examples
-    elsewhere are also short <em>snippets</em> that depend on context
-    (a preceding variable, a hotkey label, a window with a specific title);
-    they illustrate syntax rather than being standalone programs.</li>
+    ...) are kept for reference; calling those functions raises a clear
+    error.  Many examples elsewhere are also short <em>snippets</em> that
+    depend on context (a preceding variable, a hotkey label, a window with
+    a specific title); they illustrate syntax rather than being standalone
+    programs.</li>
 </ul>
 
 <h2>What works on Linux</h2>
 <p>All <b>327</b> built-in functions listed in the worklist are implemented
-(0 not implemented); 795 doc-check assertions pass under Xvfb. The port has
-two display backends:</p>
+(0 not implemented); 842 doc-check assertions pass under Xvfb (including 29
+for <code>DllCall</code> against native <b>.so</b> libraries and 18 for the
+D-Bus COM layer). The port has two display backends:</p>
 <ul>
   <li><b>X11 backend</b> (preferred when DISPLAY is set, including
     XWayland sessions): window management (Win*), controls, hotkeys via
