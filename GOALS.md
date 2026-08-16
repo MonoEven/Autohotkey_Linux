@@ -23,7 +23,7 @@
 - [x] 提供 Linux 命令行入口 `main()`，替代 `_tWinMain`（含 `--version`/`--help`）
 - [x] 能解析并执行不依赖 GUI/热键的脚本（MsgBox/变量赋值/算术表达式）
 - [x] 建立回归测试 `tests/run_tests.sh`（26 项，常规与 ASan 构建全部通过）
-- [ ] 建立基础 CI 编译检查（未做：本地双构建 + 全量 doc-check 代替；可作为后续增强）
+- [x] 建立 CI（`.github/workflows/ci.yml`，常规 + ASan 双构建 + 全量 doc-check + Wayland，见 M5）
 
 ### M3：平台抽象与 X11 后端 ✅
 - [x] 平台层：未采用 `PlatformAbstraction.h` 抽象类，而是按模块直接实现 Linux 后端
