@@ -15,6 +15,10 @@
  *   b:down:<button>:win:<hwnd>   b:up:<button>:win:<hwnd>
  * Exits on WM_DELETE_WINDOW, on DestroyNotify, after -ms ms, or when stdin
  * closes.
+ *
+ * Note: X errors are silenced (the runner may pkill us; the default Xlib
+ * error handler would print "X connection ... broken" to stderr, which
+ * pollutes the doc-check output files that share our stderr).
  */
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -25,6 +29,11 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+
+static int xerr_handler(Display *d, XErrorEvent *e)
+{
+    return 0;
+}
 
 #define MAX_CHILDREN 32
 #define MAX_FILLS 32
@@ -122,6 +131,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "xwin_helper: no display\n");
         return 1;
     }
+    XSetErrorHandler(xerr_handler); // Silence "X connection broken" on pkill.
     int screen = DefaultScreen(d);
     Window root = RootWindow(d, screen);
     Window win = XCreateSimpleWindow(d, root, x, y, w, h, 0,
