@@ -8806,7 +8806,7 @@ unquoted_literal:
 				callsite->flags = IT_GET | EIF_STACK_MEMBER;
 			}
 			infix[infix_count].callsite = callsite;
-			infix[infix_count].error_reporting_marker = cp - 1;
+			infix[infix_count].error_reporting_marker = cp - int(*(cp - 1) == g_DerefChar);
 		}
 		else if (this_deref_ref.type == DT_WORDOP)
 		{
