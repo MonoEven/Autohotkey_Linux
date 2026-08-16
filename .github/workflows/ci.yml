@@ -21,7 +21,7 @@ jobs:
       BUILD_DIR: build-${{ matrix.build }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
@@ -59,7 +59,7 @@ jobs:
 
       - name: Upload doc-check outputs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: doccheck-${{ matrix.build }}
           path: tests/doccheck/out/
@@ -77,7 +77,7 @@ jobs:
     needs: build-and-test
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
