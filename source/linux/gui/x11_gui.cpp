@@ -242,6 +242,14 @@ static long long LinuxNowMs()
 int RunX11Dialog(DialogContext &ctx, double aTimeout)
 {
 	XEvent ev;
+	// Test hook: AHK_MSGBOX_AUTOCLOSE_MS=<ms> auto-confirms the dialog with
+	// the default button after the delay, so automated suites (doc-check
+	// example verification under Xvfb) can run without user interaction.
+	int autoclose_ms = 0;
+	if (const char *ac = getenv("AHK_MSGBOX_AUTOCLOSE_MS"))
+		autoclose_ms = atoi(ac);
+	long long opened_at = LinuxNowMs();
+
 	// Deadline in wall-clock milliseconds (CLOCK_MONOTONIC, not clock() which
 	// measures CPU time and never advances while we sleep).
 	long long deadline_ms = 0;
@@ -253,9 +261,72 @@ int RunX11Dialog(DialogContext &ctx, double aTimeout)
 
 	for (;;)
 	{
+		if (autoclose_ms > 0 && LinuxNowMs() - opened_at >= autoclose_ms)
+			return ctx.default_id;
 		if (XPending(ctx.dpy))
 		{
 			XNextEvent(ctx.dpy, &ev);
+			switch (ev.type)
+			{
+			case Expose:
+				if (ev.xexpose.count == 0)
+					DrawButtons(ctx);
+				break;
+			case ButtonPress:
+				{
+					int id = HitTestButton(ctx, ev.xbutton.x, ev.xbutton.y);
+					if (id)
+						return id;
+				}
+				break;
+			case KeyPress:
+				{
+					KeySym ks = XLookupKeysym(&ev.xkey, 0);
+					if (ks == XK_Return || ks == XK_KP_Enter)
+						return ctx.default_id;
+					if (ks == XK_Escape)
+					{
+						int id = CancelButtonId(ctx);
+						if (id)
+							return id;
+					}
+				}
+				break;
+			case ClientMessage:
+				{
+					Atom wm_delete = XInternAtom(ctx.dpy, "WM_DELETE_WINDOW", False);
+					if ((Atom)ev.xclient.data.l[0] == wm_delete)
+					{
+						int id = CancelButtonId(ctx);
+						if (id)
+							return id;
+					}
+				}
+				break;
+			default:
+				break;
+			}
+		}
+		else if (autoclose_ms > 0)
+		{
+			// Poll with a short timeout so the autoclose hook can fire even
+			// when no events arrive.
+			int fd = ConnectionNumber(ctx.dpy);
+			fd_set fds;
+			FD_ZERO(&fds);
+			FD_SET(fd, &fds);
+			struct timeval tv;
+			long long remain = (long long)autoclose_ms - (LinuxNowMs() - opened_at);
+			if (remain < 0)
+				remain = 0;
+			tv.tv_sec = (long)(remain / 1000);
+			tv.tv_usec = (long)((remain % 1000) * 1000);
+			if (select(fd + 1, &fds, nullptr, nullptr, &tv) < 0)
+				return ctx.default_id;
+			if (XPending(ctx.dpy))
+				XNextEvent(ctx.dpy, &ev);
+			else
+				continue;
 			switch (ev.type)
 			{
 			case Expose:
