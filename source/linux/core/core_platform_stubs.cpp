@@ -399,7 +399,27 @@ LPTSTR Script::CurrentFile()
 	// Mirrors lib/vars.cpp: the file of the line currently executing.
 	return Line::sSourceFile[mCurrLine ? mCurrLine->mFileIndex : mCurrFileIndex];
 }
-ResultType Script::DoRunAs(LPTSTR, LPCTSTR, bool, WORD, PROCESS_INFORMATION &, bool &aSuccess, HANDLE &, DWORD &) { aSuccess = false; return FAIL; }
+// Linux has no logon API (CreateProcessWithLogonW).  RunAs() still stores
+// the credentials (docs: "Specifies a set of user credentials to use for
+// all subsequent Run and RunWait functions"), but launching with them must
+// fail like upstream does when the logon call fails: with aDisplayErrors
+// the documented "Launch Error (possibly related to RunAs)" is raised,
+// otherwise FAIL is returned.
+ResultType Script::DoRunAs(LPTSTR aCommandLine, LPCTSTR aWorkingDir, bool aDisplayErrors, WORD
+	, PROCESS_INFORMATION &, bool &aSuccess, HANDLE &, DWORD &)
+{
+	aSuccess = false;
+	if (aDisplayErrors)
+	{
+		TCHAR error_text[2048];
+		sntprintf(error_text, _countof(error_text)
+			, _T("Launch Error (possibly related to RunAs):\nRunAs is not supported on Linux (no logon API).")
+			_T("\nAction: <%-0.400s%s>"), aCommandLine ? aCommandLine : _T("")
+			, aCommandLine && _tcslen(aCommandLine) > 400 ? _T("...") : _T(""));
+		return RuntimeError(error_text, _T(""), FAIL_OR_OK);
+	}
+	return FAIL;
+}
 UserMenu *Script::FindMenu(HMENU) { return nullptr; }
 
 // --- window/group ---

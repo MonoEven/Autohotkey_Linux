@@ -79,6 +79,7 @@ FResult OnClipboardChange(IObject *aFunction, optl<int> aAddRemove);
 FResult OnError(IObject *aFunction, optl<int> aAddRemove);
 FResult OnExit(IObject *aFunction, optl<int> aAddRemove);
 FResult OnMessage(UINT aNumber, IObject *aFunction, optl<int> aMaxThreads);
+FResult BIF_Hotstring(StrArg name, ExprTokenType *aReplacement, optl<StrArg> aOnOff, ResultToken &aResultToken);
 FResult DateAdd(StrArg aDateTime, double aTime, StrArg aTimeUnits, StrRet &aRetVal);
 FResult DateDiff(StrArg aTime1, StrArg aTime2, StrArg aTimeUnits, __int64 &aRetVal);
 FResult FileGetAttrib(optl<StrArg> aPath, StrRet &aRetVal);
@@ -952,6 +953,49 @@ BIF_DECL(BIF_Linux_MenuSelect)
 		return; // TargetError already raised.
 	// No X11 window has a standard Win32 menu (upstream: ERR_WINDOW_HAS_NO_MENU).
 	aResultToken.Error(ERR_WINDOW_HAS_NO_MENU, _T(""), ErrorPrototype::Target);
+}
+
+// ---------------------------------------------------------------------------
+// Hotstring / RunAs
+// ---------------------------------------------------------------------------
+//
+//   - Hotstring: adapter to the upstream BIF (same parsing, option and
+//     OnOffToggle validation, same registry: FindHotstring/AddHotstring and
+//     the EndChars/MouseReset/Reset subfunctions).  Hotstrings are
+//     registered but never expand, because the port has no keyboard hook
+//     that could watch typed text (documented).
+//   - RunAs: stores the credentials in the Script object exactly like
+//     upstream.  Launching with credentials is not possible on Linux (no
+//     CreateProcessWithLogonW): the port's DoRunAs shim reports failure, so
+//     a subsequent Run/RunWait raises the documented "Launch Error
+//     (possibly related to RunAs)" (documented).
+
+BIF_DECL(BIF_Linux_Hotstring)
+{
+	// (In, String, String): the hotstring trigger with colons/options.
+	TCHAR name_buf[1024];
+	name_buf[0] = L'\0';
+	LPTSTR name = TokenToString(*aParam[0], name_buf, nullptr);
+	// (In_Opt, Variant, Replacement): text or function object.
+	ExprTokenType *repl = (aParamCount > 1 && !ParamIndexIsOmitted(1)) ? aParam[1] : nullptr;
+	// (In_Opt, String, OnOffToggle): On/Off/Toggle/1/0/-1.
+	TCHAR toggle_buf[64];
+	optl<StrArg> toggle = (aParamCount > 2 && !ParamIndexIsOmitted(2))
+		? LinuxOptStr(aParam, aParamCount, 2, toggle_buf, sizeof(toggle_buf))
+		: optl<StrArg>(nullptr);
+	FResult fr = BIF_Hotstring(name ? name : name_buf, repl, toggle, aResultToken);
+	if (FAILED(fr))
+		FResultToError(aResultToken, aParam, aParamCount, fr, 0);
+}BIF_DECL(BIF_Linux_RunAs)
+{
+	// (In_Opt, String, User), (In_Opt, String, Password), (In_Opt, String,
+	// Domain); all omitted -> the RunAs feature is turned off (docs).
+	// Stores the credentials like upstream RunAs; they cannot actually be
+	// used on Linux (no logon API) -- see the module comment.
+	TCHAR user_buf[512], pass_buf[512], domain_buf[512];
+	g_script.mRunAsUser = LinuxOptStr(aParam, aParamCount, 0, user_buf, sizeof(user_buf)).value_or_empty();
+	g_script.mRunAsPass = LinuxOptStr(aParam, aParamCount, 1, pass_buf, sizeof(pass_buf)).value_or_empty();
+	g_script.mRunAsDomain = LinuxOptStr(aParam, aParamCount, 2, domain_buf, sizeof(domain_buf)).value_or_empty();
 }
 
 // ---------------------------------------------------------------------------
@@ -2717,7 +2761,7 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(HotIfWinNotActive, BIF_Linux_HotIfWinNotActive, 0, 2),
 	LMD_IMPL(HotIfWinNotExist, BIF_Linux_HotIfWinNotExist, 0, 2),
 	LMD_IMPL(Hotkey, BIF_Linux_Hotkey, 1, 3),
-	LMD_NI(Hotstring, 1, 3),
+	LMD_IMPL(Hotstring, BIF_Linux_Hotstring, 1, 3),
 	LMD_NI(IL_Add, 2, 4),
 	LMD_NI(IL_Create, 0, 3),
 	LMD_NI(IL_Destroy, 1, 1),
@@ -2766,7 +2810,7 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(ProcessWaitClose, BIF_Linux_ProcessWaitClose, 1, 2),
 	LMD_IMPL(Reload, BIF_Linux_Reload, 0, 0),
 	LMD_IMPL(Run, BIF_Linux_Run, 1, 4, 4),
-	LMD_NI(RunAs, 0, 3),
+	LMD_IMPL(RunAs, BIF_Linux_RunAs, 0, 3),
 	LMD_IMPL(Send, BIF_Linux_Send, 1, 1),
 	LMD_IMPL(SendEvent, BIF_Linux_SendEvent, 1, 1),
 	LMD_IMPL(SendInput, BIF_Linux_SendInput, 1, 1),

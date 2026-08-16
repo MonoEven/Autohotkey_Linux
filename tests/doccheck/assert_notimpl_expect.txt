@@ -1,11 +1,9 @@
 ni_GuiCtrlFromHwnd=1
 ni_GuiFromHwnd=1
-ni_Hotstring=1
 ni_IL_Add=1
 ni_IL_Create=1
 ni_IL_Destroy=1
 ni_ImageSearch=1
 ni_LoadPicture=1
 ni_MenuFromHandle=1
-ni_RunAs=1
 ni_WinSetRegion=1

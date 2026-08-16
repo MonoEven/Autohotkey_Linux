@@ -144,5 +144,88 @@ try {
     Log("ms_nowin=1")
 }
 
+; --- Hotstring: registration/options/toggles (upstream registry; the
+; port has no keyboard hook, so hotstrings are stored but never expand;
+; documented) ---
+Hotstring("::btw", "by the way") ; Create (docs: String, Replacement).
+Log("hs_create=1")
+Hotstring("::btw", "by the way now") ; Modify the replacement.
+Log("hs_mod=1")
+Hotstring("::btw",, "Off") ; Disable (docs).
+Log("hs_off=1")
+Hotstring("::btw",, "On") ; Enable.
+Log("hs_on=1")
+Hotstring("::btw",, "Toggle") ; Toggle -> disabled.
+Log("hs_toggle=1")
+Hotstring("::btw",, "Toggle") ; Toggle -> enabled again.
+Log("hs_toggle2=1")
+Hotstring("T") ; New default options (docs: "Hotstring NewOptions").
+Log("hs_newopts=1")
+old := Hotstring("EndChars") ; Subfunction: returns the old value.
+Log("hs_endchars_old=" (StrLen(old) > 0 ? 1 : 0))
+Hotstring("EndChars", ".,!?")
+Log("hs_endchars2=" (Hotstring("EndChars") = ".,!?" ? 1 : 0))
+Hotstring("EndChars", old)
+Log("hs_endchars_restore=" (Hotstring("EndChars") = old ? 1 : 0))
+Log("hs_mousereset=" (Hotstring("MouseReset") = 1 ? 1 : 0)) ; Default is true (docs).
+Hotstring("MouseReset", false)
+Log("hs_mousereset2=" (Hotstring("MouseReset") = 0 ? 1 : 0))
+Hotstring("Reset")
+Log("hs_reset=1")
+
+; ValueError: a String of just ":" is not a valid hotstring (upstream
+; FR_E_ARG(0)); note a String without a leading colon sets default options
+; (docs: "Hotstring NewOptions"), so it is valid.
+try {
+    Hotstring(":")
+    Log("hs_bad=0")
+} catch ValueError {
+    Log("hs_bad=1")
+}
+; TargetError: creating a hotstring without a replacement (docs: the
+; hotstring must already exist).
+try {
+    Hotstring("::nope")
+    Log("hs_norepl=0")
+} catch TargetError {
+    Log("hs_norepl=1")
+}
+; ValueError: invalid OnOffToggle.
+try {
+    Hotstring("::btw",, "Maybe")
+    Log("hs_badtoggle=0")
+} catch ValueError {
+    Log("hs_badtoggle=1")
+}
+; ValueError: the X option requires a function object (upstream FR_E_ARG(1)).
+try {
+    Hotstring(":X:xf", "text")
+    Log("hs_xstr=0")
+} catch ValueError {
+    Log("hs_xstr=1")
+}
+; Function replacement with the X option is accepted.
+HFn(v) => 1
+Hotstring(":X:xf", HFn)
+Log("hs_xfn=1")
+
+; --- RunAs: stores credentials (docs); launching with credentials is not
+; possible on Linux (no logon API), so Run then raises an error ---
+RunAs("user", "pass") ; Set credentials.
+Log("ra_set=1")
+try {
+    Run("true")
+    Log("ra_run=0")
+} catch Error {
+    Log("ra_run=1")
+}
+RunAs() ; All params omitted: turns the feature off (docs).
+Log("ra_off=1")
+Run("true") ; Works again without credentials.
+Log("ra_run_ok=1")
+RunAs("u", "p", "d") ; Domain form accepted.
+Log("ra_domain=1")
+RunAs()
+
 ; --- Cleanup. ---
 ExitApp(0)
