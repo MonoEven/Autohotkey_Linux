@@ -229,7 +229,9 @@ BIF_DECL(BIF_Linux_MonitorGetName)
 // ---------------------------------------------------------------------------
 
 // Convert an X11 pixel value to 0xRRGGBB using the default visual.
-static DWORD LinuxPixelToRGB(Display *d, unsigned long aPixel)
+// Convert an X11 pixel value to 0xRRGGBB (TrueColor fast path, colormap
+// lookup otherwise); exported for ImageSearch (core_image_linux.cpp).
+DWORD LinuxPixelToRGB(Display *d, unsigned long aPixel)
 {
 	Visual *vis = DefaultVisual(d, DefaultScreen(d));
 	if (vis->c_class == TrueColor || vis->c_class == DirectColor)

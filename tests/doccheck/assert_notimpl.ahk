@@ -25,11 +25,6 @@ Check(name, fn) {
 
 Check("GuiCtrlFromHwnd", () => GuiCtrlFromHwnd(1))
 Check("GuiFromHwnd", () => GuiFromHwnd(1))
-Check("IL_Add", () => IL_Add(1, "x"))
-Check("IL_Create", IL_Create)
-Check("IL_Destroy", () => IL_Destroy(1))
-Check("ImageSearch", () => ImageSearch(&ix, &iy, 0, 0, 10, 10, "x.png"))
-Check("LoadPicture", () => LoadPicture("x"))
 Check("MenuFromHandle", () => MenuFromHandle(1))
 Check("WinSetRegion", WinSetRegion)
 

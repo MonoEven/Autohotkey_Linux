@@ -22,6 +22,7 @@
 #include "core_input_linux.h"
 #include "core_ctrl_linux.h"
 #include "core_screen_linux.h"
+#include "core_image_linux.h"
 #include "core_display_linux.h"
 #include "core_timer_linux.h"
 #include "core_hotkey_linux.h"
@@ -2762,10 +2763,10 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(HotIfWinNotExist, BIF_Linux_HotIfWinNotExist, 0, 2),
 	LMD_IMPL(Hotkey, BIF_Linux_Hotkey, 1, 3),
 	LMD_IMPL(Hotstring, BIF_Linux_Hotstring, 1, 3),
-	LMD_NI(IL_Add, 2, 4),
-	LMD_NI(IL_Create, 0, 3),
-	LMD_NI(IL_Destroy, 1, 1),
-	LMD_NI(ImageSearch, 7, 7),
+	LMD_IMPL(IL_Add, BIF_Linux_IL_Add, 2, 4),
+	LMD_IMPL(IL_Create, BIF_Linux_IL_Create, 0, 3),
+	LMD_IMPL(IL_Destroy, BIF_Linux_IL_Destroy, 1, 1),
+	LMD_IMPL(ImageSearch, BIF_Linux_ImageSearch, 7, 7, 1, 2),
 	LMD_IMPL(IniDelete, BIF_Linux_IniDelete, 2, 3),
 	LMD_IMPL(IniRead, BIF_Linux_IniRead, 1, 4),
 	LMD_IMPL(IniWrite, BIF_Linux_IniWrite, 3, 4),
@@ -2778,7 +2779,7 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(ListHotkeys, BIF_Linux_ListHotkeys, 0, 0),
 	LMD_IMPL(ListLines, BIF_Linux_ListLines, 0, 1),
 	LMD_IMPL(ListVars, BIF_Linux_ListVars, 0, 0),	LMD_IMPL(ListViewGetContent, BIF_Linux_ListViewGetContent, 1, 6),
-	LMD_NI(LoadPicture, 1, 3),
+	LMD_IMPL(LoadPicture, BIF_Linux_LoadPicture, 1, 3, 3),
 	LMD_NI(MenuFromHandle, 1, 1),
 	LMD_IMPL(MenuSelect, BIF_Linux_MenuSelect, 3, 11),
 	LMD_IMPL(MonitorGet, BIF_Linux_MonitorGet, 0, 5, 2, 3, 4, 5),
