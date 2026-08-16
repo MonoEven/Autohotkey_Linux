@@ -58,7 +58,7 @@ bindsym Control+Return exec touch /tmp/wl_key_cr
 bindsym button3 exec touch /tmp/wl_btn3
 EOF
 cd /tmp/swayhome || exit 1
-WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 XDG_RUNTIME_DIR=/tmp/swayhome \
+WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman XDG_RUNTIME_DIR=/tmp/swayhome \
   sway -c /tmp/swayhome/config > /tmp/sway.log 2>&1 &
 SWAYPID=$!
 sleep 3
