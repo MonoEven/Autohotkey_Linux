@@ -54,7 +54,8 @@
       `install.sh` 与 GUI 安装器 `install-gui.sh`（zenity/yad）
 - [x] 发布：**Release v2.0.26-linux.1**（含两个安装包资产）
 - [x] 文档：官方 v2 文档镜像重建为 Linux 移植版（删除 v1 迁移内容，
-      新增 linux-port.htm；DllCall/COM 页面含 Linux 可运行示例），GitHub Pages 发布：
+      新增 linux-port.htm；DllCall/COM 页面含 Linux 可运行示例；
+      25 个平台专属页面标注 Linux note），GitHub Pages 发布：
       https://monoeven.github.io/Autohotkey_Linux/
 
 ## 当前推进重点
@@ -63,8 +64,13 @@
 
 - **语言**：仅 AutoHotkey v2（v1 语法不支持，v1 迁移文档已从站点移除）
 - **后端**：X11（含 XWayland）优先；无 X11 时原生 Wayland
-- **函数**：327/327 已实现（0 未实现，见 `tests/doccheck/worklist.tsv`）
-- **文档**：`tests/doccheck/CHECK_REPORT.md` 为完整逐模块校验报告
+- **函数**：327/327 已实现（0 未实现，见 `tests/doccheck/worklist.tsv`）；
+      其中 **DllCall** 调用 .so 动态库（dlopen/dlsym+libffi，29 项断言）、
+      **COM** 映射到 D-Bus（ComObject/ComValue/ComObj*，18 项断言）
+- **文档**：`tests/doccheck/CHECK_REPORT.md` 为完整逐模块校验报告；
+      示例按三类处理（原样运行/平台适配/不可用标注），
+      DllCall/ComObject 页面含已实测的 Linux 可运行示例，
+      示例审计工具在 `tests/doccheck/verify_examples*.py`
 
 ## 后续增强（已完成）
 
