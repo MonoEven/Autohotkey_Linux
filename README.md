@@ -5,6 +5,35 @@ AutoHotkey is a free, open source macro-creation and automation software utility
 https://www.autohotkey.com/
 
 
+## Linux Port (this fork) ##
+
+This repository is a fork of AutoHotkey **v2.0.26** with a **Linux port** of the
+interpreter (branch `linux-port`):
+
+- **Full X11 backend**: window management (Win*), controls, hotkeys
+  (XGrabKey), pixel/monitor access, dialogs, ToolTip, ImageSearch and the
+  whole doc-checked API surface — **795/795** assertions pass under Xvfb.
+- **Native Wayland backend**: when no X display is available the port runs on
+  pure Wayland (xdg-shell windows, `zwp_virtual_keyboard_v1` /
+  `zwlr_virtual_pointer_manager_v1` input, `wlr-screencopy` screen grabs) and
+  falls back to XWayland for X11 sessions — **13** Wayland + **229** XWayland
+  assertions pass under sway.
+- **Documentation**: the official AutoHotkey v2 documentation pages are
+  mirrored in `docs-v2/` and published on GitHub Pages:
+  **https://monoeven.github.io/Autohotkey_Linux/**
+
+Build (Linux):
+
+```bash
+cmake -S . -B build-core
+cmake --build build-core -j$(nproc)
+build-core/source/linux/core/ahk_core your-script.ahk
+```
+
+See `tests/doccheck/CHECK_REPORT.md` for the full doc-check report and
+`tests/doccheck/wayland_run.sh` for the Wayland/XWayland test setup.
+
+
 ## Support ##
 
 The [AutoHotkey Community forum](https://www.autohotkey.com/boards/) is the primary source of support for AutoHotkey.
