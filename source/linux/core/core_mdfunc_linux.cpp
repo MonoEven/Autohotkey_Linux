@@ -23,6 +23,7 @@
 #include "core_ctrl_linux.h"
 #include "core_screen_linux.h"
 #include "core_display_linux.h"
+#include "core_timer_linux.h"
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -2469,7 +2470,7 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(SetRegView, BIF_Linux_SetRegView, 1, 1),
 	LMD_IMPL(SetScrollLockState, BIF_Linux_SetScrollLockState, 0, 1),
 	LMD_IMPL(SetStoreCapsLockMode, BIF_Linux_SetStoreCapsLockMode, 1, 1),
-	LMD_NI(SetTimer, 0, 3),
+	LMD_IMPL(SetTimer, BIF_Linux_SetTimer, 0, 3),
 	LMD_IMPL(SetTitleMatchMode, BIF_Linux_SetTitleMatchMode, 1, 1),
 	LMD_IMPL(SetWinDelay, BIF_Linux_SetWinDelay, 1, 1),
 	LMD_IMPL(SetWorkingDir, BIF_Linux_SetWorkingDir, 1, 1),
@@ -2484,7 +2485,7 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(SysGet, BIF_Linux_SysGet, 1, 1),
 	LMD_IMPL(SysGetIPAddresses, BIF_Linux_SysGetIPAddresses, 0, 0),
 	LMD_IMPL(Thread, BIF_Linux_Thread, 1, 3),
-	LMD_NI(ToolTip, 0, 4),
+	LMD_IMPL(ToolTip, BIF_Linux_ToolTip, 0, 4),
 	LMD_IMPL(TraySetIcon, BIF_Linux_TraySetIcon, 0, 3),
 	LMD_IMPL(TrayTip, BIF_Linux_TrayTip, 0, 3),
 	LMD_IMPL(WinActivate, BIF_Linux_WinActivate, 0, 4),

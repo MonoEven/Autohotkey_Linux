@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **617 / 617 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素模块 26 项实测与 headless 显示/快捷方式模块 15 项;25 项 headless 回归测试亦全部通过)
+- **结果**: **628 / 628 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 26 项、定时器/悬浮提示模块 11 项实测与 headless 显示/快捷方式模块 15 项;25 项 headless 回归测试亦全部通过)
 
 ---
 
@@ -14,7 +14,7 @@
 | 文件 | 作用 |
 |---|---|
 | `tests/doccheck/extract_docs.py` | 解析 `docs-v2/docs/lib/*.htm`,提取每个函数的名称/描述/语法/参数/返回值/示例 → `doc_index.tsv`(352 个函数条目) |
-| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(299 个已实现,30 个未实现) |
+| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(301 个已实现,28 个未实现) |
 | `tests/doccheck/assert_*.ahk` | 按模块编写的实测脚本(每个断言输出 `name=value` 行,取自官方文档语义) |
 | `tests/doccheck/assert_*_expect.txt` | 与文档语义对应的期望值 |
 | `tests/doccheck/run_check.sh` | 运行全部断言并逐条比对(支持传入任意二进制路径,如 `run_check.sh build-asan/ahk_core`) |
@@ -38,7 +38,8 @@
 | 控件 (ControlGetText/SetText/GetPos/Move/GetHwnd/GetClassNN/Focus/GetFocus/GetSetStyle/ExStyle/GetSetEnabled/GetSetChecked/GetVisible/Show/Hide/Click/Send/SendText/Combo-List 系列/ShowHideDropDown + WinGetControls/WinGetControlsHwnd,X11 子窗口后端) | `assert_ctrl.ahk` | 62 |
 | 显示器/像素/状态栏 (MonitorGet/GetCount/GetName/GetPrimary/GetWorkArea + PixelGetColor/PixelSearch + StatusBarGetText/StatusBarWait,XRandR/Xinerama + XGetImage 后端) | `assert_monitor.ahk` | 26 |
 | 显示/快捷方式 (FileCreateShortcut/FileGetShortcut + ListVars/ListHotkeys/KeyHistory,.desktop/.url 与 headless 输出) | `assert_display.ahk` | 15 |
-| **合计** | | **617** |
+| 定时器/悬浮提示 (SetTimer + ToolTip,主循环 + X11 override-redirect 窗口) | `assert_timer.ahk` | 11 |
+| **合计** | | **628** |
 
 复现命令:
 
@@ -234,6 +235,16 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 - **测试设施**: `assert_display.ahk`(headless,11 断言 + 4 项自由文本内容检查:ListVars 输出含变量名与值、ListHotkeys/KeyHistory 输出;run_check.sh 为 assert_display 增加内容模式比对);`assert_monitor.ahk` 增补状态栏断言(xwin_helper 增加 msctls_statusbar32 子窗口,7 断言)。
 - **本轮修复的真实缺陷**: ① ListVars 对普通变量误用 `Var::Get`(仅虚拟变量可用,普通变量须 `ToToken`,且 ResultToken 须先初始化——照 Debugger.cpp 的 GetPropertyValue 模式);② **Control 的 ClassNN 解析**:按"去尾数字再比较类名"实现会破坏类名本身以数字结尾的控件(如 `msctls_statusbar321` 被拆成类 `msctls_statusbar` + 序号 321)——改为上游 EnumControlFind 算法:以每个候选控件的类名长度取判据前缀做大小写不敏感比较,再以十进制字符串精确比较序号,天然兼容类名含数字。
 
+### 2.30 定时器/悬浮提示模块(主循环 + 线程栈,本轮)
+- **实现**: 新增 `core_timer_linux.cpp` + 升级线程基础设施,按 docs-v2 与上游语义:
+  - **线程栈**(移植 application.cpp 的 InitNewThread/ResumeUnderlyingThread,替换原先的 no-op 桩):新线程从 `g_default`(g_array[0])复制默认设置、清状态、设优先级,按 `Thread Interrupt` 规则初始化不可中断性;结束线程时递减计数,非持久脚本在最后一个线程结束时自动退出(ExitIfNotPersistent);
+  - **CheckScriptTimers**(移植上游):逐定时器检查(启用/占用/优先级/到期),mTimeLastRun 在启动前重置(文档"run-only-once 由自身线程重置"语义),一次性定时器自动禁用,执行完毕的一次性定时器自动删除;带暂停/线程数上限守卫;
+  - **主循环**:main_linux 在自动执行段结束后,若脚本持久或存在启用定时器则进入 `LinuxRunMainLoop`(按最近到期时间睡眠、上限 50ms、逐次触发到期定时器,直到 ExitApp);**MsgSleep 升级**:等待期间按 10ms 切片触发到期定时器(文档:"timers run even when the script is waiting for a window, displaying a dialog, or busy with another task");
+  - **SetTimer**:接入上游 bif_impl(函数对象校验、Period 0=删除、负 Period=仅运行一次、省略函数=当前定时器、默认 250ms);
+  - **ToolTip**:每个 WhichToolTip 索引一个 X11 override-redirect 顶层窗口(文本即窗口标题,无工具包文本渲染),X/Y 遵守 CoordMode ToolTip(默认相对活动窗口客户区),更新复用同一 HWND,空白/省略 Text 隐藏并返回 0,否则返回工具提示的 HWND(文档);脚本退出时随 X 连接自动销毁(文档"displayed until the script terminates")。
+- **测试设施**: `assert_timer.ahk`/`assert_timer_expect.txt`(新增,11 断言:周期触发、停止、默认 250ms、负周期仅一次、省略函数引用当前定时器、非法函数对象报错、ToolTip 返回 HWND/标题/同窗更新/坐标/隐藏);`run_check.sh --xvfb` 运行。
+- **本轮修复的真实缺陷**: ① InitNewThread/ResumeUnderlyingThread 原为 no-op 桩(定时器/热键线程无法建立)——完整移植上游实现;② MsgSleep 原为纯 nanosleep(等待期间定时器不触发)——按文档在等待中触发;③ ToolTip 返回值按 md_func 声明为 HWND,须经 LMD 表返回。
+
 ---
 
 ## 3. 测试预期修正(文档语义确认,非移植缺陷)
@@ -287,16 +298,18 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 | 状态栏 (StatusBarGetText/StatusBarWait) | ✅ 7/7 | Xvfb 下以 msctls_statusbar32 子窗口实测:Part1=文本/Part>1=空、ControlSetText 联动、等待命中/超时、窗口缺失与无状态栏窗口抛 TargetError |
 | 快捷方式 (FileCreateShortcut/FileGetShortcut) | ✅ 9/9 | headless 实测:.desktop 生成与回读(目标/参数/工作目录/描述/图标、含空格目标引号)、.url Internet 快捷方式(文档 INI 格式)、缺失文件/坏目录抛 OSError |
 | 调试显示 (ListVars/ListHotkeys/KeyHistory) | ✅ 6/6 | headless 实测:ListVars 输出含全部全局变量(名称+值)、ListHotkeys/KeyHistory 输出与 MaxEvents 校验(0..500 抛 ValueError) |
-| 未实现模块 (GUI/GuiCtrl/COM/DllCall/热键系统/剪贴板监听/Edit*/SendMessage/PostMessage/Hotkey/Hotstring/SetTimer/ToolTip/ImageSearch/DirSelect/FileSelect/OnMessage 等 30 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
+| 定时器 (SetTimer + 主循环) | ✅ 6/6 | headless 实测:周期触发(等待期间也触发,文档)、Period 0 删除、默认 250ms、负周期仅运行一次、省略函数=当前定时器、非法函数对象报错 |
+| 悬浮提示 (ToolTip) | ✅ 5/5 | Xvfb 下实测:返回 HWND、窗口标题=文本、同索引更新复用窗口、坐标、空白隐藏并返回 0 |
+| 未实现模块 (GUI/GuiCtrl/COM/DllCall/热键系统/剪贴板监听/Edit*/SendMessage/PostMessage/Hotkey/Hotstring/OnMessage/ImageSearch/DirSelect/FileSelect 等 28 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
 
 ## 5. 回归与构建验证
 
 ```
 普通构建: tests/run_tests.sh        PASS=25 FAIL=0
           tests/doccheck/run_check.sh PASS=423 FAIL=0 (headless)
-          tests/doccheck/run_check.sh --xvfb PASS=617 FAIL=0 (含窗口 67 + 输入 40 + 控件 62 + 显示器/像素/状态栏 26 + 显示/快捷方式 15)
+          tests/doccheck/run_check.sh --xvfb PASS=628 FAIL=0 (含窗口 67 + 输入 40 + 控件 62 + 显示器/像素/状态栏 26 + 显示/快捷方式 15 + 定时器/悬浮提示 11)
 ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=617 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=628 FAIL=0
 ```
 
 ## 6. 本轮改动文件
@@ -351,3 +364,9 @@ ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
 - `source/linux/core/core_mdfunc_linux.cpp`(本轮):7 个 BIF 由 LMD_NI 翻转 LMD_IMPL(FileCreateShortcut/FileGetShortcut/StatusBarGetText/StatusBarWait/ListVars/ListHotkeys/KeyHistory)
 - `source/linux/core/CMakeLists.txt`(本轮):加入 `core_display_linux.cpp`
 - `tests/doccheck/assert_display.ahk`/`assert_display_expect.txt`/`assert_display_content.txt`(新增,headless 11+4 断言;run_check.sh 为 assert_display 增加自由文本内容比对);`assert_monitor.ahk` 增补 7 个状态栏断言(msctls_statusbar32 子窗口);worklist 重新生成(**299 IMPL / 30 NOT_IMPL**)
+- `source/linux/core/core_timer_linux.cpp` / `.h`(新增,本轮):定时器基础设施——CheckScriptTimers 移植、LinuxRunMainLoop 主循环、SetTimer/ToolTip BIF
+- `source/linux/core/core_platform_stubs.cpp`(本轮):InitNewThread/ResumeUnderlyingThread 由 no-op 桩改为上游完整实现(线程栈/默认设置/不可中断性/自动退出);MsgSleep 等待期间按切片触发到期定时器(文档语义)
+- `source/linux/core/main_linux.cpp`(本轮):自动执行段结束后,脚本持久或有启用定时器时进入 LinuxRunMainLoop
+- `source/linux/core/core_mdfunc_linux.cpp`(本轮):SetTimer/ToolTip 由 LMD_NI 翻转 LMD_IMPL
+- `source/linux/core/CMakeLists.txt`(本轮):加入 `core_timer_linux.cpp`
+- `tests/doccheck/assert_timer.ahk`/`assert_timer_expect.txt`(新增,11 断言);`run_check.sh --xvfb` 运行 assert_timer;worklist 重新生成(**301 IMPL / 28 NOT_IMPL**)

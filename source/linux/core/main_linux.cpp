@@ -10,6 +10,7 @@
 #include "../../application.h"
 #include "../../hotkey.h"
 #include "../../SimpleHeap.h"
+#include "core_timer_linux.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cwchar>
@@ -120,6 +121,10 @@ int main(int argc, char** argv)
 	ResultType exec_result = g_script.AutoExecSection();
 	if (exec_result == FAIL && !g_script.mPendingExitCode)
 		g_script.mPendingExitCode = CRITICAL_ERROR;
+	// If the script is persistent or has enabled timers, keep running the
+	// Linux main loop (fires due timers) until ExitApp is requested.
+	if (!g_script.mPendingExitCode && (g_script.IsPersistent() || g_script.mTimerEnabledCount))
+		LinuxRunMainLoop();
 	g_script.ExitApp(exec_result == FAIL ? EXIT_ERROR : EXIT_EXIT);
 	return 0;
 }

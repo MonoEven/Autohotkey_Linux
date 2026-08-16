@@ -9,25 +9,99 @@
 #include "../../script.h"
 #include "../../input_object.h"
 #include "../../WinGroup.h"
+#include "../../globaldata.h"
+#include "core_timer_linux.h"
 
 // --- application/message pump ---
 bool MsgSleep(int aDuration, MessageMode)
 {
 	// Real sleep so that Sleep() and other timing-sensitive code behaves
-	// correctly on Linux.  Script timers are not fired yet (the Windows
-	// message pump that runs them has not been ported).
-	if (aDuration > 0)
+	// correctly on Linux.  When the script has enabled timers, fire due
+	// timers during the wait (docs: timed functions run even while the
+	// script is waiting for a window or busy with another task).
+	if (aDuration <= 0)
 	{
+		if (g_script.mTimerEnabledCount)
+			LinuxCheckScriptTimers();
+		return true;
+	}
+	DWORD end = GetTickCount() + (DWORD)aDuration;
+	for (;;)
+	{
+		if (g_script.mTimerEnabledCount)
+			LinuxCheckScriptTimers();
+		DWORD now = GetTickCount();
+		if (now >= end)
+			break;
+		DWORD slice = end - now > 10 ? 10 : end - now;
 		struct timespec ts;
-		ts.tv_sec = aDuration / 1000;
-		ts.tv_nsec = (aDuration % 1000) * 1000000L;
+		ts.tv_sec = slice / 1000;
+		ts.tv_nsec = (slice % 1000) * 1000000L;
 		nanosleep(&ts, nullptr);
 	}
 	return true;
 }
 bool MsgMonitor(HWND, UINT, WPARAM, LPARAM, MSG *, LRESULT &aMsgReply) { aMsgReply = 0; return false; }
-void InitNewThread(int, bool, bool, bool) {}
-void ResumeUnderlyingThread() {}
+
+// ---------------------------------------------------------------------------
+// Thread stack management (ports of application.cpp's InitNewThread /
+// ResumeUnderlyingThread).  Required so that timer/hotkey subroutines run in
+// their own quasi-thread with the default settings, like on Windows.
+// ---------------------------------------------------------------------------
+
+void InitNewThread(int aPriority, bool aSkipUninterruptible, bool aIncrementThreadCountAndUpdateTrayIcon
+	, bool aIsCritical)
+{
+	if (aIncrementThreadCountAndUpdateTrayIcon)
+	{
+		++g_nThreads;
+		++g;
+	}
+	// Copy only settings, not state, from the auto-execute thread.
+	memcpy(static_cast<ScriptThreadSettings *>(g), static_cast<ScriptThreadSettings *>(&g_default)
+		, sizeof(ScriptThreadSettings));
+	global_struct &g_ = *::g;
+	global_clear_state(g_);
+	g_.Priority = aPriority;
+	if (aIncrementThreadCountAndUpdateTrayIcon)
+		g_script.UpdateTrayIcon();
+	if (aSkipUninterruptible)
+		return;
+	if (!g_.ThreadIsCritical)
+		g_.ThreadIsCritical = aIsCritical;
+	if (g_script.mUninterruptibleTime && g_script.mUninterruptedLineCountMax // Both components must be non-zero.
+		|| g_.ThreadIsCritical)
+	{
+		g_.PeekFrequency = UNINTERRUPTIBLE_PEEK_FREQUENCY;
+		g_.AllowThreadToBeInterrupted = false;
+		if (!g_.ThreadIsCritical)
+		{
+			if (g_script.mUninterruptibleTime < 0)
+				g_.UninterruptibleDuration = -1;
+			else
+			{
+				g_.ThreadStartTime = GetTickCount();
+				g_.UninterruptibleDuration = g_script.mUninterruptibleTime;
+			}
+		}
+	}
+}
+
+void ResumeUnderlyingThread()
+{
+	if (g->ThrownToken)
+		g_script.FreeExceptionToken(g->ThrownToken);
+	--g_nThreads;
+	--g;
+	g_script.UpdateTrayIcon();
+	if (!g_nThreads)
+	{
+		if (!g_OnExitIsRunning)
+			g_script.ExitIfNotPersistent(EXIT_EXIT);
+		g_script.mPendingExitCode = 0;
+	}
+}
+
 BOOL IsInterruptible() { return 1; }
 VOID CALLBACK MsgBoxTimeout(HWND, UINT, UINT_PTR, DWORD) {}
 VOID CALLBACK RefreshInterruptibility(HWND, UINT, UINT_PTR, DWORD) {}

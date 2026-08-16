@@ -1,0 +1,11 @@
+timer_period=1
+timer_stop=1
+timer_default=1
+timer_once=1
+timer_omit_fn=1
+timer_bad_fn=1
+tip_hwnd=1
+tip_title=1
+tip_update=1
+tip_pos=1
+tip_hide=1
