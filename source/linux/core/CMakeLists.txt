@@ -71,6 +71,7 @@ add_executable(ahk_core
     core_win_linux.cpp
     core_input_linux.cpp
     core_ctrl_linux.cpp
+    core_screen_linux.cpp
     core_platform_stubs.cpp
     main_linux.cpp
     ../gui/x11_gui.cpp
@@ -85,4 +86,6 @@ target_compile_options(ahk_core PRIVATE -fpermissive -Wno-jump-misses-init)
 
 find_package(X11 REQUIRED)
 find_library(XTST_LIBRARY Xtst REQUIRED)
-target_link_libraries(ahk_core PRIVATE X11::X11 ahk_pcre16 ${XTST_LIBRARY})
+find_library(XRANDR_LIBRARY Xrandr REQUIRED)
+find_library(XINERAMA_LIBRARY Xinerama REQUIRED)
+target_link_libraries(ahk_core PRIVATE X11::X11 ahk_pcre16 ${XTST_LIBRARY} ${XRANDR_LIBRARY} ${XINERAMA_LIBRARY})

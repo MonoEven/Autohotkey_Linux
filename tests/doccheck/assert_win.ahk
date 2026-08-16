@@ -37,7 +37,9 @@ SetTitleMatchMode(2)
 
 ; --- ahk_class / ahk_exe / ahk_pid / ahk_id criteria. ---
 Log("class_count=" (WinGetCount("ahk_class DocCheckClass") = 2))  ; Alpha + Second (Gamma hidden).
-Log("exe_count=" (WinGetCount("ahk_exe xwin_helper") = 3))
+; Combined criteria (title + ahk_exe): robust against stray helper windows
+; left by other suites; also exercises multi-criteria matching per docs.
+Log("exe_count=" (WinGetCount("DocCheck ahk_exe xwin_helper") = 3))
 Log("exe_missing=" (WinGetCount("ahk_exe no_such_proc_xyz") = 0))
 wpid := WinGetPID("DocCheck Alpha")
 Log("pid_criteria=" (WinExist("ahk_pid " wpid) != "" ? 1 : 0))

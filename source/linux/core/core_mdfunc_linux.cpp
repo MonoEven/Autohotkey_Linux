@@ -21,6 +21,7 @@
 #include "core_win_linux.h"
 #include "core_input_linux.h"
 #include "core_ctrl_linux.h"
+#include "core_screen_linux.h"
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -2420,11 +2421,11 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_NI(LoadPicture, 1, 3),
 	LMD_NI(MenuFromHandle, 1, 1),
 	LMD_NI(MenuSelect, 1, 10),
-	LMD_NI(MonitorGet, 0, 5),
-	LMD_NI(MonitorGetCount, 0, 0),
-	LMD_NI(MonitorGetName, 0, 1),
-	LMD_NI(MonitorGetPrimary, 0, 0),
-	LMD_NI(MonitorGetWorkArea, 0, 5),
+	LMD_IMPL(MonitorGet, BIF_Linux_MonitorGet, 0, 5, 2, 3, 4, 5),
+	LMD_IMPL(MonitorGetCount, BIF_Linux_MonitorGetCount, 0, 0),
+	LMD_IMPL(MonitorGetName, BIF_Linux_MonitorGetName, 0, 1),
+	LMD_IMPL(MonitorGetPrimary, BIF_Linux_MonitorGetPrimary, 0, 0),
+	LMD_IMPL(MonitorGetWorkArea, BIF_Linux_MonitorGetWorkArea, 0, 5, 2, 3, 4, 5),
 	LMD_IMPL(MouseClick, BIF_Linux_MouseClick, 0, 7),
 	LMD_IMPL(MouseClickDrag, BIF_Linux_MouseClickDrag, 5, 7),
 	LMD_IMPL(MouseGetPos, BIF_Linux_MouseGetPos, 0, 5, 1, 2, 3, 4),
@@ -2436,8 +2437,8 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(OutputDebug, BIF_Linux_OutputDebug, 1, 1),
 	LMD_IMPL(Pause, BIF_Linux_Pause, 0, 1),
 	LMD_IMPL(Persistent, BIF_Linux_Persistent, 0, 1),
-	LMD_NI(PixelGetColor, 2, 3),
-	LMD_NI(PixelSearch, 7, 8),
+	LMD_IMPL(PixelGetColor, BIF_Linux_PixelGetColor, 2, 3),
+	LMD_IMPL(PixelSearch, BIF_Linux_PixelSearch, 7, 10, 1, 2),
 	LMD_NI(PostMessage, 2, 8),
 	LMD_IMPL(ProcessClose, BIF_Linux_ProcessClose, 1, 1),
 	LMD_IMPL(ProcessExist, BIF_Linux_ProcessExist, 0, 1),

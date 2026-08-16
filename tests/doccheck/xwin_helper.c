@@ -1,14 +1,16 @@
 /* xwin_helper: create an X11 test window (with optional child "control"
- * windows) for the doc-check Win* and Control* suites.
+ * windows) for the doc-check Win* / Control* / Monitor* suites.
  *
  * Usage: xwin_helper -title T -class C -x X -y Y -w W -h H
  *                    [-child NAME CLASS CX CY CW CH]...   (repeatable)
+ *                    [-fill RRGGBB X Y W H]...            (repeatable)
  *                    [-evout FILE] [-hidden] [-focus] [-ms N]
  *
  * Sets WM_NAME/_NET_WM_NAME, WM_CLASS, _NET_WM_PID on the main window and
- * each -child window (child windows get WM_NAME + WM_CLASS too).  Key and
- * button events received by any of the windows are logged to FILE (default
- * /tmp/ahk_dc_ev.txt) as:
+ * each -child window (child windows get WM_NAME + WM_CLASS too).  Each
+ * -fill paints a solid-color rectangle on the main window (for the
+ * PixelGetColor/PixelSearch assertions).  Key and button events received by
+ * any of the windows are logged to FILE (default /tmp/ahk_dc_ev.txt) as:
  *   k:down:<keysym>:win:<hwnd>   k:up:<keysym>:win:<hwnd>
  *   b:down:<button>:win:<hwnd>   b:up:<button>:win:<hwnd>
  * Exits on WM_DELETE_WINDOW, on DestroyNotify, after -ms ms, or when stdin
@@ -25,11 +27,18 @@
 #include <unistd.h>
 
 #define MAX_CHILDREN 32
+#define MAX_FILLS 32
 
 struct child_spec
 {
     const char *name;
     const char *cls;
+    int x, y, w, h;
+};
+
+struct fill_spec
+{
+    unsigned long pixel;
     int x, y, w, h;
 };
 
@@ -71,6 +80,8 @@ int main(int argc, char **argv)
     long ms = 600000;
     struct child_spec kids[MAX_CHILDREN];
     int nkids = 0;
+    struct fill_spec fills[MAX_FILLS];
+    int nfills = 0;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -93,6 +104,15 @@ int main(int argc, char **argv)
             k->y = atoi(argv[++i]);
             k->w = atoi(argv[++i]);
             k->h = atoi(argv[++i]);
+        }
+        else if (!strcmp(argv[i], "-fill") && i + 5 < argc && nfills < MAX_FILLS)
+        {
+            struct fill_spec *f = &fills[nfills++];
+            f->pixel = strtoul(argv[++i], NULL, 16);
+            f->x = atoi(argv[++i]);
+            f->y = atoi(argv[++i]);
+            f->w = atoi(argv[++i]);
+            f->h = atoi(argv[++i]);
         }
     }
 
@@ -154,6 +174,25 @@ int main(int argc, char **argv)
         kids_win[i] = cw;
     }
     XFlush(d);
+
+    // Solid-color rectangles on the main window (PixelGetColor/PixelSearch).
+    GC gc = XCreateGC(d, win, 0, NULL);
+    for (int i = 0; i < nfills; ++i)
+    {
+        struct fill_spec *f = &fills[i];
+        XColor color;
+        color.red = (unsigned short)(((f->pixel >> 16) & 0xFF) * 0x101);
+        color.green = (unsigned short)(((f->pixel >> 8) & 0xFF) * 0x101);
+        color.blue = (unsigned short)((f->pixel & 0xFF) * 0x101);
+        color.flags = DoRed | DoGreen | DoBlue;
+        if (XAllocColor(d, DefaultColormap(d, screen), &color))
+        {
+            XSetForeground(d, gc, color.pixel);
+            XFillRectangle(d, win, gc, f->x, f->y, (unsigned)f->w, (unsigned)f->h);
+        }
+    }
+    if (nfills)
+        XFlush(d);
 
     g_ev = fopen(evout, "w");
     if (!g_ev)

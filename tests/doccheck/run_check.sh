@@ -70,6 +70,10 @@ for ahk in assert_*.ahk; do
     echo "SKIP: assert_ctrl (run with --xvfb)"
     continue
   fi
+  if [ "$base" = "assert_monitor" ] && [ "$XVFB" != 1 ]; then
+    echo "SKIP: assert_monitor (run with --xvfb)"
+    continue
+  fi
   # Some suites need script arguments (e.g. assert_general checks A_Args);
   # run those with args instead of the plain invocation.
   case "$base" in
@@ -78,7 +82,7 @@ for ahk in assert_*.ahk; do
   esac
   # assert_win/assert_input run under Xvfb and write their output to a file
   # (MsgBox would open a real dialog with a display present).
-  if [ "$base" = "assert_win" ] || [ "$base" = "assert_input" ] || [ "$base" = "assert_ctrl" ]; then
+  if [ "$base" = "assert_win" ] || [ "$base" = "assert_input" ] || [ "$base" = "assert_ctrl" ] || [ "$base" = "assert_monitor" ]; then
     XDISPLAY=:99
   else
     XDISPLAY=""
@@ -98,6 +102,9 @@ for ahk in assert_*.ahk; do
   fi
   if [ "$base" = "assert_ctrl" ]; then
     cp /tmp/ahk_dc_ctrl_out.txt "out/${base}.txt" 2>/dev/null || true
+  fi
+  if [ "$base" = "assert_monitor" ]; then
+    cp /tmp/ahk_dc_monitor_out.txt "out/${base}.txt" 2>/dev/null || true
   fi
   while IFS= read -r line; do
     [ -z "$line" ] && continue
