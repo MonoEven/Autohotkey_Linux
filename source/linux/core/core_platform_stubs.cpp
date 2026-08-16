@@ -14,6 +14,7 @@
 #include "core_win_linux.h"
 #include "core_hotkey_linux.h"
 #include "core_wayland_linux.h"
+#include "core_clipboard_linux.h"
 #include <X11/Xlib.h>
 
 // --- application/message pump ---
@@ -32,6 +33,8 @@ bool MsgSleep(int aDuration, MessageMode)
 		if (Hotkey::sHotkeyCount)
 			if (Display *d = LinuxX11Display())
 				LinuxDispatchHotkeys(d);
+		if (Display *d = LinuxX11Display())
+			LinuxClipboardDispatchX11(d);
 		if (LinuxWaylandActive())
 			LinuxWaylandDispatch();
 		return true;
@@ -44,6 +47,8 @@ bool MsgSleep(int aDuration, MessageMode)
 		if (Hotkey::sHotkeyCount)
 			if (Display *d = LinuxX11Display())
 				LinuxDispatchHotkeys(d);
+		if (Display *d = LinuxX11Display())
+			LinuxClipboardDispatchX11(d);
 		if (LinuxWaylandActive())
 			LinuxWaylandDispatch();
 		DWORD now = GetTickCount();

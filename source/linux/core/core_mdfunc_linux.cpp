@@ -26,6 +26,7 @@
 #include "core_display_linux.h"
 #include "core_timer_linux.h"
 #include "core_hotkey_linux.h"
+#include "core_clipboard_linux.h"
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -1403,22 +1404,18 @@ BIF_DECL(BIF_Linux_SoundBeep)
 }
 
 // ---------------------------------------------------------------------------
-// A_Clipboard: process-internal clipboard (X11 selection integration later)
+// A_Clipboard: system clipboard (X11 CLIPBOARD selection, Wayland data
+// device, process-internal fallback headless) -- core_clipboard_linux.cpp.
 // ---------------------------------------------------------------------------
-
-static std::wstring &LinuxClipboardStorage()
-{
-	static std::wstring sClipboard;
-	return sClipboard;
-}
 
 void BIV_Clipboard(ResultToken &aResultToken, LPTSTR aVarName)
 {
 	(void)aVarName;
-	const std::wstring &c = LinuxClipboardStorage();
-	LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((c.size() + 1) * sizeof(TCHAR));
-	tmemcpy(persistent, c.c_str(), c.size() + 1);
-	aResultToken.SetValue(persistent, c.size());
+	std::wstring text;
+	LinuxClipboardGetText(text);
+	LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((text.size() + 1) * sizeof(TCHAR));
+	tmemcpy(persistent, text.c_str(), text.size() + 1);
+	aResultToken.SetValue(persistent, text.size());
 }
 
 void BIV_Clipboard_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
@@ -1430,19 +1427,22 @@ void BIV_Clipboard_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType
 	LPTSTR s = TokenToString(aValue, buf, &len);
 	if (!s)
 		s = buf;
-	LinuxClipboardStorage().assign(s ? s : L"");
+	LinuxClipboardSetText(s ? s : L"");
 }
 
 BIF_DECL(BIF_Linux_ClipWait)
 {
 	double timeout = aParamCount > 0 ? TokenToDouble(*aParam[0]) : 0;
 	double waited = 0;
-	bool non_empty = !LinuxClipboardStorage().empty();
+	std::wstring text;
+	LinuxClipboardGetText(text);
+	bool non_empty = !text.empty();
 	while (!non_empty && (timeout <= 0 || waited < timeout))
 	{
 		ScriptSleep(50);
 		waited += 0.05;
-		non_empty = !LinuxClipboardStorage().empty();
+		LinuxClipboardGetText(text);
+		non_empty = !text.empty();
 	}
 	aResultToken.SetValue(non_empty ? 1 : 0);
 }

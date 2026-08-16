@@ -1,0 +1,37 @@
+# Maintainer: MonoEven <MonoEven@users.noreply.github.com>
+# Contributor: AutoHotkey Linux port
+# Arch Linux PKGBUILD for the AutoHotkey v2 Linux port (v2 syntax only).
+pkgname=autohotkey-linux
+pkgver=2.0.26.linux.1
+pkgrel=1
+pkgdesc="AutoHotkey v2 Linux port (X11/Wayland) - macro-creation and automation scripting utility (v2 only, v1 not supported)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/MonoEven/Autohotkey_Linux"
+license=('GPL2')
+depends=('libx11' 'libxext' 'libxrandr' 'libxinerama' 'libxtst'
+         'wayland' 'libxkbcommon')
+makedepends=('cmake' 'ninja' 'gcc' 'wayland-protocols')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/MonoEven/Autohotkey_Linux/archive/refs/tags/v2.0.26-linux.1.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cmake -S . -B build-core -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release
+  cmake --build build-core
+}
+
+package() {
+  install -Dm755 "$srcdir"/build-core/source/linux/core/ahk_core \
+    "$pkgdir"/usr/share/autohotkey/ahk_core
+  # launcher
+  cat > "$pkgdir/usr/bin/ahk" <<EOF
+#!/bin/sh
+exec /usr/share/autohotkey/ahk_core "\$@"
+EOF
+  chmod 755 "$pkgdir/usr/bin/ahk"
+  # docs
+  install -d "$pkgdir/usr/share/doc/autohotkey"
+  cp -r "$srcdir"/docs-v2 "$pkgdir/usr/share/doc/autohotkey/docs-v2"
+  install -Dm644 "$srcdir/README.md" "$pkgdir/usr/share/doc/autohotkey/README.md"
+  install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

@@ -4,6 +4,8 @@
 // when no X display exists but WAYLAND_DISPLAY connects.
 #pragma once
 
+struct wl_display;
+
 // Opaque handle to a script-owned xdg toplevel window.
 struct LinuxWaylandWindow;
 
@@ -33,6 +35,11 @@ unsigned int LinuxWaylandKeycodeForVk(unsigned int aVK);
 // Main-loop integration: the pollable fd and a dispatch call.
 int LinuxWaylandPollFd();
 void LinuxWaylandDispatch();
+
+// The active Wayland display (for subsystems that need it, e.g. the
+// clipboard's data-device calls).  Null unless the Wayland layer is
+// connected and active.
+wl_display *LinuxWaylandDisplay();
 
 // Screen-capture fallback: grab the region (aLeft,aTop,aWidth,aHeight) via
 // the wlr-screencopy protocol into aPixels as 0xRRGGBB row-major.  Used

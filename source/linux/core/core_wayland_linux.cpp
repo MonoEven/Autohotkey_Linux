@@ -26,6 +26,7 @@
 #include "../../script_func_impl.h"
 #include "core_wayland_linux.h"
 #include "core_win_linux.h"
+#include "core_clipboard_linux.h"
 #include <wayland-client.h>
 #include <xdg-shell-protocol.h>
 #include <virtual-keyboard-unstable-v1-protocol.h>
@@ -107,6 +108,8 @@ static void LinuxWlRegistryGlobal(void *aData, wl_registry *aReg, uint32_t aName
 	else if (!strcmp(aIface, "zwlr_virtual_pointer_manager_v1"))
 		s.vptr_mgr = (zwlr_virtual_pointer_manager_v1 *)wl_registry_bind(aReg, aName
 			, &zwlr_virtual_pointer_manager_v1_interface, 1);
+	else
+		LinuxClipboardWaylandRegistry(aData, aReg, aName, aIface, aVersion);
 }
 
 static void LinuxWlRegistryRemove(void *aData, wl_registry *aReg, uint32_t aName)
@@ -322,6 +325,8 @@ static bool LinuxWlConnect()
 		wl_pointer *ptr = wl_seat_get_pointer(s.seat);
 		if (ptr)
 			wl_pointer_add_listener(ptr, &sPointerListener, nullptr);
+		// System clipboard via the seat's data device.
+		LinuxClipboardWaylandSeat(s.seat);
 	}
 	(void)0;
 	// Push a keymap so compositors accept key events (xkbcommon).
@@ -678,6 +683,12 @@ int LinuxWaylandPollFd()
 {
 	LinuxWaylandState &s = LinuxWl();
 	return s.display ? wl_display_get_fd(s.display) : -1;
+}
+
+wl_display *LinuxWaylandDisplay()
+{
+	LinuxWaylandState &s = LinuxWl();
+	return s.active ? s.display : nullptr;
 }
 
 void LinuxWaylandDispatch()

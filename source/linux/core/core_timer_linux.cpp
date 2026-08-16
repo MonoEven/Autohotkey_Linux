@@ -23,6 +23,7 @@
 #include "core_timer_linux.h"
 #include "core_win_linux.h"
 #include "core_hotkey_linux.h"
+#include "core_clipboard_linux.h"
 #include "core_wayland_linux.h"
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -137,14 +138,18 @@ void LinuxRunMainLoop()
 					sleep_ms = 1;
 			}
 		}
-		if (Hotkey::sHotkeyCount && (d = LinuxX11Display()))
+		if ((d = LinuxX11Display()))
 		{
+			// Wait on the X connection so hotkey and clipboard events are
+			// dispatched promptly (clipboard ownership must be served while
+			// the script idles).
 			struct pollfd pfd;
 			pfd.fd = ConnectionNumber(d);
 			pfd.events = POLLIN;
 			pfd.revents = 0;
-			if (poll(&pfd, 1, sleep_ms) > 0)
+			if (poll(&pfd, 1, sleep_ms) > 0 && Hotkey::sHotkeyCount)
 				LinuxDispatchHotkeys(d);
+			LinuxClipboardDispatchX11(d);
 		}
 		else if (LinuxWaylandActive())
 		{

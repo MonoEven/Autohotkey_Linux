@@ -76,7 +76,7 @@ jobs:
             cmake g++ ninja-build \
             libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev \
-            python3 dpkg-dev
+            python3 dpkg-dev rpm
 
       - name: Build
         run: |
@@ -86,9 +86,12 @@ jobs:
       - name: Build packages
         run: |
           bash tools/linux/pack.sh
+          bash tools/linux/pack-appimage.sh || true
+          bash tools/linux/pack-rpm.sh || true
           ls -la dist/
 
       - name: Verify packages
         run: |
           tar tzf dist/autohotkey-linux-*.tar.gz | head -5
           dpkg-deb --info dist/autohotkey-linux-*.deb | head -8
+          ls dist/*.AppImage dist/*.rpm 2>/dev/null

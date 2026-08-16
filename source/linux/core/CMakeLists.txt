@@ -103,6 +103,7 @@ add_executable(ahk_core
     core_display_linux.cpp
     core_timer_linux.cpp
     core_hotkey_linux.cpp
+    core_clipboard_linux.cpp
     core_platform_stubs.cpp
     core_wayland_linux.cpp
     main_linux.cpp
