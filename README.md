@@ -1,92 +1,110 @@
-# AutoHotkey #
+# AutoHotkey (Linux Port) #
 
-AutoHotkey is a free, open source macro-creation and automation software utility that allows users to automate repetitive tasks. It is driven by a custom scripting language that has special provision for defining keyboard shortcuts, otherwise known as hotkeys.
+**AutoHotkey v2.0.26 Linux port** — a free, open-source macro-creation and
+automation utility for Linux. It is driven by a custom scripting language
+with special provision for defining keyboard shortcuts, otherwise known as
+hotkeys.
 
-https://www.autohotkey.com/
+- **Language: AutoHotkey v2 only.** This port implements the v2 language.
+  The v1 language, v1 commands and v1-to-v2 migration material are **not**
+  part of this project.
+- **Upstream**: https://www.autohotkey.com/ (the original Windows project;
+  this repository is a fork of the v2.0.26 release with a Linux port of the
+  interpreter on the `linux-port` branch).
 
+## Features ##
 
-## Linux Port (this fork) ##
+- **Full X11 backend** (preferred when `DISPLAY` is set, including XWayland
+  sessions): window management (`Win*`), controls (`Control*`), hotkeys
+  (`XGrabKey`), pixel/monitor access (`PixelGetColor`, `PixelSearch`,
+  `Monitor*`, `ImageSearch`), dialogs (`MsgBox`, `InputBox`,
+  `FileSelect`/`DirSelect`), `ToolTip`, window shapes (`WinSetRegion`) and
+  the whole doc-checked v2 API surface — **795/795** assertions pass under
+  Xvfb.
+- **Native Wayland backend** (used when no X display is available):
+  xdg-shell windows, virtual keyboard/pointer input
+  (`zwp_virtual_keyboard_v1` / `zwlr_virtual_pointer_manager_v1`),
+  modifier-combo hotkey-style bindings and screen capture via
+  `wlr-screencopy` — **13** Wayland + **229** XWayland assertions pass
+  under sway.
+- **327/327** built-in functions implemented (0 not implemented); see
+  `tests/doccheck/CHECK_REPORT.md` for the per-module report.
 
-This repository is a fork of AutoHotkey **v2.0.26** with a **Linux port** of the
-interpreter (branch `linux-port`):
+## Install ##
 
-- **Full X11 backend**: window management (Win*), controls, hotkeys
-  (XGrabKey), pixel/monitor access, dialogs, ToolTip, ImageSearch and the
-  whole doc-checked API surface — **795/795** assertions pass under Xvfb.
-- **Native Wayland backend**: when no X display is available the port runs on
-  pure Wayland (xdg-shell windows, `zwp_virtual_keyboard_v1` /
-  `zwlr_virtual_pointer_manager_v1` input, `wlr-screencopy` screen grabs) and
-  falls back to XWayland for X11 sessions — **13** Wayland + **229** XWayland
-  assertions pass under sway.
-- **Documentation**: the official AutoHotkey v2 documentation pages are
-  mirrored in `docs-v2/` and published on GitHub Pages:
-  **https://monoeven.github.io/Autohotkey_Linux/**
-
-Build (Linux):
+Prebuilt packages are attached to each
+[GitHub Release](https://github.com/MonoEven/Autohotkey_Linux/releases):
 
 ```bash
+# Debian/Ubuntu
+sudo apt install ./autohotkey-linux-<version>-amd64.deb
+
+# Generic tarball (run the GUI or CLI installer from the unpacked tree)
+tar xzf autohotkey-linux-<version>-amd64.tar.gz
+cd autohotkey-linux
+./tools/linux/install-gui.sh        # graphical wizard (zenity/yad)
+# or
+./tools/linux/install.sh --prefix ~/.local
+```
+
+The installer places the `ahk` launcher, the interpreter and the
+documentation under the chosen prefix:
+
+```bash
+ahk --version        # AutoHotkey v2.0.26 Linux port (X11/Wayland)
+ahk your-script.ahk
+```
+
+## Build from source ##
+
+Requirements: CMake, a C++ compiler, X11 development headers
+(`libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev`),
+Wayland development headers (`libwayland-dev wayland-protocols`) and
+`libxkbcommon-dev`.
+
+```bash
+git clone --branch linux-port https://github.com/MonoEven/Autohotkey_Linux.git
+cd Autohotkey_Linux
 cmake -S . -B build-core
 cmake --build build-core -j$(nproc)
 build-core/source/linux/core/ahk_core your-script.ahk
 ```
 
-See `tests/doccheck/CHECK_REPORT.md` for the full doc-check report and
-`tests/doccheck/wayland_run.sh` for the Wayland/XWayland test setup.
+Build a release package (tar.gz + .deb):
 
+```bash
+bash tools/linux/pack.sh
+```
+
+## Documentation ##
+
+The official AutoHotkey v2 documentation pages (adapted for this port) are
+published on GitHub Pages:
+
+**https://monoeven.github.io/Autohotkey_Linux/**
+
+The docs live in `docs-v2/`. The v1-to-v2 change documentation is omitted
+because v1 is not supported by this port; see
+[docs-v2/docs/linux-port.htm](docs-v2/docs/linux-port.htm) for the Linux
+port overview (backends, differences from Windows, build/install notes).
+
+## Differences from Windows AutoHotkey ##
+
+- No GUI windows (`Gui`/`GuiControl`/`Menu` objects are Windows-only and
+  are not implemented); use text-based tools or external GUIs.
+- No COM, no Windows registry, no `DllCall` of Windows DLLs, no Win32
+  messages to other windows.
+- `Sound*`, tray icon and compiled-script (`.exe`) packaging are not
+  available.
+- Hotkeys work through `XGrabKey` on X11/XWayland; in pure Wayland they
+  are unavailable (no global-hotkey protocol) — use XWayland for those.
 
 ## Support ##
 
-The [AutoHotkey Community forum](https://www.autohotkey.com/boards/) is the primary source of support for AutoHotkey.
+- **Issues**: https://github.com/MonoEven/Autohotkey_Linux/issues
+- The [AutoHotkey Community forum](https://www.autohotkey.com/boards/) is
+  the primary upstream support channel for AutoHotkey v2.
 
-AutoHotkey v1 is not being maintained, but support is provided by community members.
+## License ##
 
-* **Scripts not working**: For assistance getting code AutoHotkey scripts to work the way you want, start a topic in the [Ask for Help (v2)](https://www.autohotkey.com/boards/viewforum.php?f=82) or [Ask for Help (v1)](https://www.autohotkey.com/boards/viewforum.php?f=76) subforum, depending on your AutoHotkey version.
-* **Bug reporting**: If in doubt about the nature of your issue, please post in [Ask for Help (v2)](https://www.autohotkey.com/boards/viewforum.php?f=82) for confirmation. Otherwise, bugs should be reported in the [Bug Reports](https://www.autohotkey.com/boards/viewforum.php?f=14) subforum.
-* **False positives**: If you notice any AutoHotkey files (downloaded from official sources) are being flagged as suspicious or a virus, they are likely false positives. Please refer to our page on how to resolve or report these [here](https://www.autohotkey.com/download/safe.htm).
-* **Other development topics**: For any other development related enquiries, please utilize the [AutoHotkey Development](https://www.autohotkey.com/boards/viewforum.php?f=37) subforum.
-
-
-## How to Compile ##
-
-AutoHotkey is developed with [Microsoft Visual Studio Community 2022](https://www.visualstudio.com/products/visual-studio-community-vs), which is a free download from Microsoft.
-
-  - Get the source code.
-  - Open AutoHotkeyx.sln in Visual Studio.
-  - Select the appropriate Build and Platform.
-  - Build.
-
-The project is configured in a way that allows building with Visual Studio 2012 or later, but only the 2022 toolset is regularly tested. Some newer C++ language features are used and therefore a later version of the compiler might be required.
-
-
-## Developing in VS Code ##
-
-AutoHotkey v2 can also be built and debugged in VS Code.
-
-Requirements:
-  - [C/C++ for Visual Studio Code](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools). VS Code might prompt you to install this if you open a .cpp file.
-  - [Build Tools for Visual Studio 2022](https://aka.ms/vs/17/release/vs_BuildTools.exe) with the "Desktop development with C++" workload, or similar (some older or newer versions and different products should work).
-
-
-
-## Build Configurations ##
-
-AutoHotkeyx.vcxproj contains several combinations of build configurations.  The main configurations are:
-
-  - **Debug**: AutoHotkey.exe in debug mode.
-  - **Release**: AutoHotkey.exe for general use.
-  - **Self-contained**: AutoHotkeySC.bin, used for compiled scripts.
-
-Secondary configurations are:
-
-  - **(mbcs)**: ANSI (multi-byte character set). Configurations without this suffix are Unicode.
-  - **.dll**: Builds an experimental dll for use hosting the interpreter, such as to enable the use of v1 libraries in a v2 script. See [README-LIB.md](README-LIB.md).
-
-
-## Platforms ##
-
-AutoHotkeyx.vcxproj includes the following Platforms:
-
-  - **Win32**: for Windows 32-bit.
-  - **x64**: for Windows x64.
-
-AutoHotkey supports Windows XP with or without service packs and Windows 2000 via an asm patch (win2kcompat.asm).  Support may be removed if maintaining it becomes non-trivial.  Older versions are not supported.
+GNU General Public License — see [LICENSE](LICENSE).

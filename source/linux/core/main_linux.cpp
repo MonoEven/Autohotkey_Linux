@@ -28,6 +28,24 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
+	// Version/help switches (Linux convention; the Windows build has no
+	// --version either, but installers and users expect one here).
+	if (!strcmp(argv[1], "--version") || !strcmp(argv[1], "-v"))
+	{
+		std::printf("AutoHotkey v2.0.26 Linux port (X11/Wayland)\n");
+		return 0;
+	}
+	if (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h"))
+	{
+		std::printf("AutoHotkey Linux (v2 port)\n"
+			"Usage: ahk_core script.ahk [args...]\n"
+			"  --version, -v   print the version and exit\n"
+			"  --help, -h      show this help\n"
+			"Displays: X11 when DISPLAY is set (incl. XWayland), native\n"
+			"Wayland otherwise (xdg-shell + virtual input protocols).\n");
+		return 0;
+	}
+
 	wchar_t wpath[4096];
 	if (mbstowcs(wpath, argv[1], 4095) == (size_t)-1)
 	{

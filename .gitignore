@@ -14,3 +14,6 @@ ipch/
 # Doc-check outputs (the docs-v2 mirror is committed and published as the
 # GitHub Pages site)
 tests/doccheck/out/
+
+# Release packaging output
+dist/

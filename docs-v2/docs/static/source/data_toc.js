@@ -31,7 +31,7 @@ tocData = [
     ["Tutorial by tidbit","Tutorial.htm"]
   ]],
   ["Recent Changes","ChangeLog.htm"],
-  ["Changes from v1.1 to v2.0","v2-changes.htm"],
+  ["Changes from v1.1 to v2.0",],
   ["Script Showcase","scripts/index.htm"],
   ["Function Index","lib/index.htm"],
   ["Drive", "lib/Drive.htm",
