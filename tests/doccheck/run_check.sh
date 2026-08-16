@@ -127,52 +127,58 @@ for ahk in assert_*.ahk; do
     assert_general) extra=("one" "two") ;;
     *) extra=() ;;
   esac
-  # assert_win/assert_input run under Xvfb and write their output to a file
-  # (MsgBox would open a real dialog with a display present).
-  if [ "$base" = "assert_win" ] || [ "$base" = "assert_input" ] || [ "$base" = "assert_ctrl" ] || [ "$base" = "assert_monitor" ] || [ "$base" = "assert_timer" ] || [ "$base" = "assert_hotkey" ] || [ "$base" = "assert_edit" ] || [ "$base" = "assert_dialog" ] || [ "$base" = "assert_msg" ] || [ "$base" = "assert_image" ] || [ "$base" = "assert_shape" ]; then
-    XDISPLAY=:99
-  else
-    XDISPLAY=""
-  fi
-  DISPLAY=$XDISPLAY timeout 60 "$BIN" "$ahk" "${extra[@]}" > "out/${base}.txt" 2>&1
+  # Display-dependent suites run under Xvfb (MsgBox would open a real
+  # dialog with a display present); everything else stays headless.
+  case "$base" in
+    assert_win|assert_input|assert_ctrl|assert_monitor|assert_timer|assert_hotkey|assert_edit|assert_dialog|assert_msg|assert_image|assert_shape)
+      XDISPLAY=:99 ;;
+    *) XDISPLAY="" ;;
+  esac
+  # The runner's stdout/stderr (and anything a child inherits, e.g.
+  # xwin_helper's Xlib error output) goes to a *separate* raw log; the
+  # final assertion file is published from the script's own output file
+  # via tmp+rename so no late writer holding the old inode can corrupt it.
+  raw="out/${base}.proc.log"
+  final="out/${base}.txt"
+  tmp="out/${base}.txt.tmp"
+  rm -f "$raw" "$final" "$tmp"
+  DISPLAY=$XDISPLAY timeout 60 "$BIN" "$ahk" "${extra[@]}" > "$raw" 2>&1
   rc=$?
   if [ $rc -ne 0 ]; then
     fail=$((fail+1))
     echo "FAIL: $base (runner exit=$rc)"
+    echo "DIAG $base raw tail: $(tail -3 "$raw" 2>/dev/null | tr '\n' ';')"
     continue
   fi
-  if [ "$base" = "assert_win" ]; then
-    cp /tmp/ahk_dc_win_out.txt "out/${base}.txt" 2>/dev/null || true
-  fi
-  if [ "$base" = "assert_input" ]; then
-    cp /tmp/ahk_dc_input_out.txt "out/${base}.txt" 2>/dev/null || true
-  fi
-  if [ "$base" = "assert_ctrl" ]; then
-    cp /tmp/ahk_dc_ctrl_out.txt "out/${base}.txt" 2>/dev/null || true
-  fi
-  if [ "$base" = "assert_monitor" ]; then
-    cp /tmp/ahk_dc_monitor_out.txt "out/${base}.txt" 2>/dev/null || true
-  fi
-  if [ "$base" = "assert_timer" ]; then
-    cp /tmp/ahk_dc_timer_out.txt "out/${base}.txt" 2>/dev/null || true
-  fi
-  if [ "$base" = "assert_hotkey" ]; then
-    cp /tmp/ahk_dc_hotkey_out.txt "out/${base}.txt" 2>/dev/null || true
-  fi
-  if [ "$base" = "assert_edit" ]; then
-    cp /tmp/ahk_dc_edit_out.txt "out/${base}.txt" 2>/dev/null || true
-  fi
-  if [ "$base" = "assert_dialog" ]; then
-    cp /tmp/ahk_dc_dialog_out.txt "out/${base}.txt" 2>/dev/null || true
-  fi
-  if [ "$base" = "assert_msg" ]; then
-    cp /tmp/ahk_dc_msg_out.txt "out/${base}.txt" 2>/dev/null || true
-  fi
-  if [ "$base" = "assert_image" ]; then
-    cp /tmp/ahk_dc_image_out.txt "out/${base}.txt" 2>/dev/null || true
-  fi
-  if [ "$base" = "assert_shape" ]; then
-    cp /tmp/ahk_dc_shape_out.txt "out/${base}.txt" 2>/dev/null || true
+  # Publish the suite's own output file (if any) as the assertion source.
+  out_src=""
+  case "$base" in
+    assert_win)     out_src="/tmp/ahk_dc_win_out.txt" ;;
+    assert_input)   out_src="/tmp/ahk_dc_input_out.txt" ;;
+    assert_ctrl)    out_src="/tmp/ahk_dc_ctrl_out.txt" ;;
+    assert_monitor) out_src="/tmp/ahk_dc_monitor_out.txt" ;;
+    assert_timer)   out_src="/tmp/ahk_dc_timer_out.txt" ;;
+    assert_hotkey)  out_src="/tmp/ahk_dc_hotkey_out.txt" ;;
+    assert_edit)    out_src="/tmp/ahk_dc_edit_out.txt" ;;
+    assert_dialog)  out_src="/tmp/ahk_dc_dialog_out.txt" ;;
+    assert_msg)     out_src="/tmp/ahk_dc_msg_out.txt" ;;
+    assert_image)   out_src="/tmp/ahk_dc_image_out.txt" ;;
+    assert_shape)   out_src="/tmp/ahk_dc_shape_out.txt" ;;
+  esac
+  if [ -n "$out_src" ] && [ -f "$out_src" ]; then
+    cp "$out_src" "$tmp" && mv -f "$tmp" "$final"
+    # Diagnostics: is a late writer still growing the raw log after the
+    # script returned?  (Proves an inherited-fd descendant keeps writing.)
+    size1=$(stat -c %s "$raw" 2>/dev/null || echo 0)
+    sleep 1
+    size2=$(stat -c %s "$raw" 2>/dev/null || echo 0)
+    if [ "$size1" != "$size2" ]; then
+      echo "DIAG $base raw_log_grew_after_exit: $size1 -> $size2 (late writer!)"
+      ps -ef | grep -E '[x]win_helper|[X]vfb' | head -5
+    fi
+  else
+    # No separate output file: the raw log (stdout) is the assertion source.
+    mv -f "$raw" "$final"
   fi
   # assert_display: the ListVars/ListHotkeys/KeyHistory dumps go to stdout;
   # check the freeform content patterns from assert_display_content.txt.

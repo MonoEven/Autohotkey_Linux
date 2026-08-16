@@ -37,11 +37,12 @@ static int xerr_handler(Display *d, XErrorEvent *e)
 
 static int xioerr_handler(Display *d)
 {
-    // Connection-level error (e.g. the runner kills us while we hold the
-    // X connection): stay silent -- our stderr is shared with the
-    // doc-check output file, and the default handler would print
-    // "X connection ... broken" into it.
-    return 0;
+    // Connection-level (fatal) error: the runner killed us or the X
+    // server went away.  Xlib semantics say this handler must NOT return
+    // (returning makes Xlib exit anyway); exit quietly ourselves so no
+    // "X connection ... broken" text reaches our stderr, which is shared
+    // with the doc-check output files.
+    _exit(0);
 }
 
 #define MAX_CHILDREN 32
