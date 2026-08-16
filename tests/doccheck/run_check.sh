@@ -198,14 +198,14 @@ for ahk in assert_*.ahk; do
       fail=$((fail+1))
       echo "FAIL: $base/$name want=[$want] got=[$got]"
       # Diagnostics for flaky failures: show the raw lines around the
-      # assertion and the tail of the output file.
+      # assertion and the tail of the output file.  Prefix with "DIAG" so
+      # GitHub's log folding cannot swallow the lines.
       if [ "$fail" -le 12 ]; then
-        echo "  -- grep -n '^${name}=' out/${base}.txt (raw):"
-        grep -n "^${name}=" "out/${base}.txt" | head -3 | sed 's/^/  | /'
-        echo "  -- tail of out/${base}.txt:"
-        tail -4 "out/${base}.txt" | sed 's/^/  | /'
-        echo "  -- expect lines around ${name}:"
-        grep -n "^${name}=" "assert_${base}_expect.txt" | sed 's/^/  | /'
+        echo "DIAG base=$base name=$name out=out/${base}.txt"
+        echo "DIAG raw-grep: [$(grep -n "^${name}=" "out/${base}.txt" | head -3 | tr '\n' ';')]"
+        echo "DIAG tail: [$(tail -4 "out/${base}.txt" | tr '\n' ';')]"
+        echo "DIAG expect: [$(grep -n "^${name}=" "assert_${base}_expect.txt" | tr '\n' ';')]"
+        echo "DIAG wc: $(wc -c < "out/${base}.txt" 2>/dev/null || echo missing)"
       fi
     fi
   done < "$exp"

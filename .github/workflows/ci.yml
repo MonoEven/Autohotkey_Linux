@@ -54,6 +54,15 @@ jobs:
       - name: Doc-check (Xvfb)
         run: |
           bash tests/doccheck/run_check.sh --xvfb "$BUILD_DIR/source/linux/core/ahk_core"
+        continue-on-error: true
+
+      - name: Upload doc-check outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: doccheck-${{ matrix.build }}
+          path: tests/doccheck/out/
+          if-no-files-found: ignore
 
       - name: Wayland doc-check (pure + XWayland)
         run: |
