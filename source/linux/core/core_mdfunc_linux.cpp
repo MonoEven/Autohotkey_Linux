@@ -2467,7 +2467,6 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(SetKeyDelay, BIF_Linux_SetKeyDelay, 0, 3),
 	LMD_IMPL(SetMouseDelay, BIF_Linux_SetMouseDelay, 1, 2),
 	LMD_IMPL(SetNumLockState, BIF_Linux_SetNumLockState, 0, 1),
-	LMD_NI(SetNumLockState, 0, 1),
 	LMD_IMPL(SetRegView, BIF_Linux_SetRegView, 1, 1),
 	LMD_IMPL(SetScrollLockState, BIF_Linux_SetScrollLockState, 0, 1),
 	LMD_IMPL(SetStoreCapsLockMode, BIF_Linux_SetStoreCapsLockMode, 1, 1),

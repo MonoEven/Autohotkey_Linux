@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **638 / 638 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 26 项、定时器/悬浮提示模块 11 项、热键模块 10 项实测与 headless 显示/快捷方式模块 15 项;25 项 headless 回归测试亦全部通过)
+- **结果**: **663 / 663 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 26 项、定时器/悬浮提示模块 11 项、热键模块 10 项实测,headless 显示/快捷方式模块 15 项与未实现函数错误行为模块 25 项;25 项 headless 回归测试亦全部通过)
 
 ---
 
@@ -14,7 +14,7 @@
 | 文件 | 作用 |
 |---|---|
 | `tests/doccheck/extract_docs.py` | 解析 `docs-v2/docs/lib/*.htm`,提取每个函数的名称/描述/语法/参数/返回值/示例 → `doc_index.tsv`(352 个函数条目) |
-| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(302 个已实现,27 个未实现) |
+| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(302 个已实现,26 个未实现) |
 | `tests/doccheck/assert_*.ahk` | 按模块编写的实测脚本(每个断言输出 `name=value` 行,取自官方文档语义) |
 | `tests/doccheck/assert_*_expect.txt` | 与文档语义对应的期望值 |
 | `tests/doccheck/run_check.sh` | 运行全部断言并逐条比对(支持传入任意二进制路径,如 `run_check.sh build-asan/ahk_core`) |
@@ -40,7 +40,8 @@
 | 显示/快捷方式 (FileCreateShortcut/FileGetShortcut + ListVars/ListHotkeys/KeyHistory,.desktop/.url 与 headless 输出) | `assert_display.ahk` | 15 |
 | 定时器/悬浮提示 (SetTimer + ToolTip,主循环 + X11 override-redirect 窗口) | `assert_timer.ahk` | 11 |
 | 热键 (Hotkey + XGrabKey 激活) | `assert_hotkey.ahk` | 10 |
-| **合计** | | **638** |
+| 未实现函数错误行为 (26 个无法移植函数的明确报错校验) | `assert_notimpl.ahk` | 25 |
+| **合计** | | **663** |
 
 复现命令:
 
@@ -254,6 +255,11 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 - **测试设施**: `assert_hotkey.ahk`/`assert_hotkey_expect.txt`(新增,10 断言:单键触发、Ctrl/Shift/Alt 组合、多余修饰键不触发(文档)、On/Off 动作、Key up 热键、非法键名 ValueError、热键使脚本保持运行且与定时器共存——组合以 Send 的 `^{F8}` 形式发送,XTEST 事件经抓取回到脚本并被派发);`run_check.sh --xvfb` 运行。
 - **本轮修复的真实缺陷**: ① `HookAdjustMaxHotkeys` 桩返回 false → `Hotkey::AddHotkey` 报伪"Out of memory"——改为真实 realloc(上游钩子代码经此函数扩容热键数组);② 测试脚本变量与回调函数同名(`h1` 与 `H1`,v2 名称大小写不敏感 → 函数名保留,变量冲突报错)——改名,属测试脚本问题非移植缺陷;③ `Send("^F8")` 按文档语义是 Ctrl+文本"F8"(修饰符只作用于下一个键),组合键应写 `Send("^{F8}")`——测试脚本修正。
 
+### 2.32 未实现函数错误行为校验(收尾,本轮)
+- **校验方式**: 对余下 26 个无法移植到 Linux 的函数(Edit*/Gui*/IL_*/Menu*/ListView*/LoadPicture/ImageSearch/DirSelect/FileSelect/Hotstring/OnMessage/SendMessage/PostMessage/RunAs/WinSetRegion——依赖 Windows GUI 控件、COM、消息泵或选择对话框),逐一以最少参数调用并捕获异常,验证错误消息为清晰的 "This built-in function has not been ported to Linux yet."(而非静默返回错误值或其它误导性错误)。
+- **结果**: 25 项全部通过(SetNumLockState 重复的 LMD_NI 残留条目已删除,实际未实现 26 项);这些函数在 `worklist.tsv` 中标注 `NOT_IMPL`,各自不可移植的原因见下表。
+- **不可移植原因**(Linux 无对应机制):Edit*/ListViewGetContent——Windows 编辑/列表控件的消息协议;Gui*/GuiCtrlFromHwnd/GuiFromHwnd——X11 无同名控件与句柄映射;Menu*/IL_*——Windows 菜单/图标列表句柄;LoadPicture——无 HBITMAP/COM 图像解码管线;ImageSearch——依赖 GDI 位图比较;DirSelect/FileSelect——Windows 标准对话框(可经命令行工具近似,语义差异大,保持明确报错);Hotstring——需要按键缓冲引擎(热键基础设施已就绪,可作后续工作);OnMessage/SendMessage/PostMessage——Windows 消息标识空间与 X11 事件模型无对应;RunAs——Windows 凭据注入;WinSetRegion——X11 无区域形状 API。
+
 ---
 
 ## 3. 测试预期修正(文档语义确认,非移植缺陷)
@@ -310,16 +316,17 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 | 定时器 (SetTimer + 主循环) | ✅ 6/6 | headless 实测:周期触发(等待期间也触发,文档)、Period 0 删除、默认 250ms、负周期仅运行一次、省略函数=当前定时器、非法函数对象报错 |
 | 悬浮提示 (ToolTip) | ✅ 5/5 | Xvfb 下实测:返回 HWND、窗口标题=文本、同索引更新复用窗口、坐标、空白隐藏并返回 0 |
 | 热键 (Hotkey) | ✅ 10/10 | Xvfb 下以 Send 触发实测:单键与 ^/+/! 组合、多余修饰键不触发(文档)、On/Off 动作、Key up、非法键名 ValueError、热键保持脚本运行并与定时器共存 |
+| 未实现函数错误行为 (Edit*/Gui*/Menu*/IL_*/LoadPicture/ImageSearch/选择对话框/Hotstring/OnMessage/SendMessage/PostMessage/RunAs/WinSetRegion) | ✅ 25/25 | 逐函数以最少参数调用,验证抛出清晰的 "not been ported to Linux" 运行时错误(不静默返回错误值);各函数不可移植原因见 §2.32 |
 | 未实现模块 (GUI/GuiCtrl/COM/DllCall/Hotstring/剪贴板监听/Edit*/SendMessage/PostMessage/OnMessage/ImageSearch/DirSelect/FileSelect 等 27 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
 
 ## 5. 回归与构建验证
 
 ```
 普通构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh PASS=423 FAIL=0 (headless)
-          tests/doccheck/run_check.sh --xvfb PASS=638 FAIL=0 (含窗口 67 + 输入 40 + 控件 62 + 显示器/像素/状态栏 26 + 显示/快捷方式 15 + 定时器/悬浮提示 11 + 热键 10)
+          tests/doccheck/run_check.sh PASS=448 FAIL=0 (headless,含未实现函数错误行为 25)
+          tests/doccheck/run_check.sh --xvfb PASS=663 FAIL=0 (含窗口 67 + 输入 40 + 控件 62 + 显示器/像素/状态栏 26 + 显示/快捷方式 15 + 定时器/悬浮提示 11 + 热键 10 + 未实现函数 25)
 ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=638 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=663 FAIL=0
 ```
 
 ## 6. 本轮改动文件
@@ -387,3 +394,5 @@ ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
 - `source/linux/core/core_mdfunc_linux.cpp`(本轮):Hotkey 由 LMD_NI 翻转 LMD_IMPL
 - `source/linux/core/CMakeLists.txt`(本轮):加入 `core_hotkey_linux.cpp`
 - `tests/doccheck/assert_hotkey.ahk`/`assert_hotkey_expect.txt`(新增,10 断言);`run_check.sh --xvfb` 运行 assert_hotkey;worklist 重新生成(**302 IMPL / 27 NOT_IMPL**)
+- `source/linux/core/core_mdfunc_linux.cpp`(本轮):删除 SetNumLockState 残留的重复 LMD_NI 条目(round-7 翻转时遗留)
+- `tests/doccheck/assert_notimpl.ahk`/`assert_notimpl_expect.txt`(新增,25 断言:26 个无法移植函数逐一验证抛出清晰的 "not been ported to Linux" 错误);`run_check.sh` headless 运行;worklist 重新生成(**302 IMPL / 26 NOT_IMPL**)
