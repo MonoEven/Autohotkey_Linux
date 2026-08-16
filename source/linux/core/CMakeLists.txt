@@ -105,6 +105,8 @@ add_executable(ahk_core
     core_hotkey_linux.cpp
     core_clipboard_linux.cpp
     core_dllcall_linux.cpp
+    core_com_dbus_linux.cpp
+    core_com_bif_linux.cpp
     core_platform_stubs.cpp
     core_wayland_linux.cpp
     main_linux.cpp
@@ -131,4 +133,5 @@ find_library(XEXT_LIBRARY Xext REQUIRED)
 # systems, but link explicitly for portability) + libffi for the call.
 find_library(DL_LIBRARY dl REQUIRED)
 pkg_check_modules(LIBFFI REQUIRED IMPORTED_TARGET libffi)
-target_link_libraries(ahk_core PRIVATE X11::X11 ahk_pcre16 ${XTST_LIBRARY} ${XRANDR_LIBRARY} ${XINERAMA_LIBRARY} ${XEXT_LIBRARY} PkgConfig::WAYLAND_CLIENT PkgConfig::XKBCOMMON ${DL_LIBRARY} PkgConfig::LIBFFI)
+pkg_check_modules(DBUS REQUIRED IMPORTED_TARGET dbus-1)
+target_link_libraries(ahk_core PRIVATE X11::X11 ahk_pcre16 ${XTST_LIBRARY} ${XRANDR_LIBRARY} ${XINERAMA_LIBRARY} ${XEXT_LIBRARY} PkgConfig::WAYLAND_CLIENT PkgConfig::XKBCOMMON ${DL_LIBRARY} PkgConfig::LIBFFI PkgConfig::DBUS)

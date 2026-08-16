@@ -29,14 +29,6 @@ LINUX_BIV_STUB(name) \
 void name##_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue) { (void)aVarName; (void)aValue; (void)aResultToken; }
 
 LINUX_BIF_STUB(BIF_CaretGetPos)
-LINUX_BIF_STUB(BIF_ComObj)
-LINUX_BIF_STUB(BIF_ComObjActive)
-LINUX_BIF_STUB(BIF_ComObjConnect)
-LINUX_BIF_STUB(BIF_ComObjFlags)
-LINUX_BIF_STUB(BIF_ComObjGet)
-LINUX_BIF_STUB(BIF_ComObjQuery)
-LINUX_BIF_STUB(BIF_ComObjType)
-LINUX_BIF_STUB(BIF_ComObjValue)
 LINUX_BIF_STUB(BIF_Sound)
 
 // WinExist/WinActive: implemented in core_win_linux.cpp (X11 window backend).

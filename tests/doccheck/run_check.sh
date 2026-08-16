@@ -21,6 +21,19 @@ case "$BIN" in
 esac
 mkdir -p out
 
+# D-Bus session bus for the COM (D-Bus) assertions.  Start a private
+# session daemon and export its address so ahk_core (and any child) can
+# connect; ComObject/ComObjGet proxies then work against a real bus.
+DBUS_PID=""
+if command -v dbus-daemon >/dev/null 2>&1; then
+  DBUS_ADDR="unix:path=/tmp/ahk_dc_bus"
+  rm -f /tmp/ahk_dc_bus
+  dbus-daemon --session --fork --address="$DBUS_ADDR" 2>/dev/null
+  DBUS_PID=$(pgrep -f "dbus-daemon.*ahk_dc_bus" | head -1)
+  export DBUS_SESSION_BUS_ADDRESS="$DBUS_ADDR"
+  echo "D-Bus session bus at $DBUS_ADDR (pid ${DBUS_PID:-unknown})"
+fi
+
 # assert_sys downloads from a local HTTP server (Download assertions).
 HTTP_PORT=18765
 HTTP_DIR=/tmp/ahk_dc_http
@@ -63,7 +76,7 @@ if [ "$XVFB" = 1 ]; then
     chmod +x /tmp/ahk_edit_marker.sh
   fi
 fi
-trap 'kill $HTTP_PID 2>/dev/null; [ -n "$XVFB_PID" ] && kill $XVFB_PID 2>/dev/null' EXIT
+trap 'kill $HTTP_PID 2>/dev/null; [ -n "$XVFB_PID" ] && kill $XVFB_PID 2>/dev/null; [ -n "$DBUS_PID" ] && kill $DBUS_PID 2>/dev/null' EXIT
 
 pass=0; fail=0
 for ahk in assert_*.ahk; do

@@ -14,7 +14,7 @@
 
 <h1>ComObjFromPtr</h1>
 
-<div class="warning" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> COM is not available on Linux; these functions throw an error. The D-Bus desktop bus is used for inter-process communication instead.</div>
+<div class="note" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> COM is implemented over the D-Bus desktop bus: <code>ComObject("org.freedesktop.DBus")</code> creates a proxy for a bus service, method calls and property access map to D-Bus calls, and <code>ComValue</code> wraps typed values. Windows COM interfaces (IUnknown/IDispatch pointers, SafeArrays) do not exist on Linux.</div>
 
 
 

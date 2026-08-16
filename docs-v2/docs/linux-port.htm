@@ -50,8 +50,13 @@ two display backends:</p>
 <ul>
   <li>No GUI windows (Gui, GuiControl, Menu objects are not portable and
     are not implemented); use text-based or external tools.</li>
-  <li>No COM (the COM built-ins throw); the D-Bus desktop bus is used for
-    inter-process communication instead.</li>
+  <li><b>COM is implemented over D-Bus</b>: <code>ComObject("service")</code>
+    (or ComObjGet) creates a proxy for a D-Bus service; method calls and
+    property access map to D-Bus method/property calls; ComValue wraps
+    typed values (integers, doubles, strings, booleans, bytes). Windows
+    COM interfaces (IUnknown/IDispatch pointers, SafeArrays, events) do
+    not exist on Linux; ComObjQuery/ComObjConnect/ComObjArray raise an
+    error.</li>
   <li><b>DllCall is supported</b> for native Linux shared objects (.so):
     functions are resolved with dlopen/dlsym and called through libffi,
     with Int/Int64/Short/Char/Float/Double/Ptr/Str/AStr/WStr argument

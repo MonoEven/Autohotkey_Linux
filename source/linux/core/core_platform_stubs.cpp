@@ -376,10 +376,6 @@ HANDLE Clipboard::GetClipboardDataTimeout(UINT, BOOL *) { return nullptr; }
 ResultType Clipboard::Close(LPTSTR) { return OK; }
 
 // --- COM ---
-void DefineComPrototypeMembers() {}
-BIF_DECL(ComValue_Call) { (void)aParam; (void)aParamCount; }
-BIF_DECL(ComObject_Call) { (void)aParam; (void)aParamCount; }
-BIF_DECL(ComObjArray_Call) { (void)aParam; (void)aParamCount; }
 
 // --- object/runtime ---
 void DefineFileClassLinuxOnPrototype(Object *aPrototype); // core_file_linux.cpp
