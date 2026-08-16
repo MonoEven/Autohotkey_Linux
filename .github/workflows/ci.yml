@@ -30,6 +30,7 @@ jobs:
             cmake g++ ninja-build \
             libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev \
+            libffi-dev \
             xvfb xdotool sway xwayland weston
           sudo apt-get install -y --no-install-recommends python3 dpkg-dev
 
@@ -85,6 +86,7 @@ jobs:
             cmake g++ ninja-build \
             libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev \
+            libffi-dev \
             python3 dpkg-dev rpm
 
       - name: Build
@@ -101,6 +103,12 @@ jobs:
 
       - name: Verify packages
         run: |
+          # head closes the pipe early -> tar gets SIGPIPE (exit 141);
+          # ignore it (the listing is just a sanity check).
+          set +e
           tar tzf dist/autohotkey-linux-*.tar.gz | head -5
+          tar_rc=$?
+          set -e
+          [ $tar_rc -eq 0 ] || [ $tar_rc -eq 141 ]
           dpkg-deb --info dist/autohotkey-linux-*.deb | head -8
-          ls dist/*.AppImage dist/*.rpm 2>/dev/null
+          ls dist/*.AppImage dist/*.rpm 2>/dev/null || true

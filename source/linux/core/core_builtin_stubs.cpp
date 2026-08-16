@@ -37,7 +37,6 @@ LINUX_BIF_STUB(BIF_ComObjGet)
 LINUX_BIF_STUB(BIF_ComObjQuery)
 LINUX_BIF_STUB(BIF_ComObjType)
 LINUX_BIF_STUB(BIF_ComObjValue)
-LINUX_BIF_STUB(BIF_DllCall)
 LINUX_BIF_STUB(BIF_Sound)
 
 // WinExist/WinActive: implemented in core_win_linux.cpp (X11 window backend).
