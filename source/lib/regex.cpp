@@ -109,9 +109,12 @@ ResultType RegExCreateMatchArray(LPCTSTR haystack, pcret *re, pcret_extra *extra
 		&& !pcret_fullinfo(re, extra, PCRE_INFO_NAMETABLE, &name_table) // Success.
 		&& !pcret_fullinfo(re, extra, PCRE_INFO_NAMEENTRYSIZE, &name_entry_size)   ) // Success.
 	{
-		int pcre_options;
+		// pcre16_fullinfo writes PCRE_INFO_OPTIONS as an unsigned long
+		// (8 bytes on LP64); use a matching type (the Windows original used
+		// int, which is 4 bytes there -- a latent overflow on Linux).
+		unsigned long pcre_options;
 		if (!pcret_fullinfo(re, extra, PCRE_INFO_OPTIONS, &pcre_options)) // Success.
-			allow_dupe_subpat_names = pcre_options & PCRE_DUPNAMES;
+			allow_dupe_subpat_names = (pcre_options & PCRE_DUPNAMES) != 0;
 		// For indexing simplicity, also include an entry for the main/entire pattern at index 0 even though
 		// it's never used because the entire pattern can't have a name without enclosing it in parentheses
 		// (in which case it's not the entire pattern anymore, but in fact subpattern #1).
@@ -615,7 +618,9 @@ pcret *get_compiled_regex(LPCTSTR aRegEx, pcret_extra *&aExtra, int *aOptionsLen
 	#define PCRE_NEWLINE_BITS (PCRE_NEWLINE_CRLF | PCRE_NEWLINE_ANY) // Covers all bits that are used for newline options.
 
 	// SET DEFAULT OPTIONS:
-	int pcre_options;
+	// PCRE_INFO_OPTIONS is written as unsigned long (8 bytes on LP64);
+	// keep the type in sync (see RegExCreateMatchArray).
+	unsigned long pcre_options;
 	long long do_study;
 	SET_DEFAULT_PCRE_OPTIONS
 
@@ -702,9 +707,9 @@ break_both:
 
 	// COMPILE THE REGEX.
 #ifdef __linux__
-	if (   !(re_compiled = LinuxPcre16Compile(pat, pcre_options, &error_code, (LPCSTR *)&error_msg, &error_offset))   )
+	if (   !(re_compiled = LinuxPcre16Compile(pat, (int)pcre_options, &error_code, (LPCSTR *)&error_msg, &error_offset))   )
 #else
-	if (   !(re_compiled = pcret_compile2(pat, pcre_options, &error_code, &error_msg, &error_offset, NULL))   )
+	if (   !(re_compiled = pcret_compile2(pat, (int)pcre_options, &error_code, &error_msg, &error_offset, NULL))   )
 #endif
 	{
 		if (aResultToken) // A non-NULL value indicates our caller is RegExMatch() or RegExReplace() in a script.

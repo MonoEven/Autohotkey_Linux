@@ -30,12 +30,14 @@
 #include <xdg-shell-protocol.h>
 #include <virtual-keyboard-unstable-v1-protocol.h>
 #include <wlr-virtual-pointer-unstable-v1-protocol.h>
+#include <wlr-screencopy-unstable-v1-protocol.h>
 #include <xkbcommon/xkbcommon.h>
 #include <linux/input-event-codes.h>
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <poll.h>
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -71,6 +73,7 @@ struct LinuxWaylandState
 	zwp_virtual_keyboard_v1 *vkbd = nullptr;
 	zwlr_virtual_pointer_v1 *vptr = nullptr;
 	bool vptr_used = false;
+	unsigned int vkbd_mods_depressed = 0; // Tracked for the modifiers request.
 	bool active = false;
 	bool connect_failed = false;
 	std::vector<LinuxWaylandWindow *> windows;
@@ -466,21 +469,28 @@ bool LinuxWaylandKeyEvent(unsigned int aVK, bool aDown)
 		return false;
 	if (FILE *f = LinuxWlEvlog())
 		fprintf(f, "send:k:%u:%s\n", kc, aDown ? "down" : "up");
+	// xkb modifier bits used by compositors for binding matching:
+	// Shift=1, Control=4, Mod1(Alt)=8, Mod4(Super/Logo)=64.
+	unsigned int mod_bit = 0;
+	switch (aVK)
+	{
+	case 0x10: case 0xA0: case 0xA1: mod_bit = 1; break; // Shift.
+	case 0x11: case 0xA2: case 0xA3: mod_bit = 4; break; // Control.
+	case 0x12: case 0xA4: case 0xA5: mod_bit = 8; break; // Alt.
+	case 0x5B: mod_bit = 64; break;                      // Super/Logo.
+	}
+	if (aDown)
+		s.vkbd_mods_depressed |= mod_bit;
+	else
+		s.vkbd_mods_depressed &= ~mod_bit;
+	// Virtual-keyboard key events update the compositor's key state, but
+	// the compositor's *modifier* state must be pushed explicitly with the
+	// modifiers request (compositors such as sway match bindsym combos
+	// against it).  Send it with every key event so combos like
+	// Shift+Return are matched.
+	zwp_virtual_keyboard_v1_modifiers(s.vkbd, s.vkbd_mods_depressed, 0, 0, 0);
 	zwp_virtual_keyboard_v1_key(s.vkbd, 0, kc, aDown ? WL_KEYBOARD_KEY_STATE_PRESSED : WL_KEYBOARD_KEY_STATE_RELEASED);
 	wl_display_flush(s.display);
-	// Modifier state must reach the compositor before subsequent keys are
-	// matched against modifier combos (e.g. sway bindsym Shift+Return); a
-	// roundtrip lets the compositor process the modifier press first.
-	if (aDown)
-	{
-		switch (aVK)
-		{
-		case 0x10: case 0x11: case 0x12: case 0x5B:
-		case 0xA0: case 0xA1: case 0xA2: case 0xA3: case 0xA4: case 0xA5:
-			wl_display_roundtrip(s.display);
-			break;
-		}
-	}
 	return true;
 }
 
@@ -680,4 +690,364 @@ void LinuxWaylandDispatch()
 		wl_display_dispatch_pending(s.display);
 	wl_display_read_events(s.display);
 	wl_display_dispatch_pending(s.display);
+}
+
+// ---------------------------------------------------------------------------
+// Screen capture via wlr-screencopy (XWayland fallback)
+// ---------------------------------------------------------------------------
+// sway's XWayland root window has no backing store, so XGetImage of the
+// root returns BadMatch; the compositor, however, exposes the real screen
+// content through zwlr_screencopy_manager_v1.  When the X11 grab fails,
+// the image module falls back to this function: it connects to the
+// Wayland compositor (a separate connection; the main one may be inactive
+// in XWayland mode), asks for the region in output-logical coordinates and
+// converts the returned wl_shm buffer to 0xRRGGBB.
+
+struct LinuxWlCapState
+{
+	wl_display *display = nullptr;
+	wl_registry *registry = nullptr;
+	wl_shm *shm = nullptr;
+	wl_output *output = nullptr;
+	zwlr_screencopy_manager_v1 *mgr = nullptr;
+	int out_w = 0, out_h = 0; // Logical output size (physical / scale).
+};
+
+static LinuxWlCapState &LinuxWlCap()
+{
+	static LinuxWlCapState s;
+	return s;
+}
+
+static void LinuxWlCapOutputGeometry(void *aData, wl_output *o, int32_t x, int32_t y
+	, int32_t wmm, int32_t hmm, int32_t sub, const char *make, const char *model, int32_t transform)
+{
+}
+
+static void LinuxWlCapOutputMode(void *aData, wl_output *o, uint32_t aFlags
+	, int32_t aW, int32_t aH, int32_t aRefresh)
+{
+	LinuxWlCapState *c = (LinuxWlCapState *)aData;
+	c->out_w = aW;
+	c->out_h = aH;
+}
+
+static void LinuxWlCapOutputDone(void *aData, wl_output *o)
+{
+}
+
+static void LinuxWlCapOutputScale(void *aData, wl_output *o, int32_t aFactor)
+{
+	LinuxWlCapState *c = (LinuxWlCapState *)aData;
+	if (aFactor > 1)
+	{
+		c->out_w /= aFactor;
+		c->out_h /= aFactor;
+	}
+}
+
+static void LinuxWlCapOutputName(void *aData, wl_output *o, const char *aName)
+{
+}
+
+static void LinuxWlCapOutputDescription(void *aData, wl_output *o, const char *aDesc)
+{
+}
+
+static const wl_output_listener sCapOutputListener = {
+	LinuxWlCapOutputGeometry,
+	LinuxWlCapOutputMode,
+	LinuxWlCapOutputDone,
+	LinuxWlCapOutputScale,
+	LinuxWlCapOutputName,
+	LinuxWlCapOutputDescription
+};
+
+struct LinuxWlCapFrame
+{
+	bool have_buffer = false;
+	uint32_t format = 0, width = 0, height = 0, stride = 0;
+	bool y_invert = false;
+	bool done = false, failed = false;
+};
+
+static void LinuxWlCapFrameBuffer(void *aData, zwlr_screencopy_frame_v1 *f
+	, uint32_t aFormat, uint32_t aWidth, uint32_t aHeight, uint32_t aStride)
+{
+	LinuxWlCapFrame *fr = (LinuxWlCapFrame *)aData;
+	fr->format = aFormat;
+	fr->width = aWidth;
+	fr->height = aHeight;
+	fr->stride = aStride;
+	fr->have_buffer = true;
+}
+
+static void LinuxWlCapFrameFlags(void *aData, zwlr_screencopy_frame_v1 *f, uint32_t aFlags)
+{
+	LinuxWlCapFrame *fr = (LinuxWlCapFrame *)aData;
+	fr->y_invert = (aFlags & ZWLR_SCREENCOPY_FRAME_V1_FLAGS_Y_INVERT) != 0;
+}
+
+static void LinuxWlCapFrameReady(void *aData, zwlr_screencopy_frame_v1 *f
+	, uint32_t aHi, uint32_t aLo, uint32_t aNsec)
+{
+	((LinuxWlCapFrame *)aData)->done = true;
+}
+
+static void LinuxWlCapFrameFailed(void *aData, zwlr_screencopy_frame_v1 *f)
+{
+	((LinuxWlCapFrame *)aData)->failed = true;
+}
+
+static const zwlr_screencopy_frame_v1_listener sCapFrameListener = {
+	LinuxWlCapFrameBuffer, // buffer
+	LinuxWlCapFrameFlags,  // flags
+	LinuxWlCapFrameReady,  // ready
+	LinuxWlCapFrameFailed  // failed
+};
+
+static void LinuxWlCapRegistryGlobal(void *aData, wl_registry *r, uint32_t aName
+	, const char *aIface, uint32_t aVersion)
+{
+	LinuxWlCapState *c = (LinuxWlCapState *)aData;
+	if (!strcmp(aIface, "wl_shm") && !c->shm)
+		c->shm = (wl_shm *)wl_registry_bind(r, aName, &wl_shm_interface, 1);
+	else if (!strcmp(aIface, "wl_output") && !c->output)
+	{
+		c->output = (wl_output *)wl_registry_bind(r, aName, &wl_output_interface, 2);
+		wl_output_add_listener(c->output, &sCapOutputListener, c);
+	}
+	else if (!strcmp(aIface, "zwlr_screencopy_manager_v1") && !c->mgr)
+		c->mgr = (zwlr_screencopy_manager_v1 *)wl_registry_bind(r, aName
+			, &zwlr_screencopy_manager_v1_interface, 1);
+}
+
+static void LinuxWlCapRegistryRemove(void *aData, wl_registry *r, uint32_t aName)
+{
+}
+
+static const wl_registry_listener sCapRegistryListener = {
+	LinuxWlCapRegistryGlobal,
+	LinuxWlCapRegistryRemove
+};
+
+// Registered once at first capture use (see LinuxWlCapRegisterAtExit below;
+// forward-declared here because the connection code precedes the definition).
+static void LinuxWlCapAtExit();
+static bool LinuxWlCapRegisterAtExit();
+
+static void LinuxWlCapDisconnect()
+{
+	LinuxWlCapState &c = LinuxWlCap();
+	if (c.output)
+	{
+		wl_output_destroy(c.output);
+		c.output = nullptr;
+	}
+	if (c.mgr)
+	{
+		zwlr_screencopy_manager_v1_destroy(c.mgr);
+		c.mgr = nullptr;
+	}
+	if (c.shm)
+	{
+		wl_shm_destroy(c.shm);
+		c.shm = nullptr;
+	}
+	if (c.registry)
+	{
+		// Destroy the registry proxy before disconnecting (the display's
+		// proxies are not freed by wl_display_disconnect; LSan sees them).
+		wl_registry_destroy(c.registry);
+		c.registry = nullptr;
+	}
+	if (c.display)
+	{
+		wl_display_disconnect(c.display);
+		c.display = nullptr;
+	}
+	c.out_w = c.out_h = 0;
+}
+
+// Dispatch until aCond or aTimeoutMs elapses; returns true when aCond.
+static bool LinuxWlCapWait(bool &aCond, int aTimeoutMs)
+{
+	LinuxWlCapState &c = LinuxWlCap();
+	int waited = 0;
+	while (!aCond && waited < aTimeoutMs)
+	{
+		wl_display_flush(c.display);
+		struct pollfd pfd = { wl_display_get_fd(c.display), POLLIN, 0 };
+		int pr = poll(&pfd, 1, 50);
+		if (pr > 0)
+		{
+			if (wl_display_dispatch(c.display) < 0)
+				return false; // Compositor disconnected.
+		}
+		else if (pr < 0 && errno != EINTR)
+			return false;
+		waited += 50;
+	}
+	return aCond;
+}
+
+bool LinuxWaylandCaptureScreen(int aLeft, int aTop, int aWidth, int aHeight
+	, std::vector<DWORD> &aPixels)
+{
+	aPixels.clear();
+	LinuxWlCapState &c = LinuxWlCap();
+	if (!c.display)
+	{
+		// Try WAYLAND_DISPLAY, then common names under XDG_RUNTIME_DIR
+		// (the XWayland runner unsets WAYLAND_DISPLAY for the X suites).
+		c.display = wl_display_connect(nullptr);
+		if (!c.display)
+		{
+			const char *rt = getenv("XDG_RUNTIME_DIR");
+			if (rt && *rt)
+			{
+				const char *names[] = { "wayland-0", "wayland-1" };
+				for (const char *name : names)
+				{
+					std::string path = std::string(rt) + "/" + name;
+					if (access(path.c_str(), R_OK) == 0)
+					{
+						c.display = wl_display_connect(path.c_str());
+						if (c.display)
+							break;
+					}
+				}
+			}
+		}
+		if (!c.display)
+			return false;
+		LinuxWlCapRegisterAtExit();
+		c.registry = wl_display_get_registry(c.display);
+		wl_registry_add_listener(c.registry, &sCapRegistryListener, &c);
+		wl_display_roundtrip(c.display);
+		wl_display_roundtrip(c.display); // Mode/scale events arrive on the 2nd.
+	}
+	if (!c.mgr || !c.shm || !c.output || c.out_w <= 0 || c.out_h <= 0)
+	{
+		LinuxWlCapDisconnect();
+		return false;
+	}
+
+	// The region is in output-logical coordinates (sway's XWayland root
+	// spans the output 1:1 at scale 1; multi-output setups use the first
+	// output's coordinate space -- documented).  Clip to the output like
+	// XGetImage would fail for off-screen parts (BadMatch semantics).
+	int x = aLeft, y = aTop, w = aWidth, h = aHeight;
+	if (x < 0) { w += x; x = 0; }
+	if (y < 0) { h += y; y = 0; }
+	if (w <= 0 || h <= 0)
+		return false;
+	if (x + w > c.out_w) w = c.out_w - x;
+	if (y + h > c.out_h) h = c.out_h - y;
+	if (w <= 0 || h <= 0)
+		return false;
+	if (w != aWidth || h != aHeight)
+		return false; // Off-screen region: XGetImage would BadMatch.
+
+	LinuxWlCapFrame fr;
+	zwlr_screencopy_frame_v1 *frame = zwlr_screencopy_manager_v1_capture_output_region(
+		c.mgr, 0 /*overlay_cursor*/, c.output, x, y, w, h);
+	if (!frame)
+		return false;
+	zwlr_screencopy_frame_v1_add_listener(frame, &sCapFrameListener, &fr);
+	wl_display_flush(c.display);
+	if (!LinuxWlCapWait(fr.have_buffer, 3000) || fr.failed)
+	{
+		zwlr_screencopy_frame_v1_destroy(frame);
+		LinuxWlCapDisconnect();
+		return false;
+	}
+
+	// Create the wl_shm buffer the compositor will copy into.
+	char name[64];
+	snprintf(name, sizeof(name), "/ahk-cap-%d-%p", getpid(), (void *)frame);
+	int fd = shm_open(name, O_CREAT | O_RDWR, 0600);
+	shm_unlink(name);
+	if (fd < 0)
+	{
+		zwlr_screencopy_frame_v1_destroy(frame);
+		return false;
+	}
+	size_t buf_size = (size_t)fr.stride * fr.height;
+	if (ftruncate(fd, (off_t)buf_size) != 0)
+	{
+		close(fd);
+		zwlr_screencopy_frame_v1_destroy(frame);
+		return false;
+	}
+	void *map = mmap(nullptr, buf_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	if (map == MAP_FAILED)
+	{
+		close(fd);
+		zwlr_screencopy_frame_v1_destroy(frame);
+		return false;
+	}
+	wl_shm_pool *pool = wl_shm_create_pool(c.shm, fd, (int32_t)buf_size);
+	wl_buffer *buf = wl_shm_pool_create_buffer(pool, 0, (int32_t)fr.width
+		, (int32_t)fr.height, (int32_t)fr.stride, fr.format);
+	wl_shm_pool_destroy(pool);
+	zwlr_screencopy_frame_v1_copy(frame, buf);
+	wl_display_flush(c.display);
+	bool ok = LinuxWlCapWait(fr.done, 3000) && !fr.failed;
+
+	if (ok)
+	{
+		// Convert to 0xRRGGBB.  sway delivers XRGB8888/ARGB8888
+		// (little-endian memory order B,G,R,X).
+		if (fr.format != WL_SHM_FORMAT_XRGB8888 && fr.format != WL_SHM_FORMAT_ARGB8888)
+			ok = false;
+		else
+		{
+			const uint8_t *base = (const uint8_t *)map;
+			aPixels.resize((size_t)fr.width * fr.height);
+			for (uint32_t yy = 0; yy < fr.height; ++yy)
+			{
+				uint32_t src_y = fr.y_invert ? fr.height - 1 - yy : yy;
+				const uint8_t *row = base + (size_t)src_y * fr.stride;
+				for (uint32_t xx = 0; xx < fr.width; ++xx)
+				{
+					const uint8_t *p = row + (size_t)xx * 4;
+					aPixels[(size_t)yy * fr.width + xx] =
+						((DWORD)p[2] << 16) | ((DWORD)p[1] << 8) | (DWORD)p[0];
+				}
+			}
+		}
+	}
+
+	munmap(map, buf_size);
+	close(fd);
+	wl_buffer_destroy(buf);
+	zwlr_screencopy_frame_v1_destroy(frame);
+	wl_display_flush(c.display);
+	if (!ok)
+	{
+		aPixels.clear();
+		LinuxWlCapDisconnect();
+	}
+	return ok;
+}
+
+// The capture connection is cached (it may be reused across calls, e.g.
+// PixelSearch loops); disconnect it at process exit so leak checkers
+// (LSan) see a clean shutdown.
+static void LinuxWlCapAtExit()
+{
+	LinuxWlCapDisconnect();
+}
+
+// Registered once at first capture use.
+static bool LinuxWlCapRegisterAtExit()
+{
+	static bool sRegistered = false;
+	if (!sRegistered)
+	{
+		atexit(LinuxWlCapAtExit);
+		sRegistered = true;
+	}
+	return true;
 }

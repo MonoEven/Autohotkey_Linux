@@ -6,10 +6,17 @@
 ;     zwlr_virtual_pointer_manager_v1 protocols.  sway's bindsym hooks in
 ;     the runner config create marker files when our key events reach the
 ;     compositor, giving end-to-end verification of the virtual keyboard
-;     path (plain keys and modifier keys).  Modifier-combo bindings and
-;     pointer buttons are not forwarded by sway for virtual devices (a
-;     compositor limitation; the reference xdotool-style client behaves
-;     identically) -- documented.
+;     path.  The virtual keyboard's modifier state is pushed explicitly
+;     (zwp_virtual_keyboard_v1.modifiers) before each key event, so sway's
+;     combo matching sees Shift/Control exactly as a physical keyboard
+;     would: modifier-combo bindings (Shift+Return, Control+Return) fire.
+;     Note that binding a modifier key alone (bindsym Shift_L) never fires
+;     in sway -- when the modifier key is pressed its xkb modifier bit is
+;     already set, so the mods=0 binding does not match; this is the same
+;     for a physical keyboard, and is not a limitation of the virtual
+;     device path.  Pointer buttons require the pointer to hover a surface
+;     (we move it onto the ToolTip toplevel first); sway then delivers the
+;     button event to its bindsym handlers.
 ;   - ToolTip creates an xdg-shell toplevel (the compositor decides
 ;     placement); the runner verifies the window in sway's tree.
 ;   - Window management (Win*), hotkeys, pixel/monitor access are not
@@ -22,31 +29,27 @@ FileDelete(OUT)
 Log(line) => FileAppend(line "`n", OUT)
 
 KA := "/tmp/wl_key_a"
-KS := "/tmp/wl_key_shift_l"
-KC := "/tmp/wl_key_ctrl_l"
+KSR := "/tmp/wl_key_sr"
+KCR := "/tmp/wl_key_cr"
 FileDelete(KA)
-FileDelete(KS)
-FileDelete(KC)
+FileDelete(KSR)
+FileDelete(KCR)
 
 ; --- Input via the virtual keyboard protocol (end-to-end through sway) ---
 Send("a")
 Sleep(800)
 Log("wl_send_a=" (FileExist(KA) ? 1 : 0))
-Send("{Shift down}{Shift up}")
+; Modifier-combo bindings: need the virtual keyboard's modifier state to
+; be pushed to the compositor (see LinuxWaylandKeyEvent).
+Send("+{Return}")
 Sleep(800)
-Log("wl_send_shift=" (FileExist(KS) ? 1 : 0))
-Send("{Ctrl down}{Ctrl up}")
+Log("wl_send_shift_enter=" (FileExist(KSR) ? 1 : 0))
+Send("^{Return}")
 Sleep(800)
-Log("wl_send_ctrl=" (FileExist(KC) ? 1 : 0))
+Log("wl_send_ctrl_enter=" (FileExist(KCR) ? 1 : 0))
 Send("Hello World") ; Text send: must not raise.
 Sleep(500)
 Log("wl_send_text=1")
-MouseClick("Right") ; Virtual pointer button (sway does not forward it;
-Sleep(500)          ; documented compositor limitation).
-Log("wl_mouse=1")
-MouseMove(100, 100)
-Sleep(300)
-Log("wl_mousemove=1")
 ; GetKeyState cannot query a Wayland seat: reports 0 (documented).
 Log("wl_gks=" (GetKeyState("a") = 0 ? 1 : 0))
 
@@ -59,6 +62,17 @@ if FileExist("/tmp/wl_sway_tree.txt")
     Log("wl_tip_mapped=" (InStr(FileRead("/tmp/wl_sway_tree.txt"), "WLWayTip") ? 1 : 0))
 else
     Log("wl_tip_mapped=0")
+; Virtual pointer: move onto the toplevel, then click.  sway's button3
+; bindsym fires only while the pointer hovers a surface, so the ToolTip
+; window is both the pointer target and the surface the click lands on.
+MouseMove(640, 360)
+Sleep(600)
+MouseClick("Right")
+Sleep(800)
+Log("wl_mouse_btn=" (FileExist("/tmp/wl_btn3") ? 1 : 0))
+MouseMove(100, 100)
+Sleep(300)
+Log("wl_mousemove=1")
 ToolTip()
 Sleep(300)
 

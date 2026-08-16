@@ -176,7 +176,11 @@ int main(int argc, char **argv)
     XFlush(d);
 
     // Solid-color rectangles on the main window (PixelGetColor/PixelSearch).
+    // Re-painted on Expose/ConfigureNotify: a WM (sway) may resize the
+    // window after mapping, and XWayland does not preserve buffer contents
+    // across resizes.
     GC gc = XCreateGC(d, win, 0, NULL);
+    (void)gc;
     for (int i = 0; i < nfills; ++i)
     {
         struct fill_spec *f = &fills[i];
@@ -186,10 +190,7 @@ int main(int argc, char **argv)
         color.blue = (unsigned short)((f->pixel & 0xFF) * 0x101);
         color.flags = DoRed | DoGreen | DoBlue;
         if (XAllocColor(d, DefaultColormap(d, screen), &color))
-        {
-            XSetForeground(d, gc, color.pixel);
-            XFillRectangle(d, win, gc, f->x, f->y, (unsigned)f->w, (unsigned)f->h);
-        }
+            f->pixel = color.pixel; // Remember the allocated pixel.
     }
     if (nfills)
         XFlush(d);
@@ -210,6 +211,22 @@ int main(int argc, char **argv)
                 g_running = 0;
             if (ev.type == DestroyNotify)
                 g_running = 0;
+            if (ev.type == Expose)
+            {
+                // Redraw the fills (XWayland loses buffer contents when a
+                // WM resizes the window; see above).
+                if (nfills && ev.xexpose.count == 0)
+                {
+                    for (int i = 0; i < nfills; ++i)
+                    {
+                        struct fill_spec *f = &fills[i];
+                        XSetForeground(d, gc, f->pixel);
+                        XFillRectangle(d, win, gc, f->x, f->y,
+                                       (unsigned)f->w, (unsigned)f->h);
+                    }
+                    XFlush(d);
+                }
+            }
             if (ev.type == KeyPress || ev.type == KeyRelease)
             {
                 KeySym ks = XLookupKeysym(&ev.xkey, (ev.xkey.state & ShiftMask) ? 1 : 0);

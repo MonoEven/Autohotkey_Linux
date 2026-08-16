@@ -70,6 +70,7 @@ set(WL_PROTO_NAMES
   xdg-shell
   virtual-keyboard-unstable-v1
   wlr-virtual-pointer-unstable-v1
+  wlr-screencopy-unstable-v1
 )
 set(WL_GEN_SOURCES "")
 foreach(p ${WL_PROTO_NAMES})

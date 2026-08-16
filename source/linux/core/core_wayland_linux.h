@@ -34,6 +34,14 @@ unsigned int LinuxWaylandKeycodeForVk(unsigned int aVK);
 int LinuxWaylandPollFd();
 void LinuxWaylandDispatch();
 
+// Screen-capture fallback: grab the region (aLeft,aTop,aWidth,aHeight) via
+// the wlr-screencopy protocol into aPixels as 0xRRGGBB row-major.  Used
+// when XGetImage cannot read the root window (sway's XWayland root has no
+// backing store and returns BadMatch).  Returns false when no compositor
+// or no screencopy manager is reachable, or the capture failed.
+bool LinuxWaylandCaptureScreen(int aLeft, int aTop, int aWidth, int aHeight
+	, std::vector<DWORD> &aPixels);
+
 // True when a Wayland connection attempt should be made (WAYLAND_DISPLAY
 // set or a default socket exists) and no X display is in use.
 bool LinuxWaylandShouldUse();

@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **795 / 795 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 26 项、窗口形状模块 19 项实测,与 headless 各模块;26 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 13 项** 与 **XWayland 回退 193 项** 独立套件通过(见第 10 节)
+- **结果**: **795 / 795 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 26 项、窗口形状模块 19 项实测,与 headless 各模块;26 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 13 项** 与 **XWayland 回退 229 项** 独立套件通过(见第 10 节)
 
 ---
 
@@ -46,8 +46,9 @@
 | 图像 (LoadPicture/IL_*/ImageSearch,BMP/PPM 解码 + XGetImage 屏幕匹配) | `assert_image.ahk` | 26 |
 | 窗口形状 (WinSetRegion,X11 SHAPE 扩展;xshape_probe 端到端验证) | `assert_shape.ahk` | 19 |
 | **合计 (X11/headless)** | | **795** |
-| Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端、ToolTip xdg 窗口、X11 专属表面报错) | `assert_wayland.ahk` | 13 |
+| Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端(含修饰键组合与鼠标按钮)、ToolTip xdg 窗口、X11 专属表面报错) | `assert_wayland.ahk` | 13 |
 | **合计 (Wayland)** | | **808** |
+| XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 229 |
 
 复现命令:
 
@@ -333,11 +334,11 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 普通构建: tests/run_tests.sh        PASS=26 FAIL=0
           tests/doccheck/run_check.sh --xvfb PASS=795 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0 (Wayland 模式)
-          tests/doccheck/wayland_run.sh --xwayland PASS=193 FAIL=0 (XWayland 回退)
+          tests/doccheck/wayland_run.sh --xwayland PASS=229 FAIL=0 (XWayland 回退)
 ASan 构建: tests/run_tests.sh        PASS=26 FAIL=0
           tests/doccheck/run_check.sh --xvfb PASS=795 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0
-          tests/doccheck/wayland_run.sh --xwayland PASS=193 FAIL=0
+          tests/doccheck/wayland_run.sh --xwayland PASS=229 FAIL=0
 ```
 
 ## 5.5 Wayland 后端(第 20 轮)
@@ -347,11 +348,15 @@ ASan 构建: tests/run_tests.sh        PASS=26 FAIL=0
 
 - **输入模拟**:`Send`/`Mouse*` 在纯 Wayland 下经 `zwp_virtual_keyboard_v1`
   与 `zwlr_virtual_pointer_manager_v1` 注入;vk→evdev 键码内置映射(无服务器
-  往返);keymap 经 xkbcommon 编译后通过 `keymap` 请求下发;修饰键按下后
-  roundtrip 确保 compositor 先更新修饰状态。**端到端验证**:sway(headless)
-  的 `bindsym a / Shift_L / Control_L` 钩子在收到虚拟键盘事件后创建标记文件,
-  `assert_wayland` 断言标记存在。指针运动为相对移动(Wayland 客户端无法绝对
-  定位指针,文档化)。
+  往返);keymap 经 xkbcommon 编译后通过 `keymap` 请求下发。**修饰键状态经
+  `modifiers` 请求显式推送**(每次按键事件前),使 sway 的修饰键组合匹配
+  (`bindsym Shift+Return`/`Control+Return` 端到端触发;单独 `bindsym
+  Shift_L` 类绑定在真实键盘上同样不触发——按下修饰键时其 xkb 修饰位已激活,
+  与组合键行为一致)。**鼠标按钮**:sway 的按钮绑定要求指针悬停于 surface,
+  脚本先把指针移到 ToolTip 窗口上再点击,`bindsym button3` 端到端触发。
+  **端到端验证**:sway(headless)的 `bindsym` 钩子在收到虚拟键盘/指针事件后
+  创建标记文件,`assert_wayland` 断言标记存在。指针运动为相对移动(Wayland
+  客户端无法绝对定位指针,文档化)。
 - **窗口**:ToolTip 在纯 Wayland 下创建 xdg-shell toplevel(文本为标题);首次
   commit 不携带 buffer,收到 configure 后 ack 并附加 1x1 shm buffer 再 commit
   (xdg-shell 规范:`unconfigured buffer` 协议错误)。`wayland_run.sh` 经
@@ -361,10 +366,16 @@ ASan 构建: tests/run_tests.sh        PASS=26 FAIL=0
   明确错误(消息含 "use XWayland" 提示);GetKeyState 返回 0(无法查询 seat);
   对话框走无显示 stdin 回退。
 - **XWayland 回退**:`wayland_run.sh --xwayland` 在 sway 的 XWayland 上运行
-  X11 套件(控件/编辑/对话框/消息/形状 193 项全过),验证 X11 后端在 Wayland
-  之上完整可用。排除项(均为 compositor 局限,参考客户端行为一致):
-  `assert_hotkey`(sway 不实现 XGrabKey)、`assert_image`(XWayland 上大区域
-  XGetImage 挂起)、`assert_win/input/monitor`(断言依赖无 WM 的 Xvfb 语义)。
+  X11 套件(控件/编辑/对话框/消息/形状/图像/热键 229 项全过),验证 X11 后端
+  在 Wayland 之上完整可用。**屏幕抓取**:XWayland 的 root 窗口无 backing
+  store,XGetImage 必然 BadMatch;`LinuxScreenGrabRegion` 在 XGetImage 失败时
+  回退到 wlr-screencopy 协议(sway 实现,`LinuxWaylandCaptureScreen`)抓取
+  区域像素,ImageSearch/PixelGetColor/PixelSearch 因此在 XWayland 上全量可用;
+  runner 用 `for_window [title="ImgMain"] move/resize/border` 把测试窗口钉在
+  与 Xvfb 相同的 (50,60) 位置。**热键**:XGrabKey 经 XWayland 正常工作
+  (XWayland 是完整 X server,grab 匹配与 XTEST 注入均可用),assert_hotkey
+  10 项全过。排除项仅剩 `assert_win/input/monitor`(断言依赖无 WM 的 Xvfb
+  语义:激活/焦点/光标位置由 sway 拥有)。
 - **测试钩子**:`AHK_WL_EVLOG` 记录本客户端表面收到的键盘/指针事件
   (与 `AHK_*_AUTOCLOSE_MS` 同类测试设施)。
 - 依赖:libwayland-client、wayland-protocols(xdg-shell)、xkbcommon;协议 XML
@@ -449,3 +460,7 @@ ASan 构建: tests/run_tests.sh        PASS=26 FAIL=0
   - `source/linux/core/core_image_linux.cpp` / `.h`(round 18,新增):图像存储(稳定句柄)、BMP(24/32 位 BI_RGB)与 PPM(P6/P3)解码、最近邻缩放;LoadPicture(Wn/Hn、-1 保持纵横比、Icon/GDI+ 接受、OutImageType、失败返回 0)、IL_Create/IL_Add/IL_Destroy(列表句柄、1 基索引、零句柄 ValueError)、ImageSearch(CoordMode Pixel、XGetImage 抓屏、精确与 *N 容差、*wN/*hN/*IconN/*Trans 选项、未命中置空输出、ValueError/OSError);`assert_image.ahk`(26 断言)
   - `source/linux/core/core_win_linux.cpp`(round 19):WinSetRegion 经 X11 SHAPE 扩展真实实现(选项语法照上游:坐标对/Wn/Hn/E/R/Rw-h/Wind;扫描线矩形集:椭圆/圆角/偶奇多边形;空选项恢复;ValueError/OSError/TargetError);`xshape_probe.c` 端到端验证;`assert_shape.ahk`(19 断言);GuiFromHwnd/GuiCtrlFromHwnd/MenuFromHandle 按文档空串分支恒返回 ""(移植版无 Gui/菜单对象);`assert_notimpl` 套件移除(0 NOT_IMPL)
 - **round 20(Wayland 后端)**:见第 5.5 节;`source/linux/core/core_wayland_linux.cpp` / `.h`(新增)、`source/linux/wayland/protocols/`(xdg-shell/virtual-keyboard/wlr-virtual-pointer XML,vendor)、`core_input_linux.cpp`(XTEST 原语加 Wayland 分支、SendChar 字符→vk 映射含小写字母去冲突)、`core_timer_linux.cpp`(ToolTip xdg 窗口、主循环 Wayland poll)、`core_platform_stubs.cpp`(MsgSleep 派发 Wayland)、`core_hotkey_linux.cpp`(Wayland 守卫)、`core_win_linux.cpp`(Wayland 明确错误消息)、`CMakeLists.txt`(wayland-client/xkbcommon + wayland-scanner 生成);`assert_wayland.ahk`/`wayland_run.sh`(13 断言 + XWayland 回退 193 断言);worklist 重新生成(**327 IMPL / 0 NOT_IMPL**)
+- **round 21(突破 compositor 局限)**:三个此前被归为"compositor 局限"而排除的能力全部打通并纳入回归:
+  - **修饰键组合 + 鼠标按钮(纯 Wayland)**:`LinuxWaylandKeyEvent` 在每个按键事件前显式推送 `zwp_virtual_keyboard_v1_modifiers`(跟踪按下修饰位:Shift=1/Control=4/Alt=8/Super=64),sway 的修饰键组合匹配因此生效——`bindsym Shift+Return`、`bindsym Control+Return` 端到端触发(`assert_wayland` 新增 `wl_send_shift_enter`/`wl_send_ctrl_enter` 断言)。查 sway 源码确认:`get_active_binding` 要求修饰位精确匹配,按下修饰键本身时其 xkb 位已激活,故 `bindsym Shift_L` 这类单修饰键绑定在真实物理键盘上同样不触发——推送修饰状态后的行为与真实键盘一致(此前 `wl_send_shift`/`wl_send_ctrl` 通过是未推送状态下的假阳性,已按真实语义修正断言)。**鼠标按钮**:sway 的 `bindsym button3` 要求指针悬停于 surface,测试先把虚拟指针移到 ToolTip 窗口上再 `MouseClick("Right")`——`wl_mouse_btn` 断言新增,sway 日志确认按钮绑定触发。
+  - **XWayland 屏幕抓取(ImageSearch/PixelGetColor/PixelSearch)**:XWayland 的 root 窗口无 backing store,`XGetImage` 必然 BadMatch(NULL)。新增 `LinuxWaylandCaptureScreen`(core_wayland_linux.cpp,独立 Wayland 连接 + wlr-screencopy 协议:registry 绑定 `zwlr_screencopy_manager_v1`/wl_shm/wl_output,`capture_output_region` 抓区域,shm buffer 拷贝,`ready`/`failed` 事件等待,XRGB8888→0xRRGGBB,含 y_invert 处理与 3s 超时);`core_screen_linux.cpp` 新增共享的 `LinuxScreenGrabRegion`(XGetImage 失败时回退 screencopy),ImageSearch 与像素函数复用;`wayland_run.sh --xwayland` 把 `assert_image` 纳入套件,并用 `for_window [title="ImgMain"] move position 50 60 / resize set 300 200 / border none` 把测试窗口钉在与 Xvfb 相同位置(另修 xwin_helper 在 Expose 时重绘 fill,WM resize 后内容不丢);XWayland 断言 193→**219**。
+  - **XWayland 热键(assert_hotkey)**:实测 XGrabKey 经 XWayland 正常工作(XWayland 是完整 X server,grab 匹配与 XTEST 注入均可用,sway 会把 Wayland 键盘事件转入 XWayland),此前排除结论错误;`assert_hotkey` 10 项纳入 --xwayland,合计 **229** 项全过。排除项仅剩 `assert_win/input/monitor`(断言依赖无 WM 的 Xvfb 语义,sway 拥有激活/焦点/光标)。`wl_diag2.sh`/`xw_img*.sh` 等调试脚本留在 tests/doccheck 便于复现。

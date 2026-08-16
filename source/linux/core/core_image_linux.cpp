@@ -17,7 +17,8 @@
 //     zero handle raises a ValueError like upstream).  The lists exist so
 //     that scripts written for the ListView/TreeView icon options keep
 //     working, but nothing can display them (no Gui on the port).
-//   - ImageSearch grabs the search region with XGetImage and scans for the
+//   - ImageSearch grabs the search region (XGetImage, or wlr-screencopy
+//     on XWayland where the root has no backing store) and scans for the
 //     image top-left position (exact match, or per-channel variation with
 //     *N; *IconN/*wN/*hN/*Trans<color> options are parsed like upstream,
 //     icons are treated as bitmaps).  Returns 1 with the coordinates in
@@ -560,21 +561,17 @@ BIF_DECL(BIF_Linux_ImageSearch)
 		aResultToken.SetValue((__int64)0);
 		return;
 	}
-	XImage *ximg = XGetImage(d, DefaultRootWindow(d), left, top
-		, (unsigned)sw, (unsigned)sh, AllPlanes, ZPixmap);
-	if (!ximg)
+	// Grab the region.  XGetImage reads the X server's root window;
+	// sway's XWayland root has no backing store (XGetImage returns
+	// BadMatch), so fall back to capturing through the compositor
+	// (wlr-screencopy) when a Wayland display is reachable.
+	std::vector<DWORD> screen;
+	if (!LinuxScreenGrabRegion(d, left, top, sw, sh, screen))
 	{
 		// Docs: "An OSError is thrown if an internal function call fails."
 		aResultToken.Error(_T("The screen region could not be captured."), _T(""), ErrorPrototype::OS);
 		return;
 	}
-
-	// Convert the region to 0xRRGGBB.
-	std::vector<DWORD> screen((size_t)sw * sh);
-	for (int y = 0; y < sh; ++y)
-		for (int x = 0; x < sw; ++x)
-			screen[(size_t)y * sw + x] = LinuxPixelToRGB(d, XGetPixel(ximg, x, y));
-	XDestroyImage(ximg);
 
 	const std::vector<DWORD> &img_px = img.pixels;
 	int iw = img.width, ih = img.height;

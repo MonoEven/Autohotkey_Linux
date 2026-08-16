@@ -19,6 +19,7 @@
 #include "../../globaldata.h"
 #include "../../script_func_impl.h"
 #include "core_screen_linux.h"
+#include "core_wayland_linux.h"
 #include "core_win_linux.h"
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -266,6 +267,29 @@ DWORD LinuxPixelToRGB(Display *d, unsigned long aPixel)
 	return ((c.red >> 8) << 16) | ((c.green >> 8) << 8) | (c.blue >> 8);
 }
 
+bool LinuxScreenGrabRegion(Display *d, int aLeft, int aTop, int aW, int aH
+	, std::vector<DWORD> &aScreen)
+{
+	aScreen.clear();
+	XImage *ximg = XGetImage(d, DefaultRootWindow(d), aLeft, aTop
+		, (unsigned)aW, (unsigned)aH, AllPlanes, ZPixmap);
+	if (ximg)
+	{
+		aScreen.resize((size_t)aW * aH);
+		for (int y = 0; y < aH; ++y)
+			for (int x = 0; x < aW; ++x)
+				aScreen[(size_t)y * aW + x] = LinuxPixelToRGB(d, XGetPixel(ximg, x, y));
+		XDestroyImage(ximg);
+		return true;
+	}
+	// sway's XWayland root has no backing store, so XGetImage returns
+	// BadMatch; capture through the compositor (wlr-screencopy) instead.
+	if (LinuxWaylandCaptureScreen(aLeft, aTop, aW, aH, aScreen))
+		return true;
+	aScreen.clear();
+	return false;
+}
+
 // Apply CoordMode Pixel: CLIENT mode translates the point from the active
 // window's client area to screen coordinates.
 static void LinuxPixelCoords(Display *d, int &x, int &y)
@@ -307,6 +331,16 @@ BIF_DECL(BIF_Linux_PixelGetColor)
 	XImage *img = XGetImage(d, DefaultRootWindow(d), x, y, 1, 1, AllPlanes, ZPixmap);
 	if (!img)
 	{
+		// XWayland root has no backing store; fall back to screencopy.
+		std::vector<DWORD> px;
+		if (LinuxScreenGrabRegion(d, x, y, 1, 1, px) && px.size() == 1)
+		{
+			DWORD rgb = px[0];
+			TCHAR buf[32];
+			swprintf(buf, 32, _T("0x%06X"), (unsigned)rgb);
+			LinuxWinSetPersistentEx(aResultToken, buf);
+			return;
+		}
 		aResultToken.Error(_T("The pixel could not be retrieved."), _T(""), ErrorPrototype::OS);
 		return;
 	}
@@ -352,9 +386,10 @@ BIF_DECL(BIF_Linux_PixelSearch)
 		aResultToken.SetValue((__int64)0); // Empty region: not found.
 		return;
 	}
-	XImage *img = XGetImage(d, DefaultRootWindow(d), left, top
-		, (unsigned)(right - left + 1), (unsigned)(bottom - top + 1), AllPlanes, ZPixmap);
-	if (!img)
+	// Grab the region (XGetImage, falling back to wlr-screencopy when the
+	// XWayland root has no backing store).
+	std::vector<DWORD> screen;
+	if (!LinuxScreenGrabRegion(d, left, top, right - left + 1, bottom - top + 1, screen))
 	{
 		aResultToken.Error(_T("The region could not be retrieved."), _T(""), ErrorPrototype::OS);
 		return;
@@ -370,8 +405,8 @@ BIF_DECL(BIF_Linux_PixelSearch)
 		{
 			if (xx < left || xx > right || yy < top || yy > bottom)
 				continue; // Clipped away.
-			unsigned long px = XGetPixel(img, xx - left, yy - top);
-			DWORD rgb = LinuxPixelToRGB(d, px);
+			unsigned long px = screen[(size_t)(yy - top) * (right - left + 1) + (xx - left)];
+			DWORD rgb = px;
 			DWORD r = (rgb >> 16) & 0xFF, gr = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
 			int dr = (int)r - (int)r_want;
 			int dg = (int)gr - (int)g_want;
@@ -386,7 +421,6 @@ BIF_DECL(BIF_Linux_PixelSearch)
 				found_y = yy;
 			}
 		}
-	XDestroyImage(img);
 	Var *out;
 	if (found)
 	{

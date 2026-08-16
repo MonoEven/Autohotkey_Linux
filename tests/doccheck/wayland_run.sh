@@ -41,16 +41,21 @@ pkill -x Xwayland 2>/dev/null
 sleep 0.5
 rm -rf /tmp/swayhome
 mkdir -p /tmp/swayhome
-rm -f /tmp/wl_key_a /tmp/wl_key_shift_l /tmp/wl_key_ctrl_l /tmp/wl_sway_tree.txt
+rm -f /tmp/wl_key_a /tmp/wl_sway_tree.txt /tmp/wl_key_sr /tmp/wl_key_cr /tmp/wl_btn3
 cat > /tmp/swayhome/config <<EOF
 seat * xcursor_theme empty
 input "*" xkb_layout us
 output "*" bg #000000 solid_color
 xwayland $([ "$XWAYLAND" = 1 ] && echo enable || echo disable)
 for_window [app_id="DocCheck"] floating enable
+for_window [title="ImgMain"] floating enable
+for_window [title="ImgMain"] border none
+for_window [title="ImgMain"] resize set 300 200
+for_window [title="ImgMain"] move position 50 60
 bindsym a exec touch /tmp/wl_key_a
-bindsym Shift_L exec touch /tmp/wl_key_shift_l
-bindsym Control_L exec touch /tmp/wl_key_ctrl_l
+bindsym Shift+Return exec touch /tmp/wl_key_sr
+bindsym Control+Return exec touch /tmp/wl_key_cr
+bindsym button3 exec touch /tmp/wl_btn3
 EOF
 cd /tmp/swayhome || exit 1
 WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 XDG_RUNTIME_DIR=/tmp/swayhome \
@@ -138,11 +143,12 @@ if [ "$XWAYLAND" != 1 ]; then
   run_compare wayland out/assert_wayland.txt
 else
   # XWayland fallback: the X11 suites must pass on sway's XWayland display.
-  # Excluded suites and why:
-  #   - assert_hotkey: sway does not implement XGrabKey (global grabs) for
-  #     XWayland clients.
-  #   - assert_image: XGetImage of a screen region hangs on sway's XWayland
-  #     (compositor limitation).
+  #   - assert_image: runs -- ImageSearch/PixelGetColor/PixelSearch read the
+  #     screen through wlr-screencopy (XWayland's root has no backing store,
+  #     so XGetImage BadMatches); the runner pins the DocCheck window to the
+  #     same (50,60) position as the Xvfb suites.
+  #   - assert_hotkey: runs -- XGrabKey works through XWayland (key events
+  #     injected with Send go through the X grab).
   #   - assert_win/assert_input/assert_monitor: their assertions depend on
   #     WM-free Xvfb semantics (activation, focus, cursor positions); sway
   #     as a window manager owns those, so the assertions do not hold there.
@@ -152,7 +158,7 @@ else
   unset WAYLAND_DISPLAY
   export XDG_RUNTIME_DIR=/tmp/swayhome
   cd "$SCRIPT_DIR" || exit 1
-  for base in ctrl edit dialog msg shape; do
+  for base in ctrl edit dialog msg shape image hotkey; do
     ahk="assert_${base}.ahk"
     [ -f "$ahk" ] || continue
     timeout 90 "$BIN" "$ahk" > "out/${base}.txt" 2>&1
