@@ -626,15 +626,19 @@ static void LinuxResolveCriteria(ExprTokenType *aParam[], int aParamCount
 	, ScriptThreadSettings &aSettings, LinuxWinCriteria &aOut, bool &aHasWinText)
 {
 	aHasWinText = false;
-	TCHAR title_buf[4096], exclude_buf[4096];
+	TCHAR title_buf[4096], exclude_buf[4096], text_buf[4096];
 	title_buf[0] = L'\0';
 	exclude_buf[0] = L'\0';
+	text_buf[0] = L'\0';
 	LPTSTR title = _T("");
 	LPTSTR exclude = _T("");
 	if (aParamCount > 0 && !ParamIndexIsOmitted(0))
 		title = TokenToString(*aParam[0], title_buf, nullptr);
+	// WinText can never match on X11; a blank WinText is ignored (docs:
+	// "If this is blank or omitted, ...").
 	if (aParamCount > 1 && !ParamIndexIsOmitted(1))
-		aHasWinText = true; // Non-empty WinText can never match on X11.
+		if (*TokenToString(*aParam[1], text_buf, nullptr))
+			aHasWinText = true;
 	if (aParamCount > 2 && !ParamIndexIsOmitted(2))
 		exclude = TokenToString(*aParam[2], exclude_buf, nullptr);
 	LinuxParseCriteria(aSettings, title, exclude, aOut);
@@ -876,15 +880,19 @@ static void LinuxResolveCriteriaIdx(ExprTokenType *aParam[], int aParamCount
 	, LinuxWinCriteria &aOut, bool &aHasText)
 {
 	aHasText = false;
-	TCHAR title_buf[4096], exclude_buf[4096];
+	TCHAR title_buf[4096], exclude_buf[4096], text_buf[4096];
 	title_buf[0] = L'\0';
 	exclude_buf[0] = L'\0';
+	text_buf[0] = L'\0';
 	LPTSTR title = _T("");
 	LPTSTR exclude = _T("");
 	if (aTitleIdx >= 0 && aTitleIdx < aParamCount && !ParamIndexIsOmitted(aTitleIdx))
 		title = TokenToString(*aParam[aTitleIdx], title_buf, nullptr);
+	// WinText can never match on X11; a blank WinText is ignored (docs:
+	// "If this is blank or omitted, ...").
 	if (aTextIdx >= 0 && aTextIdx < aParamCount && !ParamIndexIsOmitted(aTextIdx))
-		aHasText = true; // Non-empty WinText can never match on X11.
+		if (*TokenToString(*aParam[aTextIdx], text_buf, nullptr))
+			aHasText = true;
 	if (aExcludeIdx >= 0 && aExcludeIdx < aParamCount && !ParamIndexIsOmitted(aExcludeIdx))
 		exclude = TokenToString(*aParam[aExcludeIdx], exclude_buf, nullptr);
 	LinuxParseCriteria(aSettings, title, exclude, aOut);

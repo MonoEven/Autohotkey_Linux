@@ -78,6 +78,7 @@ void OutputDebug(StrArg aText);
 FResult OnClipboardChange(IObject *aFunction, optl<int> aAddRemove);
 FResult OnError(IObject *aFunction, optl<int> aAddRemove);
 FResult OnExit(IObject *aFunction, optl<int> aAddRemove);
+FResult OnMessage(UINT aNumber, IObject *aFunction, optl<int> aMaxThreads);
 FResult DateAdd(StrArg aDateTime, double aTime, StrArg aTimeUnits, StrRet &aRetVal);
 FResult DateDiff(StrArg aTime1, StrArg aTime2, StrArg aTimeUnits, __int64 &aRetVal);
 FResult FileGetAttrib(optl<StrArg> aPath, StrRet &aRetVal);
@@ -830,6 +831,127 @@ BIF_DECL(BIF_Linux_DirSelect)
 		return;
 	}
 	LinuxWinSetPersistentEx(aResultToken, std::wstring(result_buf));
+}
+
+// ---------------------------------------------------------------------------
+// OnMessage / SendMessage / PostMessage / MenuSelect
+// ---------------------------------------------------------------------------
+//
+// Windows message plumbing.  X11 has no Win32 message queue, so:
+//   - OnMessage registers/unregisters message monitors exactly like
+//     upstream (same functor validation, same MaxThreads semantics via the
+//     upstream OnMessage BIF); the callbacks can never fire because the
+//     port never receives Win32 messages (documented).
+//   - SendMessage/PostMessage resolve the target window/control per docs
+//     (TargetError if not found), validate MsgNumber (0..0xFFFFFFFF,
+//     ValueError otherwise) and the wParam/lParam values (integer or an
+//     object with a Ptr property, per docs), then return 0 -- the reply a
+//     window gives for a message it does not handle (DefWindowProc
+//     default).  The Timeout parameter is accepted but there is nothing to
+//     wait for (documented).
+//   - MenuSelect resolves the target window per docs and then raises the
+//     documented "does not have a standard Win32 menu" TargetError: no X11
+//     window can have a standard Win32 menu (documented).
+
+// OnMessage: register/query/unregister a message monitor (upstream BIF).
+BIF_DECL(BIF_Linux_OnMessage)
+{
+	// (In, UInt32, Number): docs "between 0 and 4294967295 (0xFFFFFFFF)".
+	__int64 msg = TokenToInt64(*aParam[0]);
+	if (msg < 0 || msg > 0xFFFFFFFFLL)
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	// (In, Object, Function).
+	IObject *fn = TokenToObject(*aParam[1]);
+	if (!fn)
+	{
+		aResultToken.ParamError(1, aParam[1], _T("Object"));
+		return;
+	}
+	int max_threads_slot = 0;
+	FResult fr = OnMessage((UINT)msg, fn, LinuxOptInt(max_threads_slot, aParam, aParamCount, 2));
+	if (FAILED(fr))
+		FResultToError(aResultToken, aParam, aParamCount, fr, 0);
+}
+
+// wParam/lParam for the message functions: an integer or an object with a
+// Ptr property such as a Buffer (the upstream md signatures are Variant for
+// both SendMessage and PostMessage, and PostSendMessage accepts objects for
+// both).
+static bool LinuxMsgParamValue(ExprTokenType *aTok, __int64 &aOut, ResultToken &aResultToken)
+{
+	aOut = 0;
+	if (!aTok)
+		return true;
+	if (aTok->symbol == SYM_OBJECT)
+	{
+		// Docs: "an object with a Ptr property, such as a Buffer".
+		UINT_PTR ptr = 0;
+		if (GetObjectPtrProperty(aTok->object, _T("Ptr"), ptr, aResultToken, true) == OK)
+		{
+			aOut = (__int64)ptr;
+			return true;
+		}
+		return false;
+	}
+	if (aTok->symbol == SYM_MISSING)
+		return true; // Omitted: 0 is sent (docs).
+	aOut = TokenToInt64(*aTok);
+	return true;
+}
+
+// Shared body of SendMessage/PostMessage: validate and resolve; the actual
+// "send" is a no-op returning 0 (see module comment).
+static void LinuxPostSendMessage(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount
+	, bool aReturnResult)
+{
+	__int64 msg = TokenToInt64(*aParam[0]);
+	if (msg < 0 || msg > 0xFFFFFFFFLL)
+	{
+		FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(0), 0);
+		return;
+	}
+	__int64 wp = 0, lp = 0;
+	for (int i = 1; i <= 2; ++i)
+		if (i < aParamCount && !LinuxMsgParamValue(aParam[i], i == 1 ? wp : lp, aResultToken))
+		{
+			// Docs: "Each parameter must be an integer [or an object with
+			// a Ptr property]".
+			FResultToError(aResultToken, aParam, aParamCount, FR_E_ARG(i), 0);
+			return;
+		}
+	// ControlID (3) is optional: omitted -> the message goes to the target
+	// window itself (docs).  Timeout (8) is accepted and ignored (nothing
+	// to wait for on Linux; documented).
+	Window target = 0, control = 0;
+	if (!LinuxCtrlTargetEx(aResultToken, aParam, aParamCount, *g, 3, 4, target, control))
+		return;
+	(void)wp; (void)lp;
+	if (aReturnResult)
+		aResultToken.SetValue((__int64)0); // The DefWindowProc default reply.
+}
+
+BIF_DECL(BIF_Linux_SendMessage)
+{
+	LinuxPostSendMessage(aResultToken, aParam, aParamCount, true);
+}
+
+BIF_DECL(BIF_Linux_PostMessage)
+{
+	LinuxPostSendMessage(aResultToken, aParam, aParamCount, false);
+}
+
+// MenuSelect: docs "A TargetError is thrown if the window or control could
+// not be found, or does not have a standard Win32 menu."
+BIF_DECL(BIF_Linux_MenuSelect)
+{
+	Window w = LinuxWinFindTargetEx(aResultToken, aParam, aParamCount, *g, 0, 1, 9);
+	if (!w)
+		return; // TargetError already raised.
+	// No X11 window has a standard Win32 menu (upstream: ERR_WINDOW_HAS_NO_MENU).
+	aResultToken.Error(ERR_WINDOW_HAS_NO_MENU, _T(""), ErrorPrototype::Target);
 }
 
 // ---------------------------------------------------------------------------
@@ -2614,7 +2736,7 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(ListVars, BIF_Linux_ListVars, 0, 0),	LMD_IMPL(ListViewGetContent, BIF_Linux_ListViewGetContent, 1, 6),
 	LMD_NI(LoadPicture, 1, 3),
 	LMD_NI(MenuFromHandle, 1, 1),
-	LMD_NI(MenuSelect, 1, 10),
+	LMD_IMPL(MenuSelect, BIF_Linux_MenuSelect, 3, 11),
 	LMD_IMPL(MonitorGet, BIF_Linux_MonitorGet, 0, 5, 2, 3, 4, 5),
 	LMD_IMPL(MonitorGetCount, BIF_Linux_MonitorGetCount, 0, 0),
 	LMD_IMPL(MonitorGetName, BIF_Linux_MonitorGetName, 0, 1),
@@ -2627,13 +2749,13 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(OnClipboardChange, BIF_Linux_OnClipboardChange, 1, 2),
 	LMD_IMPL(OnError, BIF_Linux_OnError, 1, 2),
 	LMD_IMPL(OnExit, BIF_Linux_OnExit, 1, 2),
-	LMD_NI(OnMessage, 2, 3),
+	LMD_IMPL(OnMessage, BIF_Linux_OnMessage, 2, 3),
 	LMD_IMPL(OutputDebug, BIF_Linux_OutputDebug, 1, 1),
 	LMD_IMPL(Pause, BIF_Linux_Pause, 0, 1),
 	LMD_IMPL(Persistent, BIF_Linux_Persistent, 0, 1),
 	LMD_IMPL(PixelGetColor, BIF_Linux_PixelGetColor, 2, 3),
 	LMD_IMPL(PixelSearch, BIF_Linux_PixelSearch, 7, 10, 1, 2),
-	LMD_NI(PostMessage, 2, 8),
+	LMD_IMPL(PostMessage, BIF_Linux_PostMessage, 1, 8),
 	LMD_IMPL(ProcessClose, BIF_Linux_ProcessClose, 1, 1),
 	LMD_IMPL(ProcessExist, BIF_Linux_ProcessExist, 0, 1),
 	LMD_IMPL(ProcessGetName, BIF_Linux_ProcessGetName, 0, 1),
@@ -2649,7 +2771,7 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(SendEvent, BIF_Linux_SendEvent, 1, 1),
 	LMD_IMPL(SendInput, BIF_Linux_SendInput, 1, 1),
 	LMD_IMPL(SendLevel, BIF_Linux_SendLevel, 1, 1),
-	LMD_NI(SendMessage, 3, 9),
+	LMD_IMPL(SendMessage, BIF_Linux_SendMessage, 1, 9),
 	LMD_IMPL(SendMode, BIF_Linux_SendMode, 1, 1),
 	LMD_IMPL(SendPlay, BIF_Linux_SendPlay, 1, 1),
 	LMD_IMPL(SendText, BIF_Linux_SendText, 1, 1),

@@ -376,6 +376,14 @@ static Window LinuxCtrlTarget(ResultToken &aResultToken, ExprTokenType *aParam[]
 	return aTarget;
 }
 
+// Exported wrapper for the message BIFs (SendMessage/PostMessage).
+bool LinuxCtrlTargetEx(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount
+	, ScriptThreadSettings &aSettings, int aControlIdx, int aTitleIdx, Window &aTarget, Window &aControl)
+{
+	return LinuxCtrlTarget(aResultToken, aParam, aParamCount, aSettings, aControlIdx, aTitleIdx
+		, aTarget, aControl);
+}
+
 // SetControlDelay sleep after changing functions (except SetStyle/ExStyle).
 static void LinuxCtrlDelay()
 {

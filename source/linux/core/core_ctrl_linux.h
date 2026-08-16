@@ -55,3 +55,9 @@ BIF_DECL(BIF_Linux_ListViewGetContent);
 // First descendant of aParent whose class contains aClassPart
 // (case-insensitive); 0 if none.  Used by StatusBarGetText/Wait.
 Window LinuxFindDescendantByClass(Display *d, Window aParent, const wchar_t *aClassPart);
+
+// Target-window/control resolution shared with the message BIFs
+// (SendMessage/PostMessage): resolves per docs "Control Identifiers" and
+// raises a TargetError on failure (returns false).
+bool LinuxCtrlTargetEx(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount
+	, ScriptThreadSettings &aSettings, int aControlIdx, int aTitleIdx, Window &aTarget, Window &aControl);
