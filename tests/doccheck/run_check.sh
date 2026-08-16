@@ -200,10 +200,12 @@ for ahk in assert_*.ahk; do
       # Diagnostics for flaky failures: show the raw lines around the
       # assertion and the tail of the output file.
       if [ "$fail" -le 12 ]; then
-        echo "  -- grep -n '^${name}=' '$outfile' (raw):"
-        grep -n "^${name}=" "$outfile" | head -3 | sed 's/^/  | /'
-        echo "  -- tail of $outfile:"
-        tail -4 "$outfile" | sed 's/^/  | /'
+        echo "  -- grep -n '^${name}=' out/${base}.txt (raw):"
+        grep -n "^${name}=" "out/${base}.txt" | head -3 | sed 's/^/  | /'
+        echo "  -- tail of out/${base}.txt:"
+        tail -4 "out/${base}.txt" | sed 's/^/  | /'
+        echo "  -- expect lines around ${name}:"
+        grep -n "^${name}=" "assert_${base}_expect.txt" | sed 's/^/  | /'
       fi
     fi
   done < "$exp"
