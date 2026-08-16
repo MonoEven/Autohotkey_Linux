@@ -41,7 +41,7 @@ if [ "$XVFB" = 1 ]; then
     pkill -f "Xvfb :99" 2>/dev/null
     rm -f /tmp/.X99-lock
     sleep 0.3
-    Xvfb :99 -screen 0 1024x768x24 >/dev/null 2>&1 &
+    Xvfb :99 -screen 0 1024x768x24 > out/xvfb.log 2>&1 &
     XVFB_PID=$!
     # Wait for the X socket to be connectable (up to 5 s) instead of a
     # fixed sleep; on loaded CI runners Xvfb can take a moment to start.
