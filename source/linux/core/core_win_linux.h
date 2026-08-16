@@ -3,6 +3,7 @@
 #pragma once
 
 #include "../../abi.h"
+#include <X11/Xlib.h>
 
 BIF_DECL(BIF_Linux_WinGetTitle);
 BIF_DECL(BIF_Linux_WinGetClass);
@@ -53,3 +54,6 @@ BIF_DECL(BIF_Linux_GroupAdd);
 BIF_DECL(BIF_Linux_GroupActivate);
 BIF_DECL(BIF_Linux_GroupClose);
 BIF_DECL(BIF_Linux_GroupDeactivate);
+
+// The current input-focus top-level window (0 if none).
+Window LinuxX11ActiveWindow();

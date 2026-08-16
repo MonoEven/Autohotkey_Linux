@@ -118,6 +118,12 @@ static bool LinuxKeyByName(LPCTSTR aName, vk_type &aVK, sc_type &aSC)
 		aSC = (sc_type)(0x1E + (aName[0] - 'A'));
 		return true;
 	}
+	if (aName[0] >= 'a' && aName[0] <= 'z' && !aName[1]) // a-z
+	{
+		aVK = (vk_type)(0x41 + (aName[0] - 'a'));
+		aSC = (sc_type)(0x1E + (aName[0] - 'a'));
+		return true;
+	}
 	if (aName[0] >= '0' && aName[0] <= '9' && !aName[1]) // 0-9
 	{
 		int d = aName[0] - '0';
@@ -146,6 +152,12 @@ static bool LinuxKeyByName(LPCTSTR aName, vk_type &aVK, sc_type &aSC)
 		return aSC != 0;
 	}
 	return false;
+}
+
+// Non-static accessor for the input module (core_input_linux.cpp).
+bool LinuxLookupKey(LPCTSTR aName, vk_type &aVK, sc_type &aSC)
+{
+	return LinuxKeyByName(aName, aVK, aSC);
 }
 
 static LPCTSTR LinuxKeyNameFromVK(vk_type aVK)

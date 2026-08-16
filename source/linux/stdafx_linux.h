@@ -3028,14 +3028,9 @@ inline int ImageList_AddIcon(void*, HICON)
 	return -1;
 }
 
-inline SHORT GetAsyncKeyState(int)
-{
-	return 0;
-}
-inline SHORT GetKeyState(int)
-{
-	return 0;
-}
+// Implemented in core_input_linux.cpp (X11 XQueryKeymap / Xkb based).
+SHORT GetAsyncKeyState(int aVK);
+SHORT GetKeyState(int aVK);
 
 struct JOYCAPS
 {

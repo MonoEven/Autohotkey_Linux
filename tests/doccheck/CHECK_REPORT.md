@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **475 / 475 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项实测;25 项 headless 回归测试亦全部通过)
+- **结果**: **515 / 515 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项与输入模块 40 项实测;25 项 headless 回归测试亦全部通过)
 
 ---
 
@@ -14,7 +14,7 @@
 | 文件 | 作用 |
 |---|---|
 | `tests/doccheck/extract_docs.py` | 解析 `docs-v2/docs/lib/*.htm`,提取每个函数的名称/描述/语法/参数/返回值/示例 → `doc_index.tsv`(352 个函数条目) |
-| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(236 个已实现,90 个未实现) |
+| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(253 个已实现,76 个未实现) |
 | `tests/doccheck/assert_*.ahk` | 按模块编写的实测脚本(每个断言输出 `name=value` 行,取自官方文档语义) |
 | `tests/doccheck/assert_*_expect.txt` | 与文档语义对应的期望值 |
 | `tests/doccheck/run_check.sh` | 运行全部断言并逐条比对(支持传入任意二进制路径,如 `run_check.sh build-asan/ahk_core`) |
@@ -34,7 +34,8 @@
 | 注册表 (RegRead/RegWrite/RegDelete/RegDeleteKey/RegCreateKey) | `assert_registry.ahk` | 19 |
 | 系统/设置/进程/文件操作/网络 (CoordMode/DetectHidden*/Set*Delay/SendMode/SendLevel/SetRegView/FileEncoding/SetStoreCapsLockMode/ProcessGet*/FileCopy/FileMove/FileInstall/FileRecycle/FileGetVersion/SysGet/SysGetIPAddresses/Download/Drive*/SoundPlay) | `assert_sys.ahk` | 106 |
 | 窗口管理 (WinExist/WinActive/WinGet*/WinSet*/WinMove/WinClose/WinKill/WinWait*/WinActivate/WinMinimize/Maximize/Restore/Hide/Show/Redraw/Group*,X11 后端) | `assert_win.ahk` | 67 |
-| **合计** | | **475** |
+| 输入模拟 (Send/SendEvent/SendInput/SendPlay/SendText/Click/MouseMove/MouseClick/MouseClickDrag/MouseGetPos/KeyWait/BlockInput/InstallKeybdHook/InstallMouseHook/SetCapsLockState/SetNumLockState/SetScrollLockState/GetKeyState,XTEST 后端) | `assert_input.ahk` | 40 |
+| **合计** | | **515** |
 
 复现命令:
 
@@ -187,6 +188,24 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 - **本轮修复的真实缺陷**: ① WinGetCount/WinGetList 只收集到第一个匹配(查找函数在首匹配即返回);② `ahk_exe` 条件解析错位(关键字定位用 `find('_')`,被值里的下划线干扰);③ X 协议错误导致进程退出;④ 测试助手 `-hidden` 未生效(XMapWindow 无条件调用)。
 - **脚本运行语义确认**: 上游 `LoadFromFile` 会把工作目录切到脚本所在目录(Windows 同款行为),因此 Run 的相对路径以脚本目录为基准;长驻子进程持有管道导致 runner 等待 EOF 属测试脚手架问题,非解释器缺陷。
 
+### 2.25 输入模拟模块(XTEST 后端,本轮)
+- **实现**: 新增 `core_input_linux.cpp`(输入模块,17 个 BIF + GetKeyState/GetAsyncKeyState 真实实现),按 lib/sendkeys.cpp、lib/mouse.cpp、lib/keywait.cpp 语义:
+  - **Send 引擎**: 字面字符(US 布局基键 + Shift 合成,`LinuxCharBase/LinuxCharNeedsShift`)、修饰符 `^+!#`(按住-发送-释放,`{Blind}`/`{Text}` 保持状态)、`{KeyName}` 带 down/up 后缀与重复计数、`{vkXX}`、`{Click ...}`(坐标/按钮/Down/Up)、Enter/Tab 特殊映射;`{Enter 3}` 重复 3 次;
+  - SendEvent/SendInput/SendPlay 在 Linux 均经 XTEST 投递(与 SendMode 文档"推荐 SendInput 防打断"的精神一致——XTEST 事件对用户输入天然不可打断);SendText 全字面;
+  - **Mouse**: MouseMove(相对 R 模式)、MouseClick(按钮名 Left/Right/Middle/XButton1/2/Wheel*、坐标省略=当前指针、ClickCount 重复、DownOrUp D/U 按住/释放、R 相对)、MouseClickDrag(移动+按住+释放)、MouseGetPos(输出 X/Y/WhichWindow/WhichHWND,输出参数按实参个数保护写)、Click(BIF_Click,坐标/按钮/Down/Up);
+  - **KeyWait**: 轮询 XQueryKeymap(真实键状态,与 XTEST 事件同步),"D" 选项等按下、省略等释放,返回 1;KeyWait 期间 20ms 轮询;
+  - **GetKeyState/GetAsyncKeyState**(真实):XQueryKeymap 位图(修饰键 vk 同时查左右变体),"T" 模式经 Xkb 锁键状态,`ScriptGetKeyState`/`SendThisHotkey` 等共享代码路径同步生效;
+  - **SetCapsLockState/SetNumLockState/SetScrollLockState**:XkbLockModifiers,`On/Off/-1(切换)/0(释放)/1(按下)` 语义,`-1` 切换检测修正(此前把 `-1` 误判为开关解析错误);
+  - **BlockInput**(状态机):按 v2 文档三组独立模式——OnOff(On/1 全阻断、Off/0 解除)、SendMouse(Send/Mouse/SendAndMouse 阻断对应输入、**Default 只关 Send/Mouse 模式、不动 OnOff 阻断状态**)、MouseMove(MouseMove/MouseMoveOff);实现为 X 键盘/指针抓取(owner_events=False,Async):抓取期间硬件输入被本进程吞掉、其他客户端收不到,而脚本自身的 XTEST 模拟仍可产生(与文档"user input is blocked but AutoHotkey can simulate keystrokes"一致);脚本退出时服务端自动释放抓取(文档"Input is automatically re-enabled when the script closes");与 Windows 的偏差:Send/Mouse 模式是持续抓取而非仅 Send 执行期间(无钩子系统);
+  - 独立 `LinuxInputDisplay` 缓存连接 + 忽略 X 错误处理器(XOpenDisplay 对 BadWindow 崩溃问题同窗口模块);
+- **测试设施**: `xkeycap.c` 测试客户端(Xvfb :99 下带焦点窗口,按 Shift 状态取 keysym 列、记录键/按钮事件到文件);`run_check.sh --xvfb` 编译并运行 assert_input(40 断言:各 Send 变体事件序列、Shift 合成、修饰键、按住/重复、Mouse 各参数、KeyWait 状态、锁键开关、BlockInput On/Default/Off 阻断语义、钩子安装标志、GetKeyState 逻辑/物理状态);
+- **本轮修复的真实缺陷**: ① MouseGetPos/WinGetPos 对少于输出参数个数的调用读取越界 aParam(输出写入全部改为 `aParamCount > N` 保护);② "Left/Right/Middle/XButton1/2/Wheel*" 按钮名不在键表 → 新增 `LinuxButtonFromName`(键表只有 LButton);③ KeyWait/GetKeyState "Invalid key name" 对 a-z 小写失败 → 键表补小写分支;④ Shift 合成字符 keysym 解析(XLookupKeysym 索引 1 带 Shift 列);⑤ BlockInput `Default` 误实现为"全阻断"(文档:只关 Send/Mouse 模式);⑥ 测试脚手架:xkeycap 移除自身 GX 抓取(否则 BlockInput 的 XGrabKeyboard 返回 AlreadyGrabbed);KeyWait/锁键断言不消费捕获事件,BlockInput 断言前须排空待读事件。
+
+### 2.26 TextFile::_Seek 栈越界读取(本轮,ASan 构建捕获)
+- **现象**: ASan 构建运行 assert_input(File.Seek)时 `stack-buffer-overflow` 中止,普通构建不报错。
+- **根因**: 上游 `_Seek` 用 `*((PLARGE_INTEGER)&aDistance)` 别名技巧传参——Windows 上 `LONG` 为 32 位,`LARGE_INTEGER` 恰为 8 字节;Linux 上 `long` 为 64 位,`struct {DWORD LowPart; LONG HighPart;}` 变为 12 字节并填充到 16,联合体变成 16 字节,从 8 字节栈变量读取 16 字节 → UB(QuadPart 恰与低 8 字节重合,普通构建"碰巧正确")。
+- **修复**: `TextIO.cpp` 改为先 `LARGE_INTEGER li; li.QuadPart = aDistance;` 再传值,消除别名读取;`lib/file.cpp:973` 的 `(PLARGE_INTEGER)&size` 仅写入 8 字节,无越界,保留。
+
 ---
 
 ## 3. 测试预期修正(文档语义确认,非移植缺陷)
@@ -234,16 +253,17 @@ bash tests/run_tests.sh                         # 25 项 headless 回归
 | 下载 (Download) | ✅ 3/3 | 本地 HTTP 服务实测:内容一致、404 保存错误页(文档)、坏路径 OSError |
 | 驱动器/声音错误路径 (DriveSetLabel/DriveEject/DriveLock/DriveUnlock/DriveRetract/SoundPlay) | ✅ 6/6 | 不存在设备/无播放器按文档抛 OSError(Shutdown 已实现但测试中不实际执行,防误关机) |
 | 窗口管理 (WinExist/WinActive/WinGet*/WinSet*/WinMove/WinClose/WinKill/WinWait*/WinActivate/WinMinimize/Maximize/Restore/Hide/Show/Redraw/Group*) | ✅ 67/67 | Xvfb 下以 xwin_helper 实测:条件匹配(标题/类/exe/pid/id/RegEx/排除)、几何/样式/透明度/置顶、隐藏与 DetectHiddenWindows 联动、关闭/强杀/等待、分组循环 |
-| 未实现模块 (GUI/GuiCtrl/COM/DllCall/热键系统/剪贴板监听/Control*/Input/Send 等 90 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
+| 输入模拟 (Send/SendEvent/SendInput/SendPlay/SendText/Click/Mouse*/KeyWait/BlockInput/Install*Hook/Set*LockState/GetKeyState) | ✅ 40/40 | Xvfb 下以 xkeycap 实测:Send 事件序列(字面/Shift 合成/修饰符/按住/重复/Text)、Mouse 坐标/按钮/计数/按住、KeyWait 与 GetKeyState 状态、锁键开关、BlockInput On/Default/Off 阻断语义;XTEST 后端,无显示时按文档抛 OSError |
+| 未实现模块 (GUI/GuiCtrl/COM/DllCall/热键系统/剪贴板监听/Control*/SendMessage/PostMessage/Pixel*/Monitor*/Hotkey/Hotstring/SetTimer/ToolTip/ImageSearch/DirSelect/FileSelect/OnMessage 等 76 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
 
 ## 5. 回归与构建验证
 
 ```
 普通构建: tests/run_tests.sh        PASS=25 FAIL=0
           tests/doccheck/run_check.sh PASS=408 FAIL=0 (headless)
-          tests/doccheck/run_check.sh --xvfb PASS=475 FAIL=0 (含窗口模块)
+          tests/doccheck/run_check.sh --xvfb PASS=515 FAIL=0 (含窗口模块 67 + 输入模块 40)
 ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=475 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=515 FAIL=0
 ```
 
 ## 6. 本轮改动文件
@@ -276,3 +296,9 @@ ASan 构建: tests/run_tests.sh        PASS=25 FAIL=0
 - `source/linux/core/core_builtin_stubs.cpp`(本轮):`BIF_WinExistActive` 桩移除,改由 core_win_linux.cpp 实现
 - `source/linux/core/CMakeLists.txt`(本轮):加入 `core_win_linux.cpp`
 - `tests/doccheck/xwin_helper.c`(新增):X11 测试窗口客户端;`assert_win.ahk`/`assert_win_expect.txt`(新增,67 断言);`run_check.sh` 新增 `--xvfb` 模式(Xvfb :99 + 编译助手 + 文件输出比对);worklist 重新生成(**236 IMPL / 90 NOT_IMPL**)
+- `source/linux/core/core_input_linux.cpp` / `.h`(新增,本轮):输入模拟模块——Send 引擎(字面/修饰符/`{Key}` down-up/重复/`{vk}`/`{Click}`/Blind/Text)、Mouse 系列(XTEST 按钮/运动/相对模式/计数/按住)、KeyWait(XQueryKeymap 轮询)、GetKeyState/GetAsyncKeyState 真实实现、Set*LockState(Xkb 锁键)、BlockInput(OnOff/SendMouse/MouseMove 三组模式状态机 + X 抓取)、Install*Hook 标志;`LinuxLookupKey` 访问器(键表小写分支)
+- `source/linux/core/core_platform_stubs.cpp`(本轮):GetKeyState/GetAsyncKeyState 桩移除;`LinuxKeyByName` 补 a-z 小写键名分支
+- `source/linux/core/core_mdfunc_linux.cpp`(本轮):17 个输入 BIF 由 LMD_NI 翻转 LMD_IMPL(BlockInput/InstallKeybdHook/InstallMouseHook/KeyWait/MouseClick/MouseClickDrag/MouseGetPos/MouseMove/Send/SendEvent/SendInput/SendPlay/SendText/SetCapsLockState/SetNumLockState/SetScrollLockState),BIF_Click 桩移除
+- `source/linux/core/CMakeLists.txt`(本轮):加入 `core_input_linux.cpp`、链接 Xtst(`find_library(XTST_LIBRARY Xtst REQUIRED)`)
+- `source/TextIO.cpp`(本轮):`TextFile::_Seek` 消除 `PLARGE_INTEGER` 别名读取(Linux 上 LARGE_INTEGER 为 16 字节导致 8 字节栈变量被读 16 字节,ASan 捕获)
+- `tests/doccheck/xkeycap.c`(新增):XTEST 事件捕获客户端;`assert_input.ahk`/`assert_input_expect.txt`(新增,40 断言);`run_check.sh` 的 `--xvfb` 模式编译 xkeycap 并运行 assert_input;worklist 重新生成(**253 IMPL / 76 NOT_IMPL**)

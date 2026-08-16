@@ -671,6 +671,13 @@ static Window LinuxActiveWindow(Display *d)
 	return top;
 }
 
+// Shared accessor for other modules (input coordinates etc.).
+Window LinuxX11ActiveWindow()
+{
+	Display *d = LinuxWinDisplay();
+	return d ? LinuxActiveWindow(d) : 0;
+}
+
 // ---------------------------------------------------------------------------
 // Window actions (EWMH + virtual state)
 // ---------------------------------------------------------------------------
@@ -1086,11 +1093,12 @@ BIF_DECL(BIF_Linux_WinGetPos)
 	unsigned wd = 0, ht = 0;
 	if (LinuxWinGeom(d, w, x, y, wd, ht))
 	{
+		// NOTE: aParam[] only has aParamCount valid entries — never read beyond.
 		Var *out;
-		if ((out = TokenToOutputVar(*aParam[0]))) out->Assign((__int64)x);
-		if ((out = TokenToOutputVar(*aParam[1]))) out->Assign((__int64)y);
-		if ((out = TokenToOutputVar(*aParam[2]))) out->Assign((__int64)wd);
-		if ((out = TokenToOutputVar(*aParam[3]))) out->Assign((__int64)ht);
+		if (aParamCount > 0 && (out = TokenToOutputVar(*aParam[0]))) out->Assign((__int64)x);
+		if (aParamCount > 1 && (out = TokenToOutputVar(*aParam[1]))) out->Assign((__int64)y);
+		if (aParamCount > 2 && (out = TokenToOutputVar(*aParam[2]))) out->Assign((__int64)wd);
+		if (aParamCount > 3 && (out = TokenToOutputVar(*aParam[3]))) out->Assign((__int64)ht);
 	}
 }
 
@@ -1107,10 +1115,10 @@ BIF_DECL(BIF_Linux_WinGetClientPos)
 	if (LinuxWinGeom(d, w, x, y, wd, ht))
 	{
 		Var *out;
-		if ((out = TokenToOutputVar(*aParam[0]))) out->Assign((__int64)x);
-		if ((out = TokenToOutputVar(*aParam[1]))) out->Assign((__int64)y);
-		if ((out = TokenToOutputVar(*aParam[2]))) out->Assign((__int64)wd);
-		if ((out = TokenToOutputVar(*aParam[3]))) out->Assign((__int64)ht);
+		if (aParamCount > 0 && (out = TokenToOutputVar(*aParam[0]))) out->Assign((__int64)x);
+		if (aParamCount > 1 && (out = TokenToOutputVar(*aParam[1]))) out->Assign((__int64)y);
+		if (aParamCount > 2 && (out = TokenToOutputVar(*aParam[2]))) out->Assign((__int64)wd);
+		if (aParamCount > 3 && (out = TokenToOutputVar(*aParam[3]))) out->Assign((__int64)ht);
 	}
 }
 

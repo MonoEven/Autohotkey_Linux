@@ -19,6 +19,7 @@
 #include "../../script_func_impl.h"
 #include "../gui/x11_gui.h"
 #include "core_win_linux.h"
+#include "core_input_linux.h"
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -2297,7 +2298,7 @@ struct LinuxMdFuncEntry
 // mirror lib/functions.h so that call validation behaves like upstream.
 static LinuxMdFuncEntry sLinuxMdFuncs[] =
 {
-	LMD_NI(BlockInput, 1, 1),
+	LMD_IMPL(BlockInput, BIF_Linux_BlockInput, 1, 1),
 	LMD_IMPL(ClipWait, BIF_Linux_ClipWait, 0, 2),
 	LMD_NI(ControlAddItem, 5, 5),
 	LMD_NI(ControlChooseIndex, 5, 5),
@@ -2406,11 +2407,11 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(IniRead, BIF_Linux_IniRead, 1, 4),
 	LMD_IMPL(IniWrite, BIF_Linux_IniWrite, 3, 4),
 	LMD_IMPL(InputBox, BIF_Linux_InputBox, 0, 4),
-	LMD_NI(InstallKeybdHook, 0, 2),
-	LMD_NI(InstallMouseHook, 0, 2),
+	LMD_IMPL(InstallKeybdHook, BIF_Linux_InstallKeybdHook, 0, 2),
+	LMD_IMPL(InstallMouseHook, BIF_Linux_InstallMouseHook, 0, 2),
 	LMD_IMPL(IsLabel, BIF_Linux_IsLabel, 1, 1),
 	LMD_NI(KeyHistory, 0, 1),
-	LMD_NI(KeyWait, 1, 2),
+	LMD_IMPL(KeyWait, BIF_Linux_KeyWait, 1, 2),
 	LMD_NI(ListHotkeys, 0, 0),
 	LMD_IMPL(ListLines, BIF_Linux_ListLines, 0, 1),
 	LMD_NI(ListVars, 0, 0),
@@ -2423,10 +2424,10 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_NI(MonitorGetName, 0, 1),
 	LMD_NI(MonitorGetPrimary, 0, 0),
 	LMD_NI(MonitorGetWorkArea, 0, 5),
-	LMD_NI(MouseClick, 0, 6),
-	LMD_NI(MouseClickDrag, 2, 7),
-	LMD_NI(MouseGetPos, 0, 4),
-	LMD_NI(MouseMove, 2, 4),
+	LMD_IMPL(MouseClick, BIF_Linux_MouseClick, 0, 7),
+	LMD_IMPL(MouseClickDrag, BIF_Linux_MouseClickDrag, 5, 7),
+	LMD_IMPL(MouseGetPos, BIF_Linux_MouseGetPos, 0, 5, 1, 2, 3, 4),
+	LMD_IMPL(MouseMove, BIF_Linux_MouseMove, 2, 4),
 	LMD_IMPL(OnClipboardChange, BIF_Linux_OnClipboardChange, 1, 2),
 	LMD_IMPL(OnError, BIF_Linux_OnError, 1, 2),
 	LMD_IMPL(OnExit, BIF_Linux_OnExit, 1, 2),
@@ -2448,22 +2449,23 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(Reload, BIF_Linux_Reload, 0, 0),
 	LMD_IMPL(Run, BIF_Linux_Run, 1, 4, 4),
 	LMD_NI(RunAs, 0, 3),
-	LMD_NI(Send, 1, 1),
-	LMD_NI(SendEvent, 1, 1),
-	LMD_NI(SendInput, 1, 1),
+	LMD_IMPL(Send, BIF_Linux_Send, 1, 1),
+	LMD_IMPL(SendEvent, BIF_Linux_SendEvent, 1, 1),
+	LMD_IMPL(SendInput, BIF_Linux_SendInput, 1, 1),
 	LMD_IMPL(SendLevel, BIF_Linux_SendLevel, 1, 1),
 	LMD_NI(SendMessage, 3, 9),
 	LMD_IMPL(SendMode, BIF_Linux_SendMode, 1, 1),
-	LMD_NI(SendPlay, 1, 1),
-	LMD_NI(SendText, 1, 1),
-	LMD_NI(SetCapsLockState, 0, 1),
+	LMD_IMPL(SendPlay, BIF_Linux_SendPlay, 1, 1),
+	LMD_IMPL(SendText, BIF_Linux_SendText, 1, 1),
+	LMD_IMPL(SetCapsLockState, BIF_Linux_SetCapsLockState, 0, 1),
 	LMD_IMPL(SetControlDelay, BIF_Linux_SetControlDelay, 1, 1),
 	LMD_IMPL(SetDefaultMouseSpeed, BIF_Linux_SetDefaultMouseSpeed, 1, 1),
 	LMD_IMPL(SetKeyDelay, BIF_Linux_SetKeyDelay, 0, 3),
 	LMD_IMPL(SetMouseDelay, BIF_Linux_SetMouseDelay, 1, 2),
+	LMD_IMPL(SetNumLockState, BIF_Linux_SetNumLockState, 0, 1),
 	LMD_NI(SetNumLockState, 0, 1),
 	LMD_IMPL(SetRegView, BIF_Linux_SetRegView, 1, 1),
-	LMD_NI(SetScrollLockState, 0, 1),
+	LMD_IMPL(SetScrollLockState, BIF_Linux_SetScrollLockState, 0, 1),
 	LMD_IMPL(SetStoreCapsLockMode, BIF_Linux_SetStoreCapsLockMode, 1, 1),
 	LMD_NI(SetTimer, 0, 3),
 	LMD_IMPL(SetTitleMatchMode, BIF_Linux_SetTitleMatchMode, 1, 1),

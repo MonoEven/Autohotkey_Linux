@@ -707,7 +707,14 @@ DWORD TextFile::_Write(LPCVOID aBuffer, DWORD aBufSize)
 
 bool TextFile::_Seek(__int64 aDistance, int aOrigin)
 {
-	return !!SetFilePointerEx(mFile, *((PLARGE_INTEGER) &aDistance), NULL, aOrigin);
+	// NOTE (Linux port): do not alias aDistance through PLARGE_INTEGER --
+	// on Linux `long` is 64-bit, so LARGE_INTEGER is 16 bytes (struct
+	// {DWORD LowPart; LONG HighPart;} pads to 16), and reading 16 bytes
+	// from the 8-byte stack slot is a stack-buffer-overflow (caught by
+	// the ASan build).  Copy into QuadPart instead.
+	LARGE_INTEGER li;
+	li.QuadPart = aDistance;
+	return !!SetFilePointerEx(mFile, li, NULL, aOrigin);
 }
 
 __int64 TextFile::_Tell() const

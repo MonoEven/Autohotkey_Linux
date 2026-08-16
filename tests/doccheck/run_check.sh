@@ -32,11 +32,11 @@ if command -v python3 >/dev/null 2>&1; then
   sleep 0.5
 fi
 
-# Display-dependent suite support (assert_win): Xvfb + helper client.
+# Display-dependent suite support (assert_win/assert_input): Xvfb + helper clients.
 XVFB_PID=""
 if [ "$XVFB" = 1 ]; then
   if ! command -v Xvfb >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
-    echo "SKIP: assert_win (Xvfb or gcc not installed)"
+    echo "SKIP: assert_win/assert_input (Xvfb or gcc not installed)"
   else
     pkill -f "Xvfb :99" 2>/dev/null
     rm -f /tmp/.X99-lock
@@ -45,6 +45,7 @@ if [ "$XVFB" = 1 ]; then
     XVFB_PID=$!
     sleep 1
     gcc -o out/xwin_helper xwin_helper.c -lX11 2>/dev/null
+    gcc -o out/xkeycap xkeycap.c -lX11 2>/dev/null
   fi
 fi
 trap 'kill $HTTP_PID 2>/dev/null; [ -n "$XVFB_PID" ] && kill $XVFB_PID 2>/dev/null' EXIT
@@ -61,15 +62,19 @@ for ahk in assert_*.ahk; do
     echo "SKIP: assert_win (run with --xvfb)"
     continue
   fi
+  if [ "$base" = "assert_input" ] && [ "$XVFB" != 1 ]; then
+    echo "SKIP: assert_input (run with --xvfb)"
+    continue
+  fi
   # Some suites need script arguments (e.g. assert_general checks A_Args);
   # run those with args instead of the plain invocation.
   case "$base" in
     assert_general) extra=("one" "two") ;;
     *) extra=() ;;
   esac
-  # assert_win runs under Xvfb and writes its output to a file (MsgBox would
-  # open a real dialog with a display present).
-  if [ "$base" = "assert_win" ]; then
+  # assert_win/assert_input run under Xvfb and write their output to a file
+  # (MsgBox would open a real dialog with a display present).
+  if [ "$base" = "assert_win" ] || [ "$base" = "assert_input" ]; then
     XDISPLAY=:99
   else
     XDISPLAY=""
@@ -83,6 +88,9 @@ for ahk in assert_*.ahk; do
   fi
   if [ "$base" = "assert_win" ]; then
     cp /tmp/ahk_dc_win_out.txt "out/${base}.txt" 2>/dev/null || true
+  fi
+  if [ "$base" = "assert_input" ]; then
+    cp /tmp/ahk_dc_input_out.txt "out/${base}.txt" 2>/dev/null || true
   fi
   while IFS= read -r line; do
     [ -z "$line" ] && continue

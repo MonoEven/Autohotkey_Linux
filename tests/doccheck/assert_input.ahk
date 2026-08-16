@@ -1,0 +1,208 @@
+; Input module doc-check (v2 docs: Send/SendEvent/SendInput/SendPlay/SendText,
+; MouseMove/MouseClick/MouseClickDrag/MouseGetPos, Click, KeyWait, BlockInput,
+; InstallKeybdHook/InstallMouseHook, SetCapsLockState/SetNumLockState/
+; SetScrollLockState).  Runs under Xvfb (run_check.sh --xvfb) with the xkeycap
+; capture client; output goes to a file (MsgBox would block with a display).
+#Requires AutoHotkey v2.0
+
+WINOUT := "/tmp/ahk_dc_input_out.txt"
+FileDelete(WINOUT)
+Log(line) => FileAppend(line "`n", WINOUT)
+
+KEYCAP := "/tmp/ahk_dc_keycap.txt"
+FileDelete(KEYCAP)
+prev_bytes := 0
+
+Run('out/xkeycap -out ' KEYCAP)
+WinWait("KeyCap Capture",, 5)
+Sleep(200)
+
+; Read the lines appended to the capture file since the last call.
+next_lines() {
+    global prev_bytes
+    f := FileOpen(KEYCAP, "r")
+    f.Seek(prev_bytes)
+    rest := f.Read()
+    f.Close()
+    prev_bytes := FileGetSize(KEYCAP)
+    return StrSplit(rest, "`n")
+}
+
+; "name1,name2,..." of key-down events.
+downs(lines) {
+    out := ""
+    for l in lines {
+        if l = ""
+            continue
+        p := StrSplit(l, ":")
+        if p.Length >= 3 && p[1] = "k" && p[2] = "down"
+            out .= (out = "" ? "" : ",") p[3]
+    }
+    return out
+}
+
+; "down:N,up:N,..." of button events.
+btns(lines) {
+    out := ""
+    for l in lines {
+        if l = ""
+            continue
+        p := StrSplit(l, ":")
+        if p.Length >= 3 && p[1] = "b"
+            out .= (out = "" ? "" : ",") p[2] ":" p[3]
+    }
+    return out
+}
+
+; --- Send: literal text (each char: down + up). ---
+Send("hello")
+Sleep(60)
+Log("send_text=" (downs(next_lines()) = "h,e,l,l,o" ? 1 : 0))
+
+; --- Send: shifted character (Shift held, keysym resolves to "A"). ---
+Send("A")
+Sleep(60)
+Log("send_shift=" (downs(next_lines()) = "Shift_L,A" ? 1 : 0))
+
+; --- Send: special key + modifiers + explicit hold + repeat. ---
+Send("{Enter}")
+Sleep(60)
+Log("send_enter=" (downs(next_lines()) = "Return" ? 1 : 0))
+Send("^a")
+Sleep(60)
+Log("send_ctrla=" (downs(next_lines()) = "Control_L,a" ? 1 : 0))
+Send("{Ctrl down}c{Ctrl up}")
+Sleep(60)
+Log("send_hold=" (downs(next_lines()) = "Control_L,c" ? 1 : 0))
+Send("{Enter 3}")
+Sleep(60)
+Log("send_repeat=" (downs(next_lines()) = "Return,Return,Return" ? 1 : 0))
+
+; --- SendText: everything literal (braces included). ---
+SendText("a{bc")
+Sleep(60)
+Log("sendtext=" (downs(next_lines()) = "a,Shift_L,braceleft,b,c" ? 1 : 0))
+
+; --- SendMode variants: all deliver XTEST events on Linux. ---
+SendEvent("x")
+Sleep(60)
+Log("sendevent=" (downs(next_lines()) = "x" ? 1 : 0))
+SendInput("y")
+Sleep(60)
+Log("sendinput=" (downs(next_lines()) = "y" ? 1 : 0))
+SendPlay("z")
+Sleep(60)
+Log("sendplay=" (downs(next_lines()) = "z" ? 1 : 0))
+
+; --- MouseMove + MouseGetPos. ---
+MouseMove(300, 200)
+Sleep(50)
+MouseGetPos(&mx, &my)
+Log("mousemove=" (mx = 300 && my = 200 ? 1 : 0))
+
+; --- MouseClick. ---
+MouseClick("Left", 100, 100)
+Sleep(80)
+Log("mouseclick_btns=" (btns(next_lines()) = "down:1,up:1" ? 1 : 0))
+MouseGetPos(&mx, &my)
+Log("mouseclick_pos=" (mx = 100 && my = 100 ? 1 : 0))
+; Docs: ClickCount.
+MouseClick("Right", 200, 150, 2)
+Sleep(100)
+Log("mouseclick_count=" (btns(next_lines()) = "down:3,up:3,down:3,up:3" ? 1 : 0))
+; Docs: DownOrUp "D" holds the button.
+MouseClick("Left", 50, 50, 1, , "D")
+Sleep(50)
+Log("mouseclick_down=" (btns(next_lines()) = "down:1" ? 1 : 0))
+MouseClick("Left", 50, 50, 1, , "U")
+Sleep(50)
+Log("mouseclick_up=" (btns(next_lines()) = "up:1" ? 1 : 0))
+
+; --- MouseClickDrag. ---
+MouseClickDrag("Left", 10, 10, 120, 90)
+Sleep(80)
+Log("mousedrag_btns=" (btns(next_lines()) = "down:1,up:1" ? 1 : 0))
+MouseGetPos(&mx, &my)
+Log("mousedrag_pos=" (mx = 120 && my = 90 ? 1 : 0))
+
+; --- Click (g_BIF). ---
+Click("Right")
+Sleep(80)
+Log("click_right=" (btns(next_lines()) = "down:3,up:3" ? 1 : 0))
+Click("150 160")
+Sleep(80)
+Log("click_xy=" (btns(next_lines()) = "down:1,up:1" ? 1 : 0))
+MouseGetPos(&mx, &my)
+Log("click_pos=" (mx = 150 && my = 160 ? 1 : 0))
+
+; --- MouseGetPos WhichWindow: pointer over the capture window. ---
+MouseMove(150, 160)
+Sleep(50)
+MouseGetPos(, , &whwnd)
+Log("mousegetpos_win=" (WinGetTitle("ahk_id " whwnd) = "KeyCap Capture" ? 1 : 0))
+
+; --- KeyWait (docs: 1 when the condition is met; "D" waits for down). ---
+Log("keywait_up=" (KeyWait("a") = 1 ? 1 : 0))
+Send("{a down}")
+Sleep(50)
+Log("keywait_d=" (KeyWait("a", "D") = 1 ? 1 : 0))
+Send("{a up}")
+Sleep(50)
+Log("keywait_up2=" (KeyWait("a") = 1 ? 1 : 0))
+
+; --- SetCapsLockState/SetNumLockState/SetScrollLockState + GetKeyState "T". ---
+SetCapsLockState("On")
+Log("caps_on=" (GetKeyState("CapsLock", "T") = 1 ? 1 : 0))
+SetCapsLockState(-1)
+Log("caps_toggle=" (GetKeyState("CapsLock", "T") = 0 ? 1 : 0))
+SetCapsLockState(1)
+Log("caps_num=" (GetKeyState("CapsLock", "T") = 1 ? 1 : 0))
+SetCapsLockState("Off")
+Log("caps_off=" (GetKeyState("CapsLock", "T") = 0 ? 1 : 0))
+SetNumLockState("On")
+Log("num_on=" (GetKeyState("NumLock", "T") = 1 ? 1 : 0))
+SetNumLockState("Off")
+Log("num_off=" (GetKeyState("NumLock", "T") = 0 ? 1 : 0))
+SetScrollLockState("On")
+Log("scroll_on=" (GetKeyState("ScrollLock", "T") = 1 ? 1 : 0))
+SetScrollLockState("Off")
+Log("scroll_off=" (GetKeyState("ScrollLock", "T") = 0 ? 1 : 0))
+
+; --- BlockInput (docs: On/Off mode blocks all user input; while blocked,
+; simulated input does not reach other clients, but the script can still
+; simulate it; Default turns off the Send/Mouse modes without unblocking
+; On/Off; input is re-enabled when the script closes). ---
+; Drain capture events left by the KeyWait section (its checks read the
+; keyboard state, not the capture file).
+next_lines()
+BlockInput("On")
+Send("{Enter}")
+Sleep(60)
+Log("block_send=" (downs(next_lines()) = "" ? 1 : 0))
+BlockInput("Default")
+Send("{Enter}")
+Sleep(60)
+Log("block_default=" (downs(next_lines()) = "" ? 1 : 0))
+BlockInput("Off")
+Send("{Enter}")
+Sleep(60)
+Log("block_off=" (downs(next_lines()) = "Return" ? 1 : 0))
+
+; --- InstallKeybdHook/InstallMouseHook: no error, flags stored. ---
+InstallKeybdHook()
+InstallMouseHook()
+InstallKeybdHook(0)
+InstallMouseHook(0)
+Log("install_hooks=1")
+
+; --- GetKeyState logical/physical state follows XTEST events. ---
+Send("{b down}")
+Sleep(50)
+Log("keystate_down=" (GetKeyState("b") = 1 ? 1 : 0))
+Log("keystate_phys=" (GetKeyState("b", "P") = 1 ? 1 : 0))
+Send("{b up}")
+Sleep(50)
+Log("keystate_up=" (GetKeyState("b") = 0 ? 1 : 0))
+
+; --- Cleanup. ---
+Run("pkill -f xkeycap")

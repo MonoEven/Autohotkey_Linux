@@ -29,7 +29,6 @@ LINUX_BIV_STUB(name) \
 void name##_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue) { (void)aVarName; (void)aValue; (void)aResultToken; }
 
 LINUX_BIF_STUB(BIF_CaretGetPos)
-LINUX_BIF_STUB(BIF_Click)
 LINUX_BIF_STUB(BIF_ComObj)
 LINUX_BIF_STUB(BIF_ComObjActive)
 LINUX_BIF_STUB(BIF_ComObjConnect)
