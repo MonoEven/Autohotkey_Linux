@@ -28,36 +28,37 @@
 ### 阶段 0：环境与构建系统
 - [x] 新建 `Autohotkey_Linux` 目录并克隆 v2.0.26 源码。
 - [x] 创建 `linux-port` 分支。
-- [ ] 编写 CMake 构建脚本，支持 Linux 下的 GCC/Clang。
-- [ ] 建立 CI（GitHub Actions / 本地容器）编译检查。
+- [x] 编写 CMake 构建脚本，支持 Linux 下的 GCC/Clang。
+- [x] 建立 CI（GitHub Actions）编译检查。
 
 ### 阶段 1：核心解释器可编译
-- [ ] 用 `#ifdef` / 平台抽象层隔离 Win32 API。
-- [ ] 提供 `stdafx.h` 的 Linux 替代头，移除 MSVC 专用特性。
-- [ ] 先编译不依赖 GUI/钩子的核心模块（script、var、util、TextIO、error 等）。
-- [ ] 建立 Linux 下可运行的命令行入口（`AutoHotkey` 解释器，无 GUI）。
+- [x] 用 `#ifdef` / 平台抽象层隔离 Win32 API。
+- [x] 提供 `stdafx.h` 的 Linux 替代头，移除 MSVC 专用特性。
+- [x] 先编译不依赖 GUI/钩子的核心模块（script、var、util、TextIO、error 等）。
+- [x] 建立 Linux 下可运行的命令行入口（`AutoHotkey` 解释器，无 GUI）。
 
 ### 阶段 2：平台抽象层
-- [ ] 定义 `IPlatformWindow`、`IPlatformHook`、`IPlatformClipboard` 等接口。
-- [ ] 实现 X11 后端：
+- [x] 定义 `IPlatformWindow`、`IPlatformHook`、`IPlatformClipboard` 等接口。
+- [x] 实现 X11 后端：
   - 窗口枚举/操作：Xlib / XCB + EWMH。
   - 全局热键：XGrabKey / XRecord。
   - 键鼠模拟：XTest。
   - 剪贴板：X11 selections。
   - 消息循环：XNextEvent / poll。
-- [ ] 保留 Win32 后端，方便对比回归。
+- [x] 保留 Win32 后端，方便对比回归。
 
 ### 阶段 3：功能模块移植
-- [ ] 热键与键鼠钩子。
-- [ ] 窗口管理与控件（可先用 GTK 或 Qt 承载 GUI）。
-- [ ] 剪贴板。
-- [ ] 注册表替代（GSettings / XDG 配置 / 轻量 KV 存储）。
-- [ ] COM 替代（D-Bus / 桌面自动化接口）。
+- [x] 热键与键鼠钩子。
+- [x] 窗口管理与控件（X11 后端;Gui 复杂控件不移植,文档标注）。
+- [x] 剪贴板。
+- [x] 注册表替代（文件虚拟注册表,见 assert_registry;Windows 注册表不移植）。
+- [x] COM 替代（**D-Bus** 实现,`core_com_dbus_linux.cpp`）。
+- [x] DllCall(.so 动态库):dlopen/dlsym + libffi,`core_dllcall_linux.cpp`。
 
 ### 阶段 4：完善与测试
-- [ ] 移植 `AutoHotkey` 单元/集成测试。
-- [ ] Wayland 兼容性评估（全局热键/模拟输入受 Wayland 协议限制）。
-- [ ] 打包（AppImage / deb / rpm）。
+- [x] 移植 `AutoHotkey` 单元/集成测试。
+- [x] Wayland 兼容性评估（全局热键/模拟输入受 Wayland 协议限制）。
+- [x] 打包（AppImage / deb / rpm）。
 
 ## 风险与注意事项
 

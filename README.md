@@ -19,8 +19,8 @@ hotkeys.
   (`XGrabKey`), pixel/monitor access (`PixelGetColor`, `PixelSearch`,
   `Monitor*`, `ImageSearch`), dialogs (`MsgBox`, `InputBox`,
   `FileSelect`/`DirSelect`), `ToolTip`, window shapes (`WinSetRegion`) and
-  the whole doc-checked v2 API surface — **795/795** assertions pass under
-  Xvfb.
+  the whole doc-checked v2 API surface — **842/842** assertions pass under
+  Xvfb (29 of them exercise `DllCall`).
 - **Native Wayland backend** (used when no X display is available):
   xdg-shell windows, virtual keyboard/pointer input
   (`zwp_virtual_keyboard_v1` / `zwlr_virtual_pointer_manager_v1`),
@@ -31,6 +31,15 @@ hotkeys.
   clipboard (X11 CLIPBOARD selection on X11/XWayland, wl_data_device on
   Wayland; process-internal fallback headless), verified cross-process
   with xclip.
+- **DllCall for native libraries**: calls functions in Linux shared
+  objects (`.so`) via dlopen/dlsym + libffi — full type support
+  (`Int`/`Int64`/`Short`/`Char`/`Float`/`Double`/`Ptr`/`Str`/`AStr`/
+  `WStr`), by-address `&Var` output parameters and HRESULT-style error
+  reporting (29 doc-check assertions).
+- **COM over D-Bus**: `ComObject("service")` proxies a D-Bus bus service;
+  method calls and property access map to D-Bus; `ComValue` wraps typed
+  values (18 doc-check assertions).  Windows COM interfaces do not exist
+  on Linux.
 - **327/327** built-in functions implemented (0 not implemented); see
   `tests/doccheck/CHECK_REPORT.md` for the per-module report.
 - **CI**: GitHub Actions builds both the regular and ASan binaries and
@@ -65,8 +74,8 @@ ahk your-script.ahk
 
 Requirements: CMake, a C++ compiler, X11 development headers
 (`libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev`),
-Wayland development headers (`libwayland-dev wayland-protocols`) and
-`libxkbcommon-dev`.
+Wayland development headers (`libwayland-dev wayland-protocols`),
+`libxkbcommon-dev`, `libffi-dev` (DllCall) and `libdbus-1-dev` (COM/D-Bus).
 
 ```bash
 git clone --branch linux-port https://github.com/MonoEven/Autohotkey_Linux.git
@@ -98,8 +107,13 @@ port overview (backends, differences from Windows, build/install notes).
 
 - No GUI windows (`Gui`/`GuiControl`/`Menu` objects are Windows-only and
   are not implemented); use text-based tools or external GUIs.
-- No COM, no Windows registry, no `DllCall` of Windows DLLs, no Win32
-  messages to other windows.
+- COM is implemented over **D-Bus** (no IUnknown/IDispatch/SafeArray
+  pointers, no COM events); `ComObjQuery`/`ComObjConnect`/`ComObjArray`
+  raise an error.
+- No Windows registry, no Win32 messages to other windows
+  (`SendMessage`/`PostMessage`/`OnMessage` are not available).
+- `DllCall` loads native **.so** shared objects — Windows DLLs are not
+  loadable.
 - `Sound*`, tray icon and compiled-script (`.exe`) packaging are not
   available.
 - Hotkeys work through `XGrabKey` on X11/XWayland; in pure Wayland they

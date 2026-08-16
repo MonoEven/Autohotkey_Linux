@@ -30,24 +30,31 @@
       （`source/linux/core/core_*_linux.cpp`），效果等同且更贴合移植版结构
 - [x] 实现 X11 后端（Xlib + XTest + XRandR/Xinerama + XGrabKey 热键）
 - [x] 热键、Send、窗口枚举/操作、剪贴板、像素/显示器、对话框、ToolTip、
-      ImageSearch、WinSetRegion 全部可用（doc-check **795/795** 断言通过）
+      ImageSearch、WinSetRegion 全部可用（doc-check **842/842** 断言通过，
+      含 DllCall 29 项与 D-Bus COM 18 项）
 
 ### M4：GUI 与系统集成 ✅（按 Linux 实际情况落地）
 - [x] 消息框/输入框/文件选择对话框：真实 X11 对话框（`source/linux/gui/x11_gui.cpp`），
-      无 DISPLAY 时回退控制台/stdin
-- [x] 注册表/COM：**不移植**（Windows 专属），相关函数按文档抛出明确错误
+      无 DISPLAY 时回退控制台/stdin；`AHK_MSGBOX_AUTOCLOSE_MS` 测试钩子供自动化套件
+- [x] 注册表：**不移植**（Windows 专属），相关函数按文档抛出明确错误
+- [x] **COM：改用 D-Bus 实现**（`core_com_dbus_linux.cpp`）：`ComObject("service")`
+      创建总线服务代理，方法调用/属性访问映射 D-Bus，`ComValue` 包装类型化值；
+      `ComObjGet`/`ComObjType`/`ComObjValue`/`ComObjFlags` 可用，
+      `ComObjQuery`/`ComObjConnect`/`ComObjArray` 按文档报错（18 项断言）
+- [x] **DllCall：实现 .so 动态库调用**（`core_dllcall_linux.cpp`）：
+      dlopen/dlsym + libffi，全类型支持、`&Var` 输出参数、HRESULT 报错（29 项断言）
 - [x] 复杂 GUI 控件（Gui/GuiControl/Menu 对象）：**不移植**（Windows 专属），文档标注
 - [x] 原生 Wayland 后端：xdg-shell 窗口、虚拟键盘/指针、wlr-screencopy 抓屏
       （无 X11 时亦可运行；XWayland 回退 229 断言 + 纯 Wayland 13 断言通过）
 
 ### M5：完善与发布 ✅
-- [x] 移植测试用例：26 项回归 + 795 项 doc-check（Xvfb）+ Wayland/XWayland 套件
+- [x] 移植测试用例：26 项回归 + 842 项 doc-check（Xvfb）+ Wayland/XWayland 套件
 - [x] Wayland 兼容性：原生 Wayland 后端 + XWayland 回退（sway headless 验证）
 - [x] 打包：`tools/linux/pack.sh` 生成 **tar.gz + .deb**；CLI 安装器
       `install.sh` 与 GUI 安装器 `install-gui.sh`（zenity/yad）
 - [x] 发布：**Release v2.0.26-linux.1**（含两个安装包资产）
 - [x] 文档：官方 v2 文档镜像重建为 Linux 移植版（删除 v1 迁移内容，
-      新增 linux-port.htm），GitHub Pages 发布：
+      新增 linux-port.htm；DllCall/COM 页面含 Linux 可运行示例），GitHub Pages 发布：
       https://monoeven.github.io/Autohotkey_Linux/
 
 ## 当前推进重点
@@ -69,6 +76,10 @@
 - [x] **系统剪贴板**：`core_clipboard_linux.cpp` —— X11 CLIPBOARD selection
       （读写、跨进程经 xclip 验证）与 Wayland wl_data_device（数据源/offer）；
       无显示时保留进程内回退
+- [x] **DllCall（.so 动态库）**：`core_dllcall_linux.cpp` —— dlopen/dlsym +
+      libffi，全类型/输出参数/HRESULT，29 项断言（含真实 libc/libm 调用）
+- [x] **COM 改用 D-Bus**：`core_com_dbus_linux.cpp` —— ComObject/ComValue/
+      ComObj* 映射到桌面总线，18 项断言（真实 org.freedesktop.DBus 调用）
 - [x] **输入法集成评估**：`docs/IME-Integration.md`（XIM / Wayland text-input
       分阶段方案、热键与 preedit 交互、推荐路径）
 
@@ -76,3 +87,4 @@
 
 - [ ] 输入法实际集成（Phase 1：XIM 事件过滤 + IME 状态变量）
 - [ ] Wayland text-input（zwp_text_input_v3）Send 文本投递
+- [ ] 复杂 GUI 控件（Gui/GuiControl/Menu 对象）——Windows 专属，暂不移植

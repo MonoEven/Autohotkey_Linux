@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **795 / 795 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 26 项、窗口形状模块 19 项实测,与 headless 各模块;26 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 13 项** 与 **XWayland 回退 229 项** 独立套件通过(见第 10 节)
+- **结果**: **842 / 842 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 26 项、窗口形状模块 19 项实测,与 headless 各模块;新增 **DllCall 29 项** 与 **D-Bus COM 18 项**;26 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 13 项** 与 **XWayland 回退 229 项** 独立套件通过(见第 10 节)
 
 ---
 
@@ -45,7 +45,7 @@
 | 消息/热字串/RunAs (OnMessage/SendMessage/PostMessage/MenuSelect/Hotstring/RunAs) | `assert_msg.ahk` | 49 |
 | 图像 (LoadPicture/IL_*/ImageSearch,BMP/PPM 解码 + XGetImage 屏幕匹配) | `assert_image.ahk` | 26 |
 | 窗口形状 (WinSetRegion,X11 SHAPE 扩展;xshape_probe 端到端验证) | `assert_shape.ahk` | 19 |
-| **合计 (X11/headless)** | | **795** |
+| **合计 (X11/headless)** | | **842** |
 | Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端(含修饰键组合与鼠标按钮)、ToolTip xdg 窗口、X11 专属表面报错) | `assert_wayland.ahk` | 13 |
 | **合计 (Wayland)** | | **808** |
 | XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 229 |
@@ -326,17 +326,19 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 | 悬浮提示 (ToolTip) | ✅ 5/5 | Xvfb 下实测:返回 HWND、窗口标题=文本、同索引更新复用窗口、坐标、空白隐藏并返回 0 |
 | 热键 (Hotkey) | ✅ 10/10 | Xvfb 下以 Send 触发实测:单键与 ^/+/! 组合、多余修饰键不触发(文档)、On/Off 动作、Key up、非法键名 ValueError、热键保持脚本运行并与定时器共存 |
 | 未实现函数错误行为 (Edit*/Gui*/Menu*/IL_*/LoadPicture/ImageSearch/选择对话框/Hotstring/OnMessage/SendMessage/PostMessage/RunAs/WinSetRegion) | ✅ 25/25 | 逐函数以最少参数调用,验证抛出清晰的 "not been ported to Linux" 运行时错误(不静默返回错误值);各函数不可移植原因见 §2.32 |
-| 未实现模块 (GUI/GuiCtrl/COM/DllCall/Hotstring/剪贴板监听/Edit*/SendMessage/PostMessage/OnMessage/ImageSearch/DirSelect/FileSelect 等 27 项) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
+| DllCall (.so 动态库) | ✅ 29/29 | dlopen/dlsym + libffi:真实 libc/libm 调用(abs/strlen/isdigit/floor/sqrt/pow/malloc/free/getenv/time/rand_r/sprintf),全类型(Int/Int64/Short/Char/Float/Double/Ptr/Str/AStr/WStr/U 前缀)、`&Var` 输出参数、失败路径(缺符号/缺库/坏类型) |
+| COM (D-Bus) | ✅ 18/18 | D-Bus 会话总线实测:ComValue 标量包装(I2/I4/R4/R8/BSTR/BOOL/UI1/I8/UI8)、ComObject 服务代理、真实调用(org.freedesktop.DBus GetId/ListNames 返回字符串数组)、属性/方法调用、错误路径(未知成员抛 OSError)、ComObjType/Value/Flags |
+| 未实现模块 (GUI/GuiCtrl/Hotstring/剪贴板监听/Edit*/SendMessage/PostMessage/OnMessage/ImageSearch/DirSelect/FileSelect 等) | ⏳ 明确报错 | 调用的函数会给出清晰的 "not implemented on Linux" 运行时错误,不会静默返回错误值(见 `worklist.tsv` `NOT_IMPL`) |
 
 ## 5. 回归与构建验证
 
 ```
 普通构建: tests/run_tests.sh        PASS=26 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=795 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=842 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0 (Wayland 模式)
           tests/doccheck/wayland_run.sh --xwayland PASS=229 FAIL=0 (XWayland 回退)
 ASan 构建: tests/run_tests.sh        PASS=26 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=795 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=842 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0
           tests/doccheck/wayland_run.sh --xwayland PASS=229 FAIL=0
 ```
