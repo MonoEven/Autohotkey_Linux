@@ -14,6 +14,10 @@
 
 <h1>ComCall</h1>
 
+<div class="note-linux" style="background:#fdf0ef;border-left:4px solid #a04040;padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> COM is not available on Linux; these functions throw an error. The D-Bus desktop bus is used for inter-process communication instead.</div>
+
+
+
 <p>Calls a native COM interface method by index.</p>
 
 <pre class="Syntax">Result := <span class="func">ComCall</span>(Index, ComObj <span class="optional">, Type1, Arg1, Type2, Arg2, ReturnType</span>)</pre>

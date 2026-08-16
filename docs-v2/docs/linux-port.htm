@@ -50,8 +50,15 @@ two display backends:</p>
 <ul>
   <li>No GUI windows (Gui, GuiControl, Menu objects are not portable and
     are not implemented); use text-based or external tools.</li>
-  <li>No COM, no DllCall of Windows DLLs, no registry access (Windows
-    registry), no Win32 messages for other windows.</li>
+  <li>No COM (the COM built-ins throw); the D-Bus desktop bus is used for
+    inter-process communication instead.</li>
+  <li><b>DllCall is supported</b> for native Linux shared objects (.so):
+    functions are resolved with dlopen/dlsym and called through libffi,
+    with Int/Int64/Short/Char/Float/Double/Ptr/Str/AStr/WStr argument
+    types, by-address (&amp;Var) output parameters, and HRESULT-style
+    error reporting. Windows DLLs are not loadable.</li>
+  <li>No registry access (Windows registry), no Win32 messages for other
+    windows.</li>
   <li>Sound functions, tray icon and compiled-script packaging are not
     available.</li>
   <li>CoordMode/SendMode semantics are honored; hotkeys work through

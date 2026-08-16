@@ -1,5 +1,6 @@
 tocData = [
   ["Quick Reference","index.htm"],
+  ["Linux Port","linux-port.htm"],
   ["Usage and Syntax","",
   [
     ["Using the Program","Program.htm"],
@@ -31,7 +32,6 @@ tocData = [
     ["Tutorial by tidbit","Tutorial.htm"]
   ]],
   ["Recent Changes","ChangeLog.htm"],
-  ["Changes from v1.1 to v2.0",],
   ["Script Showcase","scripts/index.htm"],
   ["Function Index","lib/index.htm"],
   ["Drive", "lib/Drive.htm",

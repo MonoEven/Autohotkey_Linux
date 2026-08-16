@@ -1,10 +1,232 @@
 <!DOCTYPE HTML>
 <html lang="en">
 <head>
-<meta http-equiv="refresh" content="0;url=docs/" />
-<link rel="canonical" href="docs/" />
+<title>AutoHotkey v2 Linux Port &mdash; Documentation</title>
+<meta name="description" content="Documentation for the AutoHotkey v2 Linux port: language reference, built-in function list, tutorials and Linux-port notes." />
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<link href="docs/static/theme.css" rel="stylesheet" type="text/css" />
+<link href="docs/static/dark.css" rel="stylesheet" type="text/css" media="(prefers-color-scheme: dark)" id="dark_css" />
+<style>
+/* Landing-page layout (self-contained; does not change the doc pages). */
+body {
+  margin: 0;
+  padding: 0;
+  background: #f4f6f9;
+  color: #1c2733;
+}
+#landing {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 2.2em 1.4em 3em;
+}
+#landing .hero {
+  text-align: center;
+  padding: 1.6em 1em 1.2em;
+  background: linear-gradient(160deg, #24364b 0%, #3f5770 100%);
+  color: #fff;
+  border-radius: 14px;
+  box-shadow: 0 6px 24px rgba(31, 45, 61, .35);
+}
+#landing .hero img { height: 72px; }
+#landing .hero h1 {
+  color: #fff;
+  border: none;
+  margin: .35em 0 .15em;
+  font-size: 1.9em;
+}
+#landing .hero .tagline {
+  font-size: 1.05em;
+  opacity: .92;
+  margin: .2em 0 0;
+}
+#landing .hero .badges { margin-top: .9em; }
+#landing .hero .badge {
+  display: inline-block;
+  background: rgba(255,255,255,.16);
+  border: 1px solid rgba(255,255,255,.35);
+  color: #fff;
+  font-size: .8em;
+  padding: .28em .8em;
+  border-radius: 999px;
+  margin: .2em .25em;
+}
+#landing h2 {
+  color: #3f5770;
+  border-bottom: 2px solid #d5dde6;
+  margin: 1.6em 0 .7em;
+  padding-bottom: .25em;
+}
+#landing .grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+#landing .card {
+  background: #fff;
+  border: 1px solid #e0e6ee;
+  border-radius: 12px;
+  padding: .9em 1.1em;
+  box-shadow: 0 2px 8px rgba(31,45,61,.08);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+#landing .card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(31,45,61,.16);
+}
+#landing .card h3 {
+  margin: 0 0 .35em;
+  color: #a04040;
+  border: none;
+  font-size: 1.02em;
+}
+#landing .card ul { margin: .2em 0 .2em 1.1em; padding: 0; }
+#landing .card li { margin: .28em 0; }
+#landing .card a { color: #2b5c8f; }
+#landing .card a:hover { text-decoration: underline; }
+#landing .note {
+  background: #eef4fb;
+  border-left: 4px solid #3f5770;
+  padding: .7em 1em;
+  border-radius: 0 8px 8px 0;
+  margin: 1.2em 0;
+  font-size: .95em;
+}
+#landing .note b { color: #3f5770; }
+#landing footer {
+  margin-top: 2.4em;
+  text-align: center;
+  color: #6b7887;
+  font-size: .85em;
+}
+@media (prefers-color-scheme: dark) {
+  body { background: #151a21; color: #dfe6ee; }
+  #landing .card { background: #1d242e; border-color: #2c3644; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+  #landing h2 { color: #9fb8d4; border-bottom-color: #2c3644; }
+  #landing .card h3 { color: #e08a8a; }
+  #landing .card a { color: #7fb2e8; }
+  #landing .note { background: #1c2733; border-left-color: #7fa3c7; }
+  #landing .note b { color: #9fb8d4; }
+  #landing footer { color: #7d8a99; }
+}
+</style>
 </head>
 <body>
-<p>Redirecting to <a href="docs/">docs/</a>.</p>
+
+<div id="landing">
+  <div class="hero">
+    <img src="docs/static/ahk_logo.svg" onerror="this.src='docs/static/ahk_logo.png'; this.onerror=null;" alt="AutoHotkey">
+    <h1>AutoHotkey v2 Linux Port</h1>
+    <p class="tagline">Official AutoHotkey v2.0.26 documentation, adapted for Linux &mdash; X11 &amp; Wayland backends</p>
+    <div class="badges">
+      <span class="badge">v2 only</span>
+      <span class="badge">327 built-ins</span>
+      <span class="badge">X11 / XWayland / Wayland</span>
+      <span class="badge">DllCall (.so)</span>
+    </div>
+  </div>
+
+  <h2>Getting Started</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>About the port</h3>
+      <ul>
+        <li><a href="docs/linux-port.htm">Linux port overview</a> &mdash; what works, differences, build &amp; install</li>
+        <li><a href="https://github.com/MonoEven/Autohotkey_Linux">GitHub repository</a> (MonoEven/Autohotkey_Linux)</li>
+        <li><a href="https://github.com/MonoEven/Autohotkey_Linux/releases">Releases &amp; packages</a></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Tutorials</h3>
+      <ul>
+        <li><a href="docs/Tutorial.htm">Beginner tutorial</a></li>
+        <li><a href="docs/howto/WriteHotkeys.htm">How to write hotkeys</a></li>
+        <li><a href="docs/howto/SendKeys.htm">How to send keystrokes</a></li>
+        <li><a href="docs/howto/RunPrograms.htm">How to run programs</a></li>
+        <li><a href="docs/howto/ManageWindows.htm">How to manage windows</a></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Quick reference</h3>
+      <ul>
+        <li><a href="docs/index.htm">Full quick reference</a></li>
+        <li><a href="docs/lib/index.htm">Built-in function index</a></li>
+        <li><a href="docs/KeyList.htm">Keys, mouse buttons &amp; controller</a></li>
+        <li><a href="docs/misc/RegEx-QuickRef.htm">RegEx quick reference</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Language</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Scripting</h3>
+      <ul>
+        <li><a href="docs/Language.htm">Scripting language</a></li>
+        <li><a href="docs/Concepts.htm">Concepts and conventions</a></li>
+        <li><a href="docs/Scripts.htm">Miscellaneous topics</a></li>
+        <li><a href="docs/Objects.htm">Objects</a></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Variables &amp; functions</h3>
+      <ul>
+        <li><a href="docs/Variables.htm">Variables and expressions</a></li>
+        <li><a href="docs/Functions.htm">Functions</a></li>
+        <li><a href="docs/ObjList.htm">Object types</a></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Hotkeys &amp; input</h3>
+      <ul>
+        <li><a href="docs/Hotkeys.htm">Hotkeys</a></li>
+        <li><a href="docs/Hotstrings.htm">Hotstrings &amp; auto-replace</a></li>
+        <li><a href="docs/misc/Remap.htm">Remapping keys</a></li>
+        <li><a href="docs/HotkeyFeatures.htm">Hotkey features</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Interoperability</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Native libraries</h3>
+      <ul>
+        <li><a href="docs/lib/DllCall.htm">DllCall</a> &mdash; call functions in <b>.so</b> shared objects (dlopen/dlsym + libffi)</li>
+        <li><a href="docs/lib/NumGet.htm">NumGet / NumPut</a> &mdash; raw memory access</li>
+        <li><a href="docs/lib/Buffer.htm">Buffer</a> &mdash; binary buffers</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Platform notes</h3>
+      <ul>
+        <li><a href="docs/lib/ComObject.htm">COM</a> &mdash; not available on Linux (D-Bus is used instead)</li>
+        <li><a href="docs/Program.htm">Using the program</a></li>
+        <li><a href="docs/FAQ.htm">FAQ</a></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Reference</h3>
+      <ul>
+        <li><a href="docs/ChangeLog.htm">Change log (v2.0.26)</a></li>
+        <li><a href="docs/license.htm">License (GPL)</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>Linux port note:</b> this documentation accompanies the
+    <a href="https://github.com/MonoEven/Autohotkey_Linux">AutoHotkey v2 Linux port</a>.
+    Only <b>AutoHotkey v2</b> syntax is supported &mdash; v1 syntax and the
+    v1-to-v2 migration material are not part of this port. See
+    <a href="docs/linux-port.htm">linux-port.htm</a> for the complete list of
+    differences from Windows AutoHotkey.
+  </div>
+
+  <footer>
+    &copy; 2014 Steve Gray, Chris Mallett; portions &copy; AutoIt Team and others.
+    Documentation for the AutoHotkey v2 Linux port (MonoEven/Autohotkey_Linux).
+  </footer>
+</div>
+
 </body>
 </html>

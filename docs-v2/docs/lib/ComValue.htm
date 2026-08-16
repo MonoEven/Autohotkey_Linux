@@ -14,6 +14,10 @@
 
 <h1>ComValue</h1>
 
+<div class="note-linux" style="background:#fdf0ef;border-left:4px solid #a04040;padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> COM is not available on Linux; these functions throw an error. The D-Bus desktop bus is used for inter-process communication instead.</div>
+
+
+
 <p>Wraps a value, SafeArray or COM object for use by the script or for passing to a COM method.</p>
 <pre class="Syntax">ComObj := <span class="func">ComValue</span>(VarType, Value <span class="optional">, Flags</span>)</pre>
 <p><code>ComValue</code> itself is a <a href="Class.htm">class</a> derived from <code>Any</code>, but is used only to create or identify COM wrapper objects.</p>

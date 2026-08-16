@@ -14,6 +14,10 @@
 
 <h1>ComObjFromPtr</h1>
 
+<div class="note-linux" style="background:#fdf0ef;border-left:4px solid #a04040;padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> COM is not available on Linux; these functions throw an error. The D-Bus desktop bus is used for inter-process communication instead.</div>
+
+
+
 <p>Wraps a raw <a href="https://learn.microsoft.com/windows/win32/api/oaidl/nn-oaidl-idispatch">IDispatch</a> pointer (COM object) for use by the script.</p>
 <pre class="Syntax">ComObj := <span class="func">ComObjFromPtr</span>(DispPtr)</pre>
 
