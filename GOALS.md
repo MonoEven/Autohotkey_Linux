@@ -1,7 +1,7 @@
 # AutoHotkey Linux 化迁移目标
 
 > 目标随进展持续更新。基线：AutoHotkey v2.0.26，分支：`linux-port`。
-> **状态：全部核心目标已完成并发布（v2.0.26-linux.1）。**
+> **状态：全部核心目标已完成并发布（v2.0.26-linux.1，含 GTK3 GUI 的 v2.0.26-linux.2 已打包）。**
 
 ## 总目标
 
@@ -53,11 +53,13 @@
       （无 X11 时亦可运行；XWayland 回退 229 断言 + 纯 Wayland 13 断言通过）
 
 ### M5：完善与发布 ✅
-- [x] 移植测试用例：26 项回归 + 868 项 doc-check（Xvfb）+ Wayland/XWayland 套件
+- [x] 移植测试用例：26 项回归 + 880 项 doc-check（Xvfb，含 GUI/未移植错误行为断言）
+      + Wayland/XWayland 套件
 - [x] Wayland 兼容性：原生 Wayland 后端 + XWayland 回退（sway headless 验证）
 - [x] 打包：`tools/linux/pack.sh` 生成 **tar.gz + .deb**；CLI 安装器
       `install.sh` 与 GUI 安装器 `install-gui.sh`（zenity/yad）
-- [x] 发布：**Release v2.0.26-linux.1**（含两个安装包资产）
+- [x] 发布：**Release v2.0.26-linux.1**（含两个安装包资产）；GTK3 GUI 落地后
+      打包 **v2.0.26-linux.2**（tar.gz + .deb，依赖补 libgtk-3-0/libdbus-1-3/libffi8）
 - [x] 文档：官方 v2 文档镜像重建为 Linux 移植版（删除 v1 迁移内容，
       新增 linux-port.htm；DllCall/COM 页面含 Linux 可运行示例；
       25 个平台专属页面标注 Linux note），GitHub Pages 发布：

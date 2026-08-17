@@ -14,7 +14,7 @@ set -u
 REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$REPO_DIR" || exit 1
 
-VER="${1:-2.0.26-linux.1}"
+VER="${1:-2.0.26-linux.2}"
 ARCH=$(uname -m)
 case "$ARCH" in
   x86_64) ARCH=amd64 ;;
@@ -76,7 +76,7 @@ Priority: optional
 Architecture: $ARCH
 Maintainer: MonoEven <MonoEven@users.noreply.github.com>
 Installed-Size: $DEB_SIZE
-Depends: libx11-6, libxext6, libxrandr2, libxinerama1, libxtst6
+Depends: libx11-6, libxext6, libxrandr2, libxinerama1, libxtst6, libgtk-3-0, libdbus-1-3, libffi8
 Recommends: zenity | yad
 Description: AutoHotkey v2 Linux port (X11/Wayland)
  AutoHotkey is a free, open source macro-creation and automation
@@ -84,10 +84,11 @@ Description: AutoHotkey v2 Linux port (X11/Wayland)
  for defining keyboard shortcuts (hotkeys).
  .
  This package provides the Linux port of AutoHotkey v2.0.26: a full X11
- backend (window management, controls, hotkeys, pixel access, dialogs)
- and a native Wayland backend (xdg-shell windows, virtual keyboard and
- pointer, wlr-screencopy).  AutoHotkey v2 syntax only; v1 is not
- supported.  Documentation is under /usr/share/doc/autohotkey/docs-v2.
+ backend (window management, controls, hotkeys, pixel access, dialogs),
+ GTK3-based Gui/GuiControl/Menu support, D-Bus COM support, and a native
+ Wayland backend (xdg-shell windows, virtual keyboard and pointer,
+ wlr-screencopy).  AutoHotkey v2 syntax only; v1 is not supported.
+ Documentation is under /usr/share/doc/autohotkey/docs-v2.
 EOF
   cat > "$DEBROOT/DEBIAN/postinst" <<'EOF'
 #!/bin/sh

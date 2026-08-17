@@ -433,7 +433,24 @@ void Util_WinKill(HWND) {}
 FResult ControlGetClassNN(HWND, HWND, LPTSTR aBuf, int aBufSize) { if (aBuf && aBufSize > 0) aBuf[0] = 0; return OK; }
 
 // --- InputObject ---
-Object *InputObject::Create() { return nullptr; }
+// InputHook needs the keyboard hook input capture (input.cpp), which is not
+// ported to Linux.  Create a real object whose __New raises the standard
+// "not ported" error, so InputHook() fails with a clear message instead of
+// NewObject's misleading "Out of memory".
+BIF_DECL(InputObject_NotPorted)
+{
+	(void)aParam;
+	(void)aParamCount;
+	aResultToken.Error(_T("This built-in function has not been ported to Linux yet."));
+}
+
+Object *InputObject::Create()
+{
+	auto obj = Object::Create();
+	if (obj)
+		obj->DefineMethod(_T("__New"), new BuiltInFunc(_T(""), InputObject_NotPorted, 0, 3));
+	return obj;
+}
 Object *InputObject::sPrototype = nullptr;
 ObjectMemberMd InputObject::sMembers[] = {};
 int InputObject::sMemberCount = 0;

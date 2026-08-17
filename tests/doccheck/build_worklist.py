@@ -24,7 +24,7 @@ for m in re.finditer(r"BIF[1ni]?\((\w+),", src):
 # which g_BIF funcs are stubbed in core_builtin_stubs.cpp?
 stubs = set()
 src = open(os.path.join(BASE, "source/linux/core/core_builtin_stubs.cpp"), encoding="utf-8").read()
-for m in re.finditer(r"LINUX_BIF_STUB\((\w+)\)", src):
+for m in re.finditer(r"LINUX_BIF_STUB_ERR?\((\w+)\)", src):
     stubs.add(m.group(1))
     if m.group(1).startswith("BIF_"):
         stubs.add(m.group(1)[4:])
@@ -46,7 +46,32 @@ SHARED_STUBS = {
 for stub_name, names in SHARED_STUBS.items():
     if stub_name in stubs:
         stubs.update(names)
+# Stubbed g_BIF functions are NOT_IMPL (they raise a clear "not ported"
+# error at runtime), not silently dropped from the worklist.
+ni.update(stubs & g_bif)
 g_bif_impl = g_bif - stubs
+
+# 2b) Class constructors / object types that are fully usable on Linux but
+# are not plain g_BIF entries (they are registered via DefineClasses or the
+# GUI/COM backends).  Verified at runtime; listed here so the worklist covers
+# every doc/lib page.
+CLASS_IMPL = {
+    # Primitive/container constructors.
+    "Buffer", "ClipboardAll", "Float", "Integer", "Number", "String",
+    "Array", "Map", "Object", "Error", "Enumerator", "Func", "Class",
+    # COM (D-Bus) object constructors.
+    "ComObject", "ComValue",
+    # GUI classes (GTK3 backend).
+    "Gui", "GuiControl", "Menu", "ListView", "TreeView",
+    # Doc name variants of implemented functions.
+    "DriveGetFileSystem", "IsSet",
+}
+# InputHook needs the keyboard-hook input capture (input.cpp), which is not
+# ported; ComObjArray needs SafeArray marshalling, also unavailable.  Both
+# raise a clear runtime error.
+CLASS_NOT_IMPL = {"InputHook", "ComObjArray", "ComObjConnect", "ComObjQuery"}
+impl |= CLASS_IMPL
+ni |= CLASS_NOT_IMPL
 
 # 3) Built-in variables implemented in core_builtin_stubs.cpp (BIV_ definitions)
 biv = set()

@@ -189,6 +189,7 @@ for ahk in assert_*.ahk; do
     assert_image)   out_src="/tmp/ahk_dc_image_out.txt" ;;
     assert_shape)   out_src="/tmp/ahk_dc_shape_out.txt" ;;
     assert_gui)     out_src="/tmp/ahk_dc_gui_out.txt" ;;
+    assert_notimpl) out_src="/tmp/ahk_dc_notimpl_out.txt" ;;
   esac
   if [ -n "$out_src" ] && [ -f "$out_src" ]; then
     cp "$out_src" "$tmp" && mv -f "$tmp" "$final"

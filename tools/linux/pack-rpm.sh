@@ -9,7 +9,7 @@ set -u
 REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$REPO_DIR" || exit 1
 
-VER="${1:-2.0.26-linux.1}"
+VER="${1:-2.0.26-linux.2}"
 ARCH=$(uname -m)
 case "$ARCH" in
   x86_64) RPM_ARCH=x86_64 ;;
@@ -46,14 +46,15 @@ License:        GPL-2.0-only
 URL:            https://github.com/MonoEven/Autohotkey_Linux
 Source0:        $SRC
 BuildArch:      $RPM_ARCH
-Requires:       libX11, libXext, libXrandr, libXinerama, libXtst
+Requires:       libX11, libXext, libXrandr, libXinerama, libXtst, gtk3, dbus-libs, libffi
 
 %description
 AutoHotkey is a free, open source macro-creation and automation utility
 driven by a custom scripting language with special provision for defining
 keyboard shortcuts.  This is the Linux port of AutoHotkey v2.0.26:
-AutoHotkey v2 syntax only (v1 is not supported), full X11 backend and a
-native Wayland backend.
+AutoHotkey v2 syntax only (v1 is not supported), full X11 backend,
+GTK3-based Gui/GuiControl/Menu support, D-Bus COM support, and a native
+Wayland backend.
 
 %prep
 %setup -q -c -n ahk-$VER

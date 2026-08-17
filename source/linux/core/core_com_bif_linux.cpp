@@ -25,11 +25,11 @@ void DefineComPrototypeMembers()
 
 // ComValue(type, value [, flags]) -- typed scalar wrapper.
 // ComObject(serviceSpec [, unusedIID] [, unusedFlags]) -- D-Bus proxy.
-// The `this` class parameter is excluded like upstream.
+// Callers (ComValue_Call / ComObject_Call / BIF_ComObj) have already
+// excluded the `this` parameter where applicable, so aParam[0] is always
+// the first real argument (mirrors upstream script_com.cpp).
 static void LinuxComCallImpl(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount, bool aIsComObject)
 {
-	++aParam;
-	--aParamCount;
 	if (aParamCount < 1)
 		_f_throw_param(0);
 
@@ -109,16 +109,25 @@ static void LinuxComCallImpl(ResultToken &aResultToken, ExprTokenType *aParam[],
 
 BIF_DECL(ComValue_Call)
 {
+	// Exclude the `this` class parameter (upstream script_com.cpp does the
+	// same before passing control to BIF_ComObj).
+	++aParam;
+	--aParamCount;
 	LinuxComCallImpl(aResultToken, aParam, aParamCount, false);
 }
 
 BIF_DECL(ComObject_Call)
 {
+	++aParam;
+	--aParamCount;
 	LinuxComCallImpl(aResultToken, aParam, aParamCount, true);
 }
 
-BIF_DECL(BIF_ComObj) // ComObjFromPtr / ComValue.Call when called as BIF.
+BIF_DECL(BIF_ComObj) // ComObjFromPtr -- no `this` parameter; aParam[0] is the pointer.
 {
+	// Linux has no COM interface pointers; keep the function callable (the
+	// value is treated as an opaque handle) instead of crashing on the
+	// missing `this` skip that class constructors perform.
 	LinuxComCallImpl(aResultToken, aParam, aParamCount, false);
 }
 

@@ -2692,6 +2692,12 @@ struct LinuxMdFuncEntry
 // mirror lib/functions.h so that call validation behaves like upstream.
 static LinuxMdFuncEntry sLinuxMdFuncs[] =
 {
+	// CallbackCreate/CallbackFree rely on the DllCall callback machinery
+	// (lib/CCallback.cpp), which is not ported to Linux; register them so
+	// calling them raises the standard "not ported" error instead of an
+	// "unassigned variable" load error.
+	LMD_NI(CallbackCreate, 1, 3),
+	LMD_NI(CallbackFree, 1, 1),
 	LMD_IMPL(BlockInput, BIF_Linux_BlockInput, 1, 1),
 	LMD_IMPL(ClipWait, BIF_Linux_ClipWait, 0, 2),
 	LMD_IMPL(ControlAddItem, BIF_Linux_ControlAddItem, 2, 6),

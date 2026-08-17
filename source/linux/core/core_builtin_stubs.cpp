@@ -21,6 +21,9 @@ void ScriptSleep(int aDelay);
 #define LINUX_BIF_STUB(name) \
 void name(BIF_DECL_PARAMS) { (void)aParam; (void)aParamCount; }
 
+#define LINUX_BIF_STUB_ERR(name) \
+void name(BIF_DECL_PARAMS) { (void)aParam; (void)aParamCount; aResultToken.Error(_T("This built-in function has not been ported to Linux yet.")); }
+
 #define LINUX_BIV_STUB(name) \
 void name(ResultToken &aResultToken, LPTSTR aVarName) { (void)aVarName; (void)aResultToken; }
 
@@ -28,8 +31,8 @@ void name(ResultToken &aResultToken, LPTSTR aVarName) { (void)aVarName; (void)aR
 LINUX_BIV_STUB(name) \
 void name##_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue) { (void)aVarName; (void)aValue; (void)aResultToken; }
 
-LINUX_BIF_STUB(BIF_CaretGetPos)
-LINUX_BIF_STUB(BIF_Sound)
+LINUX_BIF_STUB_ERR(BIF_CaretGetPos)
+LINUX_BIF_STUB_ERR(BIF_Sound)
 
 // WinExist/WinActive: implemented in core_win_linux.cpp (X11 window backend).
 

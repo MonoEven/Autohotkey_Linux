@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **868 / 868 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 26 项、窗口形状模块 19 项、**GUI/控件/菜单模块 26 项**实测,与 headless 各模块;新增 **DllCall 29 项** 与 **D-Bus COM 18 项**;26 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 13 项** 与 **XWayland 回退 229 项** 独立套件通过(见第 10 节)
+- **结果**: **880 / 880 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 26 项、窗口形状模块 19 项、**GUI/控件/菜单模块 26 项**、**未移植函数错误行为模块 13 项**实测,与 headless 各模块;新增 **DllCall 29 项** 与 **D-Bus COM 18 项**;26 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 13 项** 与 **XWayland 回退 229 项** 独立套件通过(见第 10 节)
 
 ---
 
@@ -46,7 +46,8 @@
 | 图像 (LoadPicture/IL_*/ImageSearch,BMP/PPM 解码 + XGetImage 屏幕匹配) | `assert_image.ahk` | 26 |
 | 窗口形状 (WinSetRegion,X11 SHAPE 扩展;xshape_probe 端到端验证) | `assert_shape.ahk` | 19 |
 | GUI/控件/菜单 (Gui/GuiControl/Menu/MenuBar,GTK3 窗口;Edit/DDL/List/ListView/TreeView/StatusBar/Submit/OnEvent/菜单属性等) | `assert_gui.ahk` | 26 |
-| **合计 (X11/headless)** | | **868** |
+| 未移植函数错误行为 (SoundGet*/SoundSet*/CaretGetPos/CallbackCreate/Free/InputHook/ComObjArray/Query/Connect) | `assert_notimpl.ahk` | 13 |
+| **合计 (X11/headless)** | | **880** |
 | Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端(含修饰键组合与鼠标按钮)、ToolTip xdg 窗口、X11 专属表面报错) | `assert_wayland.ahk` | 13 |
 | **合计 (Wayland)** | | **808** |
 | XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 229 |
@@ -281,6 +282,14 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 - **根因**: GTK3/fontconfig/pango 在进程生命周期内持有字体与样式缓存(即使正常退出的 GTK 应用也会被 LSan 标记)。
 - **修复**: `run_check.sh` 对 `assert_gui` 单独设 `ASAN_OPTIONS+=detect_leaks=0`(ASan 内存安全检查保持开启,仅抑制 LSan 退出码报告),其余全部套件仍保留泄漏检测。
 
+### 2.35 逐文档条目审查发现并修复的漏项(本轮)
+对照 `docs-v2/docs/lib/*.htm` 全部 352 个条目逐条审查(与 `worklist.tsv`/运行时实测交叉核对),发现并修复 4 类真实缺陷,并新增 `assert_notimpl.ahk`(13 项断言)固化行为:
+- **SoundGetInterface/Mute/Name/Volume、SoundSetMute/Volume、CaretGetPos(共 7 个)**: `core_builtin_stubs.cpp` 的空 stub 使调用**静默返回垃圾值**(实测 `SoundGetMute()` 返回 `99323594649640` 类地址残留),既不是文档语义也不报错。改为 `LINUX_BIF_STUB_ERR` 抛 "This built-in function has not been ported to Linux yet."。
+- **ComObjFromPtr 段错误**: `LinuxComCallImpl` 把类构造专用的 `++aParam`(跳过 `this`)错误放进共享函数,`ComObjFromPtr(0)` 越界读取 token(ASan/gdb 确认 `TokenIsEmptyString` 崩溃)。修复为与上游一致:`ComValue_Call`/`ComObject_Call` 各自排除 `this`,`BIF_ComObj` 直接处理 `aParam[0]`。
+- **InputHook 报误导性 "Out of memory"**: `InputObject::Create()` 桩返回 nullptr,`NewObject` 误报 OOM。改为返回带 `__New`(抛 not-ported 错误)的真实对象。
+- **CallbackCreate/CallbackFree 报 "This local variable has not been assigned a value"**: 不在 g_BIF 也不在 LMD 表,名字按未定义变量解析。补 `LMD_NI(CallbackCreate/Free)` 条目。
+- **worklist 盲区**: `build_worklist.py` 原把 stub 函数从 g_BIF 集合减去但不计入 NOT_IMPL,导致 stub 函数(含 Sound*/CaretGetPos)在 worklist 中"蒸发";补类构造器/GUI/COM 条目后 274 → 298 个 doc 页有状态。剩余 54 个未收录条目经核实全部为非函数页(语句/指令/类别/索引)。
+
 ---
 
 ## 3. 测试预期修正(文档语义确认,非移植缺陷)
@@ -346,11 +355,11 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 
 ```
 普通构建: tests/run_tests.sh        PASS=26 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=868 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=880 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0 (Wayland 模式)
           tests/doccheck/wayland_run.sh --xwayland PASS=229 FAIL=0 (XWayland 回退)
 ASan 构建: tests/run_tests.sh        PASS=26 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=868 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=880 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0
           tests/doccheck/wayland_run.sh --xwayland PASS=229 FAIL=0
 ```
