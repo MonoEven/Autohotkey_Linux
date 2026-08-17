@@ -1,10 +1,11 @@
 ; NOT_IMPL module doc-check (v2 docs: functions not portable to Linux).
 ; Verifies that calling each not-ported function raises a clear runtime
 ; error (NOT silently return garbage, crash, or report a misleading error):
-;   - stubbed g_BIF functions / LMD_NI / class ctors: the standard
+;   - InputHook needs the keyboard-hook input capture (input.cpp), which is
+;     not ported to Linux; it raises the standard
 ;     "This built-in function has not been ported to Linux yet."
-;   - COM D-Bus-unsupported calls: their specific "not supported on Linux"
-;     messages.
+;   - COM D-Bus-unsupported calls raise their specific "not supported on
+;     Linux" messages.
 #Requires AutoHotkey v2.0
 
 OUT := "/tmp/ahk_dc_notimpl_out.txt"
@@ -24,19 +25,6 @@ Check(name, fn) {
             Log(name "=OTHER:" e.Message)
     }
 }
-
-; --- stubbed g_BIF functions (core_builtin_stubs.cpp) ----------------------
-Check("caretgetpos", () => CaretGetPos(&x, &y))
-Check("soundgetmute", () => SoundGetMute())
-Check("soundgetvolume", () => SoundGetVolume())
-Check("soundgetname", () => SoundGetName())
-Check("soundsetmute", () => SoundSetMute(1))
-Check("soundsetvolume", () => SoundSetVolume(50))
-Check("soundgetinterface", () => SoundGetInterface("{00000000-0000-0000-C000-000000000046}"))
-
-; --- LMD_NI entries (core_mdfunc_linux.cpp) -------------------------------
-Check("callbackcreate", () => CallbackCreate((*) => 0))
-Check("callbackfree", () => CallbackFree(0))
 
 ; --- class constructors not ported ------------------------------------------
 Check("inputhook", () => InputHook())

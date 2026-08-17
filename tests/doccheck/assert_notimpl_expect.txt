@@ -1,12 +1,3 @@
-caretgetpos=notimpl
-soundgetmute=notimpl
-soundgetvolume=notimpl
-soundgetname=notimpl
-soundsetmute=notimpl
-soundsetvolume=notimpl
-soundgetinterface=notimpl
-callbackcreate=notimpl
-callbackfree=notimpl
 inputhook=notimpl
 comobjarray=com_err
 comobjquery=com_err

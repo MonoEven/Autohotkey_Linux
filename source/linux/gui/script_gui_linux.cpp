@@ -38,6 +38,7 @@
 #include "script_func_impl.h"
 
 #include <gtk/gtk.h>
+#include <gdk/gdkx.h>
 #include <gdk/gdkkeysyms.h>
 #include <pango/pango.h>
 
@@ -5095,6 +5096,133 @@ extern "C" void AhkGtkQueueMenuItem(GuiType *aGui, UserMenu *aMenu, UINT aItemID
 {
     std::lock_guard<std::recursive_mutex> lock(ahk_gtk::s_mutex);
     ahk_gtk::s_menu_events.push_back({ aGui, aMenu, aItemID });
+}
+
+// CaretGetPos support: returns the caret (insertion point) of the focused
+// GtkEntry/GtkTextView in the focused top-level window of this process's GTK
+// backend, in screen coordinates.  Other windows have no caret protocol on
+// X11 and yield false (docs: "cannot be determined").
+extern "C" bool AhkGtkCaretGetPos(int &aScreenX, int &aScreenY)
+{
+    // Reuse the GDK display the GTK backend already holds; opening a second
+    // X connection can fail (EAGAIN) once GTK is up.
+    GdkDisplay *gdisp = gdk_display_get_default();
+    if (!gdisp)
+        return false;
+
+    // Determine the focused GTK window: prefer GDK's active window, falling
+    // back to any of our windows whose focus widget holds a caret-capable
+    // control (there is no window manager under Xvfb, so GDK's "active
+    // window" may be unset).
+    GuiType *gui = nullptr;
+    GdkWindow *focus = gdk_screen_get_active_window(gdk_display_get_default_screen(gdisp));
+    if (focus)
+    {
+        guint32 xid = gdk_x11_window_get_xid(focus);
+        gui = GuiType::FindGui((HWND)(UINT_PTR)xid, true);
+    }
+    if (!gui)
+    {
+        for (auto &kv : ahk_gtk::s_guis)
+        {
+            GuiPeer *p = kv.second.get();
+            if (!p || !p->window || !GTK_IS_WINDOW(p->window))
+                continue;
+            GtkWidget *fw = gtk_window_get_focus(GTK_WINDOW(p->window));
+            for (GtkWidget *w = fw; w; w = gtk_widget_get_parent(w))
+                if (GTK_IS_ENTRY(w) || GTK_IS_TEXT_VIEW(w))
+                {
+                    gui = kv.first;
+                    break;
+                }
+            if (gui)
+                break;
+        }
+    }
+    if (!gui)
+        return false;
+    GuiPeer *gpeer = peer(gui);
+    if (!gpeer || !gpeer->window || !GTK_IS_WINDOW(gpeer->window))
+        return false;
+    GtkWidget *focus_widget = gtk_window_get_focus(GTK_WINDOW(gpeer->window));
+    if (!focus_widget)
+        return false;
+    // Walk up to the control itself (the focus may be on a child widget).
+    GtkWidget *entry = nullptr;
+    for (GtkWidget *w = focus_widget; w; w = gtk_widget_get_parent(w))
+    {
+        if (GTK_IS_ENTRY(w) || GTK_IS_TEXT_VIEW(w))
+        {
+            entry = w;
+            break;
+        }
+    }
+    if (!entry)
+        return false;
+
+    int caret_x = 0, caret_y = 0;
+    if (GTK_IS_ENTRY(entry))
+    {
+        // GTK3: cursor position comes from the entry's Pango layout.
+        // The layout offset plus the cursor position of the layout gives
+        // the caret in widget coordinates.
+        int lo_x = 0, lo_y = 0;
+        gtk_entry_get_layout_offsets(GTK_ENTRY(entry), &lo_x, &lo_y);
+        PangoLayout *layout = gtk_entry_get_layout(GTK_ENTRY(entry));
+        // pango cursor positions are byte offsets; convert the character
+        // count to a byte offset in the UTF-8 entry text.
+        const char *text = gtk_entry_get_text(GTK_ENTRY(entry));
+        int cursor_index = gtk_entry_get_text_length(GTK_ENTRY(entry));
+        int byte_index = cursor_index ? (int)(g_utf8_offset_to_pointer(text, cursor_index) - text) : 0;
+        PangoRectangle strong, weak;
+        pango_layout_get_cursor_pos(layout, byte_index, &strong, &weak);
+        caret_x = lo_x + PANGO_PIXELS(strong.x);
+        caret_y = lo_y + PANGO_PIXELS(strong.y);
+        // Convert widget-internal coords to the toplevel window, then to screen.
+        int tx = 0, ty = 0;
+        gtk_widget_translate_coordinates(entry, gpeer->window, caret_x, caret_y, &tx, &ty);
+        GdkWindow *gdkwin = gtk_widget_get_window(gpeer->window);
+        if (gdkwin)
+        {
+            gint wx = 0, wy = 0;
+            gdk_window_get_origin(gdkwin, &wx, &wy);
+            tx += wx;
+            ty += wy;
+        }
+        caret_x = tx;
+        caret_y = ty;
+    }
+    else if (GTK_IS_TEXT_VIEW(entry))
+    {
+        // Text view: caret = cursor mark position in buffer coordinates,
+        // converted to window coordinates.
+        GtkTextView *tv = GTK_TEXT_VIEW(entry);
+        GtkTextBuffer *buf = gtk_text_view_get_buffer(tv);
+        GtkTextIter iter;
+        gtk_text_buffer_get_iter_at_mark(buf, &iter, gtk_text_buffer_get_insert(buf));
+        GdkRectangle rect;
+        gtk_text_view_get_iter_location(tv, &iter, &rect);
+        gint bx = 0, by = 0;
+        gtk_text_view_buffer_to_window_coords(tv, GTK_TEXT_WINDOW_TEXT, rect.x, rect.y, &bx, &by);
+        int tx = 0, ty = 0;
+        gtk_widget_translate_coordinates(entry, gpeer->window, bx, by, &tx, &ty);
+        GdkWindow *gdkwin = gtk_widget_get_window(gpeer->window);
+        if (gdkwin)
+        {
+            gint wx = 0, wy = 0;
+            gdk_window_get_origin(gdkwin, &wx, &wy);
+            tx += wx;
+            ty += wy;
+        }
+        caret_x = tx;
+        caret_y = ty;
+    }
+    else
+        return false;
+
+    aScreenX = caret_x;
+    aScreenY = caret_y;
+    return true;
 }
 
 // Win32 dialog procedures are exported as inert compatibility entry points.

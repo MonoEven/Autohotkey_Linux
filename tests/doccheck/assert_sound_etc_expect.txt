@@ -1,0 +1,10 @@
+sgi=ok
+sgi2=ok
+sgm=ose
+sgv=ose
+sgn=ose
+ssm=ose
+ssv=ose
+cgp=ok
+cbaddr=ok
+cbfree=ok

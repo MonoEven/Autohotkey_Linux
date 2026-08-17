@@ -107,6 +107,9 @@ add_executable(ahk_core
     core_dllcall_linux.cpp
     core_com_dbus_linux.cpp
     core_com_bif_linux.cpp
+    core_sound_linux.cpp
+    core_caret_linux.cpp
+    core_callback_linux.cpp
     core_md_func_linux.cpp
     core_platform_stubs.cpp
     core_wayland_linux.cpp

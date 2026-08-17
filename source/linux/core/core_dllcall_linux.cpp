@@ -248,9 +248,14 @@ bool LinuxDynaCall(void *aFunction, DYNAPARM aParam[], int aParamCount
 		}
 		switch (p.type)
 		{
-		case DLL_ARG_INT:   arg_types[i] = &ffi_type_sint;   arg_values[i] = &p.value_int; break;
-		case DLL_ARG_SHORT: arg_types[i] = &ffi_type_sshort; arg_values[i] = &p.value_int; break;
-		case DLL_ARG_CHAR:  arg_types[i] = &ffi_type_schar;  arg_values[i] = &p.value_int; break;
+		// On x86-64 SysV, all integer-like arguments occupy an 8-byte
+		// register/stack slot regardless of declared width.  Using 8-byte
+		// types ensures that callbacks created via CallbackCreate (which
+		// read UINT_PTR-sized values) see the correct argument value.
+		// The value_int64 field is 8 bytes, so it safely stores the value.
+		case DLL_ARG_INT:   arg_types[i] = &ffi_type_ulong; arg_values[i] = &p.value_int64; break;
+		case DLL_ARG_SHORT: arg_types[i] = &ffi_type_ulong; arg_values[i] = &p.value_int64; break;
+		case DLL_ARG_CHAR:  arg_types[i] = &ffi_type_ulong; arg_values[i] = &p.value_int64; break;
 		case DLL_ARG_INT64: arg_types[i] = &ffi_type_sint64; arg_values[i] = &p.value_int64; break;
 		case DLL_ARG_FLOAT: arg_types[i] = &ffi_type_float;  arg_values[i] = &p.value_float; break;
 		case DLL_ARG_DOUBLE:arg_types[i] = &ffi_type_double; arg_values[i] = &p.value_double; break;

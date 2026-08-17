@@ -148,6 +148,58 @@ BIF_DECL(BIF_Linux_NotImplemented)
 	aResultToken.Error(_T("This built-in function has not been ported to Linux yet."));
 }
 
+// CallbackCreate/CallbackFree (libffi closure backend, core_callback_linux.cpp).
+extern FResult CallbackCreate(IObject *func, optl<StrArg> aOptions, optl<int> aParamCount, UINT_PTR &aRetVal);
+extern FResult CallbackFree(UINT_PTR aCallback);
+
+BIF_DECL(BIF_Linux_CallbackCreate)
+{
+	// CallbackCreate(Function [, Options, ParamCount])
+	if (aParamCount < 1)
+	{
+		aResultToken.ParamError(0, aParam[0]);
+		return;
+	}
+	IObject *func = TokenToObject(*aParam[0]);
+	if (!func)
+	{
+		aResultToken.ParamError(0, aParam[0], _T("Object"));
+		return;
+	}
+	TCHAR opt_buf[MAX_NUMBER_SIZE];
+	optl<StrArg> options = (aParamCount > 1 && !ParamIndexIsOmitted(1))
+		? optl<StrArg>(ParamIndexToString(1, opt_buf))
+		: optl<StrArg>(nullptr);
+		optl<int> param_count = optl<int>(nullptr);
+	if (aParamCount > 2 && !ParamIndexIsOmitted(2))
+	{
+		int pc = (int)ParamIndexToInt64(2);
+		param_count = optl<int>(pc);
+	}
+	UINT_PTR retval = 0;
+	FResult fr = CallbackCreate(func, options, param_count, retval);
+	if (FAILED(fr))
+	{
+		FResultToError(aResultToken, aParam, aParamCount, fr, 0);
+		return;
+	}
+	aResultToken.SetValue((__int64)retval);
+}
+
+BIF_DECL(BIF_Linux_CallbackFree)
+{
+	// CallbackFree(Address)
+	if (aParamCount < 1)
+	{
+		aResultToken.ParamError(0, aParam[0]);
+		return;
+	}
+	UINT_PTR addr = (UINT_PTR)ParamIndexToInt64(0);
+	FResult fr = CallbackFree(addr);
+	if (FAILED(fr))
+		FResultToError(aResultToken, aParam, aParamCount, fr, 0);
+}
+
 BIF_DECL(BIF_Linux_Exit)
 {
 	(void)aResultToken;
@@ -2692,12 +2744,9 @@ struct LinuxMdFuncEntry
 // mirror lib/functions.h so that call validation behaves like upstream.
 static LinuxMdFuncEntry sLinuxMdFuncs[] =
 {
-	// CallbackCreate/CallbackFree rely on the DllCall callback machinery
-	// (lib/CCallback.cpp), which is not ported to Linux; register them so
-	// calling them raises the standard "not ported" error instead of an
-	// "unassigned variable" load error.
-	LMD_NI(CallbackCreate, 1, 3),
-	LMD_NI(CallbackFree, 1, 1),
+	// CallbackCreate/CallbackFree: libffi closure backend (core_callback_linux.cpp).
+	LMD_IMPL(CallbackCreate, BIF_Linux_CallbackCreate, 1, 3),
+	LMD_IMPL(CallbackFree, BIF_Linux_CallbackFree, 1, 1),
 	LMD_IMPL(BlockInput, BIF_Linux_BlockInput, 1, 1),
 	LMD_IMPL(ClipWait, BIF_Linux_ClipWait, 0, 2),
 	LMD_IMPL(ControlAddItem, BIF_Linux_ControlAddItem, 2, 6),
