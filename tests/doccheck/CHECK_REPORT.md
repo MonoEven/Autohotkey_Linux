@@ -531,3 +531,14 @@ MsgBox/InputBox/FileSelect 带 autoclose 钩子):
   - `tests/doccheck/assert_notimpl.ahk`/`_expect.txt`:内容收敛为 3 项(ComObjArray/ComObjQuery/ComObjConnect,com_err)。
   - docs-v2:`Sound*.htm` 与 `index.htm` 的 Linux note 更新为已实现描述;`InputHook.htm` 改为准确的实现状态 + 限制说明。
   - **验证**:普通 + ASan 构建 doc-check **903/903,**回归 26/26、Wayland 13、XWayland 229 全绿。
+- **round 23(弱化盘点 + 崩溃修复)**:见 `AUDIT_2026_WEAKENED.md` 全文。
+  关键结论:① **修复 Send* 无显示 + Wayland 活跃时的段错误**
+  (`LinuxFakeKey/LinuxKeycodeForVk` 缺 `!d` 守卫,ASan 栈确认
+  `XKeysymToKeycode(NULL)`;已加守卫,复测 20/20 通过);② **纠正文档**
+  SoundBeep/SoundPlay 实际已实现(响铃 与 paplay/aplay),上一轮 note
+  误写为 "not ported",已同步修正 docs-v2 四个页面;③ 盘点出以
+  Hotstring 永不展开、Send* 四模式等价、GuiFromHwnd 恒返回 ""、
+  COM 仅 D-Bus(SafeArray/IID 占位)、图像仅 BMP/PPM、注册表单文件、
+  TrayTip 空 shim 等为代表的弱化点(详见该报告 §2);④ 完备性证据
+  与边界见该报告 §3(903 断言 + 313/369 函数直引用 + 1390 示例审计 +
+  与上游二进制对标;另 56 个函数无直接断言)。

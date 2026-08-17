@@ -136,6 +136,8 @@ static KeySym LinuxVkToKeysym(vk_type aVK)
 
 static KeyCode LinuxKeycodeForVk(Display *d, vk_type aVK)
 {
+	if (!d)
+		return 0; // XKeysymToKeycode requires a live display.
 	KeySym ks = LinuxVkToKeysym(aVK);
 	if (!ks)
 		return 0;
@@ -227,6 +229,8 @@ static void LinuxFakeKey(Display *d, vk_type aVK, bool aDown)
 {
 	if (!d && LinuxWaylandKeyEvent((unsigned)aVK, aDown))
 		return; // Wayland virtual keyboard.
+	if (!d)
+		return; // No X display and Wayland injection unavailable: no-op.
 	KeyCode kc = LinuxKeycodeForVk(d, aVK);
 	if (!kc)
 		return;

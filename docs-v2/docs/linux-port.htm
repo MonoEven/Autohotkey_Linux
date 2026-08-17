@@ -92,8 +92,9 @@ D-Bus COM layer). The port has two display backends:</p>
     windows.</li>
   <li>The <code>SoundGet*/SoundSet*</code> mixer functions are available via
     <code>pactl</code> (PipeWire/PulseAudio) with an ALSA <code>amixer</code>
-    fallback. <code>SoundBeep</code>/<code>SoundPlay</code>, the tray icon
-    (<code>TrayTip</code>) and compiled-script packaging are not available.</li>
+    fallback; <code>SoundPlay</code> (paplay/aplay) and <code>SoundBeep</code>
+    (terminal/X11 bell) work too. The tray icon (<code>TrayTip</code>) and
+    compiled-script packaging are not available.</li>
   <li>CoordMode/SendMode semantics are honored; hotkeys work through
     XGrabKey on X11/XWayland.</li>
 </ul>
