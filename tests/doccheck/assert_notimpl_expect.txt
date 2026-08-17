@@ -1,4 +1,3 @@
-inputhook=notimpl
 comobjarray=com_err
 comobjquery=com_err
 comobjconnect=com_err

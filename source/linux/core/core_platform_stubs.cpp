@@ -18,6 +18,10 @@
 #include "../gui/script_gui_linux.h"
 #include <X11/Xlib.h>
 
+// InputHook dispatch (core_inputhook_linux.cpp): drains captured key events
+// and enforces the timeout while an InputHook is active.
+extern "C" void LinuxDispatchInputHook(Display *d);
+
 // --- application/message pump ---
 bool MsgSleep(int aDuration, MessageMode)
 {
@@ -38,6 +42,8 @@ bool MsgSleep(int aDuration, MessageMode)
 		if (Hotkey::sHotkeyCount)
 			if (Display *d = LinuxX11Display())
 				LinuxDispatchHotkeys(d);
+		if (g_input && g_input->InProgress())
+			LinuxDispatchInputHook(LinuxX11Display());
 		if (Display *d = LinuxX11Display())
 			LinuxClipboardDispatchX11(d);
 		if (LinuxWaylandActive())
@@ -52,6 +58,8 @@ bool MsgSleep(int aDuration, MessageMode)
 		if (Hotkey::sHotkeyCount)
 			if (Display *d = LinuxX11Display())
 				LinuxDispatchHotkeys(d);
+		if (g_input && g_input->InProgress())
+			LinuxDispatchInputHook(LinuxX11Display());
 		if (Display *d = LinuxX11Display())
 			LinuxClipboardDispatchX11(d);
 		if (LinuxWaylandActive())
@@ -433,27 +441,9 @@ void Util_WinKill(HWND) {}
 FResult ControlGetClassNN(HWND, HWND, LPTSTR aBuf, int aBufSize) { if (aBuf && aBufSize > 0) aBuf[0] = 0; return OK; }
 
 // --- InputObject ---
-// InputHook needs the keyboard hook input capture (input.cpp), which is not
-// ported to Linux.  Create a real object whose __New raises the standard
-// "not ported" error, so InputHook() fails with a clear message instead of
-// NewObject's misleading "Out of memory".
-BIF_DECL(InputObject_NotPorted)
-{
-	(void)aParam;
-	(void)aParamCount;
-	aResultToken.Error(_T("This built-in function has not been ported to Linux yet."));
-}
-
-Object *InputObject::Create()
-{
-	auto obj = Object::Create();
-	if (obj)
-		obj->DefineMethod(_T("__New"), new BuiltInFunc(_T(""), InputObject_NotPorted, 0, 3));
-	return obj;
-}
-Object *InputObject::sPrototype = nullptr;
-ObjectMemberMd InputObject::sMembers[] = {};
-int InputObject::sMemberCount = 0;
+// InputHook is implemented for real: core_inputhook_linux.cpp provides the
+// input_type methods and X11 capture; input_object.cpp defines the
+// InputObject class body, sMembers and sPrototype.  (No stubs needed here.)
 
 // --- UserMenu ---
 // UserMenu is implemented for real in ../gui/script_menu_linux.cpp (GTK3

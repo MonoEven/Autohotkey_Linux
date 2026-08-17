@@ -21,6 +21,7 @@
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/shape.h>
+#include <cstdio>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -64,13 +65,11 @@ static Display *LinuxWinDisplay()
 {
 	static Display *sDpy = nullptr;
 	if (!sDpy)
-	{
 		sDpy = XOpenDisplay(nullptr);
-		if (sDpy)
-		{
-			XSetErrorHandler(LinuxXErrorHandler);
-			XSetIOErrorHandler(LinuxXIOErrorHandler);
-		}
+	if (sDpy)
+	{
+		XSetErrorHandler(LinuxXErrorHandler);
+		XSetIOErrorHandler(LinuxXIOErrorHandler);
 	}
 	return sDpy;
 }

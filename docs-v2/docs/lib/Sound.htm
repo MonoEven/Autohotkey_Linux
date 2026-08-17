@@ -14,7 +14,7 @@
 
 <h1>Sound Functions</h1>
 
-<div class="warning" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> <code>Sound*</code> functions are not implemented on this port; they raise an error.</div>
+<div class="note" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> <code>SoundGetVolume/SoundSetVolume/SoundGetMute/SoundSetMute/SoundGetName</code> are implemented, backed by PipeWire/PulseAudio's <code>pactl</code> (falling back to ALSA <code>amixer</code> when no PulseAudio/PipeWire server is present). <code>SoundGetInterface</code> (a Windows COM concept) returns 0. <code>SoundBeep</code>/<code>SoundPlay</code> are not yet ported and raise an error.</div>
 
 
 <p>Applies to:</p>

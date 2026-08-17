@@ -65,11 +65,12 @@ CLASS_IMPL = {
     "Gui", "GuiControl", "Menu", "ListView", "TreeView",
     # Doc name variants of implemented functions.
     "DriveGetFileSystem", "IsSet",
+    # InputHook: implemented (core_inputhook_linux.cpp, X11 state machine).
+    "InputHook",
 }
-# InputHook needs the keyboard-hook input capture (input.cpp), which is not
-# ported; ComObjArray needs SafeArray marshalling, also unavailable.  Both
-# raise a clear runtime error.
-CLASS_NOT_IMPL = {"InputHook", "ComObjArray", "ComObjConnect", "ComObjQuery"}
+# ComObjArray needs SafeArray marshalling (unavailable); ComObjConnect/Query
+# need COM event/interface support.  They raise a clear runtime error.
+CLASS_NOT_IMPL = {"ComObjArray", "ComObjConnect", "ComObjQuery"}
 impl |= CLASS_IMPL
 ni |= CLASS_NOT_IMPL
 

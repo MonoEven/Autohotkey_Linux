@@ -170,10 +170,14 @@ BIF_DECL(BIF_Linux_CallbackCreate)
 	optl<StrArg> options = (aParamCount > 1 && !ParamIndexIsOmitted(1))
 		? optl<StrArg>(ParamIndexToString(1, opt_buf))
 		: optl<StrArg>(nullptr);
-		optl<int> param_count = optl<int>(nullptr);
+	// optl<int> keeps a *reference* to its slot, so the slot must live at
+	// function scope (not inside the if-block) to be valid when
+	// CallbackCreate() consumes it below.
+	int pc = 0;
+	optl<int> param_count = optl<int>(nullptr);
 	if (aParamCount > 2 && !ParamIndexIsOmitted(2))
 	{
-		int pc = (int)ParamIndexToInt64(2);
+		pc = (int)ParamIndexToInt64(2);
 		param_count = optl<int>(pc);
 	}
 	UINT_PTR retval = 0;

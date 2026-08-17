@@ -14,7 +14,7 @@
 
 <h1>SoundGetVolume</h1>
 
-<div class="warning" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> <code>SoundGetVolume</code> is not implemented on this port; it raises an error.</div>
+<div class="note" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> Backed by <code>pactl</code> (PulseAudio/PipeWire), falling back to <code>amixer</code> (ALSA) when no PulseAudio/PipeWire server is present. Raises an error if neither tool is installed.</div>
 
 
 <p>Retrieves a volume setting of a sound device.</p>

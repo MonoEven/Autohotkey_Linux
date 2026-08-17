@@ -44,4 +44,18 @@ Log("cbaddr=" (IsInteger(cb) && cb > 0 ? "ok" : "bad"))
 CallbackFree(cb)
 Log("cbfree=ok")
 
+; --- InputHook state machine (no live capture on Linux) ----------------------
+ih := InputHook("T1")
+Log("ih_type=" Type(ih))
+Log("ih_start=" ih.InProgress)
+ih.Start()
+Sleep(1300)  ; longer than the 1s timeout; MsgSleep fires the timeout
+Log("ih_after=" (ih.InProgress ? "active" : "done"))
+Log("ih_reason=" ih.EndReason)
+
+ih2 := InputHook()
+ih2.Start()
+ih2.Stop()
+Log("ih2_stop=" (ih2.EndReason = "Stopped" ? "ok" : "bad"))
+
 ExitApp 0

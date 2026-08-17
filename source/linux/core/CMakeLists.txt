@@ -110,6 +110,8 @@ add_executable(ahk_core
     core_sound_linux.cpp
     core_caret_linux.cpp
     core_callback_linux.cpp
+    core_inputhook_linux.cpp
+    ../../input_object.cpp
     core_md_func_linux.cpp
     core_platform_stubs.cpp
     core_wayland_linux.cpp

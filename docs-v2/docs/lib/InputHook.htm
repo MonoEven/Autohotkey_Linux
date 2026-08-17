@@ -13,7 +13,7 @@
 
 <h1>InputHook</h1>
 
-<div class="warning" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> <code>InputHook</code> is not implemented on this port; it raises an error.</div>
+<div class="warning" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> <code>InputHook</code> is implemented as a state machine: <code>Start/Stop</code>, <code>Timeout</code>, <code>EndKey</code>/<code>EndReason</code> and <code>InProgress</code> behave per the docs. However, since Linux has no equivalent of the Windows global keyboard hook, no keys are intercepted: the <code>OnChar</code>/<code>OnKeyDown</code> callbacks do not fire and collected input stays empty. Use it only for timeout/stop driven logic.</div>
 
 
 <p>Creates an object which can be used to collect or intercept keyboard input.</p>

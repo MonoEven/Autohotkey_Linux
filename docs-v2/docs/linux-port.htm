@@ -45,7 +45,7 @@ examples fall into three groups on Linux:</p>
     examples are kept for reference only.</li>
   <li><b>Not available on Linux.</b> Examples using Windows-only features
     (GUI windows via <code>Gui</code>/<code>GuiControl</code>/<code>Menu</code>,
-    <code>Sound*</code>, <code>TrayTip</code>, <code>SendMessage</code>/
+    <code>SoundBeep</code>/<code>SoundPlay</code>, <code>TrayTip</code>, <code>SendMessage</code>/
     <code>PostMessage</code>/<code>OnMessage</code>, <code>Hotstring</code>,
     ...) are kept for reference; calling those functions raises a clear
     error.  Many examples elsewhere are also short <em>snippets</em> that
@@ -90,8 +90,10 @@ D-Bus COM layer). The port has two display backends:</p>
     error reporting. Windows DLLs are not loadable.</li>
   <li>No registry access (Windows registry), no Win32 messages for other
     windows.</li>
-  <li>Sound functions, tray icon and compiled-script packaging are not
-    available.</li>
+  <li>The <code>SoundGet*/SoundSet*</code> mixer functions are available via
+    <code>pactl</code> (PipeWire/PulseAudio) with an ALSA <code>amixer</code>
+    fallback. <code>SoundBeep</code>/<code>SoundPlay</code>, the tray icon
+    (<code>TrayTip</code>) and compiled-script packaging are not available.</li>
   <li>CoordMode/SendMode semantics are honored; hotkeys work through
     XGrabKey on X11/XWayland.</li>
 </ul>

@@ -14,7 +14,7 @@
 | 文件 | 作用 |
 |---|---|
 | `tests/doccheck/extract_docs.py` | 解析 `docs-v2/docs/lib/*.htm`,提取每个函数的名称/描述/语法/参数/返回值/示例 → `doc_index.tsv`(352 个函数条目) |
-| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(327 个已实现,0 个未实现) |
+| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(369 个已实现,4 个 D-Bus/COM 边界操作抛明确错误,298 个 doc 页有状态) |
 | `tests/doccheck/assert_*.ahk` | 按模块编写的实测脚本(每个断言输出 `name=value` 行,取自官方文档语义) |
 | `tests/doccheck/assert_*_expect.txt` | 与文档语义对应的期望值 |
 | `tests/doccheck/run_check.sh` | 运行全部断言并逐条比对(支持传入任意二进制路径,如 `run_check.sh build-asan/ahk_core`) |
@@ -46,10 +46,12 @@
 | 图像 (LoadPicture/IL_*/ImageSearch,BMP/PPM 解码 + XGetImage 屏幕匹配) | `assert_image.ahk` | 26 |
 | 窗口形状 (WinSetRegion,X11 SHAPE 扩展;xshape_probe 端到端验证) | `assert_shape.ahk` | 19 |
 | GUI/控件/菜单 (Gui/GuiControl/Menu/MenuBar,GTK3 窗口;Edit/DDL/List/ListView/TreeView/StatusBar/Submit/OnEvent/菜单属性等) | `assert_gui.ahk` | 26 |
-| 未移植函数错误行为 (SoundGet*/SoundSet*/CaretGetPos/CallbackCreate/Free/InputHook/ComObjArray/Query/Connect) | `assert_notimpl.ahk` | 13 |
-| **合计 (X11/headless)** | | **880** |
+| 未移植函数错误行为 (ComObjArray/ComObjQuery/ComObjConnect,D-Bus COM 边界) | `assert_notimpl.ahk` | 3 |
+| 声音/光标/回调/输入钩子 (SoundGet*/SoundSet*/CaretGetPos/CallbackCreate+Free/InputHook,pactl/amixer + X11 + libffi 后端) | `assert_sound_etc.ahk` | 15 |
+| 语句/指令/类别/索引页代码形式 (If/Else/For/While/Switch/Try/Catch/Throw/Loop/Until/Break/Continue/Return/Block + Array/Map/Object/Buffer/Error/Number/String 类别 + `#Requires`/`#Warn` 等) | `assert_statements.ahk` | 19 |
+| **合计 (X11/headless)** | | **903** |
 | Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端(含修饰键组合与鼠标按钮)、ToolTip xdg 窗口、X11 专属表面报错) | `assert_wayland.ahk` | 13 |
-| **合计 (Wayland)** | | **808** |
+| **合计 (Wayland)** | | **831** |
 | XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 229 |
 
 复现命令:
@@ -290,6 +292,15 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 - **CallbackCreate/CallbackFree 报 "This local variable has not been assigned a value"**: 不在 g_BIF 也不在 LMD 表,名字按未定义变量解析。补 `LMD_NI(CallbackCreate/Free)` 条目。
 - **worklist 盲区**: `build_worklist.py` 原把 stub 函数从 g_BIF 集合减去但不计入 NOT_IMPL,导致 stub 函数(含 Sound*/CaretGetPos)在 worklist 中"蒸发";补类构造器/GUI/COM 条目后 274 → 298 个 doc 页有状态。剩余 54 个未收录条目经核实全部为非函数页(语句/指令/类别/索引)。
 
+### 2.36 声音/光标/回调/输入钩子 4 组函数落地 + 语句/指令/类别/索引页代码形式纳入校验(本轮)
+
+- **SoundGet*/SoundSet*(6 个)** — `core_sound_linux.cpp`(新增): 经 `pactl`(PulseAudio/PipeWire)实现,无 PulseAudio/PipeWire 服务时回退 ALSA `amixer`;两者都缺失时按文档抛 "No audio mixer tool (pactl/amixer) is installed." 的 OSError(此前为空 stub 静默返回垃圾值)。`SoundGetInterface`(Windows COM 概念)按文档语义返回 0。
+- **CaretGetPos** — `core_caret_linux.cpp`(新增)+ `script_gui_linux.cpp` 的 `AhkGtkCaretGetPos`: 查询 GDK 活动窗口内聚焦的 GtkEntry/GtkTextView,经 pango 布局光标位置 + `gtk_widget_translate_coordinates` + `gdk_window_get_origin` 换算为屏幕坐标(Xvfb 实测 cx/cy 正确)。
+- **InputHook** — `core_inputhook_linux.cpp`(新增): 将上游 `input_type` 的 Options/MatchList/Timeout/EndBy*/EndReason/Stop/InProgress 状态机逐方法移植;`MsgSleep` 在等待期间派发超时检查。Linux 无全局键盘钩子,`OnChar/OnKeyDown` 不触发、不抓取键盘(与 GDK 显示双消费会崩溃,已移除 X 事件读取),文档化该限制;调用不再误导性报 "Out of memory"。
+- **CallbackCreate/CallbackFree** — `core_callback_linux.cpp`(新增,libffi closure): 参数/返回值按 x64 8 字节槽 `ffi_type_ulong` 传递并拷贝进 `UINT_PTR[]`,经 `CallMethod` 调回脚本函数;`CallbackFree` 释放 closure 与 arg_types(cif 引用它)。DllCall 传入回调地址调用实测返回正确(DllCall(addr,"Int64",7,"Int64",8) = 15)。
+- **文档代码形式纳入 doc-check** — 新增 `assert_statements.ahk`(19 断言): 仅函数页不足以覆盖文档,语句页(If/Else/For/While/Switch/Try/Catch/Throw/Loop/Until/Break/Continue/Return/Block)、类别页(Array/Map/Object/Buffer/Error/Number/String 方法)、指令页(`#Requires` 等)与索引页(index.htm)的代码形式也需校验。索引页 `index.htm` 与 Sound*/InputHook 页的 Linux note 同步更新。
+- **测试写法修正(非移植缺陷)**: 尝试 `catch e`(无 `as`)在 v2.0.26 语义中是"捕获类 `e`"而非输出变量,上游同样报 "Invalid class."(已用官方 v2.0.26 二进制实测确认);正确写法是 `catch as e` 或 `catch Error as e`。相关断言已按文档修正。
+
 ---
 
 ## 3. 测试预期修正(文档语义确认,非移植缺陷)
@@ -350,16 +361,21 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 | DllCall (.so 动态库) | ✅ 29/29 | dlopen/dlsym + libffi:真实 libc/libm 调用(abs/strlen/isdigit/floor/sqrt/pow/malloc/free/getenv/time/rand_r/sprintf),全类型(Int/Int64/Short/Char/Float/Double/Ptr/Str/AStr/WStr/U 前缀)、`&Var` 输出参数、失败路径(缺符号/缺库/坏类型) |
 | COM (D-Bus) | ✅ 18/18 | D-Bus 会话总线实测:ComValue 标量包装(I2/I4/R4/R8/BSTR/BOOL/UI1/I8/UI8)、ComObject 服务代理、真实调用(org.freedesktop.DBus GetId/ListNames 返回字符串数组)、属性/方法调用、错误路径(未知成员抛 OSError)、ComObjType/Value/Flags |
 | GUI/控件/菜单 (Gui/GuiControl/Menu/MenuBar,GTK3 后端) | ✅ 26/26 | Xvfb 下实测:窗口/标题/Hwnd、Edit/CheckBox/Radio/DDL/ListBox 的 Value/Text/Set、ListView 行列增删查、TreeView 父子项、StatusBar 文本、Submit 命名控件取值、OnEvent 注册、Destroy、MenuBar 全流程(见 assert_gui.ahk) |
+| 声音 (SoundGet*/SoundSet*,pactl/amixer 后端) | ✅ 8/8 | 无 mixer 工具时按文档抛 OSError(此前空 stub 静默返回垃圾值;实测 SoundGetMute 曾返回地址残留);SoundGetInterface 返回 0 |
+| 光标 (CaretGetPos,GTK 文本控件) | ✅ 1/1 | Xvfb 下以 Xvfb 单屏实测:GDK 活动窗口内聚焦 GtkEntry 的光标屏幕坐标换算正确 |
+| 回调 (CallbackCreate/CallbackFree,libffi closure) | ✅ 4/4 | 地址整数返回/释放;DllCall(addr,"Int64",...) 调用回调实测返回正确;ASan 捕获并修复 stack-use-after-scope(optl<int> 引用块内局部变量) |
+| 输入钩子 (InputHook,X11 状态机) | ✅ 5/5 | Start→InProgress、超时 EndReason=Timeout、Stop→EndReason=Stopped(无显示时超时仍生效;X 键捕获/抓取因 GDK 双消费崩溃已禁用,文档化) |
+| 语句/指令/类别/索引页代码形式 (assert_statements) | ✅ 19/19 | If/Else/For/While/Switch/Try/Catch/Throw/Loop/Until/Break/Continue/Return/Block + Array/Map/Object/Buffer/Error/Number/String 方法 + `#Requires` + index.htm 索引页 |
 
 ## 5. 回归与构建验证
 
 ```
 普通构建: tests/run_tests.sh        PASS=26 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=880 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=903 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0 (Wayland 模式)
           tests/doccheck/wayland_run.sh --xwayland PASS=229 FAIL=0 (XWayland 回退)
 ASan 构建: tests/run_tests.sh        PASS=26 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=880 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=903 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0
           tests/doccheck/wayland_run.sh --xwayland PASS=229 FAIL=0
 ```
@@ -504,3 +520,14 @@ MsgBox/InputBox/FileSelect 带 autoclose 钩子):
   - **修饰键组合 + 鼠标按钮(纯 Wayland)**:`LinuxWaylandKeyEvent` 在每个按键事件前显式推送 `zwp_virtual_keyboard_v1_modifiers`(跟踪按下修饰位:Shift=1/Control=4/Alt=8/Super=64),sway 的修饰键组合匹配因此生效——`bindsym Shift+Return`、`bindsym Control+Return` 端到端触发(`assert_wayland` 新增 `wl_send_shift_enter`/`wl_send_ctrl_enter` 断言)。查 sway 源码确认:`get_active_binding` 要求修饰位精确匹配,按下修饰键本身时其 xkb 位已激活,故 `bindsym Shift_L` 这类单修饰键绑定在真实物理键盘上同样不触发——推送修饰状态后的行为与真实键盘一致(此前 `wl_send_shift`/`wl_send_ctrl` 通过是未推送状态下的假阳性,已按真实语义修正断言)。**鼠标按钮**:sway 的 `bindsym button3` 要求指针悬停于 surface,测试先把虚拟指针移到 ToolTip 窗口上再 `MouseClick("Right")`——`wl_mouse_btn` 断言新增,sway 日志确认按钮绑定触发。
   - **XWayland 屏幕抓取(ImageSearch/PixelGetColor/PixelSearch)**:XWayland 的 root 窗口无 backing store,`XGetImage` 必然 BadMatch(NULL)。新增 `LinuxWaylandCaptureScreen`(core_wayland_linux.cpp,独立 Wayland 连接 + wlr-screencopy 协议:registry 绑定 `zwlr_screencopy_manager_v1`/wl_shm/wl_output,`capture_output_region` 抓区域,shm buffer 拷贝,`ready`/`failed` 事件等待,XRGB8888→0xRRGGBB,含 y_invert 处理与 3s 超时);`core_screen_linux.cpp` 新增共享的 `LinuxScreenGrabRegion`(XGetImage 失败时回退 screencopy),ImageSearch 与像素函数复用;`wayland_run.sh --xwayland` 把 `assert_image` 纳入套件,并用 `for_window [title="ImgMain"] move position 50 60 / resize set 300 200 / border none` 把测试窗口钉在与 Xvfb 相同位置(另修 xwin_helper 在 Expose 时重绘 fill,WM resize 后内容不丢);XWayland 断言 193→**219**。
   - **XWayland 热键(assert_hotkey)**:实测 XGrabKey 经 XWayland 正常工作(XWayland 是完整 X server,grab 匹配与 XTEST 注入均可用,sway 会把 Wayland 键盘事件转入 XWayland),此前排除结论错误;`assert_hotkey` 10 项纳入 --xwayland,合计 **229** 项全过。排除项仅剩 `assert_win/input/monitor`(断言依赖无 WM 的 Xvfb 语义,sway 拥有激活/焦点/光标)。`wl_diag2.sh`/`xw_img*.sh` 等调试脚本留在 tests/doccheck 便于复现。
+- **round 22(9 个函数 + 语句/指令/类别/索引页代码形式校验)**:
+  - `source/linux/core/core_sound_linux.cpp`(新增):SoundGetMute/Name/Volume + SoundSetMute/Volume(6 个)经 `pactl`(PulseAudio/PipeWire,无服务回退 ALSA `amixer`)实现;无 mixer 工具抛 "No audio mixer tool (pactl/amixer) is installed." OSError;SoundGetInterface 返回 0;**`assert_sound_etc.ahk`(15 断言)**固化(sgi/sgi2/cgp/cbaddr/cbfree/ih_* 及无工具时的 ose)。
+  - `source/linux/core/core_caret_linux.cpp`(新增)+ `source/linux/gui/script_gui_linux.cpp`(`AhkGtkCaretGetPos` 导出):CaretGetPos 经 GDK 活动窗口聚焦的 GtkEntry/GtkTextView + pango 光标位置 + 坐标换算给出屏幕坐标。
+  - `source/linux/core/core_callback_linux.cpp`(新增,libffi closure):CallbackCreate/CallbackFree——closure 地址即回调地址,参数/返回按 x64 `ffi_type_ulong` 槽传递,经 `CallMethod` 调回脚本函数;**DllCall 实测调用正确**。**ASan 捕获并修复 stack-use-after-scope**:`BIF_Linux_CallbackCreate` 把 `int pc` 放在 if 块内而 `optl<int>` 持其引用,离开块后 use-after-scope;`pc` 提升到函数作用域(与 `LinuxOptInt` 的槽语义一致)。
+  - `source/linux/core/core_inputhook_linux.cpp`(新增):InputHook 上游 `input_type` 状态机移植(Options/MatchList/Timeout/EndBy*/EndReason/Stop/InProgress);`MsgSleep` 等待期派发超时。Linux 无全局键盘钩子且 GDK 显示上 X 事件读取/XGrabKeyboard 会崩溃,故不抓键(文档化限制;OnChar/OnKeyDown 不触发);已从 `assert_notimpl` 移除。
+  - `source/linux/core/core_mdfunc_linux.cpp`(本轮):BIF_Linux_CallbackCreate/Free 包装与 LMD_IMPL 条目。
+  - `tests/doccheck/build_worklist.py`/`worklist.tsv`:InputHook 由 CLASS_NOT_IMPL 移入 CLASS_IMPL;**369 IMPL / 4 边界(NOT_IMPL 打印值,含 3 个已在 g_BIF 注册的可运行错误路径)/ 298 doc 页有状态**。
+  - `tests/doccheck/assert_statements.ahk`/`_expect.txt`(新增,19 断言):语句/指令/类别/索引页代码形式校验(If/Else/For/While/Switch/Try/Catch/Throw/Loop/Until/Break/Continue/Return/Block + Array/Map/Object/Buffer/Error/Number/String 方法 + `#Requires` + index.htm)。**测试写法修正**:`catch e`(无 `as`)v2 语义是捕获"类 e",上游同样报 "Invalid class."(已用官方 v2.0.26 二进制实测),改为 `catch as e`。
+  - `tests/doccheck/assert_notimpl.ahk`/`_expect.txt`:内容收敛为 3 项(ComObjArray/ComObjQuery/ComObjConnect,com_err)。
+  - docs-v2:`Sound*.htm` 与 `index.htm` 的 Linux note 更新为已实现描述;`InputHook.htm` 改为准确的实现状态 + 限制说明。
+  - **验证**:普通 + ASan 构建 doc-check **903/903,**回归 26/26、Wayland 13、XWayland 229 全绿。

@@ -1,11 +1,6 @@
 ; NOT_IMPL module doc-check (v2 docs: functions not portable to Linux).
-; Verifies that calling each not-ported function raises a clear runtime
-; error (NOT silently return garbage, crash, or report a misleading error):
-;   - InputHook needs the keyboard-hook input capture (input.cpp), which is
-;     not ported to Linux; it raises the standard
-;     "This built-in function has not been ported to Linux yet."
-;   - COM D-Bus-unsupported calls raise their specific "not supported on
-;     Linux" messages.
+; COM D-Bus-unsupported calls raise their specific "not supported on Linux"
+; messages.  (InputHook is now implemented - see assert_sound_etc.ahk.)
 #Requires AutoHotkey v2.0
 
 OUT := "/tmp/ahk_dc_notimpl_out.txt"
@@ -25,9 +20,6 @@ Check(name, fn) {
             Log(name "=OTHER:" e.Message)
     }
 }
-
-; --- class constructors not ported ------------------------------------------
-Check("inputhook", () => InputHook())
 
 ; --- ComObj functions unavailable on D-Bus ----------------------------------
 Check("comobjarray", () => ComObjArray(0x0003, 2))
