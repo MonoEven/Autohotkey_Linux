@@ -15,11 +15,16 @@
 #include "core_hotkey_linux.h"
 #include "core_wayland_linux.h"
 #include "core_clipboard_linux.h"
+#include "../gui/script_gui_linux.h"
 #include <X11/Xlib.h>
 
 // --- application/message pump ---
 bool MsgSleep(int aDuration, MessageMode)
 {
+	// GTK GUI events (button clicks, combo changes, window close) are
+	// serviced here even while the script is sleeping or waiting, matching
+	// the role of the Windows message pump in MsgSleep().
+	ahk_gtk::GtkPump();
 	// Real sleep so that Sleep() and other timing-sensitive code behaves
 	// correctly on Linux.  When the script has enabled timers, fire due
 	// timers during the wait (docs: timed functions run even while the
@@ -42,7 +47,7 @@ bool MsgSleep(int aDuration, MessageMode)
 	DWORD end = GetTickCount() + (DWORD)aDuration;
 	for (;;)
 	{
-		if (g_script.mTimerEnabledCount)
+		ahk_gtk::GtkPump();
 			LinuxCheckScriptTimers();
 		if (Hotkey::sHotkeyCount)
 			if (Display *d = LinuxX11Display())
@@ -380,17 +385,9 @@ ResultType Clipboard::Close(LPTSTR) { return OK; }
 // --- object/runtime ---
 void DefineFileClassLinuxOnPrototype(Object *aPrototype); // core_file_linux.cpp
 
-Object *Object::DefineMetadataMembers(Object *aObj, LPCTSTR aClassName, ObjectMemberMd *, int)
-{
-	// Linux port: the DynaCall x64 marshaler is unavailable, so built-in
-	// classes register their members through hand-written BIF wrappers.
-	if (aClassName && !_tcsicmp(aClassName, _T("File")))
-	{
-		aObj->mFlags |= NativeClassPrototype;
-		DefineFileClassLinuxOnPrototype(aObj);
-	}
-	return aObj;
-}
+// DefineMetadataMembers() is implemented for real in core_md_func_linux.cpp
+// (libffi-based, replacing the Windows DynaCall marshaler).
+
 LPTSTR GetExitReasonString(ExitReasons) { return _T(""); }
 void *GetDllProcAddress(LPCTSTR, HMODULE *) { return nullptr; }
 DWORD GetProcessName(DWORD, LPTSTR aBuf, DWORD aBufSize, bool) { if (aBuf && aBufSize) aBuf[0] = 0; return 0; }
@@ -427,7 +424,6 @@ ResultType Script::DoRunAs(LPTSTR aCommandLine, LPCTSTR aWorkingDir, bool aDispl
 	}
 	return FAIL;
 }
-UserMenu *Script::FindMenu(HMENU) { return nullptr; }
 
 // --- window/group ---
 WindowSpec *WinGroup::IsMember(HWND, ScriptThreadSettings &) { return nullptr; }
@@ -442,30 +438,9 @@ Object *InputObject::sPrototype = nullptr;
 ObjectMemberMd InputObject::sMembers[] = {};
 int InputObject::sMemberCount = 0;
 
-// --- GuiType ---
-bool GuiType::Delete() { delete this; return true; }
-FResult GuiType::Destroy() { return OK; }
-void GuiType::DestroyIconsIfUnused(HICON, HICON) {}
-GuiType *GuiType::FindGui(HWND, bool) { return nullptr; }
-int GuiType::FindOrCreateFont(LPCTSTR, LPCTSTR, FontType *, COLORREF *) { return 0; }
-FontType *GuiType::sFont = nullptr;
-int GuiType::sFontCount = 0;
-ObjectMemberMd GuiType::sMembers[] = {};
-int GuiType::sMemberCount = 0;
-
-// --- GuiControlType ---
-void GuiControlType::DefineControlClasses() {}
-
 // --- UserMenu ---
-UserMenu::UserMenu(MenuTypeType) : Object() {}
-UserMenu::~UserMenu() {}
-void UserMenu::Dispose() {}
-ResultType UserMenu::AppendStandardItems() { return OK; }
-ResultType UserMenu::EnableStandardOpenItem(bool) { return OK; }
-ResultType UserMenu::Display(bool, int, int) { return OK; }
-UserMenuItem *UserMenu::FindItemByID(UINT) { return nullptr; }
-ObjectMemberMd UserMenu::sMembers[] = {};
-int UserMenu::sMemberCount = 0;
+// UserMenu is implemented for real in ../gui/script_menu_linux.cpp (GTK3
+// menu backend; scripting API + item list, popups via GtkMenu).
 
 // --- file utilities (POSIX implementations for lib/file.cpp) ---
 static bool WideToPath(LPCTSTR aWide, char *aBuf, size_t aBufSize)

@@ -11,6 +11,7 @@
 #include "../../hotkey.h"
 #include "../../SimpleHeap.h"
 #include "core_timer_linux.h"
+#include "../gui/script_gui_linux.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cwchar>
@@ -139,9 +140,12 @@ int main(int argc, char** argv)
 	ResultType exec_result = g_script.AutoExecSection();
 	if (exec_result == FAIL && !g_script.mPendingExitCode)
 		g_script.mPendingExitCode = CRITICAL_ERROR;
-	// If the script is persistent or has enabled timers, keep running the
-	// Linux main loop (fires due timers) until ExitApp is requested.
-	if (!g_script.mPendingExitCode && (g_script.IsPersistent() || g_script.mTimerEnabledCount))
+	// If the script is persistent, has enabled timers, or has a visible
+	// GUI window, keep running the Linux main loop (which fires due timers,
+	// pumps GTK events and waits for the window to close) until ExitApp is
+	// requested.  GUI windows alone keep a script alive, like the Windows
+	// message pump.
+	if (!g_script.mPendingExitCode && (g_script.IsPersistent() || g_script.mTimerEnabledCount || ahk_gtk::GuiWindowsVisible()))
 		LinuxRunMainLoop();
 	g_script.ExitApp(exec_result == FAIL ? EXIT_ERROR : EXIT_EXIT);
 	return 0;

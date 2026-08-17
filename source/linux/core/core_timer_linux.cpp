@@ -25,6 +25,7 @@
 #include "core_hotkey_linux.h"
 #include "core_clipboard_linux.h"
 #include "core_wayland_linux.h"
+#include "../gui/script_gui_linux.h"
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
@@ -113,6 +114,9 @@ void LinuxRunMainLoop()
 	Display *d = nullptr;
 	while (!g_script.mPendingExitCode)
 	{
+		// Dispatch pending GTK/GUI events (button clicks, window close,
+		// combo changes) so a visible GUI stays live and responsive.
+		ahk_gtk::GtkPump();
 		// Sleep until the next due timer (bounded at 50 ms so new timers and
 		// exit requests are noticed quickly); when hotkeys exist, wait on the
 		// X connection instead so key events are dispatched promptly.
@@ -165,6 +169,11 @@ void LinuxRunMainLoop()
 		else
 			ScriptSleep(sleep_ms);
 		LinuxCheckScriptTimers();
+		// A non-persistent GUI script ends when its last window closes (and
+		// there are no timers to keep it alive) - the same way the Windows
+		// message pump would run out of messages and quit the script.
+		if (!g_script.IsPersistent() && !g_script.mTimerEnabledCount && !ahk_gtk::GuiWindowsVisible())
+			break;
 	}
 }
 

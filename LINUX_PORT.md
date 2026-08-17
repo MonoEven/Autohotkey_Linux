@@ -49,7 +49,8 @@
 
 ### 阶段 3：功能模块移植
 - [x] 热键与键鼠钩子。
-- [x] 窗口管理与控件（X11 后端;Gui 复杂控件不移植,文档标注）。
+- [x] 窗口管理与控件（X11 后端;复杂 GUI 由 **GTK3** 实现,`Gui`/`GuiControl`/
+      `Menu` 可用,见 `source/linux/gui/`）。
 - [x] 剪贴板。
 - [x] 注册表替代（文件虚拟注册表,见 assert_registry;Windows 注册表不移植）。
 - [x] COM 替代（**D-Bus** 实现,`core_com_dbus_linux.cpp`）。
@@ -63,7 +64,8 @@
 ## 风险与注意事项
 
 - Wayland 默认不允许全局键鼠捕获和模拟，需依赖 compositor 扩展或 XWayland。
-- GUI 控件数量大，完全等价移植成本高；建议先用消息框和基础窗口验证。
+- 复杂 GUI 基于 GTK3 实现（`Gui`/`GuiControl`/`Menu`），X11 下经 Xvfb 验证 26 项断言；
+  与 Windows 原生控件在渲染细节上仍有差异，Wayland（XWayland）下可用但受合成器限制。
 - 内部字符串目前面向 UTF-16/Windows，Linux 需建立 UTF-8 转换层。
 - 上游 `alpha` 分支比 v2.0.26 更新，后续可评估是否 rebase 到 alpha。
 

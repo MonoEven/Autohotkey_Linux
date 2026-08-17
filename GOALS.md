@@ -30,8 +30,8 @@
       （`source/linux/core/core_*_linux.cpp`），效果等同且更贴合移植版结构
 - [x] 实现 X11 后端（Xlib + XTest + XRandR/Xinerama + XGrabKey 热键）
 - [x] 热键、Send、窗口枚举/操作、剪贴板、像素/显示器、对话框、ToolTip、
-      ImageSearch、WinSetRegion 全部可用（doc-check **842/842** 断言通过，
-      含 DllCall 29 项与 D-Bus COM 18 项）
+      ImageSearch、WinSetRegion 全部可用（doc-check **868/868** 断言通过，
+      含 DllCall 29 项、D-Bus COM 18 项与 GTK3 GUI/Menu 26 项）
 
 ### M4：GUI 与系统集成 ✅（按 Linux 实际情况落地）
 - [x] 消息框/输入框/文件选择对话框：真实 X11 对话框（`source/linux/gui/x11_gui.cpp`），
@@ -43,12 +43,17 @@
       `ComObjQuery`/`ComObjConnect`/`ComObjArray` 按文档报错（18 项断言）
 - [x] **DllCall：实现 .so 动态库调用**（`core_dllcall_linux.cpp`）：
       dlopen/dlsym + libffi，全类型支持、`&Var` 输出参数、HRESULT 报错（29 项断言）
-- [x] 复杂 GUI 控件（Gui/GuiControl/Menu 对象）：**不移植**（Windows 专属），文档标注
+- [x] **复杂 GUI：GTK3 后端**（`source/linux/gui/script_gui_linux.cpp`）：
+      `Gui`/`GuiControl` 的窗口、布局、属性、事件与 Text/Edit/Button/CheckBox/
+      Radio/DDL/Combo/ListBox/ListView/TreeView/Slider/Progress/UpDown/Tab/
+      MonthCal/StatusBar/GroupBox/Link/Pic 等控件；`Submit`/`OnEvent`/`Move`/
+      `GetPos`/`Opt` 可用。`Menu`/`MenuBar` 由 `script_menu_linux.cpp` 实现；
+      metadata 成员调用以 libffi 替代 Windows DynaCall（26 项 Xvfb 断言）
 - [x] 原生 Wayland 后端：xdg-shell 窗口、虚拟键盘/指针、wlr-screencopy 抓屏
       （无 X11 时亦可运行；XWayland 回退 229 断言 + 纯 Wayland 13 断言通过）
 
 ### M5：完善与发布 ✅
-- [x] 移植测试用例：26 项回归 + 842 项 doc-check（Xvfb）+ Wayland/XWayland 套件
+- [x] 移植测试用例：26 项回归 + 868 项 doc-check（Xvfb）+ Wayland/XWayland 套件
 - [x] Wayland 兼容性：原生 Wayland 后端 + XWayland 回退（sway headless 验证）
 - [x] 打包：`tools/linux/pack.sh` 生成 **tar.gz + .deb**；CLI 安装器
       `install.sh` 与 GUI 安装器 `install-gui.sh`（zenity/yad）
@@ -93,4 +98,3 @@
 
 - [ ] 输入法实际集成（Phase 1：XIM 事件过滤 + IME 状态变量）
 - [ ] Wayland text-input（zwp_text_input_v3）Send 文本投递
-- [ ] 复杂 GUI 控件（Gui/GuiControl/Menu 对象）——Windows 专属，暂不移植

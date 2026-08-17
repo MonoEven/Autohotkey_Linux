@@ -107,10 +107,13 @@ add_executable(ahk_core
     core_dllcall_linux.cpp
     core_com_dbus_linux.cpp
     core_com_bif_linux.cpp
+    core_md_func_linux.cpp
     core_platform_stubs.cpp
     core_wayland_linux.cpp
     main_linux.cpp
     ../gui/x11_gui.cpp
+    ../gui/script_gui_linux.cpp
+    ../gui/script_menu_linux.cpp
     ${WL_GEN_SOURCES}
 )
 
@@ -134,4 +137,6 @@ find_library(XEXT_LIBRARY Xext REQUIRED)
 find_library(DL_LIBRARY dl REQUIRED)
 pkg_check_modules(LIBFFI REQUIRED IMPORTED_TARGET libffi)
 pkg_check_modules(DBUS REQUIRED IMPORTED_TARGET dbus-1)
-target_link_libraries(ahk_core PRIVATE X11::X11 ahk_pcre16 ${XTST_LIBRARY} ${XRANDR_LIBRARY} ${XINERAMA_LIBRARY} ${XEXT_LIBRARY} PkgConfig::WAYLAND_CLIENT PkgConfig::XKBCOMMON ${DL_LIBRARY} PkgConfig::LIBFFI PkgConfig::DBUS)
+# GTK3 GUI backend (GuiType/GuiControlType/UserMenu).
+pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
+target_link_libraries(ahk_core PRIVATE X11::X11 ahk_pcre16 ${XTST_LIBRARY} ${XRANDR_LIBRARY} ${XINERAMA_LIBRARY} ${XEXT_LIBRARY} PkgConfig::WAYLAND_CLIENT PkgConfig::XKBCOMMON ${DL_LIBRARY} PkgConfig::LIBFFI PkgConfig::DBUS PkgConfig::GTK3)

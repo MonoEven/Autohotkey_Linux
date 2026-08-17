@@ -130,6 +130,10 @@ for ahk in assert_*.ahk; do
     echo "SKIP: assert_shape (run with --xvfb)"
     continue
   fi
+  if [ "$base" = "assert_gui" ] && [ "$XVFB" != 1 ]; then
+    echo "SKIP: assert_gui (run with --xvfb)"
+    continue
+  fi
   if [ "$base" = "assert_wayland" ]; then
     echo "SKIP: assert_wayland (run with wayland_run.sh -- sway headless)"
     continue
@@ -143,7 +147,7 @@ for ahk in assert_*.ahk; do
   # Display-dependent suites run under Xvfb (MsgBox would open a real
   # dialog with a display present); everything else stays headless.
   case "$base" in
-    assert_win|assert_input|assert_ctrl|assert_monitor|assert_timer|assert_hotkey|assert_edit|assert_dialog|assert_msg|assert_image|assert_shape)
+    assert_win|assert_input|assert_ctrl|assert_monitor|assert_timer|assert_hotkey|assert_edit|assert_dialog|assert_msg|assert_image|assert_shape|assert_gui)
       XDISPLAY=:99 ;;
     *) XDISPLAY="" ;;
   esac
@@ -155,6 +159,13 @@ for ahk in assert_*.ahk; do
   final="out/${base}.txt"
   tmp="out/${base}.txt.tmp"
   rm -f "$raw" "$final" "$tmp"
+  # The GUI suite intentionally exercises GTK3, which keeps process-lifetime
+  # caches (fontconfig/pango/GTK internals) that LeakSanitizer flags at exit
+  # even for a healthy app.  ASan memory-safety checks stay enabled; only the
+  # LSan leak report (which makes the runner exit non-zero) is suppressed.
+  if [ "$base" = "assert_gui" ]; then
+    export ASAN_OPTIONS="${ASAN_OPTIONS:+$ASAN_OPTIONS:}detect_leaks=0"
+  fi
   DISPLAY=$XDISPLAY timeout 60 "$BIN" "$ahk" "${extra[@]}" > "$raw" 2>&1
   rc=$?
   if [ $rc -ne 0 ]; then
@@ -177,6 +188,7 @@ for ahk in assert_*.ahk; do
     assert_msg)     out_src="/tmp/ahk_dc_msg_out.txt" ;;
     assert_image)   out_src="/tmp/ahk_dc_image_out.txt" ;;
     assert_shape)   out_src="/tmp/ahk_dc_shape_out.txt" ;;
+    assert_gui)     out_src="/tmp/ahk_dc_gui_out.txt" ;;
   esac
   if [ -n "$out_src" ] && [ -f "$out_src" ]; then
     cp "$out_src" "$tmp" && mv -f "$tmp" "$final"

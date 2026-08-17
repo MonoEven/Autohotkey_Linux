@@ -75,7 +75,8 @@
 |---|---|---|---|
 | MsgBox / InputBox / FileSelect / DirSelect | ✅ 真实 X11 对话框 | ✅ 控制台/stdin 回退 | 测试钩子 AHK_*_AUTOCLOSE_MS |
 | ToolTip | ✅ X11 窗口 | ❌ 报错 | 同索引更新复用窗口(5 断言) |
-| Gui()/GuiControl/Menu 对象 | ❌ 未实现 | ❌ 同样报错 | script_gui Win32 代码,后续里程碑 |
+| Gui()/GuiControl 对象 | ✅ GTK3 窗口 | ❌ 报错 | Add*/Text/Edit/Button/CheckBox/Radio/DDL/Combo/ListBox/LV/TV/Slider/Progress/UpDown/Tab/MonthCal/StatusBar/GroupBox/Link/Pic;Value/Text/Submit/OnEvent/Move/GetPos/Opt 等(26 断言) |
+| Menu / MenuBar | ✅ GTK3 菜单 | ❌ 报错 | Menu/MenuBar:Add/Insert/Delete/Check/Enable/Rename/SetIcon/Show 弹窗 + Gui.MenuBar |
 | ImageSearch | ✅ X11 (XGetImage) | ❌ 报错 | 命中/未命中/容差/反向搜索 |
 | WinSetRegion | ✅ X11 (XShape) | ❌ 报错 | 窗口形状(19 断言) |
 
@@ -106,10 +107,10 @@
 
 ## 汇总
 
-- **842/842** doc-check 断言通过(普通 + ASan 双构建,含 Xvfb 窗口/输入/控件/像素/定时器/热键/图像/形状实测)
+- **868/868** doc-check 断言通过(普通 + ASan 双构建,含 Xvfb 窗口/输入/控件/像素/定时器/热键/图像/形状/GUI/菜单实测)
 - **327/327** 内置函数已实现(0 未实现,见 `tests/doccheck/worklist.tsv`)
 - **26/26** headless 回归测试;Wayland 13 项 + XWayland 229 项独立套件
-- 未实现(明确报错):Gui/GuiControl/Menu 对象、SoundPlay/Sound*、TrayTip、Hotstring、InputHook、OnMessage/SendMessage/PostMessage、ComObjQuery/Connect/Array
+- 未实现(明确报错):SoundPlay/Sound*、TrayTip、Hotstring、InputHook、OnMessage/SendMessage/PostMessage、ComObjQuery/Connect/Array、ActiveX(Gui.AddActiveX)、纯 Wayland 窗口枚举
 - 完整逐模块报告:`tests/doccheck/CHECK_REPORT.md`
 
 > 本矩阵为现状快照;状态随移植进度更新,以 CHECK_REPORT.md 与 worklist.tsv 为准。
