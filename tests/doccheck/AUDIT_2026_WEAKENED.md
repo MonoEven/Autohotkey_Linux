@@ -40,6 +40,18 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
 - 修复(round-27):`target.empty() ? getpid() : LinuxFindProcess(...)`;
   `assert_misc_cov` 的 `psetprio_omit` 断言(返回自身 PID > 0)。
 
+### 1.4 [已修复] FileAppend 打开失败应抛 OSError(原为静默)
+- 文档:FileAppend "throws an OSError on failure"。
+- 原实现:`core_builtin_stubs.cpp` 的 `BIF_FileAppend` 在
+  `std::ofstream` 打开失败时 `if (!ofs) return;` —— 完全静默,掩盖
+  真实错误(round-27 在 GitHub Actions runner 上实测:Windows 型
+  反斜杠路径 `A_Temp "\_stmt_test.txt"` 的 FileAppend 静默失败,
+  FileRead 才报 "cannot find";core 与 ASan 双构建同现)。
+- 修复:打开失败改抛 OSError("The system cannot open the file for
+  writing.",LastError=EACCES)。测试 `assert_statements::file_rw`
+  同时改用正斜杠路径并加 `FileExist` 创建验证(POSIX 下反斜杠是
+  合法文件名字符,Windows 式路径在部分环境不可靠)。
+
 ---
 
 ## 2. 弱化实现清单(审计结果)
@@ -213,7 +225,8 @@ round-26 已完成:**LoadPicture PNG 解码**(非隔行,颜色类型 0/2/3/4/6 +
 /tRNS,经 zlib;见 §2.5)。round-27 已完成:**54 个未直引用函数的最小断言套件**
 (`assert_misc_cov`,75 断言,51 个真实调用 + 4 个"不可自动化"文档化;
 代码级直引用 313→363/367,含注释口径 367/367;另修 ProcessSetPriority
-省略参数语义、固化 ComCall 错误路径与 OnClipboardChange 不触发的文档化)。
+省略参数语义、固化 ComCall 错误路径与 OnClipboardChange 不触发的文档化;
+FileAppend 打开失败改抛 OSError、`assert_statements::file_rw` 去反斜杠)。
 剩余:
 - 其余图像格式(GIF/JPEG/Cur/AVIF)文档化即可;
 - Hotstring 触发需要按键缓冲引擎(现有热键基础设施可扩展);

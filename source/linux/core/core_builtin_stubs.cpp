@@ -1608,7 +1608,17 @@ BIF_DECL(BIF_FileAppend)
 		text = text_buf;
 	std::ofstream ofs(path, std::ios::app | std::ios::binary);
 	if (!ofs)
+	{
+		// Docs: FileAppend throws an OSError if the file cannot be opened
+		// for writing (was a silent no-op before round-27).
+		if (g)
+		{
+			g->LastError = 13; // EACCES.
+			SetLastError(13);
+		}
+		aResultToken.Error(_T("The system cannot open the file for writing."), _T(""), ErrorPrototype::OS);
 		return;
+	}
 	// Docs: FileEncoding sets the default encoding used by FileAppend.
 	// UTF-8/UTF-16 write a BOM when creating a new (empty) file; the -RAW
 	// variants never write a BOM; CP0 is the locale encoding (UTF-8 here).

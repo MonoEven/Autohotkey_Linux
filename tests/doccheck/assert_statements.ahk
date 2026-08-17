@@ -121,8 +121,16 @@ MonCount() {
     return MonitorGetCount() >= 1 ? "ok" : "bad"
 }
 FileReadWrite() {
-    f := A_Temp "\_stmt_test.txt"
+    ; Forward-slash path: backslash spellings create a literal-backslash
+    ; filename on Linux (POSIX), which is fragile across environments and
+    ; broke on the GitHub Actions runner (FileAppend silently failed, then
+    ; FileRead threw).  Verify the file was really created so a silent
+    ; FileAppend failure cannot masquerade as a pass.
+    f := A_Temp "/_stmt_test.txt"
+    FileDelete(f)
     FileAppend("abc", f)
+    if !FileExist(f)
+        throw OSError("FileAppend did not create the file")
     t := FileRead(f)
     FileDelete(f)
     return t

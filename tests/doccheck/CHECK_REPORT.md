@@ -612,6 +612,15 @@ MsgBox/InputBox/FileSelect 带 autoclose 钩子):
   - **ProcessSetPriority 修复**:`BIF_Linux_ProcessSetPriority` 省略
     PIDOrName 时按文档应作用于脚本自身(返回自身 PID),原实现返回 0 且
     不设优先级;现 `target.empty() ? getpid() : LinuxFindProcess(...)`。
+  - **文件路径与失败语义修正**(CI 实测暴露):`assert_statements` 的
+    `file_rw` 用 Windows 风格 `A_Temp "\_stmt_test.txt"`——在 GitHub
+    Actions runner 上 FileAppend 静默失败、FileRead 报
+    "cannot find the file specified"(core 与 ASan 双构建同现)。修正:
+    ① 测试改用正斜杠路径并加 `FileExist` 验证创建(移植版对反斜杠
+    按 POSIX 字面处理,Windows 式反斜杠路径在部分环境不可靠);
+    ② **`BIF_FileAppend` 打开失败由静默 return 改为按文档抛 OSError**
+    ("The system cannot open the file for writing.",EACCES)——此前
+    写文件失败完全无声,掩盖真实错误。
   - **测试基础设施**:run_check.sh 接入新套件(Xvfb + xwin_helper +
     D-Bus);套件结束 `pkill -x xwin_helper` 清理(无 WM 的 Xvfb 下
     iconify 不隐藏窗口,残留窗口会干扰后续 assert_monitor 的
