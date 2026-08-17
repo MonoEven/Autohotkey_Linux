@@ -67,7 +67,8 @@
       再补齐（GuiFromHwnd 反查 + ICO/PNG 解码，919 项 doc-check）；
       覆盖补全（round-27：`assert_misc_cov` 75 断言，54 个未直引用函数中的 51 个
       真实调用 + 4 个"不可自动化"文档化，代码级直引用 313→363/367，
-      994 项 doc-check 双构建绿）
+      994 项 doc-check 双构建绿）——**发布 v2.0.26-linux.6（Latest）**，
+      清理旧 Releases 后以英文介绍发布正式版；pages 站点已重新部署
 - [x] 文档：官方 v2 文档镜像重建为 Linux 移植版（删除 v1 迁移内容，
       新增 linux-port.htm；DllCall/COM 页面含 Linux 可运行示例；
       25 个平台专属页面标注 Linux note），GitHub Pages 发布：
