@@ -174,7 +174,10 @@ for ahk in assert_*.ahk; do
   if [ "$base" = "assert_gui" ]; then
     export ASAN_OPTIONS="${ASAN_OPTIONS:+$ASAN_OPTIONS:}detect_leaks=0"
   fi
-  DISPLAY=$XDISPLAY timeout 60 "$BIN" "$ahk" "${extra[@]}" > "$raw" 2>&1
+  # The interpreter installs a SIGTERM handler (Reload protocol), so a
+  # plain `timeout` SIGTERM alone may not terminate a stuck script; -k 5
+  # escalates to SIGKILL as a hard safety net.
+  DISPLAY=$XDISPLAY timeout -k 5 60 "$BIN" "$ahk" "${extra[@]}" > "$raw" 2>&1
   rc=$?
   if [ $rc -ne 0 ]; then
     fail=$((fail+1))

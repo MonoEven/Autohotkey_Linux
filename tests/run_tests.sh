@@ -250,7 +250,7 @@ Sleep 3000
 FileAppend("still_alive=1`n", MARK)
 ExitApp 0
 EOF
-DISPLAY= timeout 20 "$BIN" /tmp/ahk_t/t26.ahk > /tmp/ahk_t/out.txt 2>&1
+DISPLAY= timeout -k 5 20 "$BIN" /tmp/ahk_t/t26.ahk > /tmp/ahk_t/out.txt 2>&1
 if grep -q "^first=1$" /tmp/ahk_t/t26.txt \
    && grep -q "^second=1$" /tmp/ahk_t/t26.txt \
    && grep -q "^exit_reason=Reload$" /tmp/ahk_t/t26.txt \

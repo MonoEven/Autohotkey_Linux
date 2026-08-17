@@ -53,6 +53,10 @@
 #include <cstring>
 #include <cstdio>
 
+// Reload support (core_platform_stubs.cpp): bail out of the dispatch loop
+// when a restart is pending so a stuck dispatch cannot block the exit.
+extern "C" bool LinuxRestartRequested();
+
 namespace {
 
 static optl<StrArg> LinuxHotkeyOptStr(ExprTokenType *aParam[], int aParamCount, int aIndex, TCHAR *aBuf, size_t aBufSize)
@@ -310,10 +314,15 @@ bool LinuxIsPassthruCopy(XEvent &ev)
 {
 	bool is_up = ev.type == KeyRelease;
 	DWORD now = GetTickCount();
+	// A generous window (1 s) tolerates slow servers/parallel-connection
+	// reordering; repeated real keystrokes of the same key/phase within it
+	// are rare for pass-through hotkeys and the cost of a missed copy is a
+	// single swallowed key, while a missed match here would re-inject and
+	// loop.
 	for (int i = 0; i < _countof(sPassthruLog); ++i)
 		if (sPassthruLog[i].keycode == ev.xkey.keycode
 			&& sPassthruLog[i].is_up == is_up
-			&& now - sPassthruLog[i].when < 300)
+			&& now - sPassthruLog[i].when < 1000)
 			return true;
 	return false;
 }
@@ -481,10 +490,18 @@ void LinuxDispatchHotkeys()
 	if (!d)
 		return;
 	LinuxReconcileHotkeyGrabs();
-	while (XPending(d) > 0)
+	// Bound the number of events processed per dispatch: a passthrough
+	// re-injection loop (should be prevented by the injection log, but a
+	// hostile/key-repeat or slow-server timing could still produce one)
+	// must not starve the wait loops that check the restart flag.
+	int processed = 0;
+	while (XPending(d) > 0 && processed < 256)
 	{
+		if (LinuxRestartRequested())
+			return;
 		XEvent ev;
 		XNextEvent(d, &ev);
+		++processed;
 		switch (ev.type)
 		{
 		case KeyPress:
