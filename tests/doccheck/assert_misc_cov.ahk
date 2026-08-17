@@ -4,9 +4,12 @@
 ;   * 51 of the 54 previously unreferenced functions get a real invocation
 ;     here (deterministic, no side effects beyond the test itself).
 ;   * 4 are documented as NOT automatable and deliberately excluded:
-;       - Exit / Reload / Shutdown : process/system destructive; a real
-;         invocation would terminate or reboot the test environment.
-;       - InputBox                : interactive; blocks on a dialog.
+;       - Exit / Shutdown : process/system destructive; a real invocation
+;         would terminate or reboot the test environment.
+;       - Reload          : Linux restart semantics are not implemented
+;         (the new instance gets an unhandled /restart argument and errors
+;         out; see AUDIT_2026_WEAKENED.md §2.6) -- code-audited, not run.
+;       - InputBox        : interactive; blocks on a dialog.
 ;   * Also adds code-level name references for names that previously
 ;     appeared only in other suites' comments: String, Class, Menu,
 ;     ObjBindMethod, Persistent, WinWaitNotActive.  ("GuiControl" is not a

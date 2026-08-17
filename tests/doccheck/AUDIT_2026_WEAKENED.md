@@ -170,6 +170,14 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
 - [次要] **OnMessage/SendMessage/PostMessage 在 X11 无 Win32 消息**:
   已按上游 BIF 适配(校验+监视器存储),但消息不投递(返回默认 0 /
   解析目标后按文档错误),`linux-port.htm` 仍列为不可用(偏差小)。
+- [次要] **Reload 启动新实例但重启语义未落地**:`script.cpp:1163`
+  `Script::Reload` → `ActionExec(mOurEXE, "/restart /script ...")` 启动
+  新进程,但 Linux 入口 `main_linux.cpp` 不解析 `/restart`(source/linux
+  无任何 restart 处理),新实例把 `/restart` 当脚本路径报
+  "Script file not found" 后退出,**旧实例继续运行**——即 Reload 不会
+  真正重启脚本(round-27 代码核查结论;Exit/Shutdown/InputBox 均为真实
+  实现:Exit 走上游引擎全路径、Shutdown 映射 systemctl/loginctl、
+  InputBox 走 X11 输入对话框 + headless stdin 回退)。
 - [轻微] **Set*LockState 在纯 Wayland 报 "No X display"**;输出函数
   OutputDebug 走 stderr(无系统调试器)。
 - [轻微] **GetKey*/SysGet/Drive* 依赖 /proc + 外部工具**(lsblk/eject/
@@ -202,8 +210,9 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
   **363/367 IMPL 函数直接出现在断言源码的可执行代码中(98.9%,
   round-27 的 `assert_misc_cov` 从 313 提升至此);含文档注释引用
   口径为 367/367(100%)**。未代码引用的仅剩 4 个
-  **不可自动化**函数:Exit / Reload / Shutdown(破坏进程/系统)与
-  InputBox(交互阻塞)——已在套件头部文档化并说明原因,不硬测。
+  **不可自动化**函数:Exit / Shutdown(破坏进程/系统)、InputBox
+  (交互阻塞)、Reload(Linux 端重启语义未落地——见 §2.6;不可自动化
+  且已代码核查)——已在套件头部文档化并说明原因,不硬测。
   覆盖统计脚本 `tests/doccheck/_cov4.py`(注释剥离后按词匹配,可复现)。
 - doc-check 的合格标准是"调用不崩、返回或抛出文档规定的错误"——
   对 §2 的弱化区(InputHook 采集、Hotstring 展开、GuiFromHwnd 反查、
