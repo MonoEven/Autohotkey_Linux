@@ -115,9 +115,10 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
   Win32 菜单);等价于"菜单交互不可用"。
 
 ### 2.5 窗口 / 屏幕 / 图像
-- [主要→次要] **图像解码已补 ICO(round-25)**:现在支持 BMP(24/32 位
-  BI_RGB)、**ICO(经典 DIB 条目:32/24/8/4/1-bpp + 调色板)与
-  PPM(P6/P3)**;透明像素在移植版 RGB-only 模型下以品红哨兵
+- [主要→次要] **图像解码已补 ICO/PNG(round-25/26)**:现在支持 BMP(24/32
+  位 BI_RGB)、**ICO(经典 DIB 条目:32/24/8/4/1-bpp + 调色板)与
+  PNG(非隔行:0/2/3/4/6 颜色类型、8/16/1/2/4 位、五种滤波器、tRNS,经
+  zlib)与 PPM(P6/P3)**;透明像素在移植版 RGB-only 模型下以品红哨兵
   `0xFFFF00FF` 表示(可用于 ImageSearch `*Trans`),`LoadPicture` 对
   .ico 上报 OutImageType="Icon"。仍无 PNG/GIF/JPEG/CUR/AVIF
   (`core_image_linux.cpp`)。
@@ -186,8 +187,9 @@ Wayland 活跃时也绝不段错误)与 **TrayTip/TraySetIcon 明确报未移植
 垃圾值/误导性错误,worklist 改标 NOT_IMPL)。
 round-25 已完成:**GuiFromHwnd/GuiCtrlFromHwnd 真实反查**(见 §2.4)与
 **LoadPicture ICO(经典 DIB 条目)解码**(见 §2.5,透明以品红哨兵表示)。
-剩余:
-- LoadPicture 增加 PNG 简易解码(最常用)或经 libpng/zlib 接入;其余格式文档化;
+round-26 已完成:**LoadPicture PNG 解码**(非隔行,颜色类型 0/2/3/4/6 + 调色板
+/tRNS,经 zlib;见 §2.5)。剩余:
+- 其余图像格式(GIF/JPEG/Cur/AVIF)文档化即可;
 - Hotstring 触发需要按键缓冲引擎(现有热键基础设施可扩展);
 - InputHook 按键采集需要真实低级钩子/或被文档定为"仅状态机";
 - 为 54 个未直接引用函数补最小断言,提高 traceability 到接近全量。

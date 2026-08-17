@@ -30,7 +30,7 @@ jobs:
             cmake g++ ninja-build \
             libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev \
-            libffi-dev libdbus-1-dev dbus libgtk-3-dev \
+            libffi-dev libdbus-1-dev dbus libgtk-3-dev zlib1g-dev \
             xvfb xdotool sway xwayland weston
           sudo apt-get install -y --no-install-recommends python3 dpkg-dev
 
@@ -86,7 +86,7 @@ jobs:
             cmake g++ ninja-build \
             libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev \
-            libffi-dev libdbus-1-dev dbus libgtk-3-dev \
+            libffi-dev libdbus-1-dev dbus libgtk-3-dev zlib1g-dev \
             python3 dpkg-dev rpm
 
       - name: Build

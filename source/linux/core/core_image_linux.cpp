@@ -4,7 +4,8 @@
 // Windows semantics per docs-v2 and the upstream implementations
 // (script2.cpp for IL_*, lib/pixel.cpp for ImageSearch, lib/Gui.* for
 // LoadPicture):
-//   - LoadPicture loads BMP (24/32-bit BI_RGB) and PPM (P6/P3) files --
+//   - LoadPicture loads BMP (24/32-bit BI_RGB), ICO (classic DIB entries)
+//     and PNG (non-interlaced, via zlib) and PPM (P6/P3) files --
 //     the formats the port can decode natively -- applies the Wn/Hn
 //     resize options (nearest-neighbour; -1 keeps the aspect ratio, 0 uses
 //     the original dimension), accepts the Icon/GDI+ options (icon
@@ -42,6 +43,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <zlib.h>
 
 // ---------------------------------------------------------------------------
 // Image store
@@ -353,6 +355,152 @@ static bool LinuxLoadICO(const std::vector<unsigned char> &aData, LinuxImage &aO
 	return true;
 }
 
+// PNG (via zlib inflate).  Supports the common non-interlaced colour types
+// (0=gray, 2=RGB, 3=palette, 4=gray+alpha, 6=RGBA) at bit depths 8/16 (and
+// 1/2/4 for gray/palette), all five filter types and tRNS transparency.
+// Alpha is not representable in the port's RGB-only image model, so fully
+// transparent pixels become the magenta sentinel 0xFFFF00FF (same convention
+// as the ICO loader), usable with ImageSearch *Trans.  Interlaced (Adam7)
+// images are not decoded.
+static bool LinuxLoadPNG(const std::vector<unsigned char> &aData, LinuxImage &aOut)
+{
+	static const unsigned char kSig[8] = { 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A };
+	if (aData.size() < 33 || memcmp(aData.data(), kSig, 8) != 0)
+		return false;
+	auto be32 = [&](size_t o) -> unsigned {
+		return ((unsigned)aData[o] << 24) | ((unsigned)aData[o + 1] << 16)
+			| ((unsigned)aData[o + 2] << 8) | (unsigned)aData[o + 3];
+	};
+
+	size_t pos = 8;
+	bool got_ihdr = false;
+	unsigned w = 0, h = 0, bit = 0, ctype = 0, interlace = 0;
+	std::vector<unsigned char> palette, trans, idat;
+	while (pos + 12 <= aData.size())
+	{
+		unsigned len = be32(pos);
+		const unsigned char *type = aData.data() + pos + 4;
+		if (pos + 12 + len > aData.size())
+			return false;
+		const unsigned char *data = aData.data() + pos + 8;
+		if (memcmp(type, "IHDR", 4) == 0)
+		{
+			if (len < 13)
+				return false;
+			w = be32(pos + 8); h = be32(pos + 12);
+			bit = data[8]; ctype = data[9]; interlace = data[12];
+			got_ihdr = true;
+		}
+		else if (memcmp(type, "PLTE", 4) == 0 && (len % 3) == 0)
+			palette.assign(data, data + len);
+		else if (memcmp(type, "tRNS", 4) == 0)
+			trans.assign(data, data + len);
+		else if (memcmp(type, "IDAT", 4) == 0)
+			idat.insert(idat.end(), data, data + len);
+		else if (memcmp(type, "IEND", 4) == 0)
+			break;
+		pos += 12 + len;
+	}
+	if (!got_ihdr || w == 0 || h == 0 || bit == 0 || bit > 16 || interlace != 0)
+		return false;
+	if (ctype > 6 || ctype == 1 || ctype == 5)
+		return false; // 1/5 are reserved colour types.
+	unsigned channels = (ctype == 2 || ctype == 6) ? 3u + (ctype == 6 ? 1u : 0u)
+		: (ctype == 4 ? 2u : 1u); // 0/3 -> 1, 2/4/6 -> 3/2/4.
+	if ((ctype != 3 && bit != 8 && bit != 16)
+		|| (ctype == 3 && bit != 1 && bit != 2 && bit != 4 && bit != 8))
+		return false;
+
+	unsigned bpp_bits = channels * bit;
+	unsigned row_bytes = (w * bpp_bits + 7) / 8;
+	size_t raw_size = (size_t)(1 + row_bytes) * h;
+	std::vector<unsigned char> raw(raw_size);
+	uLongf out_len = (uLongf)raw.size();
+	if (uncompress(raw.data(), &out_len, idat.data(), (uLong)idat.size()) != Z_OK
+		|| out_len != raw.size())
+		return false;
+
+	// Per-channel byte depth for the filter lane width.
+	unsigned bytepp = (bit >= 8) ? bit / 8 : 1;
+	unsigned bpp_bytes = channels * bytepp;
+	std::vector<unsigned char> prev((size_t)w * channels * bytepp);
+	std::vector<unsigned char> cur((size_t)prev.size());
+	const auto getv = [&](const std::vector<unsigned char> &rowobj, unsigned s) -> unsigned {
+		if (bit == 16)
+			return rowobj[s * 2]; // big-endian, take the high byte.
+		if (bit == 8)
+			return rowobj[s];
+		unsigned bits = s * bit, byte = bits / 8, shift = 8 - bit - (bits % 8);
+		return (rowobj[byte] >> shift) & ((1u << bit) - 1);
+	};
+	auto paeth = [](int a, int b, int c) -> int {
+		int p = a + b - c, pa = p > a ? p - a : a - p;
+		int pb = p > b ? p - b : b - p, pc = p > c ? p - c : c - p;
+		if (pa <= pb && pa <= pc)
+			return a;
+		return pb <= pc ? b : c;
+	};
+
+	aOut.width = (int)w;
+	aOut.height = (int)h;
+	aOut.pixels.resize((size_t)w * h);
+	size_t src = 0;
+	// tRNS for gray (2 bytes) / RGB (6 bytes): value (high bytes) to match.
+	int tr_gray = -1, tr_r = -1, tr_g = -1, tr_b = -1;
+	if (ctype == 0 && trans.size() >= 2)
+		tr_gray = trans[0];
+	else if (ctype == 2 && trans.size() >= 6)
+	{ tr_r = trans[0]; tr_g = trans[2]; tr_b = trans[4]; }
+	for (unsigned y = 0; y < h; ++y)
+	{
+		unsigned filt = raw[src++];
+		if (filt > 4)
+			return false;
+		for (unsigned i = 0; i < cur.size(); ++i)
+		{
+			unsigned x = raw[src + i];
+			int left = (i >= bpp_bytes) ? cur[i - bpp_bytes] : 0;
+			int up = y ? prev[i] : 0;
+			int ul = (y && i >= bpp_bytes) ? prev[i - bpp_bytes] : 0;
+			switch (filt)
+			{
+			case 0: cur[i] = (unsigned char)x; break;
+			case 1: cur[i] = (unsigned char)(x + left); break;
+			case 2: cur[i] = (unsigned char)(x + up); break;
+			case 3: cur[i] = (unsigned char)(x + (left + up) / 2); break;
+			default: cur[i] = (unsigned char)(x + paeth(left, up, ul)); break;
+			}
+		}
+		src += row_bytes;
+		for (unsigned px_x = 0; px_x < w; ++px_x)
+		{
+			unsigned s = px_x * channels;
+			unsigned r = 0, g = 0, b = 0, a = 255;
+			bool transparent = false;
+			switch (ctype)
+			{
+			case 0: r = g = b = getv(cur, s); if (tr_gray >= 0 && (int)r == tr_gray) transparent = true; break;
+			case 2: r = getv(cur, s); g = getv(cur, s + 1); b = getv(cur, s + 2);
+				if (tr_r >= 0 && (int)r == tr_r && (int)g == tr_g && (int)b == tr_b) transparent = true; break;
+			case 3:
+			{
+				unsigned idx = getv(cur, s);
+				if (idx * 3 + 2 < palette.size())
+				{ r = palette[idx * 3]; g = palette[idx * 3 + 1]; b = palette[idx * 3 + 2]; }
+				if (idx < trans.size() && trans[idx] < 128) transparent = true;
+				break;
+			}
+			case 4: r = g = b = getv(cur, s); a = getv(cur, s + 1); if (a < 128) transparent = true; break;
+			case 6: r = getv(cur, s); g = getv(cur, s + 1); b = getv(cur, s + 2); a = getv(cur, s + 3);
+				if (a < 128) transparent = true; break;
+			}
+			aOut.pixels[(size_t)y * w + px_x] = transparent ? 0xFFFF00FFu : ((r << 16) | (g << 8) | b);
+		}
+		prev.swap(cur);
+	}
+	return true;
+}
+
 // Nearest-neighbour resize; aReqW/aReqH of 0 keep the original dimension,
 // -1 keeps the aspect ratio based on the other dimension (docs).
 static void LinuxImageResize(LinuxImage &aImg, int aReqW, int aReqH)
@@ -402,7 +550,9 @@ static bool LinuxImageLoad(const wchar_t *aPath, int aReqW, int aReqH, LinuxImag
 		if (aIsIcon)
 			*aIsIcon = true;
 	}
-	else if (LinuxLoadBMP(data, aOut) || LinuxLoadPPM(data, aOut))
+	else if (LinuxLoadPNG(data, aOut)   // .png (non-interlaced).
+		|| LinuxLoadBMP(data, aOut)     // .bmp (24/32-bit BI_RGB).
+		|| LinuxLoadPPM(data, aOut))    // .ppm (P6/P3).
 	{
 		if (aIsIcon)
 			*aIsIcon = false;

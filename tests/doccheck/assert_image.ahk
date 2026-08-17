@@ -3,8 +3,8 @@
 ; (-fill) on the main window; test images are generated as ASCII PPM files.
 ;
 ; Linux semantics (documented in CHECK_REPORT):
-;   - LoadPicture decodes BMP (24/32-bit), ICO (DIB-embedded entries) and
-;     PPM (P6/P3), applies Wn/Hn
+;   - LoadPicture decodes BMP (24/32-bit), ICO (DIB-embedded entries), PNG
+;     (non-interlaced) and PPM (P6/P3), applies Wn/Hn
 ;     (nearest-neighbour, -1 = keep aspect, 0 = original), accepts
 ;     Icon/GDI+ options (icons are loaded as bitmaps), returns an opaque
 ;     handle into the port's image store, 0 on any error (docs).
@@ -63,6 +63,14 @@ Log("ico_load=" (LoadPicture(ico) > 0 ? 1 : 0))
 ot3 := ""
 Log("ico_type=" (LoadPicture(ico, "w0 h0", &ot3) > 0 && ot3 = "Icon" ? 1 : 0))
 Log("ico_resize=" (LoadPicture(ico, "w32 h32") > 0 ? 1 : 0))
+
+; --- PNG decoding (RGBA, filter reconstruction via zlib; alpha -> magenta
+; sentinel; non-interlaced only). ---
+png := A_ScriptDir "/fixtures/test.png"
+Log("png_load=" (LoadPicture(png) > 0 ? 1 : 0))
+ot4 := ""
+Log("png_type=" (LoadPicture(png, "w0 h0", &ot4) > 0 && ot4 = "Bitmap" ? 1 : 0))
+Log("png_resize=" (LoadPicture(png, "w32 h32") > 0 ? 1 : 0))
 
 ; --- IL_Create / IL_Add / IL_Destroy ---
 h1 := IL_Create()

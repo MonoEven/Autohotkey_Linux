@@ -50,10 +50,10 @@
       `GetPos`/`Opt` 可用。`Menu`/`MenuBar` 由 `script_menu_linux.cpp` 实现；
       metadata 成员调用以 libffi 替代 Windows DynaCall（26 项 Xvfb 断言）
 - [x] 原生 Wayland 后端：xdg-shell 窗口、虚拟键盘/指针、wlr-screencopy 抓屏
-      （无 X11 时亦可运行；XWayland 回退 232 断言 + 纯 Wayland 13 断言通过）
+      （无 X11 时亦可运行；XWayland 回退 235 断言 + 纯 Wayland 13 断言通过）
 
 ### M5：完善与发布 ✅
-- [x] 移植测试用例：26 项回归 + 916 项 doc-check（Xvfb，含 GUI/未移植错误行为断言）
+- [x] 移植测试用例：26 项回归 + 919 项 doc-check（Xvfb，含 GUI/未移植错误行为断言）
       + Wayland/XWayland 套件
 - [x] Wayland 兼容性：原生 Wayland 后端 + XWayland 回退（sway headless 验证）
 - [x] 打包：`tools/linux/pack.sh` 生成 **tar.gz + .deb**；CLI 安装器
@@ -64,7 +64,7 @@
       代码形式校验，903 项 doc-check 双构建绿）发布 **v2.0.26-linux.3**；
       审计后补齐（Tray*/Send 崩溃回归，907 项 doc-check）**已在 GitHub 发布
       v2.0.26-linux.3 Release**（此前 GitHub 停留在 .1）；
-      再补齐（GuiFromHwnd 反查 + ICO 解码，916 项 doc-check）
+      再补齐（GuiFromHwnd 反查 + ICO/PNG 解码，919 项 doc-check）
 - [x] 文档：官方 v2 文档镜像重建为 Linux 移植版（删除 v1 迁移内容，
       新增 linux-port.htm；DllCall/COM 页面含 Linux 可运行示例；
       25 个平台专属页面标注 Linux note），GitHub Pages 发布：

@@ -43,16 +43,16 @@
 | 编辑/列表 (Edit/EditGet*/EditPaste + ListViewGetContent,虚拟编辑/列表状态) | `assert_edit.ahk` | 47 |
 | 文件对话框 (FileSelect/DirSelect,内置 X11 路径输入对话框 + 无显示 stdin 回退) | `assert_dialog.ahk` | 16 |
 | 消息/热字串/RunAs (OnMessage/SendMessage/PostMessage/MenuSelect/Hotstring/RunAs) | `assert_msg.ahk` | 49 |
-| 图像 (LoadPicture/IL_*/ImageSearch,BMP/ICO/PPM 解码 + XGetImage 屏幕匹配) | `assert_image.ahk` | 29 |
+| 图像 (LoadPicture/IL_*/ImageSearch,BMP/ICO/PNG/PPM 解码 + XGetImage 屏幕匹配) | `assert_image.ahk` | 32 |
 | 窗口形状 (WinSetRegion,X11 SHAPE 扩展;xshape_probe 端到端验证) | `assert_shape.ahk` | 19 |
 | GUI/控件/菜单 (Gui/GuiControl/Menu/MenuBar,GTK3 窗口;Edit/DDL/List/ListView/TreeView/StatusBar/Submit/OnEvent/菜单属性/HWND 反查等) | `assert_gui.ahk` | 32 |
 | 未移植函数错误行为 (ComObjArray/ComObjQuery/ComObjConnect D-Bus COM 边界 + TrayTip/TraySetIcon 无托盘 + Send 无显示不得崩溃的回归) | `assert_notimpl.ahk` | 6 |
 | 声音/光标/回调/输入钩子 (SoundGet*/SoundSet*/CaretGetPos/CallbackCreate+Free/InputHook,pactl/amixer + X11 + libffi 后端) | `assert_sound_etc.ahk` | 15 |
 | 语句/指令/类别/索引页代码形式 (If/Else/For/While/Switch/Try/Catch/Throw/Loop/Until/Break/Continue/Return/Block + Array/Map/Object/Buffer/Error/Number/String 类别 + `#Requires`/`#Warn` 等) | `assert_statements.ahk` | 19 |
-| **合计 (X11/headless)** | | **916** |
+| **合计 (X11/headless)** | | **919** |
 | Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端(含修饰键组合与鼠标按钮)、ToolTip xdg 窗口、X11 专属表面报错) | `assert_wayland.ahk` | 13 |
-| **合计 (Wayland)** | | **844** |
-| XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 232 |
+| **合计 (Wayland)** | | **847** |
+| XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 235 |
 
 复现命令:
 
@@ -371,13 +371,13 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 
 ```
 普通构建: tests/run_tests.sh        PASS=26 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=916 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=919 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0 (Wayland 模式)
-          tests/doccheck/wayland_run.sh --xwayland PASS=232 FAIL=0 (XWayland 回退)
+          tests/doccheck/wayland_run.sh --xwayland PASS=235 FAIL=0 (XWayland 回退)
 ASan 构建: tests/run_tests.sh        PASS=26 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=916 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=919 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0
-          tests/doccheck/wayland_run.sh --xwayland PASS=232 FAIL=0
+          tests/doccheck/wayland_run.sh --xwayland PASS=235 FAIL=0
 ```
 
 ## 5.4 文档示例审计(Linux 可运行性)
@@ -576,3 +576,14 @@ MsgBox/InputBox/FileSelect 带 autoclose 钩子):
   - **验证**:doc-check **916/916**(core+ASan 双构建)、回归 26/26、
     Wayland 13、XWayland 232(assert_image 纳入 xwayland,ICO 断言随之
     计入)。AUDIT §2.4/§2.5 相应改为"已修复/已补 ICO",backlog 移除这两项。
+- **round 26(LoadPicture 增加 PNG 解码)**:
+  - `core_image_linux.cpp` 新增 `LinuxLoadPNG`(经 zlib `uncompress` + 五种
+    滤波器重建 + Paeth):支持非隔行(Adam7 拒绝)的 0/2/3/4/6 颜色类型、
+    8/16 位深(及灰度/调色板 1/2/4 位)、PLTE/tRNS;透明像素同样以品红
+    哨兵 0xFFFF00FF 表示。`CMakeLists.txt` 链接 `zlib`(CI 依赖补
+    `zlib1g-dev`)。新增 fixture `tests/doccheck/fixtures/test.png`
+    (8x8 RGBA 红块+透明背景),`assert_image` 新增 3 条断言
+    (png_load/png_type/png_resize)。
+  - **验证**:doc-check **919/919**(core+ASan 双构建)、回归 26/26、
+    Wayland 13、XWayland 235。AUDIT §2.5 更新为 BMP/ICO/PNG/PPM,backlog
+    移除 PNG 项。
