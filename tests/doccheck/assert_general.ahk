@@ -36,7 +36,8 @@ Run "sleep 5", , , &pid
 MsgBox "Run_pid=" (pid > 0)
 MsgBox "ProcessExist_pid=" (ProcessExist(pid) = pid)
 ProcessClose(pid)
-Sleep 200
+; A loaded CI runner can take a moment to reap the terminated process.
+Sleep 800
 MsgBox "ProcessClose_gone=" (ProcessExist(pid) = 0)
 
 ; RunWait exit code
