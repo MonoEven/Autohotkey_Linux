@@ -26,4 +26,22 @@ Check("comobjarray", () => ComObjArray(0x0003, 2))
 Check("comobjquery", () => ComObjQuery(ComValue(0x0003, 5), "{00000000-0000-0000-C000-000000000046}"))
 Check("comobjconnect", () => ComObjConnect(ComObject("org.freedesktop.DBus")))
 
+; --- Tray functions: no tray icon on Linux -> clear not-ported error --------
+Check("traytip", () => TrayTip("t", "m"))
+Check("trayseticon", () => TraySetIcon("D:/noicon.ico"))
+
+; --- Crash-regression: Send with no usable X display must NOT segfault ------
+; (An X display may be absent while Wayland is "active" but its virtual
+; keyboard injection is unavailable; the NULL-display path used to reach
+; XKeysymToKeycode(NULL) and crash.  Whatever the outcome - success or the
+; expected no-display OSError - this must complete and log "ok".)
+SendSafe() {
+    try
+        SendInput("x")
+    catch as e
+        return "ok"
+    return "ok"
+}
+Check("send_nocrash", SendSafe)
+
 ExitApp 0

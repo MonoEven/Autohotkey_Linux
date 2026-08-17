@@ -295,33 +295,6 @@ BIF_DECL(BIF_Linux_Reload)
 		FResultToError(aResultToken, aParam, aParamCount, fr, 0);
 }
 
-BIF_DECL(BIF_Linux_TrayTip)
-{
-	TCHAR t1[512], t2[512], t3[128];
-	optl<StrArg> text = (aParamCount > 0 && !ParamIndexIsOmitted(0))
-		? LinuxOptStr(aParam, aParamCount, 0, t1, sizeof(t1)) : optl<StrArg>(nullptr);
-	optl<StrArg> title = (aParamCount > 1 && !ParamIndexIsOmitted(1))
-		? LinuxOptStr(aParam, aParamCount, 1, t2, sizeof(t2)) : optl<StrArg>(nullptr);
-	optl<StrArg> opts = (aParamCount > 2 && !ParamIndexIsOmitted(2))
-		? LinuxOptStr(aParam, aParamCount, 2, t3, sizeof(t3)) : optl<StrArg>(nullptr);
-	FResult fr = TrayTip(text, title, opts);
-	if (FAILED(fr))
-		FResultToError(aResultToken, aParam, aParamCount, fr, 0);
-}
-
-BIF_DECL(BIF_Linux_TraySetIcon)
-{
-	TCHAR fbuf[1024];
-	optl<StrArg> file = (aParamCount > 0 && !ParamIndexIsOmitted(0))
-		? LinuxOptStr(aParam, aParamCount, 0, fbuf, sizeof(fbuf)) : optl<StrArg>(nullptr);
-	int slot1 = 0, slot2 = 0;
-	optl<int> number = LinuxOptInt(slot1, aParam, aParamCount, 1);
-	optl<int> freeze = LinuxOptInt(slot2, aParam, aParamCount, 2);
-	FResult fr = TraySetIcon(file, number, freeze);
-	if (FAILED(fr))
-		FResultToError(aResultToken, aParam, aParamCount, fr, 0);
-}
-
 BIF_DECL(BIF_Linux_Thread)
 {
 	TCHAR cmd_buf[64];
@@ -2934,8 +2907,8 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(SysGetIPAddresses, BIF_Linux_SysGetIPAddresses, 0, 0),
 	LMD_IMPL(Thread, BIF_Linux_Thread, 1, 3),
 	LMD_IMPL(ToolTip, BIF_Linux_ToolTip, 0, 4),
-	LMD_IMPL(TraySetIcon, BIF_Linux_TraySetIcon, 0, 3),
-	LMD_IMPL(TrayTip, BIF_Linux_TrayTip, 0, 3),
+	LMD_NI(TraySetIcon, 0, 3),
+	LMD_NI(TrayTip, 0, 3),
 	LMD_IMPL(WinActivate, BIF_Linux_WinActivate, 0, 4),
 	LMD_IMPL(WinActivateBottom, BIF_Linux_WinActivateBottom, 0, 4),
 	LMD_IMPL(WinClose, BIF_Linux_WinClose, 0, 5),

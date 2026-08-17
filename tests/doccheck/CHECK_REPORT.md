@@ -14,7 +14,7 @@
 | 文件 | 作用 |
 |---|---|
 | `tests/doccheck/extract_docs.py` | 解析 `docs-v2/docs/lib/*.htm`,提取每个函数的名称/描述/语法/参数/返回值/示例 → `doc_index.tsv`(352 个函数条目) |
-| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(369 个已实现,4 个 D-Bus/COM 边界操作抛明确错误,298 个 doc 页有状态) |
+| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(367 个已实现,6 个边界操作抛明确错误(含 D-Bus COM 三件套与 TrayTip/TraySetIcon),298 个 doc 页有状态) |
 | `tests/doccheck/assert_*.ahk` | 按模块编写的实测脚本(每个断言输出 `name=value` 行,取自官方文档语义) |
 | `tests/doccheck/assert_*_expect.txt` | 与文档语义对应的期望值 |
 | `tests/doccheck/run_check.sh` | 运行全部断言并逐条比对(支持传入任意二进制路径,如 `run_check.sh build-asan/ahk_core`) |
@@ -46,12 +46,12 @@
 | 图像 (LoadPicture/IL_*/ImageSearch,BMP/PPM 解码 + XGetImage 屏幕匹配) | `assert_image.ahk` | 26 |
 | 窗口形状 (WinSetRegion,X11 SHAPE 扩展;xshape_probe 端到端验证) | `assert_shape.ahk` | 19 |
 | GUI/控件/菜单 (Gui/GuiControl/Menu/MenuBar,GTK3 窗口;Edit/DDL/List/ListView/TreeView/StatusBar/Submit/OnEvent/菜单属性等) | `assert_gui.ahk` | 26 |
-| 未移植函数错误行为 (ComObjArray/ComObjQuery/ComObjConnect,D-Bus COM 边界) | `assert_notimpl.ahk` | 3 |
+| 未移植函数错误行为 (ComObjArray/ComObjQuery/ComObjConnect D-Bus COM 边界 + TrayTip/TraySetIcon 无托盘 + Send 无显示不得崩溃的回归) | `assert_notimpl.ahk` | 6 |
 | 声音/光标/回调/输入钩子 (SoundGet*/SoundSet*/CaretGetPos/CallbackCreate+Free/InputHook,pactl/amixer + X11 + libffi 后端) | `assert_sound_etc.ahk` | 15 |
 | 语句/指令/类别/索引页代码形式 (If/Else/For/While/Switch/Try/Catch/Throw/Loop/Until/Break/Continue/Return/Block + Array/Map/Object/Buffer/Error/Number/String 类别 + `#Requires`/`#Warn` 等) | `assert_statements.ahk` | 19 |
-| **合计 (X11/headless)** | | **903** |
+| **合计 (X11/headless)** | | **907** |
 | Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端(含修饰键组合与鼠标按钮)、ToolTip xdg 窗口、X11 专属表面报错) | `assert_wayland.ahk` | 13 |
-| **合计 (Wayland)** | | **831** |
+| **合计 (Wayland)** | | **835** |
 | XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 229 |
 
 复现命令:
@@ -371,11 +371,11 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 
 ```
 普通构建: tests/run_tests.sh        PASS=26 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=903 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=907 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0 (Wayland 模式)
           tests/doccheck/wayland_run.sh --xwayland PASS=229 FAIL=0 (XWayland 回退)
 ASan 构建: tests/run_tests.sh        PASS=26 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=903 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=907 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0
           tests/doccheck/wayland_run.sh --xwayland PASS=229 FAIL=0
 ```
@@ -542,3 +542,20 @@ MsgBox/InputBox/FileSelect 带 autoclose 钩子):
   TrayTip 空 shim 等为代表的弱化点(详见该报告 §2);④ 完备性证据
   与边界见该报告 §3(903 断言 + 313/369 函数直引用 + 1390 示例审计 +
   与上游二进制对标;另 56 个函数无直接断言)。
+- **round 24(向完备性补齐 + 发布 linux.3 Release)**:
+  - **TrayTip/TraySetIcon 改为明确报未移植**:Linux 无托盘图标,原
+    `Shell_NotifyIcon` 空 shim 恒返回 FALSE 且 `BIF_Linux_TrayTip` 未设
+    返回值(实测返回垃圾整数)、`TraySetIcon` 报误导性 "Can't load icon."。
+    现二者改为抛统一的 "This built-in function has not been ported to
+    Linux yet." 错误(与文档 warning 一致),**worklist 由 IMPL 改标 NOT_IMPL**
+    (IMPL 367 / NOT_IMPL 6),删除死掉的 wrapper,`assert_notimpl` 增加
+    `traytip`/`trayseticon` 断言。
+  - **Send 无显示崩溃回归断言**:`assert_notimpl` 新增 `send_nocrash`
+    (try{ SendInput("x") } catch{}——无论成功还是无显示 OSError 都必须
+    完成并记 "ok";若未来再次 NULL-display 段错误则该行缺失→FAIL)。
+  - **验证**:doc-check **907/907**(core+ASan 双构建)、回归 26/26、
+    Wayland 13、XWayland 229。跟踪覆盖率:313/367 IMPL 函数直接出现在
+    断言源码,54 个未直接引用(见 `AUDIT_2026_WEAKENED.md §3`)。
+  - **发布**:重建含以上修复的 build-core → `pack.sh 2.0.26-linux.3`
+    (tar.gz + .deb),经 `gh release create v2.0.26-linux.3` 上传资产——
+    GitHub Release 从 `.1` 提升到 `.3`。

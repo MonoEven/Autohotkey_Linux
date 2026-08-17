@@ -88,10 +88,11 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
 - [次要] **注册表是单用户文件**:`core_builtin_stubs.cpp:697-700` —
   `~/.config/autohotkey-registry.txt`(INI 风格),HKCU/HKLM/HKCR/HKCC
   全部归一进同一文件;无系统范围/权限/32-64 视图语义。
-- [次要] **TrayTip 空 shim + 垃圾返回**:`stdafx_linux.h:2239`
-  `Shell_NotifyIcon` 恒返回 FALSE(不显示),`BIF_Linux_TrayTip` 未设
-  返回值 → 实测返回一个垃圾整数。`TraySetIcon` 实测 "Can't load
-  icon."(无法加载 .ico)。
+- [次要] **TrayTip/TraySetIcon 已改为明确报未移植**(round-24):Linux 无托盘图标,
+  原 `Shell_NotifyIcon` 空 shim 恒返回 FALSE 且 `BIF_Linux_TrayTip` 未设返回值
+  → 实测返回垃圾整数;`TraySetIcon` 实测报误导性的 "Can't load icon."。现已
+  **改为抛出统一的 "This built-in function has not been ported to Linux yet."**
+  错误(与文档一致),并把二者在 `worklist.tsv` 标为 NOT_IMPL(不再冒充已实现)。
 - [次要] **ClipboardAll 依赖 X 剪贴板**:空剪贴板时报 "Can't open
   clipboard for reading."(Windows 的二进制 Self.IID 等无对应)。
 
@@ -143,11 +144,12 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
 
 ### 3.1 能证明的(有可复现证据)
 1. **入口层面全覆盖**:`doc_index.tsv` 352 个 lib 页全部有状态——
-   `worklist.tsv` 370 行(369 IMPL + 1 NOT_IMPL),另有 3 个 D-Bus/COM
-   边界在 g_BIF 注册为可运行错误路径(build 流程打印 NOT_IMPL=4);
+   `worklist.tsv` 370 行(367 IMPL + 3 行 NOT_IMPL:ComObjArray、TrayTip、
+   TraySetIcon),另有 ComObjConnect/ComObjQuery 等 3 个 D-Bus/COM 边界在
+   g_BIF 注册为可运行错误路径(build 流程打印 NOT_IMPL=6);
    54 个非函数页(语句/指令/类别/索引)已识别,其中语句/类别/指令/
    索引页代码形式本轮已纳入 `assert_statements`(19 断言)。
-2. **行为断言**:doc-check **903 断言**(core + asan 双构建全绿),
+2. **行为断言**:doc-check **907 断言**(core + asan 双构建全绿),
    逐条对照官方文档语义;回归 26/26;Wayland 13;XWayland 229。
 3. **示例审计**:`verify_examples*.py` 对 docs-v2 全部 1390 个示例块
    做 headless + Xvfb 自动化审计,244 个无法独立运行的已分类
@@ -158,8 +160,8 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
    Send 崩溃。
 
 ### 3.2 边界(诚实说明)
-- 903 断言是**采样式**语义校验,不是每个文档行为全量:
-  313/369 IMPL 函数直接出现在断言源码;56 个未直接引用(多为叶函数/
+- 907 断言是**采样式**语义校验,不是每个文档行为全量:
+  313/367 IMPL 函数直接出现在断言源码;54 个未直接引用(多为叶函数/
   难自动化/间接覆盖),例如 ClipboardAll、ComObjActive、
   WinActivateBottom、Set*LockState 的无显示分支等。
 - doc-check 的合格标准是"调用不崩、返回或抛出文档规定的错误"——
@@ -173,13 +175,14 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
 ---
 
 ## 4. 后续建议(backlog,按价值排序)
+round-24 已完成:**Send 崩溃回归断言**(`assert_notimpl: send_nocrash`,无显示 +
+Wayland 活跃时也绝不段错误)与 **TrayTip/TraySetIcon 明确报未移植**(不再返回
+垃圾值/误导性错误,worklist 改标 NOT_IMPL)。剩余:
 - 补 `GuiFromHwnd`(Hwnd→Gui 反查)真实映射——成本低、文档自洽;
-- 为 Send 崩溃加一条"无显示 + Wayland 活跃"回归断言(环境可分叉,
-  需接受断言结果为 OK 或 ERR 二者之一);
-- LoadPicture 增加 ICO/PNG 简易解码(最常用),其余格式可文档化;
+- LoadPicture 增加 ICO(内嵌 DIB)/PNG 简易解码(最常用),其余格式可文档化;
 - Hotstring 触发需要按键缓冲引擎(现有热键基础设施可扩展);
 - InputHook 按键采集需要真实低级钩子/或被文档定为"仅状态机";
-- 为 56 个未直接引用函数补最小断言,提高 traceability 到接近全量。
+- 为 54 个未直接引用函数补最小断言,提高 traceability 到接近全量。
 
 ---
 生成时间:2026;(分支 linux-port,上游 v2.0.26)

@@ -53,7 +53,7 @@
       （无 X11 时亦可运行；XWayland 回退 229 断言 + 纯 Wayland 13 断言通过）
 
 ### M5：完善与发布 ✅
-- [x] 移植测试用例：26 项回归 + 903 项 doc-check（Xvfb，含 GUI/未移植错误行为断言）
+- [x] 移植测试用例：26 项回归 + 907 项 doc-check（Xvfb，含 GUI/未移植错误行为断言）
       + Wayland/XWayland 套件
 - [x] Wayland 兼容性：原生 Wayland 后端 + XWayland 回退（sway headless 验证）
 - [x] 打包：`tools/linux/pack.sh` 生成 **tar.gz + .deb**；CLI 安装器
@@ -61,7 +61,9 @@
 - [x] 发布：**Release v2.0.26-linux.1**（含两个安装包资产）；GTK3 GUI 落地后
       打包 **v2.0.26-linux.2**（tar.gz + .deb，依赖补 libgtk-3-0/libdbus-1-3/libffi8）；
       本轮（Sound*/CaretGetPos/CallbackCreate+Free/InputHook + 语句/指令/类别/索引页
-      代码形式校验，903 项 doc-check 双构建绿）发布 **v2.0.26-linux.3**
+      代码形式校验，903 项 doc-check 双构建绿）发布 **v2.0.26-linux.3**；
+      审计后补齐（Tray*/Send 崩溃回归，907 项 doc-check）**已在 GitHub 发布
+      v2.0.26-linux.3 Release**（此前 GitHub 停留在 .1）
 - [x] 文档：官方 v2 文档镜像重建为 Linux 移植版（删除 v1 迁移内容，
       新增 linux-port.htm；DllCall/COM 页面含 Linux 可运行示例；
       25 个平台专属页面标注 Linux note），GitHub Pages 发布：
@@ -73,9 +75,10 @@
 
 - **语言**：仅 AutoHotkey v2（v1 语法不支持，v1 迁移文档已从站点移除）
 - **后端**：X11（含 XWayland）优先；无 X11 时原生 Wayland
-- **函数**：369 个函数已实现；本轮补齐 Sound*/CaretGetPos/InputHook/
-      CallbackCreate+Free。其余 4 个（ComObjArray/ComObjConnect/ComObjQuery
-      等 D-Bus/COM 边界操作）抛明确错误（见 `tests/doccheck/worklist.tsv`）；
+- **函数**：367 个函数已实现；本轮补齐 Sound*/CaretGetPos/InputHook/
+      CallbackCreate+Free。其余 6 个（ComObjArray/ComObjConnect/ComObjQuery
+      等 D-Bus/COM 边界 + TrayTip/TraySetIcon 无托盘）抛明确错误
+      （见 `tests/doccheck/worklist.tsv`）；
       其中 **DllCall** 调用 .so 动态库（dlopen/dlsym+libffi，29 项断言）、
       **COM** 映射到 D-Bus（ComObject/ComValue/ComObj*，18 项断言）
 - **文档**：`tests/doccheck/CHECK_REPORT.md` 为完整逐模块校验报告；
