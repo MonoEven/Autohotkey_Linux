@@ -134,6 +134,10 @@ for ahk in assert_*.ahk; do
     echo "SKIP: assert_gui (run with --xvfb)"
     continue
   fi
+  if [ "$base" = "assert_misc_cov" ] && [ "$XVFB" != 1 ]; then
+    echo "SKIP: assert_misc_cov (run with --xvfb: xwin_helper windows + D-Bus)"
+    continue
+  fi
   if [ "$base" = "assert_wayland" ]; then
     echo "SKIP: assert_wayland (run with wayland_run.sh -- sway headless)"
     continue
@@ -147,7 +151,7 @@ for ahk in assert_*.ahk; do
   # Display-dependent suites run under Xvfb (MsgBox would open a real
   # dialog with a display present); everything else stays headless.
   case "$base" in
-    assert_win|assert_input|assert_ctrl|assert_monitor|assert_timer|assert_hotkey|assert_edit|assert_dialog|assert_msg|assert_image|assert_shape|assert_gui|assert_statements)
+    assert_win|assert_input|assert_ctrl|assert_monitor|assert_timer|assert_hotkey|assert_edit|assert_dialog|assert_msg|assert_image|assert_shape|assert_gui|assert_statements|assert_misc_cov)
       XDISPLAY=:99 ;;
     *) XDISPLAY="" ;;
   esac
@@ -192,6 +196,7 @@ for ahk in assert_*.ahk; do
     assert_notimpl) out_src="/tmp/ahk_dc_notimpl_out.txt" ;;
     assert_sound_etc) out_src="/tmp/ahk_dc_soundetc_out.txt" ;;
     assert_statements) out_src="/tmp/ahk_dc_statements_out.txt" ;;
+    assert_misc_cov) out_src="/tmp/ahk_dc_misc_out.txt" ;;
   esac
   if [ -n "$out_src" ] && [ -f "$out_src" ]; then
     cp "$out_src" "$tmp" && mv -f "$tmp" "$final"

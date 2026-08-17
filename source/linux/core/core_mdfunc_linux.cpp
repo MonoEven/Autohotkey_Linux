@@ -1255,7 +1255,9 @@ BIF_DECL(BIF_Linux_ProcessSetPriority)
 	else if (!_tcsicmp(prio_s, _T("High"))) nice = -11;
 	else if (!_tcsicmp(prio_s, _T("Realtime"))) nice = -20;
 	char name_buf[512];
-	pid_t pid = LinuxFindProcess(LinuxNarrowOf(aParam, aParamCount, 1, name_buf, sizeof(name_buf)).c_str());
+	std::string target = LinuxNarrowOf(aParam, aParamCount, 1, name_buf, sizeof(name_buf));
+	// Docs: "If PIDOrName is omitted, the script's own PID is used."
+	pid_t pid = target.empty() ? (pid_t)getpid() : LinuxFindProcess(target.c_str());
 	if (pid > 0)
 		setpriority(PRIO_PROCESS, (id_t)pid, nice);
 	LinuxSetResultPid(aResultToken, pid);

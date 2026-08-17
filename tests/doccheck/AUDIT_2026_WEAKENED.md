@@ -33,6 +33,13 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
   `Sound.htm`/`SoundBeep.htm`/`SoundPlay.htm`/`linux-port.htm`
   (改为 note 描述真实行为)。
 
+### 1.3 [已修复] ProcessSetPriority 省略 PIDOrName 时应作用于脚本自身
+- 文档:`ProcessSetPriority(Level [, PIDOrName])`,省略 PIDOrName 时
+  "the script's own PID is used",并返回该 PID。
+- 原实现:`LinuxFindProcess("")` 恒返回 0 → 不设优先级、返回 0。
+- 修复(round-27):`target.empty() ? getpid() : LinuxFindProcess(...)`;
+  `assert_misc_cov` 的 `psetprio_omit` 断言(返回自身 PID > 0)。
+
 ---
 
 ## 2. 弱化实现清单(审计结果)
@@ -57,6 +64,13 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
 - [次要] **InputHook 不抓键**:`core_inputhook_linux.cpp` 状态机齐备
   (Start/Stop/Timeout/EndReason/InProgress),但 OnKeyDown/OnChar 永不触发、
   采集内容恒空、不抓取键盘(GDK/X# 双消费会崩)——已文档化。
+- [次要] **OnClipboardChange 注册但回调永不触发**:
+  `script.cpp:753 EnableClipboardListener` → `AddClipboardFormatListener`
+  在 Linux 是 no-op 桩(`stdafx_linux.h:2419`),没有
+  WM_CLIPBOARDUPDATE → `AHK_CLIPBOARD_CHANGE` 永远不会投递,
+  OnClipboardChange 回调不运行(注册/注销本身无错,`assert_misc_cov`
+  的 `onclip_reg`/`onclip_unreg` 断言;另注意注册会使脚本变为
+  persistent,测试需先注销再退出)。
 - [轻微] **KeyWait 为 XQueryKeymap 轮询**:无低级钩子,逻辑/物理态、
   防抖细节是近似。
 - [轻微] **Hotkey 部分语法不落地**:鼠标键热键、`A & B` 前缀、
@@ -85,6 +99,11 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
   "(D-Bus)" 占位符,`ComObjActive`≈`ComObjGet`,`ComObjArray`
   (SafeArray)/`ComObjQuery`/`ComObjConnect` 抛明确错误(无可运行
   实现)。
+- [次要] **ComCall 无 COM vtable**:`core_dllcall_linux.cpp` 的 ComCall
+  与 DllCall 共用解析,但 Linux 没有可解引用的接口指针——文档式调用
+  `ComCall(0, ComObj, "Int", ...)` 报 "Invalid arg type."(接口对象被当
+  作类型串),`Ptr` 首参路径在 vtable 解引用前即抛 "Invalid parameter
+  #1"(`assert_misc_cov` 的 `comcall_err` 断言固化该错误路径)。
 - [次要] **注册表是单用户文件**:`core_builtin_stubs.cpp:697-700` —
   `~/.config/autohotkey-registry.txt`(INI 风格),HKCU/HKLM/HKCR/HKCC
   全部归一进同一文件;无系统范围/权限/32-64 视图语义。
@@ -156,8 +175,8 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
    g_BIF 注册为可运行错误路径(build 流程打印 NOT_IMPL=6);
    54 个非函数页(语句/指令/类别/索引)已识别,其中语句/类别/指令/
    索引页代码形式本轮已纳入 `assert_statements`(19 断言)。
-2. **行为断言**:doc-check **907 断言**(core + asan 双构建全绿),
-   逐条对照官方文档语义;回归 26/26;Wayland 13;XWayland 229。
+2. **行为断言**:doc-check **994 断言**(core + asan 双构建全绿),
+   逐条对照官方文档语义;回归 26/26;Wayland 13;XWayland 235。
 3. **示例审计**:`verify_examples*.py` 对 docs-v2 全部 1390 个示例块
    做 headless + Xvfb 自动化审计,244 个无法独立运行的已分类
    (绝大多数是依赖上下文的教学片段,非移植缺陷)。
@@ -167,10 +186,13 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
    Send 崩溃。
 
 ### 3.2 边界(诚实说明)
-- 907 断言是**采样式**语义校验,不是每个文档行为全量:
-  313/367 IMPL 函数直接出现在断言源码;54 个未直接引用(多为叶函数/
-  难自动化/间接覆盖),例如 ClipboardAll、ComObjActive、
-  WinActivateBottom、Set*LockState 的无显示分支等。
+- 994 断言是**采样式**语义校验,不是每个文档行为全量:
+  **363/367 IMPL 函数直接出现在断言源码的可执行代码中(98.9%,
+  round-27 的 `assert_misc_cov` 从 313 提升至此);含文档注释引用
+  口径为 367/367(100%)**。未代码引用的仅剩 4 个
+  **不可自动化**函数:Exit / Reload / Shutdown(破坏进程/系统)与
+  InputBox(交互阻塞)——已在套件头部文档化并说明原因,不硬测。
+  覆盖统计脚本 `tests/doccheck/_cov4.py`(注释剥离后按词匹配,可复现)。
 - doc-check 的合格标准是"调用不崩、返回或抛出文档规定的错误"——
   对 §2 的弱化区(InputHook 采集、Hotstring 展开、GuiFromHwnd 反查、
   COM IID/SafeArray、图像多格式、tray、注册表 hive 等)并不保证
@@ -188,11 +210,16 @@ Wayland 活跃时也绝不段错误)与 **TrayTip/TraySetIcon 明确报未移植
 round-25 已完成:**GuiFromHwnd/GuiCtrlFromHwnd 真实反查**(见 §2.4)与
 **LoadPicture ICO(经典 DIB 条目)解码**(见 §2.5,透明以品红哨兵表示)。
 round-26 已完成:**LoadPicture PNG 解码**(非隔行,颜色类型 0/2/3/4/6 + 调色板
-/tRNS,经 zlib;见 §2.5)。剩余:
+/tRNS,经 zlib;见 §2.5)。round-27 已完成:**54 个未直引用函数的最小断言套件**
+(`assert_misc_cov`,75 断言,51 个真实调用 + 4 个"不可自动化"文档化;
+代码级直引用 313→363/367,含注释口径 367/367;另修 ProcessSetPriority
+省略参数语义、固化 ComCall 错误路径与 OnClipboardChange 不触发的文档化)。
+剩余:
 - 其余图像格式(GIF/JPEG/Cur/AVIF)文档化即可;
 - Hotstring 触发需要按键缓冲引擎(现有热键基础设施可扩展);
 - InputHook 按键采集需要真实低级钩子/或被文档定为"仅状态机";
-- 为 54 个未直接引用函数补最小断言,提高 traceability 到接近全量。
+- "GuiControl" 无全局标识符(v2 语义,控件类为 Gui.Control/Gui.Text),
+  已通过控件实例断言覆盖。
 
 ---
 生成时间:2026;(分支 linux-port,上游 v2.0.26)

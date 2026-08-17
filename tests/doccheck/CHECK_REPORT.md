@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **880 / 880 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 26 项、窗口形状模块 19 项、**GUI/控件/菜单模块 26 项**、**未移植函数错误行为模块 13 项**实测,与 headless 各模块;新增 **DllCall 29 项** 与 **D-Bus COM 18 项**;26 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 13 项** 与 **XWayland 回退 229 项** 独立套件通过(见第 10 节)
+- **结果**: **994 / 994 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 26 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 6 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 29 项** 与 **D-Bus COM 18 项**;26 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 13 项** 与 **XWayland 回退 235 项** 独立套件通过(见第 10 节)
 
 ---
 
@@ -49,7 +49,8 @@
 | 未移植函数错误行为 (ComObjArray/ComObjQuery/ComObjConnect D-Bus COM 边界 + TrayTip/TraySetIcon 无托盘 + Send 无显示不得崩溃的回归) | `assert_notimpl.ahk` | 6 |
 | 声音/光标/回调/输入钩子 (SoundGet*/SoundSet*/CaretGetPos/CallbackCreate+Free/InputHook,pactl/amixer + X11 + libffi 后端) | `assert_sound_etc.ahk` | 15 |
 | 语句/指令/类别/索引页代码形式 (If/Else/For/While/Switch/Try/Catch/Throw/Loop/Until/Break/Continue/Return/Block + Array/Map/Object/Buffer/Error/Number/String 类别 + `#Requires`/`#Warn` 等) | `assert_statements.ahk` | 19 |
-| **合计 (X11/headless)** | | **919** |
+| 覆盖补全 (round-27:54 个未直引用函数中的 51 个 + String/Class/Menu/ObjBindMethod/Persistent/WinWaitNotActive 名称引用;含 Exit/Reload/Shutdown/InputBox 的"不可自动化"文档块) | `assert_misc_cov.ahk` | 75 |
+| **合计 (X11/headless)** | | **994** |
 | Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端(含修饰键组合与鼠标按钮)、ToolTip xdg 窗口、X11 专属表面报错) | `assert_wayland.ahk` | 13 |
 | **合计 (Wayland)** | | **847** |
 | XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 235 |
@@ -371,11 +372,11 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 
 ```
 普通构建: tests/run_tests.sh        PASS=26 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=919 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=994 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0 (Wayland 模式)
           tests/doccheck/wayland_run.sh --xwayland PASS=235 FAIL=0 (XWayland 回退)
 ASan 构建: tests/run_tests.sh        PASS=26 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=919 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=994 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0
           tests/doccheck/wayland_run.sh --xwayland PASS=235 FAIL=0
 ```
@@ -587,3 +588,38 @@ MsgBox/InputBox/FileSelect 带 autoclose 钩子):
   - **验证**:doc-check **919/919**(core+ASan 双构建)、回归 26/26、
     Wayland 13、XWayland 235。AUDIT §2.5 更新为 BMP/ICO/PNG/PPM,backlog
     移除 PNG 项。
+- **round 27(覆盖补全套件 + ProcessSetPriority 修复)**:
+  - **`assert_misc_cov.ahk`(新增,75 断言)**:为 54 个此前无直接断言的
+    worklist-IMPL 函数补最小运行断言——其中 **51 个真实调用**(primitive
+    类 Float/Integer/Func/Enumerator、IsSet/IsSetRef(直接与 ByRef 两种
+    形式)、Obj* 指针/容量/基类族(ObjPtr/ObjPtrAddRef/ObjAddRef/
+    ObjRelease/ObjFromPtr/ObjFromPtrAddRef/ObjGetCapacity/ObjSetCapacity/
+    ObjOwnProps/ObjSetBase)、StrPtr/VarSetStrCapacity/HasMethod、Process*
+    (自 PID 的 Wait/WaitClose/SetPriority)、Drive*("/" 挂载点)、
+    ComObjActive/ComObjFromPtr/ComCall(错误路径)、GetKeyVK/GetKeySC、
+    OutputDebug/Pause(false)/Suspend 往返、HotIf 全家(含 1 参回调与重置)、
+    ClipWait/ClipboardAll(Buffer 构造)、OnClipboardChange 注册/注销、
+    WinActivateBottom/GroupAdd+GroupDeactivate(xwin_helper 窗口)、
+    SoundBeep、OnError 触发(处理器 ExitApp 0 控制退出码)、OnExit 触发);
+    **4 个**危险/交互函数(Exit/Reload/Shutdown/InputBox)在套件头部
+    明确文档化为"不可自动化"并说明原因。另补 **String/Class/Menu/
+    ObjBindMethod/Persistent/WinWaitNotActive** 的代码级名称引用(此前
+    只出现在其他套件注释中;ObjBindMethod 以类方法绑定实测 42)。
+  - **发现并说明**:v2 中不存在全局 `GuiControl` 标识符(控件类是
+    `Gui.Control`/`Gui.Text`,上游同样如此;`x is GuiControl` 只是触发
+    未赋值变量 #Warn 对话框),控件覆盖经 `Type(g.Add(...))="Gui.Text"`
+    与 assert_gui 的 GuiCtrlFromHwnd 断言完成。
+  - **ProcessSetPriority 修复**:`BIF_Linux_ProcessSetPriority` 省略
+    PIDOrName 时按文档应作用于脚本自身(返回自身 PID),原实现返回 0 且
+    不设优先级;现 `target.empty() ? getpid() : LinuxFindProcess(...)`。
+  - **测试基础设施**:run_check.sh 接入新套件(Xvfb + xwin_helper +
+    D-Bus);套件结束 `pkill -x xwin_helper` 清理(无 WM 的 Xvfb 下
+    iconify 不隐藏窗口,残留窗口会干扰后续 assert_monitor 的
+    PixelSearch);OnError 断言经处理器内 ExitApp 0 保证退出码 0
+    (已处理错误在本移植仍按错误码退出)。
+  - **覆盖率**:断言源码**代码级直接引用 313→363/367(98.9%)**;
+    含文档注释引用 **367/367(100%)**;未代码引用仅剩
+    Exit/Reload/Shutdown/InputBox(文档化为不可自动化)。覆盖统计脚本
+    `_cov4.py`(代码/注释两种口径)。
+  - **验证**:doc-check **994/994**(core+ASan 双构建)、回归 26/26、
+    Wayland 13、XWayland 235 全绿。
