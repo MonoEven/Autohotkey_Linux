@@ -97,10 +97,13 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
   clipboard for reading."(Windows 的二进制 Self.IID 等无对应)。
 
 ### 2.4 GUI / 菜单 / 控件
-- [主要] **GuiFromHwnd/GuiCtrlFromHwnd/MenuFromHandle 恒返回 ""**:
-  `core_mdfunc_linux.cpp:1071-1087` —— 即便 GTK Gui 已实现且有真实
-  Hwnd,这三个函数也无反查映射,永远返回空串(与"Gui 已实现"自相
-  矛盾;`assert` 只测了无效句柄分支)。
+- [主要→已修复(round-25)] **GuiFromHwnd/GuiCtrlFromHwnd 反查已实现**:
+  `core_mdfunc_linux.cpp` 现在把 HWND 交给 GTK 后端的
+  `GuiFromHwnd/GuiCtrlFromHwnd`(widget↔gui/control 真实映射)——
+  实测:Gui Hwnd 返回 Gui 对象、控件 Hwnd+Recurse 返回所属 Gui、
+  控件 Hwnd 由 GuiCtrlFromHwnd 返回控件、无效/已销毁句柄返回空串
+  (assert_gui 新增 6 条断言)。`MenuFromHandle` 仍恒返回 "":Linux 无
+  Win32 HMENU 可映射(文档化空串结果)。
 - [次要] **Gui/GuiControl 是 GTK3 子集**:部分控件属性/选项接受但忽略
   (字体/颜色/边距/Resize/Min/Max/部分 OnEvent 变体需逐一核对
   `script_gui_linux.cpp`);非 GTK 的 ActiveX 等无对应。
@@ -112,9 +115,12 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
   Win32 菜单);等价于"菜单交互不可用"。
 
 ### 2.5 窗口 / 屏幕 / 图像
-- [主要] **图像只解 BMP(24/32 位 BI_RGB)+ PPM(P6/P3)**:
-  `core_image_linux.cpp:7-8` — 无 PNG/GIF/JPEG/ICO/CUR/AVIF;
-  LoadPicture/IL_* 只能处理这两种格式。
+- [主要→次要] **图像解码已补 ICO(round-25)**:现在支持 BMP(24/32 位
+  BI_RGB)、**ICO(经典 DIB 条目:32/24/8/4/1-bpp + 调色板)与
+  PPM(P6/P3)**;透明像素在移植版 RGB-only 模型下以品红哨兵
+  `0xFFFF00FF` 表示(可用于 ImageSearch `*Trans`),`LoadPicture` 对
+  .ico 上报 OutImageType="Icon"。仍无 PNG/GIF/JPEG/CUR/AVIF
+  (`core_image_linux.cpp`)。
 - [次要] **Win 风格/透明度/置顶是虚拟 shadow + EWMH 发布**:
   `core_win_linux.cpp:12-13,86-98` — WinGet/WinSetStyle、Transparent
   等记在每窗口 shadow map;对本移植自己设过的窗口准确,对外部窗口
@@ -177,9 +183,11 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
 ## 4. 后续建议(backlog,按价值排序)
 round-24 已完成:**Send 崩溃回归断言**(`assert_notimpl: send_nocrash`,无显示 +
 Wayland 活跃时也绝不段错误)与 **TrayTip/TraySetIcon 明确报未移植**(不再返回
-垃圾值/误导性错误,worklist 改标 NOT_IMPL)。剩余:
-- 补 `GuiFromHwnd`(Hwnd→Gui 反查)真实映射——成本低、文档自洽;
-- LoadPicture 增加 ICO(内嵌 DIB)/PNG 简易解码(最常用),其余格式可文档化;
+垃圾值/误导性错误,worklist 改标 NOT_IMPL)。
+round-25 已完成:**GuiFromHwnd/GuiCtrlFromHwnd 真实反查**(见 §2.4)与
+**LoadPicture ICO(经典 DIB 条目)解码**(见 §2.5,透明以品红哨兵表示)。
+剩余:
+- LoadPicture 增加 PNG 简易解码(最常用)或经 libpng/zlib 接入;其余格式文档化;
 - Hotstring 触发需要按键缓冲引擎(现有热键基础设施可扩展);
 - InputHook 按键采集需要真实低级钩子/或被文档定为"仅状态机";
 - 为 54 个未直接引用函数补最小断言,提高 traceability 到接近全量。

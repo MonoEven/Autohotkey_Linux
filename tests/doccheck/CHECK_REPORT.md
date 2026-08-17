@@ -43,16 +43,16 @@
 | 编辑/列表 (Edit/EditGet*/EditPaste + ListViewGetContent,虚拟编辑/列表状态) | `assert_edit.ahk` | 47 |
 | 文件对话框 (FileSelect/DirSelect,内置 X11 路径输入对话框 + 无显示 stdin 回退) | `assert_dialog.ahk` | 16 |
 | 消息/热字串/RunAs (OnMessage/SendMessage/PostMessage/MenuSelect/Hotstring/RunAs) | `assert_msg.ahk` | 49 |
-| 图像 (LoadPicture/IL_*/ImageSearch,BMP/PPM 解码 + XGetImage 屏幕匹配) | `assert_image.ahk` | 26 |
+| 图像 (LoadPicture/IL_*/ImageSearch,BMP/ICO/PPM 解码 + XGetImage 屏幕匹配) | `assert_image.ahk` | 29 |
 | 窗口形状 (WinSetRegion,X11 SHAPE 扩展;xshape_probe 端到端验证) | `assert_shape.ahk` | 19 |
-| GUI/控件/菜单 (Gui/GuiControl/Menu/MenuBar,GTK3 窗口;Edit/DDL/List/ListView/TreeView/StatusBar/Submit/OnEvent/菜单属性等) | `assert_gui.ahk` | 26 |
+| GUI/控件/菜单 (Gui/GuiControl/Menu/MenuBar,GTK3 窗口;Edit/DDL/List/ListView/TreeView/StatusBar/Submit/OnEvent/菜单属性/HWND 反查等) | `assert_gui.ahk` | 32 |
 | 未移植函数错误行为 (ComObjArray/ComObjQuery/ComObjConnect D-Bus COM 边界 + TrayTip/TraySetIcon 无托盘 + Send 无显示不得崩溃的回归) | `assert_notimpl.ahk` | 6 |
 | 声音/光标/回调/输入钩子 (SoundGet*/SoundSet*/CaretGetPos/CallbackCreate+Free/InputHook,pactl/amixer + X11 + libffi 后端) | `assert_sound_etc.ahk` | 15 |
 | 语句/指令/类别/索引页代码形式 (If/Else/For/While/Switch/Try/Catch/Throw/Loop/Until/Break/Continue/Return/Block + Array/Map/Object/Buffer/Error/Number/String 类别 + `#Requires`/`#Warn` 等) | `assert_statements.ahk` | 19 |
-| **合计 (X11/headless)** | | **907** |
+| **合计 (X11/headless)** | | **916** |
 | Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端(含修饰键组合与鼠标按钮)、ToolTip xdg 窗口、X11 专属表面报错) | `assert_wayland.ahk` | 13 |
-| **合计 (Wayland)** | | **835** |
-| XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 229 |
+| **合计 (Wayland)** | | **844** |
+| XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 232 |
 
 复现命令:
 
@@ -360,7 +360,7 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 | 未实现函数错误行为 (Edit*/IL_*/LoadPicture/ImageSearch/选择对话框/Hotstring/OnMessage/SendMessage/PostMessage/RunAs/WinSetRegion) | ✅ 25/25 | 逐函数以最少参数调用,验证抛出清晰的 "not been ported to Linux" 运行时错误(不静默返回错误值);各函数不可移植原因见 §2.32 |
 | DllCall (.so 动态库) | ✅ 29/29 | dlopen/dlsym + libffi:真实 libc/libm 调用(abs/strlen/isdigit/floor/sqrt/pow/malloc/free/getenv/time/rand_r/sprintf),全类型(Int/Int64/Short/Char/Float/Double/Ptr/Str/AStr/WStr/U 前缀)、`&Var` 输出参数、失败路径(缺符号/缺库/坏类型) |
 | COM (D-Bus) | ✅ 18/18 | D-Bus 会话总线实测:ComValue 标量包装(I2/I4/R4/R8/BSTR/BOOL/UI1/I8/UI8)、ComObject 服务代理、真实调用(org.freedesktop.DBus GetId/ListNames 返回字符串数组)、属性/方法调用、错误路径(未知成员抛 OSError)、ComObjType/Value/Flags |
-| GUI/控件/菜单 (Gui/GuiControl/Menu/MenuBar,GTK3 后端) | ✅ 26/26 | Xvfb 下实测:窗口/标题/Hwnd、Edit/CheckBox/Radio/DDL/ListBox 的 Value/Text/Set、ListView 行列增删查、TreeView 父子项、StatusBar 文本、Submit 命名控件取值、OnEvent 注册、Destroy、MenuBar 全流程(见 assert_gui.ahk) |
+| GUI/控件/菜单 (Gui/GuiControl/Menu/MenuBar,GTK3 后端) | ✅ 32/32 | Xvfb 下实测:窗口/标题/Hwnd、Edit/CheckBox/Radio/DDL/ListBox 的 Value/Text/Set、ListView 行列增删查、TreeView 父子项、StatusBar 文本、Submit 命名控件取值、OnEvent 注册、GuiFromHwnd/GuiCtrlFromHwnd HWND 反查、Destroy、MenuBar 全流程(见 assert_gui.ahk) |
 | 声音 (SoundGet*/SoundSet*,pactl/amixer 后端) | ✅ 8/8 | 无 mixer 工具时按文档抛 OSError(此前空 stub 静默返回垃圾值;实测 SoundGetMute 曾返回地址残留);SoundGetInterface 返回 0 |
 | 光标 (CaretGetPos,GTK 文本控件) | ✅ 1/1 | Xvfb 下以 Xvfb 单屏实测:GDK 活动窗口内聚焦 GtkEntry 的光标屏幕坐标换算正确 |
 | 回调 (CallbackCreate/CallbackFree,libffi closure) | ✅ 4/4 | 地址整数返回/释放;DllCall(addr,"Int64",...) 调用回调实测返回正确;ASan 捕获并修复 stack-use-after-scope(optl<int> 引用块内局部变量) |
@@ -371,13 +371,13 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 
 ```
 普通构建: tests/run_tests.sh        PASS=26 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=907 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=916 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0 (Wayland 模式)
-          tests/doccheck/wayland_run.sh --xwayland PASS=229 FAIL=0 (XWayland 回退)
+          tests/doccheck/wayland_run.sh --xwayland PASS=232 FAIL=0 (XWayland 回退)
 ASan 构建: tests/run_tests.sh        PASS=26 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=907 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=916 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0
-          tests/doccheck/wayland_run.sh --xwayland PASS=229 FAIL=0
+          tests/doccheck/wayland_run.sh --xwayland PASS=232 FAIL=0
 ```
 
 ## 5.4 文档示例审计(Linux 可运行性)
@@ -559,3 +559,20 @@ MsgBox/InputBox/FileSelect 带 autoclose 钩子):
   - **发布**:重建含以上修复的 build-core → `pack.sh 2.0.26-linux.3`
     (tar.gz + .deb),经 `gh release create v2.0.26-linux.3` 上传资产——
     GitHub Release 从 `.1` 提升到 `.3`。
+- **round 25(继续补齐:GuiFromHwnd 反查 + ICO 解码)**:
+  - **GuiFromHwnd/GuiCtrlFromHwnd 真实实现**:`core_mdfunc_linux.cpp` 的
+    LMD wrapper 此前无条件返回 ""(即使 GTK Gui 有真实 Hwnd)。现改为把
+    HWND 交给 GTK 后端的 `GuiFromHwnd/GuiCtrlFromHwnd`(widget↔gui/control
+    双向映射,含 Recurse 父窗口反查与销毁反注册)。Xvfb 实测:Hwnd→Gui、
+    控件+Recurse→所属 Gui、GuiCtrlFromHwnd→控件、无效/已销毁→"";
+    `assert_gui` 新增 6 条断言(gfr_*)。
+  - **LoadPicture 增加 ICO 解码**:`core_image_linux.cpp` 新增
+    `LinuxLoadICO`——解析 ICONDIR/ICONDIRENTRY,选择最大非 PNG 的经典
+    DIB 条目,支持 32/24/8/4/1-bpp(含调色板)与 AND 掩码;透明像素在
+    移植版 RGB-only 模型下以品红哨兵 0xFFFF00FF 表示(可配 ImageSearch
+    *Trans);.ico 的 OutImageType 上报 "Icon"。新增测试 fixture
+    `tests/doccheck/fixtures/test.ico`(16x16 32bpp 红块+透明背景);
+    `assert_image` 新增 3 条断言(ico_load/ico_type/ico_resize)。
+  - **验证**:doc-check **916/916**(core+ASan 双构建)、回归 26/26、
+    Wayland 13、XWayland 232(assert_image 纳入 xwayland,ICO 断言随之
+    计入)。AUDIT §2.4/§2.5 相应改为"已修复/已补 ICO",backlog 移除这两项。

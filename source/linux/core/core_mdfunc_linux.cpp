@@ -1036,21 +1036,46 @@ BIF_DECL(BIF_Linux_Hotstring)
 // Docs: "This function returns the Gui object associated with the specified
 // HWND, or an empty string if there isn't one or the HWND is invalid" (same
 // for GuiControl objects); MenuFromHandle: "or an empty string if the
-// handle is invalid or no Menu object corresponds to it".  The port has no
-// Gui class and cannot create Win32 menus, so no HWND/menu handle can ever
-// correspond to a script object: the functions always return "" (the
-// documented result for the only reachable state; documented).
+// handle is invalid or no Menu object corresponds to it".
+//
+// GuiFromHwnd/GuiCtrlFromHwnd are resolved against the real GTK window map
+// (script_gui_linux.cpp): every shown Gui registers its widget, so a script
+// can look itself up by Hwnd (and by default also the parent Gui of a
+// control).  MenuFromHandle stays "" because Linux has no Win32 HMENU to map
+// (the GTK menu objects are not handle-addressable, so no handle can ever
+// correspond to a script Menu object -- the documented empty-string result).
+
+// The reverse mapping lives in the GTK GUI backend:
+extern void GuiFromHwnd(UINT aHwnd, optl<BOOL> aRecurse, IObject *&aGui);
+extern void GuiCtrlFromHwnd(UINT aHwnd, IObject *&aGuiCtrl);
 
 BIF_DECL(BIF_Linux_GuiFromHwnd)
 {
-	(void)TokenToInt64(*aParam[0]); // Hwnd (UInt32) accepted as-is.
-	aResultToken.SetValue(_T(""));
+	UINT hwnd = (UINT)TokenToInt64(*aParam[0]);
+	BOOL recurse = FALSE;
+	optl<BOOL> ropt = optl<BOOL>(nullptr);
+	if (aParamCount > 1 && !ParamIndexIsOmitted(1))
+	{
+		recurse = (BOOL)TokenToInt64(*aParam[1]);
+		ropt = optl<BOOL>(recurse);
+	}
+	IObject *gui = nullptr;
+	GuiFromHwnd(hwnd, ropt, gui);
+	if (gui)
+		aResultToken.SetValue(gui);  // sets obj + SYM_OBJECT (AddRef'd).
+	else
+		aResultToken.SetValue(_T(""));
 }
 
 BIF_DECL(BIF_Linux_GuiCtrlFromHwnd)
 {
-	(void)TokenToInt64(*aParam[0]);
-	aResultToken.SetValue(_T(""));
+	UINT hwnd = (UINT)TokenToInt64(*aParam[0]);
+	IObject *ctrl = nullptr;
+	GuiCtrlFromHwnd(hwnd, ctrl);
+	if (ctrl)
+		aResultToken.SetValue(ctrl);  // sets obj + SYM_OBJECT (AddRef'd).
+	else
+		aResultToken.SetValue(_T(""));
 }
 
 BIF_DECL(BIF_Linux_MenuFromHandle)

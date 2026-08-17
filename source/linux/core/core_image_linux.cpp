@@ -230,6 +230,129 @@ static bool LinuxLoadPPM(const std::vector<unsigned char> &aData, LinuxImage &aO
 	return true;
 }
 
+// ICO (Windows icon): ICONDIR + N ICONDIRENTRY; each payload is a DIB
+// (BITMAPINFOHEADER + XOR bitmap + AND mask) or a PNG (skipped - not
+// decodable here).  32/24-bit and indexed (8/4/1-bit) DIBs are supported.
+// Transparency is not representable in the port's RGB-only image model, so
+// transparent pixels (AND-mask bit set, or 32-bit alpha < 128) are marked
+// with the magenta sentinel 0xFFFF00FF (documented), usable with ImageSearch
+// *Trans / PixelGetColor.
+static bool LinuxLoadICO(const std::vector<unsigned char> &aData, LinuxImage &aOut)
+{
+	auto u16 = [&](size_t o) -> unsigned {
+		return (unsigned)aData[o] | ((unsigned)aData[o + 1] << 8);
+	};
+	auto u32 = [&](size_t o) -> unsigned {
+		return (unsigned)aData[o] | ((unsigned)aData[o + 1] << 8)
+			| ((unsigned)aData[o + 2] << 16) | ((unsigned)aData[o + 3] << 24);
+	};
+	if (aData.size() < 6 || aData[0] != 0 || aData[1] != 0
+		|| aData[2] != 1 || aData[3] != 0) // reserved=0, type=1 (icon).
+		return false;
+	unsigned count = u16(4);
+	if (!count || aData.size() < 6 + (size_t)count * 16)
+		return false;
+	// Pick the largest non-PNG entry (traditional .ico holds several sizes).
+	int best = -1;
+	unsigned best_area = 0, best_w = 0, best_h = 0;
+	for (unsigned i = 0; i < count; ++i)
+	{
+		size_t eo = 6 + (size_t)i * 16;
+		unsigned w = aData[eo] ? (unsigned)aData[eo] : 256u;
+		unsigned h = aData[eo + 1] ? (unsigned)aData[eo + 1] : 256u;
+		unsigned off = u32(eo + 12);
+		if ((size_t)off + 40 > aData.size())
+			continue;
+		if (aData[off] == 0x89 && aData[off + 1] == 'P' && aData[off + 2] == 'N' && aData[off + 3] == 'G')
+			continue; // PNG-compressed entry: cannot decode here.
+		unsigned area = w * h;
+		if (area > best_area)
+		{
+			best_area = area; best = (int)i; best_w = w; best_h = h;
+		}
+	}
+	if (best < 0)
+		return false;
+	size_t eo = 6 + (size_t)best * 16;
+	unsigned off = u32(eo + 12);
+	if ((size_t)off + 40 > aData.size())
+		return false;
+	unsigned bi_size = u32(off);
+	if (bi_size < 40)
+		return false;
+	int bi_h = (int)u32(off + 8); // Doubled (XOR + AND mask); sign = row order.
+	unsigned planes = u16(off + 12);
+	unsigned bpp = u16(off + 14);
+	unsigned compression = u32(off + 16);
+	if (planes != 1 || compression != 0
+		|| (bpp != 32 && bpp != 24 && bpp != 8 && bpp != 4 && bpp != 1))
+		return false;
+	unsigned clr_used = u32(off + 32);
+	bool top_down = bi_h < 0;
+	int w = (int)best_w, h = (int)best_h;
+	if (w <= 0 || h <= 0)
+		return false;
+
+	// Palette (indexed formats) follows the header.
+	std::vector<DWORD> palette;
+	if (bpp <= 8)
+	{
+		unsigned n = clr_used ? clr_used : (1u << bpp);
+		size_t po = off + bi_size;
+		if (po + (size_t)n * 4 > aData.size())
+			return false;
+		for (unsigned k = 0; k < n; ++k)
+			palette.push_back(((DWORD)aData[po + k * 4 + 2] << 16)
+				| ((DWORD)aData[po + k * 4 + 1] << 8) | (DWORD)aData[po + k * 4]);
+	}
+
+	unsigned row_bytes = ((unsigned)w * bpp + 7) / 8;
+	unsigned pad = (row_bytes + 3) & ~3u;
+	unsigned and_row_bytes = ((unsigned)w + 7) / 8;
+	unsigned and_pad = (and_row_bytes + 3) & ~3u;
+	size_t xor_off = off + bi_size + palette.size() * 4;
+	size_t and_off = xor_off + (size_t)pad * (unsigned)h;
+	if (and_off + (size_t)and_pad * (unsigned)h > aData.size())
+		return false;
+
+	aOut.width = w;
+	aOut.height = h;
+	aOut.pixels.resize((size_t)w * h);
+	for (int y = 0; y < h; ++y)
+	{
+		unsigned src_row = top_down ? (unsigned)y : (unsigned)(h - 1 - y);
+		const unsigned char *row = aData.data() + xor_off + (size_t)src_row * pad;
+		const unsigned char *androw = aData.data() + and_off + (size_t)src_row * and_pad;
+		for (int x = 0; x < w; ++x)
+		{
+			DWORD c = 0;
+			bool transparent = false;
+			if (bpp == 32)
+			{
+				const unsigned char *p = row + (size_t)x * 4;
+				c = ((DWORD)p[2] << 16) | ((DWORD)p[1] << 8) | p[0];
+				transparent = p[3] < 128;
+			}
+			else if (bpp == 24)
+			{
+				const unsigned char *p = row + (size_t)x * 3;
+				c = ((DWORD)p[2] << 16) | ((DWORD)p[1] << 8) | p[0];
+			}
+			else // indexed: bits per pixel packed MSB-first.
+			{
+				unsigned idx_bits = (unsigned)(x * (int)bpp);
+				unsigned idx = (row[idx_bits / 8] >> (8 - bpp - (idx_bits % 8)))
+					& ((1u << bpp) - 1);
+				c = idx < palette.size() ? palette[idx] : 0;
+			}
+			if ((androw[x / 8] >> (7 - (x % 8))) & 1)
+				transparent = true;
+			aOut.pixels[(size_t)y * w + x] = transparent ? 0xFFFF00FFu : c;
+		}
+	}
+	return true;
+}
+
 // Nearest-neighbour resize; aReqW/aReqH of 0 keep the original dimension,
 // -1 keeps the aspect ratio based on the other dimension (docs).
 static void LinuxImageResize(LinuxImage &aImg, int aReqW, int aReqH)
@@ -269,12 +392,22 @@ static void LinuxImageResize(LinuxImage &aImg, int aReqW, int aReqH)
 	aImg.pixels.swap(out);
 }
 
-static bool LinuxImageLoad(const wchar_t *aPath, int aReqW, int aReqH, LinuxImage &aOut)
+static bool LinuxImageLoad(const wchar_t *aPath, int aReqW, int aReqH, LinuxImage &aOut, bool *aIsIcon = nullptr)
 {
 	std::vector<unsigned char> data;
 	if (!LinuxReadFileBytes(aPath, data))
 		return false;
-	if (!LinuxLoadBMP(data, aOut) && !LinuxLoadPPM(data, aOut))
+	if (LinuxLoadICO(data, aOut))      // .ico (DIB entry) - icon type.
+	{
+		if (aIsIcon)
+			*aIsIcon = true;
+	}
+	else if (LinuxLoadBMP(data, aOut) || LinuxLoadPPM(data, aOut))
+	{
+		if (aIsIcon)
+			*aIsIcon = false;
+	}
+	else
 		return false;
 	LinuxImageResize(aOut, aReqW, aReqH);
 	return true;
@@ -347,12 +480,13 @@ BIF_DECL(BIF_Linux_LoadPicture)
 		}
 	}
 	LinuxImage img;
-	bool ok = LinuxImageLoad(file ? file : file_buf, req_w, req_h, img);
+	bool is_icon = false;
+	bool ok = LinuxImageLoad(file ? file : file_buf, req_w, req_h, img, &is_icon);
 	// Docs: "If there are any errors, the function returns 0."
 	UINT_PTR handle = ok ? LinuxImageAdd(img) : 0;
 	Var *out = nullptr;
 	if (aParamCount > 2 && (out = TokenToOutputVar(*aParam[2])))
-		out->Assign(want_icon ? _T("Icon") : _T("Bitmap"));
+		out->Assign((want_icon || is_icon) ? _T("Icon") : _T("Bitmap"));
 	aResultToken.SetValue((__int64)handle);
 }
 

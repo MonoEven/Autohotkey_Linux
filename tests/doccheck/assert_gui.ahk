@@ -87,7 +87,18 @@ try {
     g.OnEvent("Close", (*) => 0)
     Log("onevent_close=ok")
 
+    ; Reverse HWND mapping: GuiFromHwnd / GuiCtrlFromHwnd resolve script
+    ; objects from a live GTK window/control handle (docs: return the object
+    ; or an empty string when there is none).
+    gh := g.Hwnd
+    Log("gfr_hwnd=" (Type(GuiFromHwnd(gh)) = "Gui" ? "ok" : "bad"))
+    Log("gfr_recurse=" (Type(GuiFromHwnd(e.Hwnd, 1)) = "Gui" ? "ok" : "bad"))
+    Log("gfr_norecurse=" (GuiFromHwnd(e.Hwnd) = "" ? "ok" : "bad"))
+    Log("gfr_ctrl=" (IsObject(GuiCtrlFromHwnd(e.Hwnd)) ? "ok" : "bad"))
+    Log("gfr_notfound=" (GuiFromHwnd(123456789) = "" ? "ok" : "bad"))
+
     g.Destroy()
+    Log("gfr_destroyed=" (GuiFromHwnd(gh) = "" ? "ok" : "bad"))
     Log("destroyed_ok=1")
     Log("gui_ok=1")
 } catch as err {
