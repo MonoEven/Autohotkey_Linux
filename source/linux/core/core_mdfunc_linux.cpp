@@ -290,9 +290,28 @@ BIF_DECL(BIF_Linux_Reload)
 {
 	(void)aParam;
 	(void)aParamCount;
-	FResult fr = Reload();
-	if (FAILED(fr))
-		FResultToError(aResultToken, aParam, aParamCount, fr, 0);
+	// Linux restart protocol (upstream Windows signals the old process
+	// through a registered restart message, which has no Linux
+	// counterpart): launch a fresh interpreter with
+	//   "/restart /script <script> /pid <pid>".
+	// The new instance loads the script first and only then sends SIGTERM
+	// to the old process, which exits through the EXIT_RELOAD path (OnExit
+	// callbacks run with ExitReason "Reload").  If the new instance fails
+	// to load the script it prints the error and exits WITHOUT signalling,
+	// so the old script keeps running -- same semantics as upstream.
+	if (!g_script.mFileSpec || !*g_script.mFileSpec)
+	{
+		aResultToken.Error(_T("Reload is not available for this script."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	TCHAR arg_string[LINE_SIZE];
+	_sntprintf(arg_string, _countof(arg_string), _T("/restart /script \"%s\" /pid %d")
+		, g_script.mFileSpec, (int)getpid());
+	ResultType result = g_script.ActionExec(g_script.mOurEXE, arg_string, g_WorkingDirOrig, true);
+	if (result != OK)
+		aResultToken.SetExitResult(FAIL);
+	else
+		aResultToken.SetValue(_T(""));
 }
 
 BIF_DECL(BIF_Linux_Thread)

@@ -55,7 +55,7 @@ jobs:
       - name: Doc-check (Xvfb)
         run: |
           bash tests/doccheck/run_check.sh --xvfb "$BUILD_DIR/source/linux/core/ahk_core"
-        continue-on-error: true
+        # check0818: the doc-check must gate merges (was continue-on-error).
 
       - name: Upload doc-check outputs
         if: always()

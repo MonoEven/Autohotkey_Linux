@@ -1,0 +1,8 @@
+pt_cnt1=1
+pt_cnt2=1
+pt_cnt3=0
+pt_cnt4=0
+pt_f7_hidden=1
+pt_f8_seen=1
+pt_f9_seen=1
+pt_f10_seen=1

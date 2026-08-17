@@ -227,6 +227,39 @@ else
   fail=$((fail+1)); echo "FAIL: t25_dialogs_stdin"; cat /tmp/ahk_t/out.txt
 fi
 
+# t26: Reload -- the old process exits through OnExit with ExitReason
+# "Reload" and a fresh interpreter instance takes over (end-to-end,
+# headless; the new instance is launched via ActionExec with the
+# "/restart /script <path> /pid <pid>" protocol).
+rm -f /tmp/ahk_t/t26.flag /tmp/ahk_t/t26.txt
+cat > /tmp/ahk_t/t26.ahk <<'EOF'
+#Requires AutoHotkey v2.0
+MARK := "/tmp/ahk_t/t26.txt"
+F1 := "/tmp/ahk_t/t26.flag"
+if FileExist(F1) {
+    ; Second instance (spawned by the first instance's Reload).
+    FileAppend("second=1`n", MARK)
+    FileDelete(F1)
+    ExitApp 0
+}
+FileAppend("first=1`n", MARK)
+FileAppend("", F1)
+OnExit((ExitReason, ExitCode) => (FileAppend("exit_reason=" ExitReason "`n", MARK), 0))
+Reload()
+Sleep 3000
+FileAppend("still_alive=1`n", MARK)
+ExitApp 0
+EOF
+DISPLAY= timeout 20 "$BIN" /tmp/ahk_t/t26.ahk > /tmp/ahk_t/out.txt 2>&1
+if grep -q "^first=1$" /tmp/ahk_t/t26.txt \
+   && grep -q "^second=1$" /tmp/ahk_t/t26.txt \
+   && grep -q "^exit_reason=Reload$" /tmp/ahk_t/t26.txt \
+   && ! grep -q "still_alive" /tmp/ahk_t/t26.txt; then
+  pass=$((pass+1)); echo "PASS: t26_reload (exit=0)"
+else
+  fail=$((fail+1)); echo "FAIL: t26_reload"; cat /tmp/ahk_t/t26.txt 2>/dev/null
+fi
+
 echo "=============================="
 echo "PASS=$pass FAIL=$fail"
 [ "$fail" = 0 ]

@@ -85,8 +85,41 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
   persistent,测试需先注销再退出)。
 - [轻微] **KeyWait 为 XQueryKeymap 轮询**:无低级钩子,逻辑/物理态、
   防抖细节是近似。
-- [轻微] **Hotkey 部分语法不落地**:鼠标键热键、`A & B` 前缀、
-  `~`/`*`/`UP` 变体中依赖低级钩子的部分无 XGrabKey 对应(文档化)。
+- [主要→大部分已修复(round-29,check0818 审计)] **热键后端**:
+  原实现与窗口/剪贴板共享 X 连接(`LinuxDispatchHotkeys` 用
+  `while (XPending)` 取空连接、丢弃非键盘事件)、`sGrabbed` 静态集合
+  只增不减(`Hotkey "X","Off"` 不解除系统抓取)、无 BadAccess 冲突
+  检测(全局错误处理器忽略)、抓取只在 X 事件到达时建立(冷启动时序)、
+  修饰键掩码写死(Alt=Mod1/Super=Mod4/锁键=Lock|Mod2)、Key-up 受
+  自动重复影响、Wayland 键码映射 off-by-one(数字 0-9/F11-F24/小键盘)。
+  已修复:
+  - **独立热键 X 连接**(`LinuxHotkeyDisplay`):事件隔离,不再吞噬
+    剪贴板/窗口事件;
+  - **GrabSpec 差量同步 + XUngrabKey**:Off/禁用变体/Suspend 解除
+    抓取,按键归还前台应用;
+  - **条件透传**:Async 抓取 + 事件不匹配(Off/HotIf 假/Suspend/线程
+    限制/`~`/Key-up 的 press 相位)时 `XUngrabKeyboard` + XTEST 重注入
+    (带 8 槽注入日志防循环;两个 X 连接事件乱序,单标记不够);
+    同步抓取方案被否决:冻结事件不通知抓取客户端,必然死锁;
+  - **BadAccess 冲突检测**:per-request 序列号 X 错误陷阱,注册冲突
+    向脚本抛明确 OSError(键名+修饰),失败抓取不记入已安装集合;
+  - **注册后立即 Reconcile**(BIF 返回即同步)+ 主循环入口一次,
+    消除冷启动时序风险;
+  - **动态修饰键映射**(`XGetModifierMapping`:Alt/Super 槽位 + 实际
+    锁定键)与 **MappingNotify 重建**(布局变化全量解除并重抓);
+    锁定掩码按幂集枚举(不再写死 Caps|Num);
+  - **XkbSetDetectableAutoRepeat**(Key-up 一次触发;无 XKB 时
+    合成 Release 过滤回退);
+  - **Wayland 键码显式表**(数字 KEY_0..KEY_9、F1-F24 分段表、
+    VK_MULTIPLY=0x6A/ADD=0x6B/SUBTRACT=0x6D/DECIMAL=0x6E/DIVIDE=0x6F);
+  - **独立前台客户端测试**:`assert_hotkey_pt`(xkeycap 窗口持有输入
+    焦点)验证:普通热键抑制(F7 不到前台)、`~` 透传(F8 到达)、
+    Off 解除抓取(F9 到达)、HotIf-false 透传(F10 到达);
+  - CI:doc-check 步骤去掉 `continue-on-error`,失败将阻止合并。
+  剩余(第二批/第三批,见 check0818.md):左右修饰键区分、通配修饰键
+  `*`、扫描码、`A & B` 前缀、鼠标热键——X11 被动抓取无法表达,
+  需 XI2 raw 观察或 evdev 层(计划中,不再静默注册假热键:能力校验
+  在注册时拒绝并向脚本报错)。
 
 ### 2.2 声音 / 光标 / 回调 / DllCall
 - [次要] **SoundGet*/SoundSet* 依赖外部工具**:`core_sound_linux.cpp` —
@@ -170,14 +203,18 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
 - [次要] **OnMessage/SendMessage/PostMessage 在 X11 无 Win32 消息**:
   已按上游 BIF 适配(校验+监视器存储),但消息不投递(返回默认 0 /
   解析目标后按文档错误),`linux-port.htm` 仍列为不可用(偏差小)。
-- [次要] **Reload 启动新实例但重启语义未落地**:`script.cpp:1163`
-  `Script::Reload` → `ActionExec(mOurEXE, "/restart /script ...")` 启动
-  新进程,但 Linux 入口 `main_linux.cpp` 不解析 `/restart`(source/linux
-  无任何 restart 处理),新实例把 `/restart` 当脚本路径报
-  "Script file not found" 后退出,**旧实例继续运行**——即 Reload 不会
-  真正重启脚本(round-27 代码核查结论;Exit/Shutdown/InputBox 均为真实
-  实现:Exit 走上游引擎全路径、Shutdown 映射 systemctl/loginctl、
-  InputBox 走 X11 输入对话框 + headless stdin 回退)。
+- [次要→已实现(round-28)] **Reload 重启语义**:
+  `core_mdfunc_linux.cpp` 的 `BIF_Linux_Reload` 改为 Linux 专有协议——
+  `ActionExec(mOurEXE, "/restart /script <script> /pid <pid>")` 启动新
+  实例;`main_linux.cpp` 解析 `/restart` 参数,**新实例先加载脚本,成功
+  后向旧进程发 SIGTERM**;旧进程的 SIGTERM handler(仅置标志)由等待
+  循环(MsgSleep/LinuxRunMainLoop)转为 `ExitApp(EXIT_RELOAD)`——OnExit
+  回调以 ExitReason="Reload" 运行后进程退出;若新实例加载失败则不发
+  信号,旧脚本继续运行(与上游语义一致)。配套修复:**`GetExitReasonString`
+  由恒返回空串的桩改为完整映射**(此前所有 OnExit 的 ExitReason 参数
+  恒为空——连带影响 Exit/Close/Error 等全部退出原因)。验证:
+  `tests/run_tests.sh` 新增 **t26_reload**(端到端:旧实例 OnExit
+  reason=Reload、新实例接管、无残留进程),回归 26→27 全绿。
 - [轻微] **Set*LockState 在纯 Wayland 报 "No X display"**;输出函数
   OutputDebug 走 stderr(无系统调试器)。
 - [轻微] **GetKey*/SysGet/Drive* 依赖 /proc + 外部工具**(lsblk/eject/
@@ -207,13 +244,14 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
 
 ### 3.2 边界(诚实说明)
 - 994 断言是**采样式**语义校验,不是每个文档行为全量:
-  **363/367 IMPL 函数直接出现在断言源码的可执行代码中(98.9%,
-  round-27 的 `assert_misc_cov` 从 313 提升至此);含文档注释引用
-  口径为 367/367(100%)**。未代码引用的仅剩 4 个
-  **不可自动化**函数:Exit / Shutdown(破坏进程/系统)、InputBox
-  (交互阻塞)、Reload(Linux 端重启语义未落地——见 §2.6;不可自动化
-  且已代码核查)——已在套件头部文档化并说明原因,不硬测。
-  覆盖统计脚本 `tests/doccheck/_cov4.py`(注释剥离后按词匹配,可复现)。
+  **364/367 IMPL 函数直接出现在断言源码/回归套件的可执行代码中
+  (99.2%;round-27 的 `assert_misc_cov` 从 313 提升至 363,
+  round-28 的 `t26_reload` 使 Reload 计入代码引用);含文档注释
+  引用口径为 367/367(100%)**。未代码引用的仅剩 3 个
+  **不可自动化**函数:Exit / Shutdown(破坏进程/系统)与 InputBox
+  (交互阻塞)——已在套件头部文档化并说明原因,不硬测。
+  覆盖统计脚本 `tests/doccheck/_cov4.py`(注释剥离后按词匹配,
+  扫描 assert_*.ahk 与 run_check.sh/run_tests.sh,可复现)。
 - doc-check 的合格标准是"调用不崩、返回或抛出文档规定的错误"——
   对 §2 的弱化区(InputHook 采集、Hotstring 展开、GuiFromHwnd 反查、
   COM IID/SafeArray、图像多格式、tray、注册表 hive 等)并不保证

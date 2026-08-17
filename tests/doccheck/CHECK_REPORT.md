@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **994 / 994 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 26 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 6 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 29 项** 与 **D-Bus COM 18 项**;26 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 13 项** 与 **XWayland 回退 235 项** 独立套件通过(见第 10 节)
+- **结果**: **1002 / 1002 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、**热键透传/解除抓取模块 8 项**(round-29)、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 26 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 6 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 29 项** 与 **D-Bus COM 18 项**;27 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 13 项** 与 **XWayland 回退 235 项** 独立套件通过(见第 10 节)
 
 ---
 
@@ -40,6 +40,7 @@
 | 显示/快捷方式 (FileCreateShortcut/FileGetShortcut + ListVars/ListHotkeys/KeyHistory,.desktop/.url 与 headless 输出) | `assert_display.ahk` | 15 |
 | 定时器/悬浮提示 (SetTimer + ToolTip,主循环 + X11 override-redirect 窗口) | `assert_timer.ahk` | 11 |
 | 热键 (Hotkey + XGrabKey 激活) | `assert_hotkey.ahk` | 10 |
+| 热键透传/解除抓取 (round-29:普通热键抑制、`~` 透传、Off 解除抓取、HotIf-false 透传,经独立 xkeycap 前台客户端验证) | `assert_hotkey_pt.ahk` | 8 |
 | 编辑/列表 (Edit/EditGet*/EditPaste + ListViewGetContent,虚拟编辑/列表状态) | `assert_edit.ahk` | 47 |
 | 文件对话框 (FileSelect/DirSelect,内置 X11 路径输入对话框 + 无显示 stdin 回退) | `assert_dialog.ahk` | 16 |
 | 消息/热字串/RunAs (OnMessage/SendMessage/PostMessage/MenuSelect/Hotstring/RunAs) | `assert_msg.ahk` | 49 |
@@ -50,7 +51,7 @@
 | 声音/光标/回调/输入钩子 (SoundGet*/SoundSet*/CaretGetPos/CallbackCreate+Free/InputHook,pactl/amixer + X11 + libffi 后端) | `assert_sound_etc.ahk` | 15 |
 | 语句/指令/类别/索引页代码形式 (If/Else/For/While/Switch/Try/Catch/Throw/Loop/Until/Break/Continue/Return/Block + Array/Map/Object/Buffer/Error/Number/String 类别 + `#Requires`/`#Warn` 等) | `assert_statements.ahk` | 19 |
 | 覆盖补全 (round-27:54 个未直引用函数中的 51 个 + String/Class/Menu/ObjBindMethod/Persistent/WinWaitNotActive 名称引用;含 Exit/Reload/Shutdown/InputBox 的"不可自动化"文档块) | `assert_misc_cov.ahk` | 75 |
-| **合计 (X11/headless)** | | **994** |
+| **合计 (X11/headless)** | | **1002** |
 | Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端(含修饰键组合与鼠标按钮)、ToolTip xdg 窗口、X11 专属表面报错) | `assert_wayland.ahk` | 13 |
 | **合计 (Wayland)** | | **847** |
 | XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 235 |
@@ -371,12 +372,12 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 ## 5. 回归与构建验证
 
 ```
-普通构建: tests/run_tests.sh        PASS=26 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=994 FAIL=0
+普通构建: tests/run_tests.sh        PASS=27 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=1002 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0 (Wayland 模式)
           tests/doccheck/wayland_run.sh --xwayland PASS=235 FAIL=0 (XWayland 回退)
-ASan 构建: tests/run_tests.sh        PASS=26 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=994 FAIL=0
+ASan 构建: tests/run_tests.sh        PASS=27 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=1002 FAIL=0
           tests/doccheck/wayland_run.sh PASS=13 FAIL=0
           tests/doccheck/wayland_run.sh --xwayland PASS=235 FAIL=0
 ```
@@ -632,3 +633,33 @@ MsgBox/InputBox/FileSelect 带 autoclose 钩子):
     `_cov4.py`(代码/注释两种口径)。
   - **验证**:doc-check **994/994**(core+ASan 双构建)、回归 26/26、
     Wayland 13、XWayland 235 全绿。
+- **round 28(Reload 真正实现 + OnExit ExitReason 修复)**:见
+  `AUDIT_2026_WEAKENED.md §2.6`。
+  - `BIF_Linux_Reload` 改为 Linux 专有协议:`/restart /script <path>
+    /pid <pid>`;新实例先加载脚本,成功后 SIGTERM 旧进程;旧进程经
+    `ExitApp(EXIT_RELOAD)` 退出(OnExit 的 ExitReason="Reload");加载
+    失败则旧脚本继续运行(上游语义)。`main_linux.cpp` 解析 /restart
+    参数并排除协议参数进入 A_Args;SIGTERM handler 由等待循环转为
+    EXIT_RELOAD(MsgSleep/LinuxRunMainLoop 检查)。
+  - **GetExitReasonString 由空串桩改为完整映射**(Exit/Reload/Close/
+    Error/Menu/Single/Logoff/Shutdown)——此前所有 OnExit 的 ExitReason
+    参数恒为空。
+  - **验证**:回归新增 **t26_reload**(端到端:旧实例 OnExit
+    reason=Reload、新实例接管、无残留),26→27;doc-check
+    **994/994**(core+ASan)、Wayland 13、XWayland 235 全绿。
+- **round 29(check0818 热键审计第一批)**:见 `check0818.md` 与
+  `AUDIT_2026_WEAKENED.md §2.1`。
+  - **独立热键 X 连接**(事件隔离)、**GrabSpec 差量同步与
+    XUngrabKey**(Off/禁用变体解除抓取)、**Async 抓取 + 条件透传**
+    (XUngrabKeyboard + XTEST 重注入,8 槽注入日志防跨连接乱序;
+    同步抓取因冻结事件不通知抓取者而否决)、**BadAccess 冲突检测**
+    (per-request 序列号陷阱,注册冲突抛 OSError)、**注册后立即
+    Reconcile**、**动态修饰键映射 + MappingNotify 重建**、**XKB
+    detectable auto-repeat**(Key-up 一次触发)、**Wayland 键码显式表**
+    (数字/F1-F24/VK 小键盘修正)。
+  - 新增 **`assert_hotkey_pt`**(8 断言,xkeycap 独立前台客户端):
+    普通热键抑制、`~` 透传、Off 解除抓取、HotIf-false 透传——直接
+    验证"前台应用是否收到按键",不再是"同一实现测试自身"。
+  - **CI**:doc-check 步骤去掉 `continue-on-error`(失败阻止合并)。
+  - **验证**:doc-check **1002/1002**(core+ASan 双构建,新增 8 断言)、
+    回归 27/27、Wayland 13、XWayland 235 全绿。

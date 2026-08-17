@@ -33,6 +33,9 @@
 #include <cstring>
 #include <cstdio>
 #include <string>
+
+// Reload support: true while a SIGTERM (from a /restart sibling) is pending.
+extern "C" bool LinuxRestartRequested();
 #include <poll.h>
 
 void ScriptSleep(int aDelay);
@@ -112,7 +115,7 @@ bool LinuxCheckScriptTimers()
 void LinuxRunMainLoop()
 {
 	Display *d = nullptr;
-	while (!g_script.mPendingExitCode)
+	while (!g_script.mPendingExitCode && !LinuxRestartRequested())
 	{
 		// Dispatch pending GTK/GUI events (button clicks, window close,
 		// combo changes) so a visible GUI stays live and responsive.
@@ -144,16 +147,28 @@ void LinuxRunMainLoop()
 		}
 		if ((d = LinuxX11Display()))
 		{
-			// Wait on the X connection so hotkey and clipboard events are
-			// dispatched promptly (clipboard ownership must be served while
-			// the script idles).
-			struct pollfd pfd;
-			pfd.fd = ConnectionNumber(d);
-			pfd.events = POLLIN;
-			pfd.revents = 0;
-			if (poll(&pfd, 1, sleep_ms) > 0 && Hotkey::sHotkeyCount)
-				LinuxDispatchHotkeys(d);
-			LinuxClipboardDispatchX11(d);
+			// Wait on the window/clipboard connection AND the dedicated
+			// hotkey connection separately, so neither module can consume
+			// the other's events (check0818 P0-1).
+			struct pollfd pfds[3];
+			int n = 0;
+			pfds[n] = {ConnectionNumber(d), POLLIN, 0};
+			++n;
+			if (Display *hd = LinuxHotkeyDisplay())
+			{
+				pfds[n] = {ConnectionNumber(hd), POLLIN, 0};
+				++n;
+			}
+			int pr = poll(pfds, n, sleep_ms);
+			if (pr > 0)
+			{
+				if (pfds[0].revents & (POLLIN | POLLHUP))
+					LinuxClipboardDispatchX11(d);
+				if (n > 1 && (pfds[1].revents & (POLLIN | POLLHUP)) && Hotkey::sHotkeyCount)
+					LinuxDispatchHotkeys();
+			}
+			else if (Hotkey::sHotkeyCount)
+				LinuxDispatchHotkeys(); // No event: still reconcile grabs.
 		}
 		else if (LinuxWaylandActive())
 		{

@@ -59,6 +59,24 @@ int main(int argc, char **argv)
     XSetWMProtocols(d, win, &wm_delete, 1);
 
     XMapWindow(d, win);
+    /* Xvfb has no window manager: the window must be mapped before
+     * XSetInputFocus, otherwise the focus request fails with BadMatch and
+     * key events go nowhere.  Wait for the MapNotify. */
+    XFlush(d);
+    {
+        int mapped = 0;
+        for (int i = 0; i < 100 && !mapped; ++i)
+        {
+            while (XPending(d) > 0)
+            {
+                XEvent ev;
+                XNextEvent(d, &ev);
+                if (ev.type == MapNotify && ev.xmap.window == win)
+                    mapped = 1;
+            }
+            usleep(10000);
+        }
+    }
     XSetInputFocus(d, win, RevertToParent, CurrentTime);
     /* No grabs here: key events follow the input focus and button events go
      * to the window under the pointer, so xkeycap receives them while the

@@ -11,17 +11,48 @@
 #include "../../hotkey.h"
 #include "../../SimpleHeap.h"
 #include "core_timer_linux.h"
+#include "core_hotkey_linux.h"
 #include "../gui/script_gui_linux.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cwchar>
 #include <clocale>
+#include <csignal>
+#include <unistd.h>
+
+// Reload support (see core_platform_stubs.cpp): the SIGTERM flag is turned
+// into ExitApp(EXIT_RELOAD) by the wait loops.
+extern "C" void LinuxInstallRestartHandler();
+extern "C" bool LinuxRestartRequested();
 
 int main(int argc, char** argv)
 {
 	// Honour the environment locale so that wcstombs/mbstowcs can convert
 	// non-ASCII text (UTF-8) instead of failing in the default "C" locale.
 	setlocale(LC_CTYPE, "");
+
+	LinuxInstallRestartHandler();
+
+	// Reload protocol: "/restart /script <path> [/pid <pid>]" (launched by
+	// BIF_Linux_Reload).  After the script has loaded successfully the new
+	// instance signals the old process so it exits through EXIT_RELOAD.
+	int script_arg = 1;
+	pid_t restart_old_pid = 0;
+	if (argc > 1 && !strcmp(argv[1], "/restart"))
+	{
+		for (int i = 2; i + 1 < argc; i += 2)
+		{
+			if (!strcmp(argv[i], "/script"))
+				script_arg = i + 1;
+			else if (!strcmp(argv[i], "/pid"))
+				restart_old_pid = (pid_t)atol(argv[i + 1]);
+		}
+		if (script_arg >= argc)
+		{
+			std::fprintf(stderr, "AutoHotkey Linux: invalid /restart arguments.\n");
+			return 1;
+		}
+	}
 
 	if (argc < 2)
 	{
@@ -48,7 +79,7 @@ int main(int argc, char** argv)
 	}
 
 	wchar_t wpath[4096];
-	if (mbstowcs(wpath, argv[1], 4095) == (size_t)-1)
+	if (mbstowcs(wpath, argv[script_arg], 4095) == (size_t)-1)
 	{
 		std::fprintf(stderr, "AutoHotkey Linux: invalid script path encoding.\n");
 		return 1;
@@ -105,12 +136,14 @@ int main(int argc, char** argv)
 	}
 
 	// A_Args: the command-line parameters after the script path (mirrors
-	// _tWinMain in AutoHotkey.cpp).
+	// _tWinMain in AutoHotkey.cpp).  In /restart mode the reload protocol
+	// arguments are consumed here and must not leak into A_Args.
+	int args_start = (script_arg != 1) ? argc : 2;
 	if (Var *var = g_script.FindOrAddVar(_T("A_Args"), 6, VAR_DECLARE_GLOBAL))
 	{
 		TCHAR *wide_args[256];
 		int wide_count = 0;
-		for (int i = 2; i < argc && wide_count < 255; ++i)
+		for (int i = args_start; i < argc && wide_count < 255; ++i)
 		{
 			wchar_t *wa = (wchar_t *)malloc((strlen(argv[i]) + 1) * sizeof(wchar_t));
 			mbstowcs(wa, argv[i], strlen(argv[i]) + 1);
@@ -129,6 +162,14 @@ int main(int argc, char** argv)
 	if (!load_result)
 		return 0;
 
+	// Reload: the script loaded successfully, so tell the old process to
+	// exit (it does so through EXIT_RELOAD; OnExit runs with ExitReason
+	// "Reload").  If loading had failed we would have returned above
+	// without signalling, keeping the old script alive (upstream
+	// semantics).
+	if (restart_old_pid > 0)
+		kill(restart_old_pid, SIGTERM);
+
 	// LoadFromFile() resets mIsReadyToExecute to false.  On Windows the ready
 	// flag is set by InitForExecution() after the windows/tray icon are created;
 	// on Linux we have no windows yet, so mark the script ready right before
@@ -140,6 +181,10 @@ int main(int argc, char** argv)
 	ResultType exec_result = g_script.AutoExecSection();
 	if (exec_result == FAIL && !g_script.mPendingExitCode)
 		g_script.mPendingExitCode = CRITICAL_ERROR;
+	// Establish the hotkey grabs immediately (check0818 P1-1: do not wait
+	// for the first X event to reconcile) when the script has hotkeys.
+	if (Hotkey::sHotkeyCount)
+		LinuxReconcileHotkeyGrabs();
 	// If the script is persistent, has enabled timers, or has a visible
 	// GUI window, keep running the Linux main loop (which fires due timers,
 	// pumps GTK events and waits for the window to close) until ExitApp is
@@ -147,6 +192,9 @@ int main(int argc, char** argv)
 	// message pump.
 	if (!g_script.mPendingExitCode && (g_script.IsPersistent() || g_script.mTimerEnabledCount || ahk_gtk::GuiWindowsVisible()))
 		LinuxRunMainLoop();
-	g_script.ExitApp(exec_result == FAIL ? EXIT_ERROR : EXIT_EXIT);
+	if (LinuxRestartRequested())
+		g_script.ExitApp(EXIT_RELOAD);
+	else
+		g_script.ExitApp(exec_result == FAIL ? EXIT_ERROR : EXIT_EXIT);
 	return 0;
 }

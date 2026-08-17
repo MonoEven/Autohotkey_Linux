@@ -397,12 +397,26 @@ bool LinuxWaylandActive()
 
 unsigned int LinuxWaylandKeycodeForVk(unsigned int aVK)
 {
+	// The evdev keyboard rows are NOT contiguous like the Windows VK range:
+	// KEY_0..KEY_9 run 11,2,3,...9,10 and F10 comes before F11 (KEY_F1..F10
+	// = 59..68, KEY_F11/F12 = 87/88, KEY_F13..F24 = 183..194).  Use explicit
+	// tables instead of arithmetic offsets (check0818 P1).
+	static constexpr unsigned int digits[] = {
+		KEY_0, KEY_1, KEY_2, KEY_3, KEY_4,
+		KEY_5, KEY_6, KEY_7, KEY_8, KEY_9
+	};
+	static constexpr unsigned int function_keys[] = {
+		KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6,
+		KEY_F7, KEY_F8, KEY_F9, KEY_F10, KEY_F11, KEY_F12,
+		KEY_F13, KEY_F14, KEY_F15, KEY_F16, KEY_F17, KEY_F18,
+		KEY_F19, KEY_F20, KEY_F21, KEY_F22, KEY_F23, KEY_F24
+	};
 	if (aVK >= 'A' && aVK <= 'Z')
 		return KEY_A + (aVK - 'A');
 	if (aVK >= '0' && aVK <= '9')
-		return KEY_1 + (aVK - '0');
+		return digits[aVK - '0'];
 	if (aVK >= 0x70 && aVK <= 0x87) // F1-F24.
-		return KEY_F1 + (aVK - 0x70);
+		return function_keys[aVK - 0x70];
 	switch (aVK)
 	{
 	case 0x08: return KEY_BACKSPACE;
@@ -441,8 +455,11 @@ unsigned int LinuxWaylandKeycodeForVk(unsigned int aVK)
 	case 0xBC: return KEY_COMMA;
 	case 0xBE: return KEY_DOT;
 	case 0xBF: return KEY_SLASH;
-	case 0x6B: return KEY_KPASTERISK;
-	case 0x6C: return KEY_KPPLUS;
+	// VK codes: MULTIPLY=0x6A, ADD=0x6B, SEPARATOR=0x6C, SUBTRACT=0x6D,
+	// DECIMAL=0x6E, DIVIDE=0x6F.  (0x6C, the numpad separator, has no good
+	// US-layout evdev key, so it is left unsupported.)
+	case 0x6A: return KEY_KPASTERISK;
+	case 0x6B: return KEY_KPPLUS;
 	case 0x6D: return KEY_KPMINUS;
 	case 0x6E: return KEY_KPDOT;
 	case 0x6F: return KEY_KPSLASH;

@@ -17,6 +17,30 @@
 #include "core_clipboard_linux.h"
 #include "../gui/script_gui_linux.h"
 #include <X11/Xlib.h>
+#include <csignal>
+
+// ---------------------------------------------------------------------------
+// Reload (restart) support: the new interpreter instance signals the old
+// process with SIGTERM; the handler only sets a flag, and the wait loops
+// (MsgSleep / LinuxRunMainLoop) turn it into ExitApp(EXIT_RELOAD) so OnExit
+// callbacks run with ExitReason "Reload".  Installing a handler also makes
+// an external `kill -TERM` exit the script gracefully through OnExit.
+// ---------------------------------------------------------------------------
+static volatile sig_atomic_t g_linux_restart_signal = 0;
+static void LinuxRestartSignalHandler(int) { g_linux_restart_signal = 1; }
+
+extern "C" void LinuxInstallRestartHandler()
+{
+	struct sigaction sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = LinuxRestartSignalHandler;
+	sigaction(SIGTERM, &sa, nullptr);
+}
+
+extern "C" bool LinuxRestartRequested()
+{
+	return g_linux_restart_signal != 0;
+}
 
 // InputHook dispatch (core_inputhook_linux.cpp): drains captured key events
 // and enforces the timeout while an InputHook is active.
@@ -40,14 +64,18 @@ bool MsgSleep(int aDuration, MessageMode)
 		if (g_script.mTimerEnabledCount)
 			LinuxCheckScriptTimers();
 		if (Hotkey::sHotkeyCount)
-			if (Display *d = LinuxX11Display())
-				LinuxDispatchHotkeys(d);
+			LinuxDispatchHotkeys(); // Dedicated hotkey connection.
 		if (g_input && g_input->InProgress())
 			LinuxDispatchInputHook(LinuxX11Display());
 		if (Display *d = LinuxX11Display())
 			LinuxClipboardDispatchX11(d);
 		if (LinuxWaylandActive())
 			LinuxWaylandDispatch();
+		if (LinuxRestartRequested())
+		{
+			g_script.ExitApp(EXIT_RELOAD);
+			return true;
+		}
 		return true;
 	}
 	DWORD end = GetTickCount() + (DWORD)aDuration;
@@ -56,14 +84,18 @@ bool MsgSleep(int aDuration, MessageMode)
 		ahk_gtk::GtkPump();
 			LinuxCheckScriptTimers();
 		if (Hotkey::sHotkeyCount)
-			if (Display *d = LinuxX11Display())
-				LinuxDispatchHotkeys(d);
+			LinuxDispatchHotkeys(); // Dedicated hotkey connection.
 		if (g_input && g_input->InProgress())
 			LinuxDispatchInputHook(LinuxX11Display());
 		if (Display *d = LinuxX11Display())
 			LinuxClipboardDispatchX11(d);
 		if (LinuxWaylandActive())
 			LinuxWaylandDispatch();
+		if (LinuxRestartRequested())
+		{
+			g_script.ExitApp(EXIT_RELOAD);
+			return true;
+		}
 		DWORD now = GetTickCount();
 		if (now >= end)
 			break;
@@ -396,7 +428,27 @@ void DefineFileClassLinuxOnPrototype(Object *aPrototype); // core_file_linux.cpp
 // DefineMetadataMembers() is implemented for real in core_md_func_linux.cpp
 // (libffi-based, replacing the Windows DynaCall marshaler).
 
-LPTSTR GetExitReasonString(ExitReasons) { return _T(""); }
+// GetExitReasonString: full upstream mapping (lib/vars.cpp); previously a
+// stub that made OnExit's ExitReason parameter always blank.
+LPTSTR GetExitReasonString(ExitReasons aExitReason)
+{
+	LPTSTR str;
+	switch (aExitReason)
+	{
+	case EXIT_LOGOFF: str = _T("Logoff"); break;
+	case EXIT_SHUTDOWN: str = _T("Shutdown"); break;
+	case EXIT_CRITICAL:
+	case EXIT_DESTROY:
+	case EXIT_CLOSE: str = _T("Close"); break;
+	case EXIT_ERROR: str = _T("Error"); break;
+	case EXIT_MENU: str = _T("Menu"); break;
+	case EXIT_EXIT: str = _T("Exit"); break;
+	case EXIT_RELOAD: str = _T("Reload"); break;
+	case EXIT_SINGLEINSTANCE: str = _T("Single"); break;
+	default: str = _T("");
+	}
+	return str;
+}
 void *GetDllProcAddress(LPCTSTR, HMODULE *) { return nullptr; }
 DWORD GetProcessName(DWORD, LPTSTR aBuf, DWORD aBufSize, bool) { if (aBuf && aBufSize) aBuf[0] = 0; return 0; }
 

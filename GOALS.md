@@ -107,6 +107,16 @@
       ComObj* 映射到桌面总线，18 项断言（真实 org.freedesktop.DBus 调用）
 - [x] **输入法集成评估**：`docs/IME-Integration.md`（XIM / Wayland text-input
       分阶段方案、热键与 preedit 交互、推荐路径）
+- [x] **Reload 真正实现**（round-28）：`/restart /script /pid` 协议 + SIGTERM
+      → EXIT_RELOAD（OnExit reason="Reload"），回归 t26_reload；修复
+      GetExitReasonString 空串桩（OnExit 的 ExitReason 此前恒为空）
+- [x] **热键审计第一批**（round-29，check0818.md）：独立热键 X 连接、
+      GrabSpec 差量同步 + XUngrabKey（Off 解除抓取）、条件透传（Async
+      抓取 + XTEST 重注入，8 槽注入日志防循环）、BadAccess 冲突报错、
+      注册后立即 Reconcile、动态 modifier map + MappingNotify、XKB
+      detectable auto-repeat、Wayland 键码显式表；`assert_hotkey_pt`
+      独立前台客户端测试（抑制/透传/解除抓取/HotIf-false）；CI 去掉
+      doc-check 的 continue-on-error
 
 ## 后续候选增强（未实现）
 
