@@ -29,7 +29,7 @@ jobs:
           # (the "noble-security InRelease" stall seen in core/asan jobs).  Force
           # IPv4, bound apt timeouts, and retry the whole step so a transient
           # apt-mirror flake cannot stall the pipeline.
-          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99ci-retry
+          # (no ForceIPv4: could break runners whose IPv6 route works)
           echo 'Acquire::Retries "5";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
           echo 'Acquire::http::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
           echo 'Acquire::https::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
@@ -101,7 +101,7 @@ jobs:
           # (the "noble-security InRelease" stall seen in core/asan jobs).  Force
           # IPv4, bound apt timeouts, and retry the whole step so a transient
           # apt-mirror flake cannot stall the pipeline.
-          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99ci-retry
+          # (no ForceIPv4: could break runners whose IPv6 route works)
           echo 'Acquire::Retries "5";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
           echo 'Acquire::http::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
           echo 'Acquire::https::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
