@@ -89,6 +89,9 @@ documentation under the chosen prefix:
 ```bash
 ahk --version        # AutoHotkey v2.0.26 Linux port (X11/Wayland)
 ahk your-script.ahk
+ahk uninstall        # cleanly remove this installation
+ahk update           # update to the latest GitHub release
+ahk update 2.0.26-linux.8   # or a specific release (upgrade or downgrade)
 ```
 
 ## Build from source ##

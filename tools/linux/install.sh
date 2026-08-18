@@ -117,8 +117,79 @@ install -m 0755 "$CORE" "$LIBDIR/ahk_core" || exit 1
 # A tiny wrapper so scripts can run `ahk script.ahk`.
 cat > "$BINDIR/ahk" <<EOF
 #!/bin/sh
+# AutoHotkey v2 Linux port launcher.
+#   ahk script.ahk       run a script with the interpreter
+#   ahk uninstall        cleanly remove this installation
+#   ahk update [VER]     update (or downgrade) to the latest / given release
+#                         (VER like 2.0.26-linux.8; blank = latest)
 AHK_PREFIX="$PREFIX"
-exec "\$AHK_PREFIX/$LIB_SUB/ahk_core" "\$@"
+AHK_LIB="\$AHK_PREFIX/$LIB_SUB"
+AHK_BIN="\$AHK_PREFIX/$BIN_SUB"
+AHK_DOC="\$AHK_PREFIX/$DOC_SUB"
+
+cmd="\${1:-}"
+case "\$cmd" in
+  uninstall)
+    if [ ! -f "\$AHK_BIN/ahk" ]; then
+      echo "ahk: no installation found at \$AHK_PREFIX" >&2
+      exit 1
+    fi
+    echo "Removing AutoHotkey v2 Linux port from \$AHK_PREFIX ..."
+    rm -rf "\$AHK_BIN" "\$AHK_LIB" "\$AHK_DOC" 2>/dev/null || true
+    # Prune empty directories from the deepest known one upward (e.g.
+    # share/doc -> share -> prefix) so the removal is clean.
+    d=\$(dirname "\$AHK_DOC")
+    while [ "\$d" != "/" ] && [ "\$d" != "\$HOME" ]; do
+      rmdir "\$d" 2>/dev/null || break
+      d=\$(dirname "\$d")
+    done
+    echo "Done.  AutoHotkey has been uninstalled."
+    exit 0
+    ;;
+  update)
+    ver="\${2:-}"
+    if [ -z "\$ver" ]; then
+      # Resolve the latest release tag from the GitHub API.
+      if command -v curl >/dev/null 2>&1; then
+        tag=\$(curl -fsSL --connect-timeout 15 \
+          "https://api.github.com/repos/MonoEven/Autohotkey_Linux/releases/latest" 2>/dev/null)
+      elif command -v wget >/dev/null 2>&1; then
+        tag=\$(wget -qO- --timeout=15 \
+          "https://api.github.com/repos/MonoEven/Autohotkey_Linux/releases/latest" 2>/dev/null)
+      else
+        echo "ahk: update needs curl or wget" >&2
+        exit 1
+      fi
+      ver=\$(printf '%s\n' "\$tag" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\([^"]*\)".*/\1/p' | head -1)
+      [ -n "\$ver" ] || { echo "ahk: could not determine the latest version" >&2; exit 1; }
+    fi
+    tmp=\$(mktemp -d) || exit 1
+    trap 'rm -rf "\$tmp"' EXIT
+    url="https://github.com/MonoEven/Autohotkey_Linux/releases/download/v\$ver/autohotkey-linux-\$ver-amd64.tar.gz"
+    echo "Downloading AutoHotkey v\$ver ..."
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL --connect-timeout 20 -o "\$tmp/ahk.tar.gz" "\$url" ||
+        curl -fsSL --connect-timeout 40 -o "\$tmp/ahk.tar.gz" "\$url"
+    else
+      wget -q --timeout=60 -O "\$tmp/ahk.tar.gz" "\$url"
+    fi
+    [ -s "\$tmp/ahk.tar.gz" ] || { echo "ahk: download failed for v\$ver" >&2; exit 1; }
+    tar xzf "\$tmp/ahk.tar.gz" -C "\$tmp" || { echo "ahk: bad archive" >&2; exit 1; }
+    inst=\$(cd "\$tmp" && find . -path '*/tools/linux/install.sh' -print -quit)
+    [ -n "\$inst" ] || { echo "ahk: installer not found in the archive" >&2; exit 1; }
+    instdir=\$(dirname "\$inst")
+    echo "Installing v\$ver over \$AHK_PREFIX ..."
+    ( cd "\$tmp/\$instdir" && ./install.sh --prefix "\$AHK_PREFIX" --yes )
+    rc=\$?
+    if [ "\$rc" = 0 ]; then
+      echo "AutoHotkey updated to v\$ver."
+    else
+      echo "ahk: update installer failed (rc=\$rc)" >&2
+    fi
+    exit "\$rc"
+    ;;
+esac
+exec "\$AHK_LIB/ahk_core" "\$@"
 EOF
 chmod 0755 "$BINDIR/ahk"
 
