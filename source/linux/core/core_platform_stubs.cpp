@@ -198,7 +198,22 @@ ToggleValueType ToggleKeyState(vk_type, ToggleValueType aToggleValue) { return a
 void SetModifierLRState(modLR_type, modLR_type, HWND, bool, bool, UINT) {}
 modLR_type GetModifierLRState(bool) { return 0; }
 modLR_type KeyToModifiersLR(vk_type, sc_type, bool *) { return 0; }
-modLR_type ConvertModifiers(mod_type) { return 0; }
+modLR_type ConvertModifiers(mod_type aModifiers)
+{
+	// Neutral Windows modifiers expand to both sides (upstream semantics);
+	// the hotkey machinery uses the result as mModifiersConsolidatedLR for
+	// left/right-aware matching (core_hotkey_linux.cpp).
+	modLR_type r = 0;
+	if (aModifiers & MOD_CONTROL)
+		r |= MOD_LCONTROL | MOD_RCONTROL;
+	if (aModifiers & MOD_SHIFT)
+		r |= MOD_LSHIFT | MOD_RSHIFT;
+	if (aModifiers & MOD_ALT)
+		r |= MOD_LALT | MOD_RALT;
+	if (aModifiers & MOD_WIN)
+		r |= MOD_LWIN | MOD_RWIN;
+	return r;
+}
 mod_type ConvertModifiersLR(modLR_type) { return 0; }
 LPTSTR ModifiersLRToText(modLR_type, LPTSTR aBuf) { if (aBuf) aBuf[0] = 0; return aBuf; }
 

@@ -503,18 +503,29 @@ CI 中应去掉 Xvfb doc-check 的 `continue-on-error`，并将 XWayland 专项�
 验证基线:doc-check **1026/1026**(core+ASan)、回归 27/27、Wayland 13/13、
 XWayland 247/247。
 
-## 第二批(简单热键语义增强)——计划中
+## 第二批(简单热键语义增强)——round-31 已完成
 
-- 左右修饰键区分(`mModifiersLR`)、通配修饰键(`*`)——需要 XI2 raw
-  观察层,当前在注册时明确拒绝(不静默注册假热键)。
+- 左右修饰键区分(`mModifiersLR`)、通配修饰键(`*`)。✅ **round-31 已实现**:
+  X11 被动抓取只匹配修饰掩码,抓取用中性+LR 掩码的并集,事件处理时以
+  **XI2 原始事件观察器**(RawKeyPress/Release 携带按键发生时刻的键码,先于
+  被抓取事件到达,批量 XTEST 输入也精确)跟踪 Ctrl/Shift/Alt/Win 左右侧
+  (无 XInput2 的服务器回退 XQueryKeymap,人工输入准确);`mModifiersLR`
+  精确匹配,错侧按压无变体命中时走标准 XTEST 透传(与 Windows 一致);
+  通配 `*` 把抓取展开到全部主修饰组合(最多 16×锁组合),匹配接受额外修饰。
+  顺带修复 `ConvertModifiers` 桩(恒 0 导致 consolidated LR 恒空)。
+  验证:`assert_hotkey_lr` 10 断言(xkeycap 独立客户端)。
 - 扫描码热键、`A & B` 自定义前缀——需要按键缓冲状态机,归入
   Hotstring/InputHook 的统一事件流。
-- 哈希索引与唯一候选决议(1000 热键性能)——可随第二批实现。
+- 哈希索引与唯一候选决议(1000 热键性能)。✅ **round-31 已实现**:
+  每次抓取集合变化时重建 (键码/按钮, 主修饰掩码) -> 热键索引,事件处理
+  O(1) 查桶;唯一决议:精确热键优先于通配,同优先时允许侧位更少者胜,
+  平局按注册顺序。
 
 ## 第三批(平台能力扩展)——计划中
 
-- XI2 RawKeyPress/RawKeyRelease 观察后端(`~`/Key-up/观察类热键不再
-  依赖抓取)。
+- XI2 RawKeyPress/RawKeyRelease 观察后端。🔄 **round-31 已落地最小形态**:
+  修饰键左右侧跟踪(XInput2 原始事件,热键连接统一派发);完整的
+  `~`/Key-up/观察类热键解耦仍依赖后续统一事件流。
 - XDG Global Shortcuts Portal(Wayland 全局快捷键,已有 D-Bus 设施)。
 - 鼠标热键/滚轮(XGrabButton 可先支持按钮)。✅ **round-30 已实现**:
   XGrabButton 抓取按钮 1/2/3/8/9 与滚轮 4-7(锁定掩码幂集同键盘),

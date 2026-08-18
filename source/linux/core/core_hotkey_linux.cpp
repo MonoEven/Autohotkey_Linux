@@ -30,10 +30,23 @@
 //         key-up hotkeys fire once per physical release (with a fallback
 //         filter for synthetic repeats when the server lacks XKB support).
 //
-// The upstream Hotkey() parse/variant machinery is unchanged; features the
-// X11 backend cannot express (scan codes, "A & B" prefixes, left/right
-// modifier discrimination, wildcard modifiers) are NOT grabbed and are
-// documented as unsupported rather than silently misbehaving.  Mouse hotkeys
+// The upstream Hotkey() parse/variant machinery is unchanged.  Features the
+// X11 backend cannot express (scan codes, "A & B" prefixes) are NOT grabbed
+// and are documented as unsupported rather than silently misbehaving.
+//
+// Left/right modifiers and wildcard modifiers (round 31): X11 passive grabs
+// match modifier masks only, so the grab uses the combined mask of the
+// neutral and LR-specific bits (both sides of Ctrl share ControlMask); the
+// event handler then discriminates the physical side with XQueryKeymap
+// (left/right ctrl/shift/alt/win keycodes) against the hotkey\'s consolidated
+// LR set, and a wrong-side press no variant matches is passed through with
+// the standard XTEST re-injection (Windows parity).  Wildcard (*) hotkeys
+// expand the grab to the full primary-modifier power set so the grab
+// activates under any extra modifiers, and the handler accepts them.  Event
+// matching uses a per-(key/button, modifiers) hash index rebuilt when the
+// grab set changes; resolution is unique: exact hotkeys beat wildcard ones,
+// and among equals the one allowing fewer side bits wins.
+// Mouse hotkeys
 // (LButton/RButton/MButton/XButton1/XButton2/Wheel*) are grabbed with
 // XGrabButton on the same connection, with the same reconcile, BadAccess
 // trap, lock-mask power set and XTEST passthrough as keyboard hotkeys.
@@ -51,8 +64,10 @@
 #include <X11/keysym.h>
 #include <X11/XKBlib.h>
 #include <X11/extensions/XTest.h>
+#include <X11/extensions/XInput2.h>
 #include <set>
 #include <vector>
+#include <unordered_map>
 #include <cstring>
 #include <cstdio>
 
@@ -184,6 +199,149 @@ unsigned int LinuxModsToX(mod_type aModifiers)
 	return m;
 }
 
+// X11 modifier mask contributed by left/right-specific modifiers (X11 cannot
+// distinguish sides, so both sides map to the same mask).
+unsigned int LinuxModsToXLR(modLR_type aModifiersLR)
+{
+	unsigned int m = 0;
+	if (aModifiersLR & (MOD_LCONTROL | MOD_RCONTROL))
+		m |= ControlMask;
+	if (aModifiersLR & (MOD_LSHIFT | MOD_RSHIFT))
+		m |= ShiftMask;
+	if (aModifiersLR & (MOD_LALT | MOD_RALT))
+		m |= sAltMask;
+	if (aModifiersLR & (MOD_LWIN | MOD_RWIN))
+		m |= sSuperMask;
+	return m;
+}
+
+// Left/right state of the modifiers held now, read from the physical keymap.
+// Only a side whose keycode is verified down is reported; a mask bit set
+// without any side keycode (unusual layouts) contributes no side bit, so
+// neutral hotkeys still match while side-specific ones do not.
+// ---------------------------------------------------------------------------
+// XI2 raw-event modifier-side observer (check0818 batch 3: XI2 observer)
+// ---------------------------------------------------------------------------
+// X11 passive grabs match modifier masks only (no side information), and
+// XQueryKeymap reflects the state at query time rather than at event
+// generation time -- wrong for batched XTEST input, where the modifier may
+// already be released when the queued grabbed event is dispatched.  The
+// XI2 raw-event stream reports every physical key press/release with its
+// keycode (hence its side) as it happens, on the same connection, before
+// the corresponding grabbed event; a small state machine tracks which
+// sides of Ctrl/Shift/Alt/Win are held.  Servers without XInput2 fall back
+// to XQueryKeymap (accurate for human-paced input; documented deviation
+// for batched XTEST input).
+
+bool sXI2Observer = false;
+int sXI2Opcode = 0;
+KeyCode sModKc[8];          // L/R ctrl, shift, alt, win keycodes.
+modLR_type sHeldLR = 0;
+
+void LinuxTrackModifierKeycode(KeyCode aKc, bool aDown)
+{
+	static const modLR_type sBit[8] = { MOD_LCONTROL, MOD_RCONTROL, MOD_LSHIFT, MOD_RSHIFT
+		, MOD_LALT, MOD_RALT, MOD_LWIN, MOD_RWIN };
+	for (int i = 0; i < 8; ++i)
+		if (sModKc[i] && sModKc[i] == aKc)
+		{
+			if (aDown)
+				sHeldLR |= sBit[i];
+			else
+				sHeldLR = (modLR_type)(sHeldLR & ~sBit[i]);
+			break;
+		}
+}
+
+void LinuxUpdateModifierKeycodes(Display *d)
+{
+	static const vk_type sVks[8] = { 0xA2, 0xA3, 0xA0, 0xA1, 0xA4, 0xA5, 0x5B, 0x5C };
+	for (int i = 0; i < 8; ++i)
+		sModKc[i] = d ? LinuxKeycodeForVkEx(d, sVks[i]) : 0;
+	// Seed the held-sides state from the current keymap (modifiers pressed
+	// before the observer started).
+	sHeldLR = 0;
+	if (d)
+	{
+		char keys[32];
+		memset(keys, 0, sizeof(keys));
+		XQueryKeymap(d, keys);
+		for (int i = 0; i < 8; ++i)
+			if (sModKc[i] && (keys[sModKc[i] >> 3] & (1 << (sModKc[i] & 7))))
+				LinuxTrackModifierKeycode(sModKc[i], true);
+	}
+}
+
+void LinuxXI2Init(Display *d)
+{
+	int major = 2, minor = 0;
+	int ev = 0, err = 0;
+	if (d && XQueryExtension(d, "XInputExtension", &sXI2Opcode, &ev, &err)
+		&& XIQueryVersion(d, &major, &minor) == Success)
+	{
+		unsigned char mask_data[XIMaskLen(XI_RawKeyRelease)];
+		memset(mask_data, 0, sizeof(mask_data));
+		XISetMask(mask_data, XI_RawKeyPress);
+		XISetMask(mask_data, XI_RawKeyRelease);
+		XIEventMask mask;
+		mask.deviceid = XIAllMasterDevices;
+		mask.mask_len = sizeof(mask_data);
+		mask.mask = mask_data;
+		XISelectEvents(d, DefaultRootWindow(d), &mask, 1);
+		sXI2Observer = true;
+	}
+}
+
+// Left/right state of the modifiers held when the event was generated.
+// With the XI2 observer this is the tracked physical state (raw events
+// precede the grabbed event for the same physical input, so the tracker is
+// consistent even for batched XTEST input); without it, the current
+// physical keymap is queried.
+modLR_type LinuxEventLR(Display *d, unsigned int aEvMods)
+{
+	if (sXI2Observer)
+		return sHeldLR;
+	modLR_type r = 0;
+	char keys[32];
+	memset(keys, 0, sizeof(keys));
+	if (d)
+		XQueryKeymap(d, keys);
+	auto side = [&](vk_type aLeftVk, vk_type aRightVk, modLR_type aLM, modLR_type aRM, unsigned int aMask)
+	{
+		if (!(aEvMods & aMask))
+			return;
+		KeyCode lk = LinuxKeycodeForVkEx(d, aLeftVk);
+		KeyCode rk = LinuxKeycodeForVkEx(d, aRightVk);
+		bool ldown = lk && (keys[lk >> 3] & (1 << (lk & 7)));
+		bool rdown = rk && (keys[rk >> 3] & (1 << (rk & 7)));
+		if (ldown) r |= aLM;
+		if (rdown) r |= aRM;
+	};
+	side(0xA0, 0xA1, MOD_LSHIFT, MOD_RSHIFT, ShiftMask);
+	side(0xA2, 0xA3, MOD_LCONTROL, MOD_RCONTROL, ControlMask);
+	side(0xA4, 0xA5, MOD_LALT, MOD_RALT, sAltMask);
+	side(0x5B, 0x5C, MOD_LWIN, MOD_RWIN, sSuperMask);
+	return r;
+}
+
+// Modifier matching (Windows semantics): the required neutral masks must be
+// held, the held sides must lie inside the hotkey's consolidated LR set, and
+// (unless wildcard) no extra primary modifier may be held.
+bool LinuxHotkeyModsMatch(Hotkey *aHotkey, unsigned int aEvMods, modLR_type aEvLR)
+{
+	unsigned int req = LinuxModsToX(aHotkey->mModifiers);
+	if ((aEvMods & req) != req)
+		return false;
+	if (!aHotkey->mAllowExtraModifiers)
+	{
+		if (aEvLR & ~aHotkey->mModifiersConsolidatedLR)
+			return false;
+		if (aEvMods & ~(req | LinuxModsToXLR(aHotkey->mModifiersLR)))
+			return false;
+	}
+	return true;
+}
+
 // ---------------------------------------------------------------------------
 // Per-request X error trap (grabs are asynchronous; BadAccess arrives later)
 // ---------------------------------------------------------------------------
@@ -261,15 +419,16 @@ unsigned int LinuxHotkeyButton(Hotkey *aHotkey)
 // full lock-modifier power set) of every hotkey that has an enabled variant.
 void LinuxBuildDesired(Display *d, std::set<GrabSpec> &aDesired)
 {
-	unsigned int combos[8];
-	int ncombos = 1;
-	combos[0] = 0;
-	for (int i = 0; i < sLockMaskCount && ncombos < 8; ++i)
+	unsigned int lock_combos[8];
+	int nlock = 1;
+	lock_combos[0] = 0;
+	for (int i = 0; i < sLockMaskCount && nlock < 8; ++i)
 	{
-		int n = ncombos;
+		int n = nlock;
 		for (int j = 0; j < n; ++j)
-			combos[ncombos++] = combos[j] | sLockMasks[i];
+			lock_combos[nlock++] = lock_combos[j] | sLockMasks[i];
 	}
+	unsigned int prim[4] = { ControlMask, ShiftMask, sAltMask, sSuperMask };
 	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
 	{
 		Hotkey *hk = Hotkey::shk[i];
@@ -279,9 +438,116 @@ void LinuxBuildDesired(Display *d, std::set<GrabSpec> &aDesired)
 		unsigned int btn = kc ? 0 : LinuxHotkeyButton(hk);
 		if (!kc && !btn)
 			continue; // Scan-code / prefix / unsupported: not grabbed.
-		unsigned int base = LinuxModsToX(hk->mModifiers);
-		for (int c = 0; c < ncombos; ++c)
-			aDesired.insert(GrabSpec{kc, btn, base | combos[c]});
+		unsigned int base = LinuxModsToX(hk->mModifiers) | LinuxModsToXLR(hk->mModifiersLR);
+		if (hk->mAllowExtraModifiers)
+		{
+			// Wildcard: the grab must activate under any additional primary
+			// modifier, so grab every superset of the required combination
+			// (up to 16 x lock combos per hotkey).
+			for (int t = 0; t < 16; ++t)
+			{
+				unsigned int extra = 0;
+				for (int p = 0; p < 4; ++p)
+					if (t & (1 << p))
+						extra |= prim[p];
+				unsigned int combo = base | extra;
+				for (int c = 0; c < nlock; ++c)
+					aDesired.insert(GrabSpec{kc, btn, combo | lock_combos[c]});
+			}
+		}
+		else
+		{
+			for (int c = 0; c < nlock; ++c)
+				aDesired.insert(GrabSpec{kc, btn, base | lock_combos[c]});
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Hotkey hash index (unique-resolution lookup; rebuilt when grabs change)
+// ---------------------------------------------------------------------------
+
+// Map (id<<8)|mods -> hotkey indices, where id is the keycode or the X11
+// button number and mods is the primary-only modifier mask (lock state is
+// excluded, matching the event handlers' mask).
+struct HotkeyIndex
+{
+	std::unordered_map<unsigned int, std::vector<int>> buckets;
+};
+
+HotkeyIndex sIndex;
+bool sIndexDirty = true;
+
+void LinuxIndexAdd(unsigned int aId, unsigned int aBase, bool aWildcard, const unsigned int aPrim[4], int aHotkeyIndex)
+{
+	if (aWildcard)
+	{
+		for (int t = 0; t < 16; ++t)
+		{
+			unsigned int extra = 0;
+			for (int p = 0; p < 4; ++p)
+				if (t & (1 << p))
+					extra |= aPrim[p];
+			sIndex.buckets[(aId << 8) | (aBase | extra)].push_back(aHotkeyIndex);
+		}
+	}
+	else
+		sIndex.buckets[(aId << 8) | aBase].push_back(aHotkeyIndex);
+}
+
+void LinuxBuildHotkeyIndex(Display *d)
+{
+	sIndex.buckets.clear();
+	unsigned int prim[4] = { ControlMask, ShiftMask, sAltMask, sSuperMask };
+	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
+	{
+		Hotkey *hk = Hotkey::shk[i];
+		if (!hk || hk->mModifierVK || hk->IsCompletelyDisabled())
+			continue;
+		KeyCode kc = LinuxHotkeyKeycode(d, hk);
+		unsigned int btn = kc ? 0 : LinuxHotkeyButton(hk);
+		unsigned int id = btn ? btn : (unsigned int)kc;
+		if (!id)
+			continue;
+		unsigned int base = LinuxModsToX(hk->mModifiers) | LinuxModsToXLR(hk->mModifiersLR);
+		LinuxIndexAdd(id, base, hk->mAllowExtraModifiers != 0, prim, i);
+	}
+}
+
+// Find the best matching hotkey+enabled variant for (id, mods, side, phase).
+// Unique resolution: exact (non-wildcard) hotkeys beat wildcard ones; among
+// equals the one allowing fewer side bits wins; ties keep registration order
+// (the bucket is built in registration order).
+void LinuxFindHotkey(Display *d, unsigned int aId, unsigned int aEvMods, modLR_type aEvLR, bool aIsUp
+	, Hotkey *&aHk, HotkeyVariant *&aVp)
+{
+	aHk = nullptr;
+	aVp = nullptr;
+	std::unordered_map<unsigned int, std::vector<int>>::const_iterator it = sIndex.buckets.find((aId << 8) | aEvMods);
+	if (it == sIndex.buckets.end())
+		return;
+	int best = 0x7FFFFFFF;
+	for (size_t k = 0; k < it->second.size(); ++k)
+	{
+		int i = it->second[k];
+		Hotkey *hk = Hotkey::shk[i];
+		if (!hk || hk->mKeyUp != aIsUp || hk->mModifierVK)
+			continue;
+		if (!LinuxHotkeyModsMatch(hk, aEvMods, aEvLR))
+			continue;
+		HotkeyVariant *vp = hk->FindVariant();
+		if (!vp || !vp->mEnabled || !hk->PerformIsAllowed(*vp))
+			continue;
+		int side_bits = 0;
+		for (unsigned t = (unsigned)hk->mModifiersConsolidatedLR; t; t >>= 1)
+			side_bits += (int)(t & 1);
+		int score = (hk->mAllowExtraModifiers ? 8 : 0) + side_bits;
+		if (score < best)
+		{
+			best = score;
+			aHk = hk;
+			aVp = vp;
+		}
 	}
 }
 
@@ -418,28 +684,15 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 	// The grab may activate on any lock state; the event's state then
 	// carries those bits.  Compare only the primary modifier slots.
 	unsigned int evmods = ev.xkey.state & (ControlMask | ShiftMask | sAltMask | sSuperMask);
+	modLR_type evlr = LinuxEventLR(d, evmods);
 
 	Hotkey *hk_fire = nullptr;
 	HotkeyVariant *vp_fire = nullptr;
-	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
-	{
-		Hotkey *hk = Hotkey::shk[i];
-		if (!hk || hk->mKeyUp != is_up)
-			continue;
-		KeyCode kc = LinuxHotkeyKeycode(d, hk);
-		if (!kc || kc != ev.xkey.keycode)
-			continue;
-		if (LinuxModsToX(hk->mModifiers) != evmods)
-			continue;
-		HotkeyVariant *vp = hk->FindVariant();
-		if (!vp || !vp->mEnabled || !hk->PerformIsAllowed(*vp))
-			continue;
-		if (is_up && !sDetectableAutoRepeat && LinuxIsSyntheticRelease(ev))
-			continue;
-		hk_fire = hk;
-		vp_fire = vp;
-		break;
-	}
+	LinuxFindHotkey(d, (unsigned int)ev.xkey.keycode, evmods, evlr, is_up, hk_fire, vp_fire);
+	// Key-up hotkeys without XKB repeat suppression: a synthetic repeat
+	// release is a repeat artifact, not a physical release.
+	if (hk_fire && is_up && !sDetectableAutoRepeat && LinuxIsSyntheticRelease(ev))
+		hk_fire = nullptr, vp_fire = nullptr;
 
 	if (hk_fire)
 	{
@@ -476,16 +729,18 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 // to this connection and the up variant can fire; on Windows the press
 // would be passed through to the target application, but X11 passive grabs
 // cannot split the press/release pair (documented deviation).
-bool LinuxButtonUpVariantExists(unsigned int aButton, unsigned int aEvMods)
+bool LinuxButtonUpVariantExists(Display *d, unsigned int aButton, unsigned int aEvMods)
 {
-	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
+	modLR_type evlr = LinuxEventLR(d, aEvMods);
+	std::unordered_map<unsigned int, std::vector<int>>::const_iterator it = sIndex.buckets.find((aButton << 8) | aEvMods);
+	if (it == sIndex.buckets.end())
+		return false;
+	for (size_t k = 0; k < it->second.size(); ++k)
 	{
-		Hotkey *hk = Hotkey::shk[i];
+		Hotkey *hk = Hotkey::shk[it->second[k]];
 		if (!hk || !hk->mKeyUp || hk->mModifierVK)
 			continue;
-		if (LinuxHotkeyButton(hk) != aButton)
-			continue;
-		if (LinuxModsToX(hk->mModifiers) != aEvMods)
+		if (!LinuxHotkeyModsMatch(hk, aEvMods, evlr))
 			continue;
 		HotkeyVariant *vp = hk->FindVariant();
 		if (vp && vp->mEnabled && hk->PerformIsAllowed(*vp))
@@ -504,25 +759,11 @@ void LinuxHandleButtonEvent(Display *d, XEvent &ev)
 	// button state bits of the pressed button itself are excluded, like
 	// Windows, where other held buttons do not affect matching).
 	unsigned int evmods = ev.xbutton.state & (ControlMask | ShiftMask | sAltMask | sSuperMask);
+	modLR_type evlr = LinuxEventLR(d, evmods);
 
 	Hotkey *hk_fire = nullptr;
 	HotkeyVariant *vp_fire = nullptr;
-	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
-	{
-		Hotkey *hk = Hotkey::shk[i];
-		if (!hk || hk->mKeyUp != is_up || hk->mModifierVK)
-			continue;
-		if (LinuxHotkeyButton(hk) != button)
-			continue;
-		if (LinuxModsToX(hk->mModifiers) != evmods)
-			continue;
-		HotkeyVariant *vp = hk->FindVariant();
-		if (!vp || !vp->mEnabled || !hk->PerformIsAllowed(*vp))
-			continue;
-		hk_fire = hk;
-		vp_fire = vp;
-		break;
-	}
+	LinuxFindHotkey(d, button, evmods, evlr, is_up, hk_fire, vp_fire);
 
 	bool passthrough;
 	if (hk_fire)
@@ -541,7 +782,7 @@ void LinuxHandleButtonEvent(Display *d, XEvent &ev)
 		// exists for this combo (so the release reaches us and the up
 		// variant can fire); otherwise forward the click (HotIf false,
 		// Suspend, thread limits).
-		passthrough = is_up || !LinuxButtonUpVariantExists(button, evmods);
+		passthrough = is_up || !LinuxButtonUpVariantExists(d, button, evmods);
 	}
 
 	if (passthrough)
@@ -579,6 +820,8 @@ Display *LinuxHotkeyDisplay()
 	if (XkbSetDetectableAutoRepeat(d, True, &supported) == Success && supported)
 		sDetectableAutoRepeat = true;
 	LinuxUpdateModifierMap(d);
+	LinuxUpdateModifierKeycodes(d);
+	LinuxXI2Init(d);
 	sDpy = d;
 	return d;
 }
@@ -592,6 +835,7 @@ void LinuxReconcileHotkeyGrabs()
 
 	std::set<GrabSpec> desired;
 	LinuxBuildDesired(d, desired);
+	bool changed = false;
 
 	// Ungrab combinations that are no longer desired.
 	for (std::set<GrabSpec>::iterator it = sInstalled.begin(); it != sInstalled.end();)
@@ -603,6 +847,7 @@ void LinuxReconcileHotkeyGrabs()
 			else
 				XUngrabKey(d, it->keycode, it->modifiers, root);
 			sInstalled.erase(it++);
+			changed = true;
 		}
 		else
 			++it;
@@ -616,7 +861,7 @@ void LinuxReconcileHotkeyGrabs()
 		GrabSpec spec;
 	};
 	std::vector<PendingGrab> pending;
-	sLastConflictName[0] = _T('\0');
+	sLastConflictName[0] = _T(' ');
 	{
 		ScopedXErrorTrap trap(d);
 		for (std::set<GrabSpec>::iterator it = desired.begin(); it != desired.end(); ++it)
@@ -657,6 +902,8 @@ void LinuxReconcileHotkeyGrabs()
 	// conflict-free grabs are now installed.
 	for (size_t i = 0; i < pending.size(); ++i)
 		sInstalled.insert(pending[i].spec);
+	if (changed || !pending.empty())
+		sIndexDirty = true;
 }
 
 void LinuxDispatchHotkeys()
@@ -665,6 +912,11 @@ void LinuxDispatchHotkeys()
 	if (!d)
 		return;
 	LinuxReconcileHotkeyGrabs();
+	if (sIndexDirty)
+	{
+		LinuxBuildHotkeyIndex(d);
+		sIndexDirty = false;
+	}
 	// Bound the number of events processed per dispatch: a passthrough
 	// re-injection loop (should be prevented by the injection log, but a
 	// hostile/key-repeat or slow-server timing could still produce one)
@@ -687,11 +939,28 @@ void LinuxDispatchHotkeys()
 		case ButtonRelease:
 			LinuxHandleButtonEvent(d, ev);
 			break;
+		case GenericEvent:
+		{
+			XGenericEventCookie *cookie = &ev.xcookie;
+			if (XGetEventData(d, cookie))
+			{
+				if (cookie->extension == sXI2Opcode && cookie->evtype == XI_RawKeyPress
+					|| cookie->extension == sXI2Opcode && cookie->evtype == XI_RawKeyRelease)
+				{
+					XIRawEvent *re = (XIRawEvent *)cookie->data;
+					LinuxTrackModifierKeycode((KeyCode)re->detail, cookie->evtype == XI_RawKeyPress);
+				}
+				XFreeEventData(d, cookie);
+			}
+			break;
+		}
 		case MappingNotify:
 			// Keyboard map/layout changed: refresh the modifier slots and
 			// rebuild every grab from scratch.
 			XRefreshKeyboardMapping(&ev.xmapping);
 			LinuxUpdateModifierMap(d);
+			LinuxUpdateModifierKeycodes(d);
+			sIndexDirty = true;
 			{
 				Window root = DefaultRootWindow(d);
 				for (std::set<GrabSpec>::iterator it = sInstalled.begin(); it != sInstalled.end(); ++it)
