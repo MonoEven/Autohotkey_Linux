@@ -61,6 +61,7 @@
 #include "core_wayland_linux.h"
 #include "core_input_linux.h"
 #include "core_capture_linux.h"
+#include "core_gshortcut_linux.h"
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
 #include <X11/XKBlib.h>
@@ -822,6 +823,9 @@ void LinuxHotkeyStateChanged()
 {
 	sReconcileDirty = true;
 	LinuxCaptureStateChanged();
+	// In a Wayland session (no X), global hotkeys go through the XDG Global
+	// Shortcuts portal instead of XGrabKey.
+	LinuxGShortcutSync();
 }
 
 // ---------------------------------------------------------------------------
