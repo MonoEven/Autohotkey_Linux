@@ -97,9 +97,18 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
   注入方式区别均未复刻;只有 SendText(逐字符 aRaw)不同。
 - [次要] **InstallKeybdHook/InstallMouseHook 仅记录布尔**:
   `core_input_linux.cpp:1150-1162`,不安装任何低级钩子(无显示时不报错)。
-- [次要] **InputHook 不抓键**:`core_inputhook_linux.cpp` 状态机齐备
-  (Start/Stop/Timeout/EndReason/InProgress),但 OnKeyDown/OnChar 永不触发、
-  采集内容恒空、不抓取键盘(GDK/X# 双消费会崩)——已文档化。
+- [次要→已实现(round-33,核心)] **InputHook 按键采集**:`core_capture_linux.cpp`
+  的按键捕获引擎在 InputHook InProgress 时保持全键抓取(独立热键 X 连接,不与
+  GDK 双消费),`LinuxCaptureFeedInput` 把键入送入钩子:缓冲区收集(Input 属性)、
+  单字符结束键(EndChar 原因,以 KeyVK 结束键标志 + keysym→VK 判定)、匹配表
+  (Match 原因,完整 CollectChar 逻辑)、缓冲区上限(Max)、退格撤销
+  (BackspaceIsUndo)、超时(Timeout)、输入抑制(消费按键不转发)。
+  `input_type::CollectChar` 从纯追加桩改为完整结束字/匹配/上限逻辑;
+  `GetEndReason` 对单字符结束键返回 EndChar。验证:`assert_inputhook` 6 断言
+  (缓冲 ab、EndChar z、匹配 stop、退格撤销、抑制 xkeycap 未见)。
+  限制(文档化):OnChar/OnKeyDown 通知回调仍未接入——从原生捕获派发现场调用
+  脚本回调会重入解释器挂起;命名 VK 结束键(如 {Esc} 已支持,Esc/Tab/Enter
+  经 keysym→VK 提示)与 OnKeyDown 的 VK/SC 参数待后续接入统一事件流。
 - [次要] **OnClipboardChange 注册但回调永不触发**:
   `script.cpp:753 EnableClipboardListener` → `AddClipboardFormatListener`
   在 Linux 是 no-op 桩(`stdafx_linux.h:2419`),没有

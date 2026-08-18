@@ -24,6 +24,7 @@
 #include "../../application.h"
 #include "../../keyboard_mouse.h"
 #include "core_input_linux.h"
+#include "core_capture_linux.h"
 
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
@@ -349,6 +350,8 @@ void input_type::EndByReason(InputStatusType aReason)
 		__int64 retval = 0;
 		CallMethod(ScriptObject->onEnd, ScriptObject, nullptr, nullptr, 0, &retval);
 	}
+	// The typed-text capture stream may no longer be needed.
+	LinuxCaptureStateChanged();
 }
 
 LPTSTR input_type::GetEndReason(LPTSTR aKeyBuf, int aKeyBufSize)
@@ -360,6 +363,8 @@ LPTSTR input_type::GetEndReason(LPTSTR aKeyBuf, int aKeyBufSize)
 	case INPUT_TERMINATED_BY_ENDKEY:
 	{
 		LPTSTR key_name = aKeyBuf;
+		if (EndingChar)
+			return _T("EndChar");
 		if (!key_name) return _T("EndKey");
 		if (EndingChar)
 		{
@@ -386,15 +391,53 @@ LPTSTR input_type::GetEndReason(LPTSTR aKeyBuf, int aKeyBufSize)
 
 void input_type::CollectChar(TCHAR *ch, int char_count)
 {
-	if (char_count <= 0 || !ch || !*ch)
-		return;
-	// Append characters to the buffer (no hook on Linux; called by tests).
+	const auto buffer = Buffer; // Marginally reduces code size.
+	const auto match = this->match;
+
 	for (int i = 0; i < char_count; ++i)
-		if (BufferLength < BufferLengthMax)
+	{
+		if (CaseSensitive ? _tcschr(EndChars, ch[i]) : ltcschr(EndChars, ch[i]))
 		{
-			Buffer[BufferLength++] = ch[i];
-			Buffer[BufferLength] = '\0';
+			EndByChar(ch[i]);
+			return;
 		}
+		if (BufferLength == BufferLengthMax)
+		{
+			if (!BufferLength) // For L0, collect nothing but the notification.
+				return;
+			break;
+		}
+		buffer[BufferLength++] = ch[i];
+		buffer[BufferLength] = '\0';
+	}
+
+	// Check if the buffer now matches any of the key phrases, if any:
+	if (FindAnywhere)
+	{
+		for (UINT i = 0; i < MatchCount; ++i)
+		{
+			if (CaseSensitive ? _tcsstr(buffer, match[i]) : lstrcasestr(buffer, match[i]))
+			{
+				EndByMatch(i);
+				return;
+			}
+		}
+	}
+	else // Exact match is required.
+	{
+		for (UINT i = 0; i < MatchCount; ++i)
+		{
+			if (CaseSensitive ? !_tcscmp(buffer, match[i]) : !lstrcmpi(buffer, match[i]))
+			{
+				EndByMatch(i);
+				return;
+			}
+		}
+	}
+
+	// Otherwise, no match found.
+	if (BufferLength >= BufferLengthMax)
+		EndByLimit();
 }
 
 // ---------------------------------------------------------------------------
@@ -539,6 +582,8 @@ void InputStart(input_type &input)
 	input.Prev = g_input;
 	input.Start();
 	g_input = &input;
+	// The typed-text capture stream may need to be active for live capture.
+	LinuxCaptureStateChanged();
 	Hotkey::InstallKeybdHook();
 	if (Display *d = LinuxX11Display())
 		LinuxInputHookGrab(d);

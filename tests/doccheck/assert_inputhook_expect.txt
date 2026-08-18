@@ -1,0 +1,6 @@
+ih_ab=1
+ih3_val=1
+ih3_end=1
+ih4_end=1
+ih5_bu=1
+ih_sup=1

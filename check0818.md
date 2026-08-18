@@ -479,7 +479,7 @@ CI 中应去掉 Xvfb doc-check 的 `continue-on-error`，并将 XWayland 专项�
 - XDG Global Shortcuts Portal。⏳ 计划（Wayland 全局快捷键）
 - 鼠标热键。⏳ 计划（XGrabButton 可先支持按钮）
 - 可选 evdev/uinput broker。⏳ 计划（完整钩子语义，需安全边界）
-- 最后再基于统一事件流实现 InputHook 和 Hotstring。🔄 Hotstring 已在 round-32 经按键捕获引擎先行落地(见 AUDIT §2.1);InputHook 实时采集仍待接入统一事件流。
+- 最后再基于统一事件流实现 InputHook 和 Hotstring。🔄 Hotstring(round-32)与 InputHook 实时按键采集核心(round-33)均已经按键捕获引擎落地(见 AUDIT §2.1);OnChar/OnKeyDown 通知与命名 VK 结束键的完整接入待后续事件流工作。
 
 ---
 
@@ -515,7 +515,7 @@ XWayland 247/247。
   顺带修复 `ConvertModifiers` 桩(恒 0 导致 consolidated LR 恒空)。
   验证:`assert_hotkey_lr` 10 断言(xkeycap 独立客户端)。
 - 扫描码热键、`A & B` 自定义前缀——需要按键缓冲状态机,归入
-  Hotstring/InputHook 的统一事件流。
+  Hotstring/InputHook 的统一事件流(round-32/33 捕获引擎已实现文本采集;通知回调待接)。
 - 哈希索引与唯一候选决议(1000 热键性能)。✅ **round-31 已实现**:
   每次抓取集合变化时重建 (键码/按钮, 主修饰掩码) -> 热键索引,事件处理
   O(1) 查桶;唯一决议:精确热键优先于通配,同优先时允许侧位更少者胜,

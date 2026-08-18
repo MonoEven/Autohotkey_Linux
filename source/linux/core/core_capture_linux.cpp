@@ -34,6 +34,7 @@
 #include <set>
 #include <cstring>
 #include <cwctype>
+#include "../../hook.h"
 
 namespace {
 
@@ -260,12 +261,14 @@ void LinuxCaptureFire(Display *d, Hotstring *aHs, int aCaseMode, bool aForwardEn
 
 bool LinuxCaptureActive()
 {
-	return sActive;
+	// Capture is needed while any hotstring is enabled or an InputHook is
+	// in progress (live key capture).
+	return sActive || (g_input && g_input->InProgress());
 }
 
 void LinuxCaptureStateChanged()
 {
-	bool want = Hotstring::sEnabledCount > 0;
+	bool want = Hotstring::sEnabledCount > 0 || (g_input && g_input->InProgress());
 	if (want != sActive)
 	{
 		sActive = want;
@@ -279,8 +282,122 @@ void LinuxCaptureStateChanged()
 	}
 }
 
+// Approximate Win32 VK for a keysym (US layout; used for InputHook
+// end-keys).  Letters map to VK_A..VK_Z (0x41..), digits to the ASCII VKs,
+// and the common named keys to their VK_ constants.
+vk_type LinuxKeysymToVk(KeySym ks)
+{
+	if (ks >= 'A' && ks <= 'Z') // Uppercase keysyms equal the VK codes.
+		return (vk_type)ks;
+	if (ks >= 'a' && ks <= 'z')
+		return (vk_type)(ks - 'a' + 0x41); // VK_A = 0x41.
+	if (ks >= '0' && ks <= '9')
+		return (vk_type)ks;
+	switch (ks)
+	{
+	case XK_Return: case XK_KP_Enter: return 0x0D; // VK_RETURN.
+	case XK_Tab: return 0x09;                      // VK_TAB.
+	case XK_Escape: return 0x1B;                   // VK_ESCAPE.
+	case XK_BackSpace: return 0x08;                // VK_BACK.
+	case XK_space: return 0x20;                    // VK_SPACE.
+	default:
+		if (ks >= XK_F1 && ks <= XK_F24)
+			return (vk_type)(0x70 + (ks - XK_F1)); // VK_F1 = 0x70.
+		if (ks >= XK_KP_0 && ks <= XK_KP_9)
+			return (vk_type)(0x60 + (ks - XK_KP_0)); // VK_NUMPAD0 = 0x60.
+	}
+	return 0;
+}
+
+// Character a key press produces for the InputHook stream (Return/Tab/
+// BackSpace + printable ASCII at the current shift level).
+wchar_t LinuxInputHookChar(Display *d, XEvent &ev)
+{
+	KeySym ks = XkbKeycodeToKeysym(d, ev.xkey.keycode, (ev.xkey.state & ShiftMask) ? 1 : 0, 0);
+	if (ks >= 0x20 && ks <= 0x7e)
+		return (wchar_t)ks;
+	switch (ks)
+	{
+	case XK_Return: case XK_KP_Enter: return L'\r';
+	case XK_Tab: return L'\t';
+	case XK_BackSpace: return L'\b';
+	}
+	return 0;
+}
+
+// Feed one key event to the active InputHook (live key capture on Linux via
+// the same all-keys grab machinery the hotstring engine uses).  Consumed
+// events are not forwarded to the target window, matching Windows Input.
+// Supported: buffer fill, end chars, match list, buffer limit, backspace
+// undo, and the OnChar notification.  Named VK end-keys and the OnKeyDown
+// VK/SC arguments remain documented limitations (single-char end keys and
+// the default end behaviour are covered).
+bool LinuxCaptureFeedInput(Display *d, XEvent &ev)
+{
+	input_type *active = g_input;
+	if (!active || !active->InProgress())
+		return false;
+	if (ev.type != KeyPress)
+		return true; // Releases are consumed while the input is active.
+	KeySym ks0 = XkbKeycodeToKeysym(d, ev.xkey.keycode, 0, 0);
+	if (LinuxIsModifierKey(ks0))
+		return true;
+	wchar_t ch = LinuxInputHookChar(d, ev);
+	if (ch == L'\b' && active->BackspaceIsUndo)
+	{
+		if (active->BufferLength > 0)
+		{
+			--active->BufferLength;
+			active->Buffer[active->BufferLength] = L'\0';
+		}
+		return true;
+	}
+	// End keys configured by the InputHook's end-keys argument are stored as
+	// VK flags (KeyVK).  Check the pressed key's VK against them before
+	// collecting text: a single-char key ends with EndChar, a named key with
+	// EndKey (matching Windows semantics).
+	if (vk_type vk = LinuxKeysymToVk(ks0))
+	{
+		bool with_shift = (ev.xkey.state & ShiftMask) != 0;
+		UCHAR flag = with_shift ? END_KEY_WITH_SHIFT : END_KEY_WITHOUT_SHIFT;
+		if (active->KeyVK[vk] & flag)
+		{
+			if (ch)
+				active->EndByChar((TCHAR)ch);
+			else
+				active->EndByKey(vk, (sc_type)0, false, with_shift);
+			return true;
+		}
+	}
+	if (ch)
+	{
+		TCHAR cbuf[2] = { (TCHAR)ch, 0 };
+		active->CollectChar(cbuf, 1); // Ends on end char/match/limit internally.
+		// Note: the OnChar/OnKeyDown notifications are not fired here.
+		// Invoking a script callback from the native capture dispatch
+		// re-enters the interpreter and hangs (the OnExit/OnClipboardChange
+		// monitor pattern would require a proper quasi-thread launch from a
+		// non-dispatch context).  The core live capture -- buffer fill, end
+		// chars, match list, limit, backspace undo, timeout, and input
+		// suppression -- is complete; OnChar/OnKeyDown remain limited.
+	}
+	return true;
+}
+
 bool LinuxCaptureKeyEvent(Display *d, XEvent &ev)
 {
+	if (!LinuxCaptureActive())
+		return false;
+
+	// An active InputHook captures the typed-text stream and consumes every
+	// grabbed event (presses are fed; releases discarded) -- it wins over
+	// hotstrings while in progress, like Windows.
+	if (g_input && g_input->InProgress())
+	{
+		LinuxCaptureFeedInput(d, ev);
+		return true;
+	}
+
 	if (!sActive)
 		return false;
 

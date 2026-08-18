@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **1047 / 1047 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、**热键透传/解除抓取模块 8 项**(round-29)、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 26 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 6 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 29 项** 与 **D-Bus COM 18 项**;27 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 13 项** 与 **XWayland 回退 235 项** 独立套件通过(见第 10 节)
+- **结果**: **1053 / 1053 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、**热键透传/解除抓取模块 8 项**(round-29)、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 26 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 6 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 29 项** 与 **D-Bus COM 18 项**;27 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 13 项** 与 **XWayland 回退 235 项** 独立套件通过(见第 10 节)
 
 ---
 
@@ -46,6 +46,7 @@
 | 文件对话框 (FileSelect/DirSelect,内置 X11 路径输入对话框 + 无显示 stdin 回退) | `assert_dialog.ahk` | 16 |
 | 消息/热字串/RunAs (OnMessage/SendMessage/PostMessage/MenuSelect/Hotstring/RunAs) | `assert_msg.ahk` | 49 |
 | 热字串展开 (round-32:按键捕获引擎的 hold/flush/match,C/*/O/X 选项,端字符与大小写跟随;xkeycap 独立客户端验证) | `assert_hotstring.ahk` | 11 |
+| InputHook 按键采集 (round-33:捕获引擎实时喂键——缓冲/结束键/匹配/退格撤销/抑制,xkeycap 独立客户端验证;OnChar/OnKeyDown 通知待接入) | `assert_inputhook.ahk` | 6 |
 | 图像 (LoadPicture/IL_*/ImageSearch,BMP/ICO/PNG/GIF/CUR/JPEG/PPM 解码 + XGetImage 屏幕匹配) | `assert_image.ahk` | 44 |
 | 窗口形状 (WinSetRegion,X11 SHAPE 扩展;xshape_probe 端到端验证) | `assert_shape.ahk` | 19 |
 | GUI/控件/菜单 (Gui/GuiControl/Menu/MenuBar,GTK3 窗口;Edit/DDL/List/ListView/TreeView/StatusBar/Submit/OnEvent/菜单属性/HWND 反查等) | `assert_gui.ahk` | 32 |
@@ -53,7 +54,7 @@
 | 声音/光标/回调/输入钩子 (SoundGet*/SoundSet*/CaretGetPos/CallbackCreate+Free/InputHook,pactl/amixer + X11 + libffi 后端) | `assert_sound_etc.ahk` | 15 |
 | 语句/指令/类别/索引页代码形式 (If/Else/For/While/Switch/Try/Catch/Throw/Loop/Until/Break/Continue/Return/Block + Array/Map/Object/Buffer/Error/Number/String 类别 + `#Requires`/`#Warn` 等) | `assert_statements.ahk` | 19 |
 | 覆盖补全 (round-27:54 个未直引用函数中的 51 个 + String/Class/Menu/ObjBindMethod/Persistent/WinWaitNotActive 名称引用;含 Exit/Reload/Shutdown/InputBox 的"不可自动化"文档块) | `assert_misc_cov.ahk` | 75 |
-| **合计 (X11/headless)** | | **1047** |
+| **合计 (X11/headless)** | | **1053** |
 | Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端(含修饰键组合与鼠标按钮)、ToolTip xdg 窗口、X11 专属表面报错) | `assert_wayland.ahk` | 13 |
 | **合计 (Wayland)** | | **847** |
 | XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 247 |
