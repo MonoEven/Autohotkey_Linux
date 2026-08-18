@@ -25,8 +25,17 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          # GitHub-hosted runners intermittently hang contacting archive.ubuntu.com
+          # (the "noble-security InRelease" stall seen in core/asan jobs).  Force
+          # IPv4, bound apt timeouts, and retry the whole step so a transient
+          # apt-mirror flake cannot stall the pipeline.
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99ci-retry
+          echo 'Acquire::Retries "5";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
+          echo 'Acquire::http::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
+          echo 'Acquire::https::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
+          retry() { for i in 1 2 3 4 5; do "$@" && return 0; echo "apt retry $i"; sleep $((i*10)); done; return 1; }
+          retry sudo apt-get update
+          retry sudo apt-get install -y --no-install-recommends \
             cmake g++ ninja-build \
             libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev libxi-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev \
@@ -81,8 +90,17 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          # GitHub-hosted runners intermittently hang contacting archive.ubuntu.com
+          # (the "noble-security InRelease" stall seen in core/asan jobs).  Force
+          # IPv4, bound apt timeouts, and retry the whole step so a transient
+          # apt-mirror flake cannot stall the pipeline.
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99ci-retry
+          echo 'Acquire::Retries "5";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
+          echo 'Acquire::http::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
+          echo 'Acquire::https::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
+          retry() { for i in 1 2 3 4 5; do "$@" && return 0; echo "apt retry $i"; sleep $((i*10)); done; return 1; }
+          retry sudo apt-get update
+          retry sudo apt-get install -y --no-install-recommends \
             cmake g++ ninja-build \
             libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev libxi-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev \
