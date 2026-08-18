@@ -55,14 +55,16 @@ examples fall into three groups on Linux:</p>
 </ul>
 
 <h2>What works on Linux</h2>
-<p>All <b>327</b> built-in functions listed in the worklist are implemented
-(0 not implemented); 842 doc-check assertions pass under Xvfb (including 29
+<p>All <b>367</b> built-in functions listed in the worklist are implemented
+(3 not-implemented error paths: ComObjArray, TrayTip, TraySetIcon);
+1026 doc-check assertions pass under Xvfb (including 29
 for <code>DllCall</code> against native <b>.so</b> libraries and 18 for the
 D-Bus COM layer). The port has two display backends:</p>
 <ul>
   <li><b>X11 backend</b> (preferred when DISPLAY is set, including
     XWayland sessions): window management (Win*), controls, hotkeys via
-    XGrabKey, pixel/monitor access, dialogs, ToolTip, ImageSearch and
+    XGrabKey/XGrabButton (keyboard and mouse-button/wheel hotkeys),
+    pixel/monitor access, dialogs, ToolTip, ImageSearch and
     window shapes.</li>
   <li><b>Native Wayland backend</b> (used when no X display is available):
     xdg-shell windows, virtual keyboard/pointer input
@@ -96,28 +98,29 @@ D-Bus COM layer). The port has two display backends:</p>
     (terminal/X11 bell) work too. The tray icon (<code>TrayTip</code>) and
     compiled-script packaging are not available.</li>
   <li>CoordMode/SendMode semantics are honored; hotkeys work through
-    XGrabKey on X11/XWayland.</li>
+    XGrabKey (keys) and XGrabButton (mouse buttons/wheels) on X11/XWayland.
+    LoadPicture decodes BMP/ICO/PNG/GIF/CUR/JPEG/PPM.</li>
 </ul>
 <p>See <a href="https://github.com/MonoEven/Autohotkey_Linux/blob/linux-port/tests/doccheck/CHECK_REPORT.md">CHECK_REPORT.md</a>
 for the complete per-module report.</p>
 
 <h2>Latest release</h2>
 <p>The latest official release is
-<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.6</a>.
+<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.7</a>.
 Highlights of this release:</p>
 <ul>
-  <li>Coverage suite for the previously unasserted built-ins: 51 of the 54
-    functions with no direct test reference now have runtime assertions
-    (363/367 of all implemented functions are referenced directly in
-    executable test code; the remaining 4 — Exit/Reload/Shutdown/InputBox —
-    are documented as not automatable because they are destructive or
-    interactive).</li>
-  <li>ProcessSetPriority now uses the script's own PID when PIDOrName is
-    omitted, as documented.</li>
-  <li>FileAppend throws an OSError when the file cannot be opened for
-    writing (previously a silent no-op).</li>
-  <li>Doc-check: 994/994 assertions pass on both the normal and the ASan
-    builds; regression 26/26, Wayland 13/13, XWayland 235/235.</li>
+  <li>LoadPicture now decodes <b>GIF</b> (first frame; GCT/LCT palettes, GCE
+    transparency, interlace, hand-written LZW), <b>CUR</b> (ICONDIR type 2,
+    DIB shared with ICO) and <b>JPEG</b> (via libjpeg, baseline and
+    progressive) in addition to BMP/ICO/PNG/PPM.  Transparency maps to the
+    magenta sentinel like the other formats.</li>
+  <li><b>Mouse hotkeys</b> (XGrabButton): LButton/RButton/MButton/XButton1/
+    XButton2 and WheelUp/Down/Left/Right, with modifier combinations,
+    key-up variants, and deterministic passthrough for <code>~</code>/HotIf-false/
+    Off hotkeys (passive grab removed + XTEST re-injection; the server
+    swallows a press injected while the button is held).</li>
+  <li>Doc-check: 1026/1026 assertions pass on both the normal and the ASan
+    builds; regression 27/27, Wayland 13/13, XWayland 247/247.</li>
 </ul>
 
 <h2>Build and install</h2>

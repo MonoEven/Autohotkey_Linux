@@ -14,7 +14,7 @@ set -u
 REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$REPO_DIR" || exit 1
 
-VER="${1:-2.0.26-linux.6}"
+VER="${1:-2.0.26-linux.7}"
 ARCH=$(uname -m)
 case "$ARCH" in
   x86_64) ARCH=amd64 ;;
