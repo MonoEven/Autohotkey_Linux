@@ -1,9 +1,9 @@
 # AutoHotkey v2.0.26 Linux 移植 —— 模块验证矩阵
 
 > 对照 AutoHotkey v2 官方文档逐模块确认可用性。完整逐模块校验报告见
-> `tests/doccheck/CHECK_REPORT.md`(842/842 断言,普通 + ASan 双构建)。
-> 状态图例:✅ 已实现并有 .ahk 验证;⚠️ 部分实现;❌ 未实现(明确报错)。
-> GUI 类功能区分「有画面」(DISPLAY 可用,X11/WSLg/XFCE/XWayland)与「无画面」(headless)。
+> `tests/doccheck/CHECK_REPORT.md`（1053/1053 断言，普通 + ASan 双构建）。
+> 状态图例：✅ 已实现并有 .ahk 验证；⚠️ 部分实现/依赖外部工具；❌ 未实现（明确报错）。
+> GUI 类功能区分「有画面」(DISPLAY 可用，X11/WSLg/XFCE/XWayland) 与「无画面」(headless)。
 
 ## 1. 脚本与指令 (Scripts & Directives)
 
@@ -25,7 +25,7 @@
 | MsgBox / InputBox | ✅ | 有画面:真实 X11 对话框(按钮/超时/默认值);无画面:控制台/stdin |
 | Run / RunWait | ✅ | fork/exec;URL 走 xdg-open;WSL 下可启动 .exe |
 | Sleep / Exit / ExitApp | ✅ | 真实睡眠、退出码 |
-| Reload / Pause / Suspend | ✅ | 进程重启依赖 exec;线程状态切换 |
+| Reload / Pause / Suspend | ✅ | Reload 真重启(round-28,退出原因 Reload);线程状态切换 |
 | OnExit / OnError / OnClipboardChange | ✅ | 事件注册回调可执行 |
 | SetTimer | ✅ | 周期触发/Period 0 删除/默认 250ms |
 | **DllCall** | ✅ | **.so 动态库**(dlopen/dlsym + libffi):全类型、&Var 输出、HRESULT 报错(29 断言) |
@@ -56,18 +56,19 @@
 | 驱动 (Drive*/DriveEject/...) | ✅ | statvfs + /proc/mounts;设备操作按文档报错 |
 | 下载 (Download) | ✅ | libcurl,本地 HTTP 服务实测 |
 | 剪贴板 (A_Clipboard/ClipWait/ClipboardAll) | ✅ | X11 CLIPBOARD selection + Wayland wl_data_device;无显示时进程内回退 |
-| SoundBeep | ✅ | X11 Bell / 终端响铃 |
-| SoundPlay/SoundGet*/SoundSet* / TrayTip | ❌ | 未实现,明确报错 |
+| **SoundBeep / SoundPlay** | ✅ | 终端/X11 响铃等实现(aplay/paplay) |
+| SoundGet*/SoundSet* | ⚠️ | 依赖外部 `pactl`/`amixer`,否则 OSError |
+| TrayTip / TraySetIcon / ComObjArray | ❌ | Linux 无托盘/SafeArray,有意未实现,明确报错 |
 
-## 5. 键盘 / 鼠标 / 热键 (Input)
+## 5. 键盘 / 鼠标 / 热键 / 热字串 / InputHook (Input)
 
 | 函数 | 状态 | 说明 |
 |---|---|---|
 | Send/SendEvent/SendInput/SendPlay/SendText | ✅ | X11:XTEST;Wayland:虚拟键盘/指针(40 断言,以 xkeycap 实测) |
 | Click/Mouse*/KeyWait/GetKeyState/BlockInput | ✅ | X11 实测;锁键开关、阻断语义 |
-| Hotkey / HotIf | ✅ | X11/XWayland:XGrabKey(10 断言,以 Send 触发实测) |
-| Hotstring | ❌ | 未实现(无系统级钩子),明确报错 |
-| InputHook | ❌ | 未实现,明确报错 |
+| Hotkey / HotIf | ✅ | X11/XWayland:XGrabKey(10 断言,以 Send 触发实测);**鼠标热键**(round-30,XGrabButton:左/右/中/X1/X2/滚轮)、**左右修饰键 `<^a`/`>^a` 与通配 `*`**(round-31)、哈希索引、动态 modifier map、BadAccess 冲突报错、Off/透传(round-29) |
+| Hotstring | ✅ | **round-32 真实触发**:全键捕获引擎 hold/flush/match,支持 C/*/O/X 选项、大小写跟随、HotIf;触发词抑制并发送替换(或回调);xkeycap 独立客户端验证(11 断言) |
+| InputHook | ✅ | **round-33 按键采集核心**:捕获引擎实时喂键——缓冲收集、结束键(EndChar/EndKey)、匹配表(Match)、退格撤销、输入抑制(6 断言);OnChar/OnKeyDown 通知回调待接入 |
 
 ## 6. GUI(有画面 / 无画面)
 
@@ -75,7 +76,7 @@
 |---|---|---|---|
 | MsgBox / InputBox / FileSelect / DirSelect | ✅ 真实 X11 对话框 | ✅ 控制台/stdin 回退 | 测试钩子 AHK_*_AUTOCLOSE_MS |
 | ToolTip | ✅ X11 窗口 | ❌ 报错 | 同索引更新复用窗口(5 断言) |
-| Gui()/GuiControl 对象 | ✅ GTK3 窗口 | ❌ 报错 | Add*/Text/Edit/Button/CheckBox/Radio/DDL/Combo/ListBox/LV/TV/Slider/Progress/UpDown/Tab/MonthCal/StatusBar/GroupBox/Link/Pic;Value/Text/Submit/OnEvent/Move/GetPos/Opt 等(26 断言) |
+| Gui()/GuiControl 对象 | ✅ **GTK3 窗口** | ❌ 报错 | Add*/Text/Edit/Button/CheckBox/Radio/DDL/Combo/ListBox/LV/TV/Slider/Progress/UpDown/Tab/MonthCal/StatusBar/GroupBox/Link/Pic;Value/Text/Submit/OnEvent/Move/GetPos/Opt 等(26 断言) |
 | Menu / MenuBar | ✅ GTK3 菜单 | ❌ 报错 | Menu/MenuBar:Add/Insert/Delete/Check/Enable/Rename/SetIcon/Show 弹窗 + Gui.MenuBar |
 | ImageSearch | ✅ X11 (XGetImage) | ❌ 报错 | 命中/未命中/容差/反向搜索 |
 | WinSetRegion | ✅ X11 (XShape) | ❌ 报错 | 窗口形状(19 断言) |
@@ -103,14 +104,15 @@
 | ComObject / ComObjGet / ComObjActive | ✅ | **D-Bus 服务代理**(18 断言,真实 org.freedesktop.DBus 调用) |
 | ComValue / ComObjType / ComObjValue / ComObjFlags | ✅ | 标量包装(I2/I4/R4/R8/BSTR/BOOL/UI1/I8/UI8) |
 | ComCall | ✅ | 走 DllCall 实现 |
-| ComObjQuery / ComObjConnect / ComObjArray | ❌ | Windows COM 接口不存在,明确报错 |
+| ComObjQuery / ComObjConnect | ⚠️ | Windows COM 接口不存在,按文档报错 |
+| ComObjArray | ❌ | Windows SafeArray,有意未实现,明确报错 |
 
 ## 汇总
 
-- **868/868** doc-check 断言通过(普通 + ASan 双构建,含 Xvfb 窗口/输入/控件/像素/定时器/热键/图像/形状/GUI/菜单实测)
-- **327/327** 内置函数已实现(0 未实现,见 `tests/doccheck/worklist.tsv`)
-- **26/26** headless 回归测试;Wayland 13 项 + XWayland 229 项独立套件
-- 未实现(明确报错):SoundPlay/Sound*、TrayTip、Hotstring、InputHook、OnMessage/SendMessage/PostMessage、ComObjQuery/Connect/Array、ActiveX(Gui.AddActiveX)、纯 Wayland 窗口枚举
+- **1053/1053** doc-check 断言通过（普通 + ASan 双构建，含 Xvfb 窗口/输入/控件/像素/定时器/热键/热字串/InputHook/图像/形状/GUI/菜单实测）
+- **367/370** 内置函数已实现（3 个有意未实现:ComObjArray、TrayTip、TraySetIcon，见 `tests/doccheck/worklist.tsv`）
+- **27/27** headless 回归测试；Wayland 13 项 + XWayland 247 项独立套件
+- 未实现（有意、明确报错）:ComObjArray、TrayTip、TraySetIcon、OnMessage/SendMessage/PostMessage、纯 Wayland 窗口枚举/hotstring/InputHook（需 XWayland）；SoundGet*/SoundSet* 依赖 pactl/amixer
 - 完整逐模块报告:`tests/doccheck/CHECK_REPORT.md`
 
 > 本矩阵为现状快照;状态随移植进度更新,以 CHECK_REPORT.md 与 worklist.tsv 为准。

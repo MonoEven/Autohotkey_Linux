@@ -11,22 +11,39 @@ hotkeys.
 - **Upstream**: https://www.autohotkey.com/ (the original Windows project;
   this repository is a fork of the v2.0.26 release with a Linux port of the
   interpreter on the `linux-port` branch).
+- **Latest build**: `v2.0.26-linux.10` (see
+  [Releases](https://github.com/MonoEven/Autohotkey_Linux/releases)).
+  Doc-check **1053/1053** (regular + ASan), regression 27/27,
+  Wayland 13/13, XWayland 247/247.
 
 ## Features ##
 
 - **Full X11 backend** (preferred when `DISPLAY` is set, including XWayland
   sessions): window management (`Win*`), controls (`Control*`), hotkeys
-  (`XGrabKey`), pixel/monitor access (`PixelGetColor`, `PixelSearch`,
+  (`XGrabKey` — keyboard + mouse buttons, `~`/Off/HotIf pass-through,
+  BadAccess conflict reporting, left/right modifiers, wildcard), **hotstring
+  expansion** (typed-text capture engine, all core options), **InputHook
+  live key capture**, pixel/monitor access (`PixelGetColor`, `PixelSearch`,
   `Monitor*`, `ImageSearch`), dialogs (`MsgBox`, `InputBox`,
-  `FileSelect`/`DirSelect`), `ToolTip`, window shapes (`WinSetRegion`) and
-  the whole doc-checked v2 API surface — **842/842** assertions pass under
-  Xvfb (29 of them exercise `DllCall`).
+  `FileSelect`/`DirSelect`), `ToolTip`, window shapes (`WinSetRegion`),
+  GTK3 `Gui`/`Menu` and the whole doc-checked v2 API surface —
+  **1053/1053** assertions pass under Xvfb.
 - **Native Wayland backend** (used when no X display is available):
   xdg-shell windows, virtual keyboard/pointer input
   (`zwp_virtual_keyboard_v1` / `zwlr_virtual_pointer_manager_v1`),
   modifier-combo hotkey-style bindings and screen capture via
-  `wlr-screencopy` — **13** Wayland + **229** XWayland assertions pass
+  `wlr-screencopy` — **13** Wayland + **247** XWayland assertions pass
   under sway.
+- **Hotstring** (round-32): real expansion of `Hotstring()` from the typed
+  stream — the all-keys capture engine holds trigger prefixes and, on a
+  full match (end char or `*`), suppresses the trigger and sends the
+  replacement (or runs the `X`-option callback).  Options `C`/`*`/`O`/`X`,
+  case conforming, `HotIf` criteria; verified against the independent
+  `xkeycap` client.
+- **InputHook** (round-33): live key capture while a hook is `InProgress` —
+  buffer fill, single-char/named end keys (`EndChar`/`EndKey`), match list,
+  backspace undo, input suppression; `OnChar`/`OnKeyDown` notifications
+  still pending the unified event-stream work.
 - **System clipboard**: `A_Clipboard` integrates with the desktop
   clipboard (X11 CLIPBOARD selection on X11/XWayland, wl_data_device on
   Wayland; process-internal fallback headless), verified cross-process
@@ -40,10 +57,14 @@ hotkeys.
   method calls and property access map to D-Bus; `ComValue` wraps typed
   values (18 doc-check assertions).  Windows COM interfaces do not exist
   on Linux.
-- **327/327** built-in functions implemented (0 not implemented); see
-  `tests/doccheck/CHECK_REPORT.md` for the per-module report.
+- **367/370** built-in functions implemented (3 are intentionally
+  not-implemented with a clear error: `ComObjArray`, `TraySetIcon` and
+  `TrayTip`); see `tests/doccheck/CHECK_REPORT.md` for the per-module
+  report and `tests/doccheck/worklist.tsv` for the per-function status.
 - **CI**: GitHub Actions builds both the regular and ASan binaries and
-  runs the full suite (headless, Xvfb, Wayland, XWayland) on every push.
+  runs the full suite (headless, Xvfb, Wayland, XWayland) on every push;
+  dependency install is hardened against runner apt-mirror stalls
+  (IPv4/timeouts/retries + azure.archive.ubuntu.com fallback).
 
 ## Install ##
 
@@ -73,9 +94,10 @@ ahk your-script.ahk
 ## Build from source ##
 
 Requirements: CMake, a C++ compiler, X11 development headers
-(`libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev`),
+(`libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev libxi-dev`),
 Wayland development headers (`libwayland-dev wayland-protocols`),
-`libxkbcommon-dev`, `libffi-dev` (DllCall) and `libdbus-1-dev` (COM/D-Bus).
+`libxkbcommon-dev`, `libffi-dev` (DllCall), `libdbus-1-dev` (COM/D-Bus) and
+`libgtk-3-dev` (GUI).
 
 ```bash
 git clone --branch linux-port https://github.com/MonoEven/Autohotkey_Linux.git
@@ -102,22 +124,27 @@ The docs live in `docs-v2/`. The v1-to-v2 change documentation is omitted
 because v1 is not supported by this port; see
 [docs-v2/docs/linux-port.htm](docs-v2/docs/linux-port.htm) for the Linux
 port overview (backends, differences from Windows, build/install notes).
+The language switcher on the docs site offers English and Chinese only
+(a maintained Chinese overview is at `docs-v2/docs/zh.htm`); it never
+leaves this fork.
 
 ## Differences from Windows AutoHotkey ##
 
-- No GUI windows (`Gui`/`GuiControl`/`Menu` objects are Windows-only and
-  are not implemented); use text-based tools or external GUIs.
+- **GUI**: `Gui`/`GuiControl`/`Menu` are implemented over **GTK3** and work
+  on X11/XWayland (they need a display; pure headless sessions raise a
+  clear error).
 - COM is implemented over **D-Bus** (no IUnknown/IDispatch/SafeArray
-  pointers, no COM events); `ComObjQuery`/`ComObjConnect`/`ComObjArray`
-  raise an error.
+  pointers, no COM events); `ComObjArray` raises an error.
 - No Windows registry, no Win32 messages to other windows
   (`SendMessage`/`PostMessage`/`OnMessage` are not available).
 - `DllCall` loads native **.so** shared objects — Windows DLLs are not
   loadable.
-- `Sound*`, tray icon and compiled-script (`.exe`) packaging are not
-  available.
-- Hotkeys work through `XGrabKey` on X11/XWayland; in pure Wayland they
-  are unavailable (no global-hotkey protocol) — use XWayland for those.
+- **Sound**: `SoundBeep` / `SoundPlay` are implemented (`aplay`/`paplay`);
+  `SoundGet*`/`SoundSet*` need `pactl`/`amixer` installed.  There is no
+  tray icon, so `TrayTip` / `TraySetIcon` raise a clear error.
+- Hotkeys, hotstrings and InputHook capture work through **XGrabKey** +
+  the typed-text capture engine on X11/XWayland; in pure Wayland there is
+  no global-hotkey input protocol, so those need an XWayland session.
 
 ## Support ##
 

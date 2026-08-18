@@ -1,7 +1,7 @@
 # AutoHotkey Linux 化迁移目标
 
 > 目标随进展持续更新。基线：AutoHotkey v2.0.26，分支：`linux-port`。
-> **状态：全部核心目标已完成并发布（最新 v2.0.26-linux.7：round-30 补 GIF/CUR/JPEG 图像解码与鼠标热键，doc-check 1026/1026，回归 27/27，Wayland 13/13，XWayland 247/247）。**
+> **状态：全部核心目标已完成并发布（最新 v2.0.26-linux.10：round-32 热字串真实现 + round-33 InputHook 实时按键采集，doc-check 1053/1053，回归 27/27，Wayland 13/13，XWayland 247/247，pages 站点语言/安装说明已修复）。**
 
 ## 总目标
 
@@ -22,15 +22,15 @@
 - [x] 核心模块（script/var/util/TextIO/error 等）通过 Linux 编译
 - [x] 提供 Linux 命令行入口 `main()`，替代 `_tWinMain`（含 `--version`/`--help`）
 - [x] 能解析并执行不依赖 GUI/热键的脚本（MsgBox/变量赋值/算术表达式）
-- [x] 建立回归测试 `tests/run_tests.sh`（26 项，常规与 ASan 构建全部通过）
+- [x] 建立回归测试 `tests/run_tests.sh`（27 项，常规与 ASan 构建全部通过）
 - [x] 建立 CI（`.github/workflows/ci.yml`，常规 + ASan 双构建 + 全量 doc-check + Wayland，见 M5）
 
 ### M3：平台抽象与 X11 后端 ✅
 - [x] 平台层：未采用 `PlatformAbstraction.h` 抽象类，而是按模块直接实现 Linux 后端
       （`source/linux/core/core_*_linux.cpp`），效果等同且更贴合移植版结构
-- [x] 实现 X11 后端（Xlib + XTest + XRandR/Xinerama + XGrabKey 热键）
+- [x] 实现 X11 后端（Xlib + XTest + XRandR/Xinerama + XGrabKey 热键 + XGrabButton 鼠标热键）
 - [x] 热键、Send、窗口枚举/操作、剪贴板、像素/显示器、对话框、ToolTip、
-      ImageSearch、WinSetRegion 全部可用（doc-check **868/868** 断言通过，
+      ImageSearch、WinSetRegion 全部可用（doc-check **1053/1053** 断言通过，
       含 DllCall 29 项、D-Bus COM 18 项与 GTK3 GUI/Menu 26 项）
 
 ### M4：GUI 与系统集成 ✅（按 Linux 实际情况落地）
@@ -40,7 +40,7 @@
 - [x] **COM：改用 D-Bus 实现**（`core_com_dbus_linux.cpp`）：`ComObject("service")`
       创建总线服务代理，方法调用/属性访问映射 D-Bus，`ComValue` 包装类型化值；
       `ComObjGet`/`ComObjType`/`ComObjValue`/`ComObjFlags` 可用，
-      `ComObjQuery`/`ComObjConnect`/`ComObjArray` 按文档报错（18 项断言）
+      `ComObjQuery`/`ComObjConnect` 按文档报错、`ComObjArray` 有意未实现（18 项断言）
 - [x] **DllCall：实现 .so 动态库调用**（`core_dllcall_linux.cpp`）：
       dlopen/dlsym + libffi，全类型支持、`&Var` 输出参数、HRESULT 报错（29 项断言）
 - [x] **复杂 GUI：GTK3 后端**（`source/linux/gui/script_gui_linux.cpp`）：
@@ -50,29 +50,27 @@
       `GetPos`/`Opt` 可用。`Menu`/`MenuBar` 由 `script_menu_linux.cpp` 实现；
       metadata 成员调用以 libffi 替代 Windows DynaCall（26 项 Xvfb 断言）
 - [x] 原生 Wayland 后端：xdg-shell 窗口、虚拟键盘/指针、wlr-screencopy 抓屏
-      （无 X11 时亦可运行；XWayland 回退 235 断言 + 纯 Wayland 13 断言通过）
+      （无 X11 时亦可运行；XWayland 回退 247 断言 + 纯 Wayland 13 断言通过）
 
 ### M5：完善与发布 ✅
-- [x] 移植测试用例：27 项回归 + 1026 项 doc-check（Xvfb，含 GUI/未移植错误行为/覆盖补全断言；round-30 补 GIF/CUR/JPEG 图像与鼠标热键断言）
+- [x] 移植测试用例：27 项回归 + 1053 项 doc-check（Xvfb，含 GUI/未移植错误行为/覆盖补全断言）
       + Wayland/XWayland 套件
 - [x] Wayland 兼容性：原生 Wayland 后端 + XWayland 回退（sway headless 验证）
 - [x] 打包：`tools/linux/pack.sh` 生成 **tar.gz + .deb**；CLI 安装器
       `install.sh` 与 GUI 安装器 `install-gui.sh`（zenity/yad）
-- [x] 发布：**Release v2.0.26-linux.1**（含两个安装包资产）；GTK3 GUI 落地后
-      打包 **v2.0.26-linux.2**（tar.gz + .deb，依赖补 libgtk-3-0/libdbus-1-3/libffi8）；
-      本轮（Sound*/CaretGetPos/CallbackCreate+Free/InputHook + 语句/指令/类别/索引页
-      代码形式校验，903 项 doc-check 双构建绿）发布 **v2.0.26-linux.3**；
-      审计后补齐（Tray*/Send 崩溃回归，907 项 doc-check）**已在 GitHub 发布
-      v2.0.26-linux.3 Release**（此前 GitHub 停留在 .1）；
-      再补齐（GuiFromHwnd 反查 + ICO/PNG 解码，919 项 doc-check）；
-      覆盖补全（round-27：`assert_misc_cov` 75 断言，54 个未直引用函数中的 51 个
-      真实调用 + 4 个"不可自动化"文档化，代码级直引用 313→363/367，
-      994 项 doc-check 双构建绿）——**发布 v2.0.26-linux.6（Latest）**，
-      清理旧 Releases 后以英文介绍发布正式版；pages 站点已重新部署
+- [x] 发布与清理：历经 **v2.0.26-linux.1/.2/.3**（归档）→ **.4/.5**（归档）→
+      **linux.6**（覆盖补全，994 doc-check，归档）→ **linux.7**（Reload + 热键审计第一批 +
+      GIF/CUR/JPEG 图像 + 鼠标热键，1026 doc-check）→ **linux.8**（round-31 左右/通配/哈希/XI2，
+      1036 doc-check，归档）→ **正式版 linux.9**（round-32 热字串真实现 + 文档站修复，
+      1047 doc-check；清理旧包，1→8 全部更新点汇总）→ **linux.10**（round-33 InputHook
+      实时按键采集，1053 doc-check）；旧包已从 Release 清理，latest 收敛为 linux.10
 - [x] 文档：官方 v2 文档镜像重建为 Linux 移植版（删除 v1 迁移内容，
       新增 linux-port.htm；DllCall/COM 页面含 Linux 可运行示例；
       25 个平台专属页面标注 Linux note），GitHub Pages 发布：
       https://monoeven.github.io/Autohotkey_Linux/
+- [x] pages 站点修复：语言切换仅中英文且不跳出本站（删除指向第三方镜像站点的链接）、
+      新增随移植版维护的中文页 `docs-v2/docs/zh.htm`、安装说明改为 Linux 实际安装方式
+      （apt .deb / tar.gz + install.sh / 源码构建）
 
 ## 当前推进重点
 
@@ -80,22 +78,27 @@
 
 - **语言**：仅 AutoHotkey v2（v1 语法不支持，v1 迁移文档已从站点移除）
 - **后端**：X11（含 XWayland）优先；无 X11 时原生 Wayland
-- **函数**：367 个函数已实现；本轮补齐 Sound*/CaretGetPos/InputHook/
-      CallbackCreate+Free。其余 6 个（ComObjArray/ComObjConnect/ComObjQuery
-      等 D-Bus/COM 边界 + TrayTip/TraySetIcon 无托盘）抛明确错误
-      （见 `tests/doccheck/worklist.tsv`）；
-      其中 **DllCall** 调用 .so 动态库（dlopen/dlsym+libffi，29 项断言）、
-      **COM** 映射到 D-Bus（ComObject/ComValue/ComObj*，18 项断言）
-- **文档**：`tests/doccheck/CHECK_REPORT.md` 为完整逐模块校验报告；
-      示例按三类处理（原样运行/平台适配/不可用标注），
-      DllCall/ComObject 页面含已实测的 Linux 可运行示例，
-      示例审计工具在 `tests/doccheck/verify_examples*.py`
+- **函数**：**367/370** 个函数已实现；3 个有意未实现（ComObjArray/TrayTip/TraySetIcon）
+      抛明确错误（见 `tests/doccheck/worklist.tsv`）；完整逐模块校验见
+      `tests/doccheck/CHECK_REPORT.md`
+- **热键/热字串/InputHook**：
+  - 热键（round-29~31）：独立热键 X 连接、GrabSpec 差量同步 + 解除抓取、条件透传、
+    BadAccess 冲突报错、动态 modifier map、XKB auto-repeat、Wayland 键码表、
+    鼠标热键（XGrabButton）、左右修饰键与通配 `*`、哈希索引、XI2 raw 观察器
+  - **热字串**（round-32）：真实触发（全键捕获引擎，C/*/O/X 选项、大小写跟随、
+    HotIf 条件；触发词抑制并发送替换/回调），xkeycap 独立客户端验证
+  - **InputHook 采集**（round-33）：捕获引擎实时喂键（缓冲/结束键 EndChar/EndKey/
+    匹配表 Match/退格撤销/输入抑制）；OnChar/OnKeyDown 通知回调待接入
+  - Reload 真重启（round-28，退出原因 Reload，回归 t26_reload）
+- **CI**：GitHub Actions 常规 + ASan 双构建 + 依赖安装韧性加固（apt 重试/超时/
+      azure 镜像回退，应对 runner 端 apt 源抖动）
 
 ## 后续增强（已完成）
 
 - [x] **GitHub Actions CI**（`.github/workflows/ci.yml`）：常规 + ASan 双构建，
       跑 `tests/run_tests.sh`、`run_check.sh --xvfb`、`wayland_run.sh`
-      （纯 Wayland + XWayland），package job 构建并检查 tar.gz/.deb/AppImage/rpm
+      （纯 Wayland + XWayland），package job 构建并检查 tar.gz/.deb/AppImage/rpm；
+      doc-check 去掉 continue-on-error；依赖安装抗 apt 镜像故障
 - [x] **更多发行版包**：`tools/linux/pack-appimage.sh`（AppImage）、
       `pack-rpm.sh`（rpm）、`PKGBUILD`（Arch）
 - [x] **系统剪贴板**：`core_clipboard_linux.cpp` —— X11 CLIPBOARD selection
@@ -117,8 +120,28 @@
       detectable auto-repeat、Wayland 键码显式表；`assert_hotkey_pt`
       独立前台客户端测试（抑制/透传/解除抓取/HotIf-false）；CI 去掉
       doc-check 的 continue-on-error
+- [x] **鼠标热键**（round-30）：XGrabButton 左/右/中/X1/X2/滚轮，`~`/HotIf-false/Off
+      （解除抓取 + XTEST 重注入；按住时注入 press 会被服务器吞掉）确定性透传
+- [x] **图像格式补齐**（round-30）：GIF（手写 LZW）/CUR/JPEG（libjpeg）解码，
+      连同既有 ICO/PNG/BMP/PPM
+- [x] **左右修饰键 + 通配 + 哈希 + XI2 观察器**（round-31）：`<^a`/`>^a`（XI2 raw
+      事件观察器判侧，抓取只匹配掩码、事件按物理键码判侧，错侧透传）、通配 `*`
+      （展开到主修饰组合全集）、`assert_hotkey_lr`/哈希索引唯一决议（1000 热键）
+- [x] **热字串触发**（round-32）：全键捕获引擎 hold/flush/match，
+      C/*/O/X 选项、大小写跟随、HotIf、端字符；XSendEvent 直投焦点窗口不重入
+      抓取；`assert_hotstring` 11 断言（xkeycap 独立客户端）
+- [x] **InputHook 按键采集**（round-33）：捕获引擎实时喂键——缓冲/结束键/
+      匹配/上限/退格撤销/输入抑制；`CollectChar` 补全上游逻辑、`GetEndReason`
+      返回 EndChar；`assert_inputhook` 6 断言（xkeycap 独立客户端）
+- [x] **pages 站点维护**：语言切换仅中英文 + 中文页 `docs/zh.htm` + 安装指南
+      改为 Linux 实际方式（`docs/howto/Install.htm`）
 
 ## 后续候选增强（未实现）
 
+- [ ] InputHook OnChar/OnKeyDown 通知回调接入（统一事件流，native 派发现场调用
+      脚本回调需准线程启动；当前为文档化限制）
+- [ ] 扫描码热键与 `A & B` 前缀（需按键缓冲状态机/统一事件流；注册时已能力校验拒绝）
+- [ ] XDG Global Shortcuts Portal（Wayland 桌面全局热键协议，能力评估后实施）
+- [ ] evdev/uinput 低层输入 broker（绕过 X 抓取的独立输入源）
 - [ ] 输入法实际集成（Phase 1：XIM 事件过滤 + IME 状态变量）
 - [ ] Wayland text-input（zwp_text_input_v3）Send 文本投递
