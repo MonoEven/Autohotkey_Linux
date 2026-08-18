@@ -1,7 +1,7 @@
 # AutoHotkey Linux 化迁移目标
 
 > 目标随进展持续更新。基线：AutoHotkey v2.0.26，分支：`linux-port`。
-> **状态：全部核心目标已完成并发布（v2.0.26-linux.1，含 GTK3 GUI 的 v2.0.26-linux.2 已打包）。**
+> **状态：全部核心目标已完成并发布（最新 v2.0.26-linux.7：round-30 补 GIF/CUR/JPEG 图像解码与鼠标热键，doc-check 1026/1026，回归 27/27，Wayland 13/13，XWayland 247/247）。**
 
 ## 总目标
 
