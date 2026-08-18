@@ -1,4 +1,4 @@
-﻿#!/bin/sh
+#!/bin/sh
 # AutoHotkey v2 Linux port - build release packages.
 #
 # Usage: pack.sh [version]
