@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta name="description" content="AutoHotkey v2 Linux 移植版（中文页）：功能、安装、与 Windows 的差异。" />
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>AutoHotkey v2 Linux 移植版（中文）</title>
+<link href="static/theme.css" rel="stylesheet" type="text/css" />
+<link href="static/dark.css" rel="stylesheet" type="text/css" media="(prefers-color-scheme: dark)" id="dark_css" />
+</head>
+<body>
+<h1>AutoHotkey v2 Linux 移植版</h1>
+
+<p>本页维护 AutoHotkey v2.0.26 Linux 移植版的<strong>中文</strong>概览，随移植版同步更新。
+完整的英文手册参见
+<a href="index.htm">文档首页</a> 与 <a href="linux-port.htm">Linux 移植版总览（英文）</a>。
+源码与问题反馈：
+<a href="https://github.com/MonoEven/Autohotkey_Linux">MonoEven/Autohotkey_Linux</a>（分支 <code>linux-port</code>）。</p>
+
+<h2>这是什么</h2>
+<p>AutoHotkey v2 在 Linux 上的移植版：解释器与官方 v2.0.26 保持语法一致（<strong>仅支持 v2</strong>，
+不支持 v1 语言）。官方文档集中除 Windows 专属部分外基本适用；本移植版的差异与平台说明见
+<a href="linux-port.htm">英文总览</a>。包含三个后端：<strong>X11</strong>（首选，含 XWayland）、
+<strong>原生 Wayland</strong>（无 X 显示时）。</p>
+
+<h2>安装</h2>
+<p>从 <a href="https://github.com/MonoEven/Autohotkey_Linux/releases">Releases</a>
+下载最新的 <code>autohotkey-linux-&lt;版本&gt;-amd64.deb</code> 或
+<code>.tar.gz</code>：</p>
+<pre># Debian/Ubuntu：
+sudo apt install ./autohotkey-linux-&lt;版本&gt;-amd64.deb
+ahk your-script.ahk
+
+# 通用 tar 包（解压后运行内置安装器）：
+tar xzf autohotkey-linux-&lt;版本&gt;-amd64.tar.gz
+cd autohotkey-linux
+./tools/linux/install-gui.sh            # 图形向导（zenity/yad）
+./tools/linux/install.sh --prefix ~/.local   # 或系统级安装（需 root）
+
+# 或从源码构建：
+git clone --branch linux-port https://github.com/MonoEven/Autohotkey_Linux.git
+cd Autohotkey_Linux
+cmake -S . -B build-core
+cmake --build build-core -j$(nproc)
+build-core/source/linux/core/ahk_core your-script.ahk</pre>
+<p>安装器会放置 <code>ahk</code> 启动器、解释器 <code>ahk_core</code> 与文档。
+详细步骤见 <a href="howto/Install.htm">Install（英文）</a>。</p>
+
+<h2>能做什么（X11 / XWayland）</h2>
+<ul>
+  <li>热键 <code>Hotkey()</code> / <code>#HotIf</code>：键盘 + 鼠标（左/右/中/X1/X2 与滚轮）、
+    左右修饰键（<code>&lt;^a</code>/<code>&gt;^a</code>）、通配 <code>*</code>、Off/Suspend 解绑、
+    BadAccess 冲突报告、<code>~</code>/HotIf-false 透传。</li>
+  <li>热字串 <code>Hotstring()</code>：键入触发真实现（C/*/O/X 选项、大小写跟随、HotIf）。</li>
+  <li>Send/SendText/Click/Mouse*/KeyWait/BlockInput、剪贴板、像素/显示器、对话框、ToolTip、
+    ImageSearch（BMP/ICO/PNG/GIF/CUR/JPEG/PPM 解码）等。</li>
+  <li><code>ComObject</code>（D-Bus）、<code>DllCall</code>（.so + libffi）、GTK3 <code>Gui</code>。</li>
+</ul>
+<p>原生 Wayland 模式支持窗口、虚拟键盘/指针、抓屏；窗口管理与全局热键需 XWayland。</p>
+
+<h2>与 Windows 的差异（要点）</h2>
+<ul>
+  <li>无 Win32 注册表/消息；<code>RunAs</code> 存储凭据但 Run 报文档化错误。</li>
+  <li><code>TrayTip</code>/<code>TraySetIcon</code>、<code>ComObjArray</code> 等按文档报未移植错误。</li>
+  <li>滚动/图形界面控件部分属性为 GTK 子集；详见英文总览。</li>
+</ul>
+
+<h2>验证</h2>
+<p>doc-check <strong>1047/1047</strong>（core+ASan）、回归 27/27、Wayland 13/13、
+XWayland 247/247；CI（core/ASan/package）全绿。</p>
+
+<p style="font-size:85%">软件许可：<a href="license.htm">GNU GPL</a> · <a href="index.htm">English docs</a></p>
+</body>
+</html>
