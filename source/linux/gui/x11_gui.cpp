@@ -80,6 +80,8 @@ struct DialogContext
 	XFontStruct *font;
 	int font_height;
 	int win_w, win_h;
+	// Origin of the message text (restored on every Expose repaint).
+	int text_x, text_y;
 	const wchar_t *title;
 	const wchar_t *text; // Already wrapped into lines separated by '\n'.
 	Button buttons[4];
@@ -270,7 +272,12 @@ int RunX11Dialog(DialogContext &ctx, double aTimeout)
 			{
 			case Expose:
 				if (ev.xexpose.count == 0)
+				{
+					// A real WM repaints the background on map, discarding the
+					// pre-map text draw; restore both text and buttons here.
+					DrawTextWrapped(ctx, ctx.text_x, ctx.text_y);
 					DrawButtons(ctx);
+				}
 				break;
 			case ButtonPress:
 				{
@@ -331,7 +338,12 @@ int RunX11Dialog(DialogContext &ctx, double aTimeout)
 			{
 			case Expose:
 				if (ev.xexpose.count == 0)
+				{
+					// A real WM repaints the background on map, discarding the
+					// pre-map text draw; restore both text and buttons here.
+					DrawTextWrapped(ctx, ctx.text_x, ctx.text_y);
 					DrawButtons(ctx);
+				}
 				break;
 			case ButtonPress:
 				{
@@ -393,7 +405,12 @@ int RunX11Dialog(DialogContext &ctx, double aTimeout)
 			{
 			case Expose:
 				if (ev.xexpose.count == 0)
+				{
+					// A real WM repaints the background on map, discarding the
+					// pre-map text draw; restore both text and buttons here.
+					DrawTextWrapped(ctx, ctx.text_x, ctx.text_y);
 					DrawButtons(ctx);
+				}
 				break;
 			case ButtonPress:
 				{
@@ -558,9 +575,12 @@ int ShowMessageBoxX11(const wchar_t *aText, const wchar_t *aTitle, UINT aType, d
 	WideToNarrow(ctx.title, title_narrow, sizeof(title_narrow));
 	XStoreName(dpy, ctx.win, title_narrow);
 
-	// Pre-draw text so the first expose shows everything.
+	// Pre-draw text; the Expose handler restores it (and the buttons) on
+	// every repaint, because a WM clears the pre-map draw once mapped.
+	ctx.text_x = margin;
+	ctx.text_y = margin + ctx.font->ascent;
 	XClearWindow(dpy, ctx.win);
-	DrawTextWrapped(ctx, margin, margin + ctx.font->ascent);
+	DrawTextWrapped(ctx, ctx.text_x, ctx.text_y);
 
 	int result = RunX11Dialog(ctx, aTimeout);
 

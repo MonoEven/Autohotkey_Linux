@@ -11,9 +11,11 @@
 //     next timer is due (bounded at 50 ms) and fires due timers until
 //     ExitApp is requested.
 //   - ToolTip: an override-redirect X11 window per tooltip index; the text
-//     is the window title (no toolkit text rendering on X11); blank/omitted
-//     Text hides the tooltip and returns 0; otherwise the HWND is returned
-//     (docs).  X/Y honour CoordMode ToolTip.
+//     is drawn INTO the window body with the core font (the title is also
+//     set, e.g. for accessibility).  Drawing happens pre-map so a window
+//     manager cannot clear it (an override-redirect window is not repainted
+//     by the WM); blank/omitted Text hides the tooltip and returns 0;
+//     otherwise the HWND is returned (docs).  X/Y honour CoordMode ToolTip.
 #include "../../stdafx.h"
 #include "../../application.h"
 #include "../../script.h"
@@ -310,11 +312,18 @@ BIF_DECL(BIF_Linux_ToolTip)
 	Window tip = sTips[index] ? (Window)(intptr_t)sTips[index] : 0;
 	if (!tip)
 	{
-		// Estimate a size from the text length (no text metrics without a
-		// toolkit): ~8 px per character, ~20 px per line.
+		// Size the window to fit the text (~8 px/char, core-font line height).
+		XFontStruct *szfont = XLoadQueryFont(d, "fixed");
+		if (!szfont)
+			szfont = XLoadQueryFont(d, "9x15");
+		int line_h = szfont ? szfont->ascent + szfont->descent : 16;
 		size_t len = _tcslen(text);
+		int lines = 1;
+		for (const TCHAR *p = text; *p; ++p)
+			if (*p == L'\n')
+				++lines;
 		unsigned w = (unsigned)(len * 8 + 16);
-		unsigned h = 40;
+		unsigned h = (unsigned)(10 + lines * line_h + 10);
 		if (w < 120)
 			w = 120;
 		if (w > 600)
@@ -325,8 +334,52 @@ BIF_DECL(BIF_Linux_ToolTip)
 		attrs.override_redirect = True;
 		attrs.save_under = True;
 		XChangeWindowAttributes(d, tip, CWOverrideRedirect | CWSaveUnder, &attrs);
+		// No background repaint: otherwise the server white-washes the window
+		// on map/expose, erasing our pre-drawn text (the same class of bug as
+		// the MsgBox expose loss, just server-side for an override-redirect
+		// tooltip).  With background None the drawn content is retained.
+		XSetWindowBackgroundPixmap(d, tip, None);
+		if (szfont)
+			XFreeFont(d, szfont);
 		sTips[index] = (void *)(intptr_t)tip;
 	}
+	// Draw the text INTO the window body (otherwise the tooltip appears as a
+	// blank box on real desktops, since only the title was set).  Pre-map draw
+	// persists: an override-redirect window is not repainted by the WM.
+	// Residual limitation: an expose of an already-mapped tooltip is not
+	// repainted (no event pump for it).
+	GC gc = XCreateGC(d, tip, 0, nullptr);
+	XFontStruct *font = XLoadQueryFont(d, "fixed");
+	if (!font)
+		font = XLoadQueryFont(d, "9x15");
+	if (font)
+	{
+		XSetFont(d, gc, font->fid);
+		XClearWindow(d, tip);
+		char utf8line[131072];
+		int y0 = 10 + font->ascent;
+		const TCHAR *p = text;
+		while (*p)
+		{
+			const TCHAR *eol = _tcschr(p, L'\n');
+			size_t l = eol ? (size_t)(eol - p) : _tcslen(p);
+			TCHAR wline[2048];
+			if (l >= sizeof(wline) / sizeof(wline[0]))
+				l = sizeof(wline) / sizeof(wline[0]) - 1;
+			for (size_t i = 0; i < l; ++i)
+				wline[i] = p[i];
+			wline[l] = L'\0';
+			int ul = WideCharToUTF8(wline, utf8line, (int)sizeof(utf8line));
+			if (ul > 0)
+				XDrawString(d, tip, gc, 8, y0, utf8line, ul - 1);
+			y0 += font->ascent + font->descent;
+			if (!eol)
+				break;
+			p = eol + 1;
+		}
+		XFreeFont(d, font);
+	}
+	XFreeGC(d, gc);
 	Atom utf8 = XInternAtom(d, "UTF8_STRING", False);
 	char utf8buf[131072];
 	int ulen = WideCharToUTF8(text, utf8buf, (int)sizeof(utf8buf));
