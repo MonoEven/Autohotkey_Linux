@@ -52,6 +52,27 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
   同时改用正斜杠路径并加 `FileExist` 创建验证(POSIX 下反斜杠是
   合法文件名字符,Windows 式路径在部分环境不可靠)。
 
+### 1.5 [round-30] LoadPicture 图像格式补全:GIF / CUR / JPEG
+- **GIF**(`core_image_linux.cpp` 的 `LinuxLoadGIF`):完整解码 GIF87a/89a——
+  逻辑屏幕描述符/GCT(2^(size+1) 项)与局部颜色表、GCE 透明(透明索引→
+  品红哨兵,与 PNG/ICO 一致)、隔行(0/8、4/8、2/4、1/2 四程)、LZW 字典
+  解码(clear/end 码、KwKwK 情形、宽度按字典增长在 4096 项上限内同步)与
+  子块流;首帧即止(后续帧忽略,文档化)。fixtures:8x8 带 GCE 透明、
+  2x2 纯红 LZW 流(生成器 `tests/doccheck/_mkfixtures.py`)。
+- **CUR**:ICONDIR type=2 判型后把类型字节改为 1 复用 ICO 的 DIB 解析(热点
+  不可表示,文档化)。
+- **JPEG**(`LinuxLoadJPEG`):libjpeg 解码(baseline/progressive 均可),
+  `out_color_space=JCS_RGB` 由库统一做 YCbCr→RGB(灰/CMYK 等自动转换),
+  `jpeg_mem_src` 内存解码,错误经 setjmp/longjmp 返回 false 而非退出进程
+  (`cinfo.err` 必须在 `jpeg_create_decompress` 前挂上;jmorecfg 的 INT32
+  与移植版 Win32 兼容层冲突,以 `XMD_H` 守卫复用后者)。JPEG 有损往返
+  (纯红 0xFF0000 落为 0xFE0000),断言用 `*N` 容差匹配——这与 ImageSearch
+  用户对 JPEG 的实际用法一致。CMake `find_library(JPEG jpeg)` + CI
+  `libjpeg-dev`。
+- 验证:`assert_image` 新增 11 项(gif 4 + cur 3 + jpg 4,其中含两个
+  ImageSearch 内容级校验 \+ 1 项区域可见性等待断言),doc-check 1002→1026
+  (core+ASan 双绿)。
+
 ---
 
 ## 2. 弱化实现清单(审计结果)
@@ -184,7 +205,7 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
   PNG(非隔行:0/2/3/4/6 颜色类型、8/16/1/2/4 位、五种滤波器、tRNS,经
   zlib)与 PPM(P6/P3)**;透明像素在移植版 RGB-only 模型下以品红哨兵
   `0xFFFF00FF` 表示(可用于 ImageSearch `*Trans`),`LoadPicture` 对
-  .ico 上报 OutImageType="Icon"。仍无 PNG/GIF/JPEG/CUR/AVIF
+  .ico 上报 OutImageType="Icon"。**round-30 已补 GIF(首帧、手写 LZW、GCE 透明→品红哨兵)、CUR(ICONDIR type 2,DIB 复用 ICO)与 JPEG(libjpeg,out_color_space=JCS_RGB,错误经 setjmp/longjmp 返回 false)**;仍无 AVIF
   (`core_image_linux.cpp`)。
 - [次要] **Win 风格/透明度/置顶是虚拟 shadow + EWMH 发布**:
   `core_win_linux.cpp:12-13,86-98` — WinGet/WinSetStyle、Transparent
@@ -232,8 +253,8 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
    g_BIF 注册为可运行错误路径(build 流程打印 NOT_IMPL=6);
    54 个非函数页(语句/指令/类别/索引)已识别,其中语句/类别/指令/
    索引页代码形式本轮已纳入 `assert_statements`(19 断言)。
-2. **行为断言**:doc-check **994 断言**(core + asan 双构建全绿),
-   逐条对照官方文档语义;回归 26/26;Wayland 13;XWayland 235。
+2. **行为断言**:doc-check **1026 断言**(core + asan 双构建全绿),
+   逐条对照官方文档语义;回归 27/27;Wayland 13;XWayland 235。
 3. **示例审计**:`verify_examples*.py` 对 docs-v2 全部 1390 个示例块
    做 headless + Xvfb 自动化审计,244 个无法独立运行的已分类
    (绝大多数是依赖上下文的教学片段,非移植缺陷)。
@@ -275,7 +296,7 @@ round-26 已完成:**LoadPicture PNG 解码**(非隔行,颜色类型 0/2/3/4/6 +
 省略参数语义、固化 ComCall 错误路径与 OnClipboardChange 不触发的文档化;
 FileAppend 打开失败改抛 OSError、`assert_statements::file_rw` 去反斜杠)。
 剩余:
-- 其余图像格式(GIF/JPEG/Cur/AVIF)文档化即可;
+- 图像格式:GIF/CUR/JPEG 已由 round-30 真实现(§1.5),仅剩 AVIF 文档化;
 - Hotstring 触发需要按键缓冲引擎(现有热键基础设施可扩展);
 - InputHook 按键采集需要真实低级钩子/或被文档定为"仅状态机";
 - "GuiControl" 无全局标识符(v2 语义,控件类为 Gui.Control/Gui.Text),

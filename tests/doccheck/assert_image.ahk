@@ -45,6 +45,23 @@ Run('out/xwin_helper -title ImgMain -class DocCheck -x 50 -y 60 -w 300 -h 200'
     ' -fill FF0000 10 20 40 30')
 WinWait("ImgMain",, 5)
 Sleep(300)
+; The port defaults CoordMode Pixel to CLIENT (upstream default); every
+; screen-region search below uses explicit screen coordinates, so pin the
+; mode here before the first search (Xvfb is frameless and client coords
+; coincide with screen coords, but sway/XWayland windows are offset).
+CoordMode("Pixel", "Screen")
+; Wait for the rectangle to be observable: sway/XWayland paints
+; asynchronously (headless pixman renderer + wlr-screencopy can lag the
+; window map), so a capture taken right after the map may still be blank.
+; Poll with the exact-match search until it succeeds (bounded).
+wr0 := 0
+wr1 := 0
+loop 100 {
+    if ImageSearch(&wr0, &wr1, 60, 80, 99, 109, IMGDIR "/red2.ppm")
+        break
+    Sleep(100)
+}
+Log("wait_red_found=" (wr0 = 60 && wr1 = 80 ? 1 : 0))
 
 ; --- LoadPicture ---
 hp := LoadPicture(IMGDIR "/red2.ppm")
@@ -72,6 +89,42 @@ ot4 := ""
 Log("png_type=" (LoadPicture(png, "w0 h0", &ot4) > 0 && ot4 = "Bitmap" ? 1 : 0))
 Log("png_resize=" (LoadPicture(png, "w32 h32") > 0 ? 1 : 0))
 
+; --- GIF decoding (first frame; hand-written LZW; transparency -> magenta
+; sentinel like PNG/ICO). ---
+gif := A_ScriptDir "/fixtures/test.gif"
+Log("gif_load=" (LoadPicture(gif) > 0 ? 1 : 0))
+ot5 := ""
+Log("gif_type=" (LoadPicture(gif, "w0 h0", &ot5) > 0 && ot5 = "Bitmap" ? 1 : 0))
+Log("gif_resize=" (LoadPicture(gif, "w16 h16") > 0 ? 1 : 0))
+; Content-level check: a solid-red 2x2 GIF (same shape as red2.ppm) must be
+; found by ImageSearch in the red rectangle area.
+gx := 0
+gy := 0
+gr := A_ScriptDir "/fixtures/test_red.gif"
+Log("gif_red_search=" (ImageSearch(&gx, &gy, 60, 80, 99, 109, gr) = 1 ? 1 : 0))
+
+; --- CUR (Windows cursor) decoding (ICONDIR type 2; DIB shared with ICO;
+; the hotspot is not representable, documented). ---
+cur := A_ScriptDir "/fixtures/test.cur"
+Log("cur_load=" (LoadPicture(cur) > 0 ? 1 : 0))
+ot6 := ""
+Log("cur_type=" (LoadPicture(cur, "w0 h0", &ot6) > 0 && ot6 = "Icon" ? 1 : 0))
+Log("cur_resize=" (LoadPicture(cur, "w32 h32") > 0 ? 1 : 0))
+
+; --- JPEG decoding (via libjpeg; YUV->RGB by the library; no alpha). ---
+jpg := A_ScriptDir "/fixtures/test.jpg"
+Log("jpg_load=" (LoadPicture(jpg) > 0 ? 1 : 0))
+ot7 := ""
+Log("jpg_type=" (LoadPicture(jpg, "w0 h0", &ot7) > 0 && ot7 = "Bitmap" ? 1 : 0))
+Log("jpg_resize=" (LoadPicture(jpg, "w32 h32") > 0 ? 1 : 0))
+; Content check: an 8x8 solid-red JPEG.  JPEG is mathematically lossy (the
+; integer YCbCr->RGB round-trip lands at 0xFE0000, not 0xFF0000), so use
+; the documented *N per-channel variation, as ImageSearch users do for
+; JPEG.
+jx := 0
+jy := 0
+Log("jpg_red_search=" (ImageSearch(&jx, &jy, 60, 80, 99, 109, "*8 " jpg) = 1 ? 1 : 0))
+
 ; --- IL_Create / IL_Add / IL_Destroy ---
 h1 := IL_Create()
 h2 := IL_Create(4, 10, true)
@@ -92,7 +145,6 @@ try {
 }
 
 ; --- ImageSearch ---
-CoordMode("Pixel", "Screen") ; Search in screen coordinates.
 found := 0
 Log("is_red=" (ImageSearch(&found, &fy, 60, 80, 99, 109, IMGDIR "/red2.ppm") = 1 ? 1 : 0))
 Log("is_red_xy=" (found = 60 && fy = 80 ? 1 : 0))

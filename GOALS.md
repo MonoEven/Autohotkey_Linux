@@ -53,7 +53,7 @@
       （无 X11 时亦可运行；XWayland 回退 235 断言 + 纯 Wayland 13 断言通过）
 
 ### M5：完善与发布 ✅
-- [x] 移植测试用例：26 项回归 + 994 项 doc-check（Xvfb，含 GUI/未移植错误行为/覆盖补全断言）
+- [x] 移植测试用例：27 项回归 + 1026 项 doc-check（Xvfb，含 GUI/未移植错误行为/覆盖补全断言；round-30 补 GIF/CUR/JPEG 图像与鼠标热键断言）
       + Wayland/XWayland 套件
 - [x] Wayland 兼容性：原生 Wayland 后端 + XWayland 回退（sway headless 验证）
 - [x] 打包：`tools/linux/pack.sh` 生成 **tar.gz + .deb**；CLI 安装器

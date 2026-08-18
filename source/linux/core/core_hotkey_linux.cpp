@@ -31,9 +31,12 @@
 //         filter for synthetic repeats when the server lacks XKB support).
 //
 // The upstream Hotkey() parse/variant machinery is unchanged; features the
-// X11 backend cannot express (mouse keys, scan codes, "A & B" prefixes,
-// left/right modifier discrimination, wildcard modifiers) are NOT grabbed
-// and are documented as unsupported rather than silently misbehaving.
+// X11 backend cannot express (scan codes, "A & B" prefixes, left/right
+// modifier discrimination, wildcard modifiers) are NOT grabbed and are
+// documented as unsupported rather than silently misbehaving.  Mouse hotkeys
+// (LButton/RButton/MButton/XButton1/XButton2/Wheel*) are grabbed with
+// XGrabButton on the same connection, with the same reconcile, BadAccess
+// trap, lock-mask power set and XTEST passthrough as keyboard hotkeys.
 #include "../../stdafx.h"
 #include "../../application.h"
 #include "../../script.h"
@@ -89,11 +92,16 @@ bool sPrevWasPress = false;
 
 struct GrabSpec
 {
-	KeyCode keycode;
+	KeyCode keycode;      // Key grab (button == 0).
+	unsigned int button;  // Mouse grab (keycode == 0): X11 button 1..9.
 	unsigned int modifiers;
 	bool operator<(const GrabSpec &o) const
 	{
-		return keycode != o.keycode ? keycode < o.keycode : modifiers < o.modifiers;
+		if (keycode != o.keycode)
+			return keycode < o.keycode;
+		if (button != o.button)
+			return button < o.button;
+		return modifiers < o.modifiers;
 	}
 };
 
@@ -227,6 +235,28 @@ KeyCode LinuxHotkeyKeycode(Display *d, Hotkey *aHotkey)
 	return 0; // Scan-code or other hotkeys are not supported.
 }
 
+// X11 button number used to grab/fire this mouse hotkey (0 = not a mouse
+// hotkey).  Mouse hotkeys keep their Windows vks in mVK (VK_LBUTTON..,
+// VK_WHEEL_*) because LinuxVkToKeysym maps them to NoSymbol.  X11 numbering
+// is 1=left, 2=middle, 3=right, 4/5=wheel up/down, 6/7=wheel left/right,
+// 8/9=x1/x2 (same as LinuxMouseButtonForVk in core_input_linux.cpp).
+unsigned int LinuxHotkeyButton(Hotkey *aHotkey)
+{
+	switch (aHotkey->mVK)
+	{
+	case VK_LBUTTON:     return 1;
+	case VK_MBUTTON:     return 2;
+	case VK_RBUTTON:     return 3;
+	case VK_WHEEL_UP:    return 4;
+	case VK_WHEEL_DOWN:  return 5;
+	case VK_WHEEL_LEFT:  return 6;
+	case VK_WHEEL_RIGHT: return 7;
+	case VK_XBUTTON1:    return 8;
+	case VK_XBUTTON2:    return 9;
+	}
+	return 0;
+}
+
 // Build the desired grab set: every key+modifier combination (including the
 // full lock-modifier power set) of every hotkey that has an enabled variant.
 void LinuxBuildDesired(Display *d, std::set<GrabSpec> &aDesired)
@@ -246,11 +276,12 @@ void LinuxBuildDesired(Display *d, std::set<GrabSpec> &aDesired)
 		if (!hk || hk->mModifierVK || hk->IsCompletelyDisabled())
 			continue; // Prefix hotkeys unsupported; disabled variants ungrabbed.
 		KeyCode kc = LinuxHotkeyKeycode(d, hk);
-		if (!kc)
-			continue; // Scan-code / mouse: unsupported, not grabbed.
+		unsigned int btn = kc ? 0 : LinuxHotkeyButton(hk);
+		if (!kc && !btn)
+			continue; // Scan-code / prefix / unsupported: not grabbed.
 		unsigned int base = LinuxModsToX(hk->mModifiers);
 		for (int c = 0; c < ncombos; ++c)
-			aDesired.insert(GrabSpec{kc, base | combos[c]});
+			aDesired.insert(GrabSpec{kc, btn, base | combos[c]});
 	}
 }
 
@@ -294,8 +325,9 @@ bool LinuxIsSyntheticRelease(XEvent &aEv)
 // for passthrough hotkeys, which are rare.
 struct PassthruMark
 {
-	KeyCode keycode;
-	DWORD when; // GetTickCount() at injection time.
+	bool is_button;    // Mouse button event (otherwise a key event).
+	unsigned int id;   // KeyCode for keys, X11 button number for buttons.
+	DWORD when;        // GetTickCount() at injection time.
 	bool is_up;
 };
 PassthruMark sPassthruLog[8];
@@ -307,20 +339,63 @@ void LinuxInjectKey(Display *d, XEvent &ev)
 	XTestFakeKeyEvent(d, ev.xkey.keycode, ev.type == KeyPress ? True : False, CurrentTime);
 	XFlush(d);
 	PassthruMark &m = sPassthruLog[sPassthruHead++ % _countof(sPassthruLog)];
-	m = PassthruMark{ev.xkey.keycode, GetTickCount(), ev.type == KeyRelease};
+	m = PassthruMark{false, (unsigned int)ev.xkey.keycode, GetTickCount(), ev.type == KeyRelease};
+}
+
+void LinuxButtonPassthrough(Display *d, unsigned int aButton, XEvent &ev)
+{
+	// X11 passive button grabs hand the whole press/release pair to the
+	// grabbing client, and re-injecting a press with XTEST while the button
+	// is still held is swallowed by the server (unlike keyboard repeat
+	// delivery, which the key passthrough relies on).  Forwarding a press
+	// therefore removes the passive grabs for the button (restored by the
+	// next reconcile, which runs on every dispatch), releases the active
+	// pointer grab, and re-injects an un-press/press pair; the window under
+	// the pointer receives the click (with a harmless leading release it
+	// never saw a press for).  The release phase is forwarded with a single
+	// XTEST release.  No injection marks are needed: with the passive grabs
+	// removed and the active grab released, nothing can be delivered back
+	// to this connection.
+	Window root = DefaultRootWindow(d);
+	if (ev.type == ButtonPress)
+	{
+		for (std::set<GrabSpec>::iterator it = sInstalled.begin(); it != sInstalled.end();)
+		{
+			if (it->button == aButton)
+			{
+				XUngrabButton(d, it->button, it->modifiers, root);
+				sInstalled.erase(it++);
+			}
+			else
+				++it;
+		}
+		XUngrabPointer(d, CurrentTime);
+		XTestFakeButtonEvent(d, aButton, False, CurrentTime);
+		XTestFakeButtonEvent(d, aButton, True, CurrentTime);
+		XFlush(d);
+	}
+	else
+	{
+		XUngrabPointer(d, CurrentTime);
+		XTestFakeButtonEvent(d, aButton, False, CurrentTime);
+		XFlush(d);
+	}
 }
 
 bool LinuxIsPassthruCopy(XEvent &ev)
 {
-	bool is_up = ev.type == KeyRelease;
+	bool is_button = ev.type == ButtonPress || ev.type == ButtonRelease;
+	bool is_up = is_button ? ev.type == ButtonRelease : ev.type == KeyRelease;
+	unsigned int id = is_button ? (unsigned int)ev.xbutton.button : (unsigned int)ev.xkey.keycode;
 	DWORD now = GetTickCount();
 	// A generous window (1 s) tolerates slow servers/parallel-connection
-	// reordering; repeated real keystrokes of the same key/phase within it
-	// are rare for pass-through hotkeys and the cost of a missed copy is a
-	// single swallowed key, while a missed match here would re-inject and
+	// reordering; repeated real input of the same key/button/phase within it
+	// is rare for pass-through hotkeys and the cost of a missed copy is a
+	// single swallowed event, while a missed match here would re-inject and
 	// loop.
 	for (int i = 0; i < _countof(sPassthruLog); ++i)
-		if (sPassthruLog[i].keycode == ev.xkey.keycode
+		if (sPassthruLog[i].is_button == is_button
+			&& sPassthruLog[i].id == id
 			&& sPassthruLog[i].is_up == is_up
 			&& now - sPassthruLog[i].when < 1000)
 			return true;
@@ -395,6 +470,93 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 	}
 }
 
+// True if some enabled, fireable button-up variant exists for this combo.
+// Used by the press-phase decision: when an up variant exists, the press
+// must keep the grab alive (i.e. be consumed) so the release is delivered
+// to this connection and the up variant can fire; on Windows the press
+// would be passed through to the target application, but X11 passive grabs
+// cannot split the press/release pair (documented deviation).
+bool LinuxButtonUpVariantExists(unsigned int aButton, unsigned int aEvMods)
+{
+	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
+	{
+		Hotkey *hk = Hotkey::shk[i];
+		if (!hk || !hk->mKeyUp || hk->mModifierVK)
+			continue;
+		if (LinuxHotkeyButton(hk) != aButton)
+			continue;
+		if (LinuxModsToX(hk->mModifiers) != aEvMods)
+			continue;
+		HotkeyVariant *vp = hk->FindVariant();
+		if (vp && vp->mEnabled && hk->PerformIsAllowed(*vp))
+			return true;
+	}
+	return false;
+}
+
+void LinuxHandleButtonEvent(Display *d, XEvent &ev)
+{
+	bool is_up = ev.type == ButtonRelease;
+	unsigned int button = (unsigned int)ev.xbutton.button;
+
+	// The grab may activate on any lock state; the event's state then
+	// carries those bits.  Compare only the primary modifier slots (the
+	// button state bits of the pressed button itself are excluded, like
+	// Windows, where other held buttons do not affect matching).
+	unsigned int evmods = ev.xbutton.state & (ControlMask | ShiftMask | sAltMask | sSuperMask);
+
+	Hotkey *hk_fire = nullptr;
+	HotkeyVariant *vp_fire = nullptr;
+	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
+	{
+		Hotkey *hk = Hotkey::shk[i];
+		if (!hk || hk->mKeyUp != is_up || hk->mModifierVK)
+			continue;
+		if (LinuxHotkeyButton(hk) != button)
+			continue;
+		if (LinuxModsToX(hk->mModifiers) != evmods)
+			continue;
+		HotkeyVariant *vp = hk->FindVariant();
+		if (!vp || !vp->mEnabled || !hk->PerformIsAllowed(*vp))
+			continue;
+		hk_fire = hk;
+		vp_fire = vp;
+		break;
+	}
+
+	bool passthrough;
+	if (hk_fire)
+	{
+		// Consume the event unless the hotkey is a pass-through (~).
+		bool suppress = !((hk_fire->mNoSuppress & (NO_SUPPRESS_PREFIX | AT_LEAST_ONE_VARIANT_HAS_TILDE))
+			|| (vp_fire->mNoSuppress & (NO_SUPPRESS_PREFIX | AT_LEAST_ONE_VARIANT_HAS_TILDE)));
+		passthrough = !suppress;
+	}
+	else
+	{
+		// No variant fires.  Releases (delivered while the grab is still
+		// active, e.g. after a suppressed down-only hotkey) are forwarded so
+		// the target application never sees a stuck button.  For the press
+		// phase, keep the grab alive only when an enabled button-up variant
+		// exists for this combo (so the release reaches us and the up
+		// variant can fire); otherwise forward the click (HotIf false,
+		// Suspend, thread limits).
+		passthrough = is_up || !LinuxButtonUpVariantExists(button, evmods);
+	}
+
+	if (passthrough)
+		LinuxButtonPassthrough(d, button, ev);
+
+	if (hk_fire)
+	{
+		++g_nThreads;
+		++g;
+		InitNewThread(vp_fire->mPriority, false, false);
+		hk_fire->PerformInNewThreadMadeByCaller(*vp_fire);
+		ResumeUnderlyingThread();
+	}
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -436,7 +598,10 @@ void LinuxReconcileHotkeyGrabs()
 	{
 		if (!desired.count(*it))
 		{
-			XUngrabKey(d, it->keycode, it->modifiers, root);
+			if (it->button)
+				XUngrabButton(d, it->button, it->modifiers, root);
+			else
+				XUngrabKey(d, it->keycode, it->modifiers, root);
 			sInstalled.erase(it++);
 		}
 		else
@@ -456,10 +621,14 @@ void LinuxReconcileHotkeyGrabs()
 		ScopedXErrorTrap trap(d);
 		for (std::set<GrabSpec>::iterator it = desired.begin(); it != desired.end(); ++it)
 		{
-			if (sInstalled.count(*it))
+						if (sInstalled.count(*it))
 				continue;
 			unsigned long serial = (unsigned long)XNextRequest(d) - 1;
-			XGrabKey(d, it->keycode, it->modifiers, root, False, GrabModeAsync, GrabModeAsync);
+			if (it->button)
+				XGrabButton(d, it->button, it->modifiers, root, False
+					, ButtonPressMask | ButtonReleaseMask, GrabModeAsync, GrabModeAsync, None, None);
+			else
+				XGrabKey(d, it->keycode, it->modifiers, root, False, GrabModeAsync, GrabModeAsync);
 			pending.push_back(PendingGrab{serial, *it});
 		}
 		if (trap.HasBadAccess())
@@ -469,9 +638,15 @@ void LinuxReconcileHotkeyGrabs()
 			{
 				if (pending[i].serial == trap.BadSerial())
 				{
-					KeySym ks = XkbKeycodeToKeysym(d, pending[i].spec.keycode, 0, 0);
-					_sntprintf(sLastConflictName, _countof(sLastConflictName), _T("%s (modifiers %X)")
-						, ks ? XKeysymToString(ks) : _T("key"), pending[i].spec.modifiers);
+					if (pending[i].spec.button)
+						_sntprintf(sLastConflictName, _countof(sLastConflictName), _T("mouse button %u (modifiers %X)")
+							, pending[i].spec.button, pending[i].spec.modifiers);
+					else
+					{
+						KeySym ks = XkbKeycodeToKeysym(d, pending[i].spec.keycode, 0, 0);
+						_sntprintf(sLastConflictName, _countof(sLastConflictName), _T("%s (modifiers %X)")
+							, ks ? XKeysymToString(ks) : _T("key"), pending[i].spec.modifiers);
+					}
 					break;
 				}
 			}
@@ -508,6 +683,10 @@ void LinuxDispatchHotkeys()
 		case KeyRelease:
 			LinuxHandleKeyEvent(d, ev);
 			break;
+		case ButtonPress:
+		case ButtonRelease:
+			LinuxHandleButtonEvent(d, ev);
+			break;
 		case MappingNotify:
 			// Keyboard map/layout changed: refresh the modifier slots and
 			// rebuild every grab from scratch.
@@ -516,7 +695,12 @@ void LinuxDispatchHotkeys()
 			{
 				Window root = DefaultRootWindow(d);
 				for (std::set<GrabSpec>::iterator it = sInstalled.begin(); it != sInstalled.end(); ++it)
-					XUngrabKey(d, it->keycode, it->modifiers, root);
+				{
+					if (it->button)
+						XUngrabButton(d, it->button, it->modifiers, root);
+					else
+						XUngrabKey(d, it->keycode, it->modifiers, root);
+				}
 				sInstalled.clear();
 			}
 			break;

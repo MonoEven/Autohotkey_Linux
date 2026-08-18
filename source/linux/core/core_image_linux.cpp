@@ -4,9 +4,10 @@
 // Windows semantics per docs-v2 and the upstream implementations
 // (script2.cpp for IL_*, lib/pixel.cpp for ImageSearch, lib/Gui.* for
 // LoadPicture):
-//   - LoadPicture loads BMP (24/32-bit BI_RGB), ICO (classic DIB entries)
-//     and PNG (non-interlaced, via zlib) and PPM (P6/P3) files --
-//     the formats the port can decode natively -- applies the Wn/Hn
+//   - LoadPicture loads BMP (24/32-bit BI_RGB), ICO (classic DIB entries),
+//     PNG (non-interlaced, via zlib), GIF (first frame, hand-written LZW),
+//     CUR (icons with ICONDIR type 2) and JPEG (via libjpeg) and PPM
+//     (P6/P3) files -- the formats the port can decode natively -- applies the Wn/Hn
 //     resize options (nearest-neighbour; -1 keeps the aspect ratio, 0 uses
 //     the original dimension), accepts the Icon/GDI+ options (icon
 //     resources and GDI+ do not exist on Linux; the image is loaded as a
@@ -44,6 +45,9 @@
 #include <vector>
 #include <map>
 #include <zlib.h>
+#define XMD_H 1 // jmorecfg.h: reuse the port\'s INT32 (xmd.h guard).
+#include <jpeglib.h>
+#include <setjmp.h>
 
 // ---------------------------------------------------------------------------
 // Image store
@@ -355,6 +359,247 @@ static bool LinuxLoadICO(const std::vector<unsigned char> &aData, LinuxImage &aO
 	return true;
 }
 
+// GIF87a/89a (hand-written LZW).  Loads the first frame of an image as a
+// static bitmap (the port has no animation surface; further frames are
+// ignored, documented).  Supports global/local colour tables, the GIF89a
+// Graphic Control Extension (transparent colour index honoured; delay and
+// the other flags are ignored), interlaced rows, and the standard LZW
+// minimum-code-size scheme with a 4096-entry dictionary.  Transparency
+// uses the magenta sentinel convention like the PNG/ICO loaders.
+static bool LinuxLoadGIF(const std::vector<unsigned char> &aData, LinuxImage &aOut)
+{
+	auto le16 = [&](size_t o) -> unsigned {
+		return (unsigned)aData[o] | ((unsigned)aData[o + 1] << 8);
+	};
+	if (aData.size() < 13 || aData[0] != 'G' || aData[1] != 'I' || aData[2] != 'F'
+		|| aData[3] != '8' || (aData[4] != '7' && aData[4] != '9') || aData[5] != 'a')
+		return false;
+
+	size_t pos = 6;
+	unsigned w = le16(pos), h = le16(pos + 2);
+	if (!w || !h)
+		return false;
+	unsigned packed = aData[pos + 4]; // GCT flag / colour res / sort / size.
+	pos += 7;                        // 4 dims + packed + bg + aspect.
+	if (pos > aData.size())
+		return false;
+
+	std::vector<unsigned char> gct;
+	if (packed & 0x80)
+	{
+		size_t gct_bytes = (size_t)(1u << ((packed & 0x07) + 1)) * 3;
+		if (pos + gct_bytes > aData.size())
+			return false;
+		gct.assign(aData.begin() + pos, aData.begin() + pos + gct_bytes);
+		pos += gct_bytes;
+	}
+
+	bool got_image = false, gce_transparent = false;
+	unsigned trans_index = 0;
+
+	for (;;)
+	{
+		if (pos + 1 > aData.size())
+			break;
+		unsigned char block = aData[pos++];
+		if (block == 0x3B)
+			break; // Trailer.
+		if (block == 0x21) // Extension: skip it (GCE may carry transparency).
+		{
+			if (pos >= aData.size())
+				break;
+			unsigned char label = aData[pos++];
+			bool is_gce = label == 0xF9;
+			for (;;)
+			{
+				if (pos >= aData.size())
+					goto gif_done;
+				unsigned l = aData[pos++];
+				if (!l)
+					break;
+				if (pos + l > aData.size())
+					goto gif_done;
+				if (is_gce && l >= 4)
+				{
+					gce_transparent = (aData[pos] & 1) != 0;
+					trans_index = aData[pos + 3];
+					is_gce = false;
+				}
+				pos += l;
+			}
+			continue;
+		}
+		if (block != 0x2C)
+			continue; // Unknown block type: skip it.
+		if (got_image)
+			break; // Only the first frame is loaded.
+		if (pos + 9 > aData.size())
+			break;
+		unsigned iw = le16(pos + 4), ih = le16(pos + 6);
+		if (!iw || !ih)
+			break;
+		unsigned ipacked = aData[pos + 8];
+		pos += 9;
+		bool interlace = (ipacked & 0x40) != 0;
+		bool has_lct = (ipacked & 0x80) != 0;
+		std::vector<unsigned char> lct;
+		if (has_lct)
+		{
+			size_t lct_bytes = (size_t)(1u << ((ipacked & 0x07) + 1)) * 3;
+			if (pos + lct_bytes > aData.size())
+				break;
+			lct.assign(aData.begin() + pos, aData.begin() + pos + lct_bytes);
+			pos += lct_bytes;
+		}
+		const unsigned char *palette = has_lct ? lct.data() : gct.data();
+		if (!palette)
+			break;
+		if (pos >= aData.size())
+			break;
+		unsigned min_code = aData[pos++];
+		if (min_code < 2 || min_code > 8)
+			break;
+
+		// Gather the image data sub-blocks into one stream.
+		std::vector<unsigned char> img;
+		for (;;)
+		{
+			if (pos >= aData.size())
+				goto gif_done;
+			unsigned l = aData[pos++];
+			if (!l)
+				break;
+			if (pos + l > aData.size())
+				goto gif_done;
+			img.insert(img.end(), aData.begin() + pos, aData.begin() + pos + l);
+			pos += l;
+		}
+
+		// LZW decode (GIF variant).  Dictionary: code -> (prefix, first byte);
+		// codes [0, clear) are literals.  LSB-first bit reader.
+		unsigned clear = 1u << min_code, end = clear + 1;
+		std::vector<unsigned> prefix(4096, 0);
+		std::vector<unsigned char> first(4096, 0);
+		unsigned next = end + 1, width = min_code + 1, bit_pos = 0;
+		std::vector<unsigned char> out_px;
+		out_px.reserve((size_t)iw * ih);
+		auto read_code = [&]() -> int {
+			if ((size_t)(bit_pos / 8) + 1 >= img.size() && (bit_pos + width) / 8 >= img.size())
+				return -1;
+			unsigned v = 0;
+			for (unsigned k = 0; k < width; ++k)
+			{
+				size_t bit = bit_pos + k, byte = bit >> 3;
+				if (byte >= img.size())
+					return -1;
+				v |= ((img[byte] >> (bit & 7)) & 1u) << k;
+			}
+			bit_pos += width;
+			return (int)v;
+		};
+		std::vector<unsigned char> seq;
+		bool have_prev = false;
+		unsigned prev = 0;
+		for (;;)
+		{
+			int code = read_code();
+			if (code < 0)
+				break;
+			if ((unsigned)code == clear)
+			{
+				next = end + 1;
+				width = min_code + 1;
+				have_prev = false;
+				continue;
+			}
+			if ((unsigned)code == end)
+				break;
+			seq.clear();
+			if ((unsigned)code < next)
+			{
+				unsigned c = (unsigned)code;
+				while (c > clear)
+				{
+					seq.push_back(first[c]);
+					c = prefix[c];
+				}
+				seq.push_back((unsigned char)c);
+				for (size_t i = 0, j = seq.size() - 1; i < j; ++i, --j)
+					std::swap(seq[i], seq[j]);
+			}
+			else if ((unsigned)code == next && have_prev)
+			{
+				// KwKwK: prev sequence + its own first byte.
+				unsigned c = prev;
+				while (c > clear)
+				{
+					seq.push_back(first[c]);
+					c = prefix[c];
+				}
+				seq.push_back((unsigned char)c);
+				for (size_t i = 0, j = seq.size() - 1; i < j; ++i, --j)
+					std::swap(seq[i], seq[j]);
+				seq.push_back(seq.front());
+			}
+			else
+				break;
+			out_px.insert(out_px.end(), seq.begin(), seq.end());
+			if (have_prev && next < 4096)
+			{
+				prefix[next] = prev;
+				first[next] = seq.front();
+				++next;
+				if (next == (1u << width) && width < 12)
+					++width;
+			}
+			prev = (unsigned)code;
+			have_prev = true;
+		}
+		if (out_px.size() < (size_t)iw * ih)
+			break;
+
+		// Map the decoded pixels into the interlaced row order.
+		std::vector<unsigned char> rows((size_t)iw * ih, 0);
+		size_t src = 0;
+		if (!interlace)
+		{
+			for (size_t i = 0; i < (size_t)iw * ih; ++i)
+				rows[i] = out_px[i];
+		}
+		else
+		{
+			static const int dstart[4] = { 0, 4, 2, 1 };
+			static const int ddelta[4] = { 8, 8, 4, 2 };
+			for (int p = 0; p < 4 && src < rows.size(); ++p)
+				for (unsigned y = (unsigned)dstart[p]; y < ih; y += (unsigned)ddelta[p])
+					for (unsigned x = 0; x < iw; ++x)
+						rows[(size_t)y * iw + x] = out_px[src++];
+		}
+
+		// Compose RGB pixels (palette lookup + transparency sentinel).
+		aOut.width = (int)iw;
+		aOut.height = (int)ih;
+		aOut.pixels.resize((size_t)iw * ih);
+		for (size_t i = 0; i < (size_t)iw * ih; ++i)
+		{
+			unsigned idx = rows[i];
+			if (gce_transparent && idx == trans_index)
+				aOut.pixels[i] = 0xFFFF00FFu;
+			else if ((size_t)(idx * 3 + 2) < (has_lct ? lct.size() : gct.size()))
+				aOut.pixels[i] = ((DWORD)palette[idx * 3] << 16)
+					| ((DWORD)palette[idx * 3 + 1] << 8) | palette[idx * 3 + 2];
+			else
+				aOut.pixels[i] = 0;
+		}
+		got_image = true;
+	}
+	if (!got_image)
+		return false;
+	return true;
+gif_done:
+	return got_image;
+}
+
 // PNG (via zlib inflate).  Supports the common non-interlaced colour types
 // (0=gray, 2=RGB, 3=palette, 4=gray+alpha, 6=RGBA) at bit depths 8/16 (and
 // 1/2/4 for gray/palette), all five filter types and tRNS transparency.
@@ -540,17 +785,99 @@ static void LinuxImageResize(LinuxImage &aImg, int aReqW, int aReqH)
 	aImg.pixels.swap(out);
 }
 
+// CUR (Windows cursor): identical to ICO except ICONDIR type=2 and the
+// hotspot words in the directory entry.  The DIB payload is shared, so the
+// bytes are copied with the type patched to 1 and handed to LinuxLoadICO
+// (the cursor hotspot is not representable in the port's image model;
+// documented).
+static bool LinuxLoadCUR(const std::vector<unsigned char> &aData, LinuxImage &aOut)
+{
+	if (aData.size() < 6 || aData[0] != 0 || aData[1] != 0 || aData[2] != 2 || aData[3] != 0)
+		return false;
+	std::vector<unsigned char> patched = aData;
+	patched[2] = 1; // Pretend it's an icon for the shared DIB parser.
+	return LinuxLoadICO(patched, aOut);
+}
+
+// JPEG (via libjpeg).  Decodes baseline and progressive JPEGs; gray/RGB/
+// CMYK/etc. input is converted to RGB by the library (out_color_space =
+// JCS_RGB), so the port's RGB-only image model needs no transparency
+// sentinel (JPEG has no alpha).  Decode errors longjmp out of the library
+// callbacks (the jpeg_std_error default would exit the process) and return
+// false.
+struct JpegErrorMgr
+{
+	jpeg_error_mgr pub;
+	jmp_buf jump;
+};
+
+static void LinuxJpegErrorExit(j_common_ptr aCinfo)
+{
+	JpegErrorMgr *m = reinterpret_cast<JpegErrorMgr *>(aCinfo->err);
+	longjmp(m->jump, 1);
+}
+
+static bool LinuxLoadJPEG(const std::vector<unsigned char> &aData, LinuxImage &aOut)
+{
+	if (aData.size() < 4 || aData[0] != 0xFF || aData[1] != 0xD8) // SOI marker.
+		return false;
+	JpegErrorMgr err;
+	jpeg_decompress_struct cinfo;
+	std::memset(&cinfo, 0, sizeof(cinfo));
+	jpeg_std_error(&err.pub);
+	err.pub.error_exit = LinuxJpegErrorExit;
+	// cinfo.err must be attached before jpeg_create_decompress: the library
+	// dereferences it on any error path (malloc failure, corrupt stream).
+	cinfo.err = &err.pub;
+	if (setjmp(err.jump))
+	{
+		jpeg_destroy_decompress(&cinfo);
+		return false;
+	}
+	jpeg_create_decompress(&cinfo);
+	jpeg_mem_src(&cinfo, const_cast<unsigned char *>(aData.data()), (unsigned long)aData.size());
+	jpeg_read_header(&cinfo, TRUE);
+	cinfo.out_color_space = JCS_RGB;
+	jpeg_start_decompress(&cinfo);
+	int w = (int)cinfo.output_width, h = (int)cinfo.output_height;
+	if (w <= 0 || h <= 0 || cinfo.output_components < 3)
+	{
+		jpeg_destroy_decompress(&cinfo);
+		return false;
+	}
+	aOut.width = w;
+	aOut.height = h;
+	aOut.pixels.resize((size_t)w * h);
+	std::vector<JSAMPLE> row_buf((size_t)w * (size_t)cinfo.output_components);
+	JSAMPROW rows[1];
+	rows[0] = row_buf.data();
+	size_t idx = 0;
+	while (cinfo.output_scanline < (JDIMENSION)h)
+	{
+		jpeg_read_scanlines(&cinfo, rows, 1);
+		JSAMPLE *s = row_buf.data();
+		for (int x = 0; x < w; ++x, s += cinfo.output_components)
+			aOut.pixels[idx++] = ((DWORD)s[0] << 16) | ((DWORD)s[1] << 8) | (DWORD)s[2];
+	}
+	jpeg_finish_decompress(&cinfo);
+	jpeg_destroy_decompress(&cinfo);
+	return true;
+}
+
 static bool LinuxImageLoad(const wchar_t *aPath, int aReqW, int aReqH, LinuxImage &aOut, bool *aIsIcon = nullptr)
 {
 	std::vector<unsigned char> data;
 	if (!LinuxReadFileBytes(aPath, data))
 		return false;
-	if (LinuxLoadICO(data, aOut))      // .ico (DIB entry) - icon type.
+	if (LinuxLoadICO(data, aOut)        // .ico (DIB entry) - icon type.
+		|| LinuxLoadCUR(data, aOut))    // .cur (DIB entry, type 2) - icon type.
 	{
 		if (aIsIcon)
 			*aIsIcon = true;
 	}
-	else if (LinuxLoadPNG(data, aOut)   // .png (non-interlaced).
+	else if (LinuxLoadGIF(data, aOut)   // .gif (first frame; hand-written LZW).
+		|| LinuxLoadPNG(data, aOut)     // .png (non-interlaced).
+		|| LinuxLoadJPEG(data, aOut)    // .jpg (baseline/progressive; libjpeg).
 		|| LinuxLoadBMP(data, aOut)     // .bmp (24/32-bit BI_RGB).
 		|| LinuxLoadPPM(data, aOut))    // .ppm (P6/P3).
 	{

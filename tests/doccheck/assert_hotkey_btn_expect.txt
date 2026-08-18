@@ -1,0 +1,12 @@
+btn_cnt1=1
+btn_cnt2=1
+btn_cnt3=1
+btn_cnt4=1
+btn_cnt5=0
+btn_cnt6=0
+btn_l_hidden=1
+btn_r_seen=1
+btn_m_hidden=1
+btn_w_hidden=1
+btn_x1_seen=1
+btn_x2_seen=1

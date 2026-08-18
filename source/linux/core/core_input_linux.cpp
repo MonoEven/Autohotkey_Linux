@@ -277,6 +277,10 @@ static unsigned int LinuxMouseButtonForVk(vk_type aVK)
 	case 0x04: return 2; // MButton.
 	case 0x05: return 8; // XButton1.
 	case 0x06: return 9; // XButton2.
+	case 0x9C: return 6; // WheelLeft.
+	case 0x9D: return 7; // WheelRight.
+	case 0x9E: return 5; // WheelDown.
+	case 0x9F: return 4; // WheelUp.
 	}
 	return 0;
 }

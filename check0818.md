@@ -500,8 +500,8 @@ CI 中应去掉 Xvfb doc-check 的 `continue-on-error`，并将 XWayland 专项�
 | P1 测试"自己测自己" | ✅ 已解决 | 新增 `assert_hotkey_pt`(xkeycap 独立前台客户端持有输入焦点):普通热键抑制、`~` 透传、Off 解除抓取、HotIf-false 透传,直接观察前台客户端收到的按键 |
 | CI continue-on-error | ✅ 已解决 | `.github/workflows/ci.yml` doc-check 步骤已去掉 `continue-on-error`,失败阻止合并 |
 
-验证基线:doc-check **1002/1002**(core+ASan)、回归 27/27、Wayland 13/13、
-XWayland 235/235。
+验证基线:doc-check **1026/1026**(core+ASan)、回归 27/27、Wayland 13/13、
+XWayland 247/247。
 
 ## 第二批(简单热键语义增强)——计划中
 
@@ -516,7 +516,17 @@ XWayland 235/235。
 - XI2 RawKeyPress/RawKeyRelease 观察后端(`~`/Key-up/观察类热键不再
   依赖抓取)。
 - XDG Global Shortcuts Portal(Wayland 全局快捷键,已有 D-Bus 设施)。
-- 鼠标热键/滚轮(XGrabButton 可先支持按钮)。
+- 鼠标热键/滚轮(XGrabButton 可先支持按钮)。✅ **round-30 已实现**:
+  XGrabButton 抓取按钮 1/2/3/8/9 与滚轮 4-7(锁定掩码幂集同键盘),
+  ButtonPress/Release 分派到变体匹配+回调;`~`/HotIf-false/Off 透传用
+  "暂撤被动抓取(XUngrabButton)+释放活动抓取(XUngrabPointer)+XTEST
+  反注入(先假释放再假按下)"——按住期间注入 press 会被服务器吞掉
+  (键盘重复投递可用而按钮不可,已用独立 X 客户端探针验证),窗口收到
+  一次多余的假释放后是完整按下/释放;存在 enabled up 变体时按下阶段保持
+  抓取链,使真实释放送达以触发 up 热键(Windows 会把按下透传给目标,此为
+  文档化偏差)。`assert_hotkey_btn` 12 断言(xkeycap 独立客户端观察
+  down/up:普通抑制、`~` 完整点击、^组合、WheelUp 抑制、Off 解除、
+  HotIf-false 透传各 1)。
 - 可选 evdev/uinput broker(完整钩子语义,安全边界设计)。
 - 统一事件流上实现 InputHook 按键采集与 Hotstring 展开。
 

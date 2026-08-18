@@ -245,7 +245,7 @@ static const LinuxKeyEntry sLinuxKeys[] =
 	{ L"NumpadRight", 0x27, 0x4D }, { L"NumpadClear", 0x0C, 0x4C },
 	{ L"LButton", 0x01, 0 }, { L"RButton", 0x02, 0 }, { L"MButton", 0x04, 0 },
 	{ L"XButton1", 0x05, 0 }, { L"XButton2", 0x06, 0 },
-	{ L"WheelUp", 0, 0 }, { L"WheelDown", 0, 0 }, { L"WheelLeft", 0, 0 }, { L"WheelRight", 0, 0 },
+	{ L"WheelUp", 0x9F, 0 }, { L"WheelDown", 0x9E, 0 }, { L"WheelLeft", 0x9C, 0 }, { L"WheelRight", 0x9D, 0 },
 	{ L"-", 0xBD, 0x0C }, { L"=", 0xBB, 0x0D }, { L"[", 0xDB, 0x1A }, { L"]", 0xDD, 0x1B },
 	{ L"\\", 0xDC, 0x2B }, { L";", 0xBA, 0x27 }, { L"'", 0xDE, 0x28 },
 	{ L",", 0xBC, 0x33 }, { L".", 0xBE, 0x34 }, { L"/", 0xBF, 0x35 },

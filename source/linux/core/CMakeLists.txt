@@ -142,8 +142,10 @@ find_library(XEXT_LIBRARY Xext REQUIRED)
 find_library(DL_LIBRARY dl REQUIRED)
 # PNG decode for LoadPicture (core_image_linux.cpp): zlib inflate.
 find_library(ZLIB_LIBRARY z REQUIRED)
+# JPEG decode for LoadPicture (core_image_linux.cpp): libjpeg.
+find_library(JPEG_LIBRARY jpeg REQUIRED)
 pkg_check_modules(LIBFFI REQUIRED IMPORTED_TARGET libffi)
 pkg_check_modules(DBUS REQUIRED IMPORTED_TARGET dbus-1)
 # GTK3 GUI backend (GuiType/GuiControlType/UserMenu).
 pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
-target_link_libraries(ahk_core PRIVATE X11::X11 ahk_pcre16 ${XTST_LIBRARY} ${XRANDR_LIBRARY} ${XINERAMA_LIBRARY} ${XEXT_LIBRARY} PkgConfig::WAYLAND_CLIENT PkgConfig::XKBCOMMON ${DL_LIBRARY} PkgConfig::LIBFFI PkgConfig::DBUS PkgConfig::GTK3 ${ZLIB_LIBRARY})
+target_link_libraries(ahk_core PRIVATE X11::X11 ahk_pcre16 ${XTST_LIBRARY} ${XRANDR_LIBRARY} ${XINERAMA_LIBRARY} ${XEXT_LIBRARY} PkgConfig::WAYLAND_CLIENT PkgConfig::XKBCOMMON ${DL_LIBRARY} PkgConfig::LIBFFI PkgConfig::DBUS PkgConfig::GTK3 ${ZLIB_LIBRARY} ${JPEG_LIBRARY})
