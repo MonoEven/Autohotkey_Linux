@@ -34,7 +34,14 @@ jobs:
           echo 'Acquire::http::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
           echo 'Acquire::https::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
           retry() { for i in 1 2 3 4 5; do "$@" && return 0; echo "apt retry $i"; sleep $((i*10)); done; return 1; }
-          retry sudo apt-get update
+          # The default archive.ubuntu.com mirror is intermittently unreachable
+          # from GitHub runners; if the update fails after retries, fall back to
+          # the Azure mirror that backs these runners, then retry once more.
+          if ! retry sudo apt-get update; then
+            echo "default mirror unreachable; switching to azure.archive.ubuntu.com"
+            sudo sed -i -E 's@//(archive\|security)\.ubuntu\.com@//azure.archive.ubuntu.com@g'               /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null ||             sudo sed -i -E 's@//(archive\|security)\.ubuntu\.com@//azure.archive.ubuntu.com@g'               /etc/apt/sources.list 2>/dev/null || true
+            retry sudo apt-get update
+          fi
           retry sudo apt-get install -y --no-install-recommends \
             cmake g++ ninja-build \
             libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev libxi-dev \
@@ -99,7 +106,14 @@ jobs:
           echo 'Acquire::http::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
           echo 'Acquire::https::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
           retry() { for i in 1 2 3 4 5; do "$@" && return 0; echo "apt retry $i"; sleep $((i*10)); done; return 1; }
-          retry sudo apt-get update
+          # The default archive.ubuntu.com mirror is intermittently unreachable
+          # from GitHub runners; if the update fails after retries, fall back to
+          # the Azure mirror that backs these runners, then retry once more.
+          if ! retry sudo apt-get update; then
+            echo "default mirror unreachable; switching to azure.archive.ubuntu.com"
+            sudo sed -i -E 's@//(archive\|security)\.ubuntu\.com@//azure.archive.ubuntu.com@g'               /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null ||             sudo sed -i -E 's@//(archive\|security)\.ubuntu\.com@//azure.archive.ubuntu.com@g'               /etc/apt/sources.list 2>/dev/null || true
+            retry sudo apt-get update
+          fi
           retry sudo apt-get install -y --no-install-recommends \
             cmake g++ ninja-build \
             libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev libxi-dev \
