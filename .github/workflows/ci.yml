@@ -33,7 +33,7 @@ jobs:
           echo 'Acquire::Retries "5";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
           echo 'Acquire::http::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
           echo 'Acquire::https::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
-          retry() { for i in 1 2 3 4 5; do "$@" && return 0; echo "apt retry $i"; sleep $((i*10)); done; return 1; }
+          retry() { for i in 1 2 3 4 5 6; do timeout 300 "$@" && return 0; echo "apt retry $i"; sleep $((i*10)); done; return 1; }
           # The default archive.ubuntu.com mirror is intermittently unreachable
           # from GitHub runners; if the update fails after retries, fall back to
           # the Azure mirror that backs these runners, then retry once more.
@@ -105,7 +105,7 @@ jobs:
           echo 'Acquire::Retries "5";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
           echo 'Acquire::http::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
           echo 'Acquire::https::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
-          retry() { for i in 1 2 3 4 5; do "$@" && return 0; echo "apt retry $i"; sleep $((i*10)); done; return 1; }
+          retry() { for i in 1 2 3 4 5 6; do timeout 300 "$@" && return 0; echo "apt retry $i"; sleep $((i*10)); done; return 1; }
           # The default archive.ubuntu.com mirror is intermittently unreachable
           # from GitHub runners; if the update fails after retries, fall back to
           # the Azure mirror that backs these runners, then retry once more.
