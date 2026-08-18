@@ -20,6 +20,8 @@ GNU General Public License for more details.
 #include "window.h" // For MsgBox()
 //#include "application.h" // For ExitApp()
 #include "script_func_impl.h"
+// Linux port hook (declared in source/linux/core/core_hotkey_linux.h).
+void LinuxHotkeyStateChanged();
 
 // Initialize static members:
 HookType Hotkey::sWhichHookNeeded = 0;
@@ -478,7 +480,10 @@ void Hotkey::ManifestAllHotkeysHotstringsHooks()
 	// In addition...
 	if (sJoyHotkeyCount)  // Joystick hotkeys require the timer to be always on.
 		SET_MAIN_TIMER
-}
+
+	// Linux port: hotkey/hotstring/suspend state changed -- the backend
+	// re-reconciles its X11 grabs on the next dispatch (core_hotkey_linux.cpp).
+	LinuxHotkeyStateChanged();}
 
 
 

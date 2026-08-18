@@ -81,13 +81,16 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
 [轻微]= 边缘/compat。带 `file:line` 依据。
 
 ### 2.1 输入 / 热键 / 热字串 / InputHook
-- [主要] **Hotstring 注册但永不展开**:`core_mdfunc_linux.cpp:1020-1024`
-  注释明示 "registered but never expand, because the port has no keyboard
-  hook"。键入触发文本不会替换。
-- [次要] **Hotstring 调用形式有限**:实测 `Hotstring("::btw::by the way")`
-  (简写整体式)报 "Nonexistent hotstring."、`Hotstring("btw","repl")`
-  (裸名)报 "Parameter #1 invalid.";只有 `Hotstring("::btw","repl")`
-  (带前缀 `::` 的名称 + 独立替换,`assert_msg` 所用)可用。
+- [主要→已实现(round-32)] **Hotstring 触发**:`core_capture_linux.cpp`
+  的按键捕获引擎在有启用热字串时全键抓取(主修饰组合精简约 2k 个抓取),
+  缓冲键入文本:命中前缀则暂存,完整触发(以 g_EndChars 或 `*` 选项结束)时
+  抑制触发词并发送替换(或运行 X 选项回调)。支持 C/*/O/X 选项、大小写
+  跟随(mConformToCase)、HotIf 条件;转发用 XSendEvent 直投焦点窗口,
+  不重入被动抓取。验证:`assert_hotstring` 11 断言(xkeycap 独立客户端)。
+- [次要→基本可用(round-32)] **Hotstring 调用形式**`:name`/`::name`(独立
+  替换/回调)与带选项的 `:O:name`/`:X:name`/`:*:name` 均可用;简写整体式
+  `::btw::by the way` 与裸名 `btw` 仍按上游返回 Nonexistent/Parameter #1
+  invalid(与上游一致)。
 - [主要] **Send/SendEvent/SendInput/SendPlay 完全等价**:
   `core_input_linux.cpp:745-748` 四个 BIF 都走同一 `LinuxSendWrapper(...,false)`
   → XTEST;SendInput 的 "脚本忙时丢弃按键" 缓冲语义、SendPlay 的

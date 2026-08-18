@@ -1,0 +1,11 @@
+hs_cb=1
+hs_zz_seen=1
+hs_x_hidden=1
+hs_q_hidden=1
+hs_w_seen=1
+hs_a_hidden=1
+hs_b_hidden=1
+hs_c_hidden=1
+hs_d_hidden=1
+hs_hello=1
+hs_space_count=1

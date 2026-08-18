@@ -23,6 +23,7 @@
 #include "core_timer_linux.h"
 #include "core_win_linux.h"
 #include "core_hotkey_linux.h"
+#include "core_capture_linux.h"
 #include "core_clipboard_linux.h"
 #include "core_wayland_linux.h"
 #include "../gui/script_gui_linux.h"
@@ -164,10 +165,10 @@ void LinuxRunMainLoop()
 			{
 				if (pfds[0].revents & (POLLIN | POLLHUP))
 					LinuxClipboardDispatchX11(d);
-				if (n > 1 && (pfds[1].revents & (POLLIN | POLLHUP)) && Hotkey::sHotkeyCount)
+				if (n > 1 && (pfds[1].revents & (POLLIN | POLLHUP)) && (Hotkey::sHotkeyCount || LinuxCaptureActive()))
 					LinuxDispatchHotkeys();
 			}
-			else if (Hotkey::sHotkeyCount)
+			else if (Hotkey::sHotkeyCount || LinuxCaptureActive())
 				LinuxDispatchHotkeys(); // No event: still reconcile grabs.
 		}
 		else if (LinuxWaylandActive())

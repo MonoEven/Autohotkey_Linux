@@ -13,6 +13,7 @@
 #include "core_timer_linux.h"
 #include "core_win_linux.h"
 #include "core_hotkey_linux.h"
+#include "core_capture_linux.h"
 #include "core_wayland_linux.h"
 #include "core_clipboard_linux.h"
 #include "../gui/script_gui_linux.h"
@@ -63,7 +64,7 @@ bool MsgSleep(int aDuration, MessageMode)
 	{
 		if (g_script.mTimerEnabledCount)
 			LinuxCheckScriptTimers();
-		if (Hotkey::sHotkeyCount)
+		if (Hotkey::sHotkeyCount || LinuxCaptureActive())
 			LinuxDispatchHotkeys(); // Dedicated hotkey connection.
 		if (g_input && g_input->InProgress())
 			LinuxDispatchInputHook(LinuxX11Display());
@@ -83,7 +84,7 @@ bool MsgSleep(int aDuration, MessageMode)
 	{
 		ahk_gtk::GtkPump();
 			LinuxCheckScriptTimers();
-		if (Hotkey::sHotkeyCount)
+		if (Hotkey::sHotkeyCount || LinuxCaptureActive())
 			LinuxDispatchHotkeys(); // Dedicated hotkey connection.
 		if (g_input && g_input->InProgress())
 			LinuxDispatchInputHook(LinuxX11Display());

@@ -60,6 +60,7 @@
 #include "core_win_linux.h"
 #include "core_wayland_linux.h"
 #include "core_input_linux.h"
+#include "core_capture_linux.h"
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
 #include <X11/XKBlib.h>
@@ -74,6 +75,10 @@
 // Reload support (core_platform_stubs.cpp): bail out of the dispatch loop
 // when a restart is pending so a stuck dispatch cannot block the exit.
 extern "C" bool LinuxRestartRequested();
+
+// Copy-suppression check for re-injected events (defined at file scope
+// in the public section below; the anonymous-namespace handlers need it).
+bool LinuxIsPassthruCopy(XEvent &ev);
 
 namespace {
 
@@ -105,22 +110,7 @@ bool sPrevWasPress = false;
 // Desired/installed grab bookkeeping
 // ---------------------------------------------------------------------------
 
-struct GrabSpec
-{
-	KeyCode keycode;      // Key grab (button == 0).
-	unsigned int button;  // Mouse grab (keycode == 0): X11 button 1..9.
-	unsigned int modifiers;
-	bool operator<(const GrabSpec &o) const
-	{
-		if (keycode != o.keycode)
-			return keycode < o.keycode;
-		if (button != o.button)
-			return button < o.button;
-		return modifiers < o.modifiers;
-	}
-};
-
-std::set<GrabSpec> sInstalled;
+std::set<GrabSpec> sInstalled; // GrabSpec lives in core_hotkey_linux.h.
 
 // Name of the key involved in the most recent BadAccess conflict (for the
 // BIF error message), or empty.
@@ -570,43 +560,9 @@ bool LinuxIsSyntheticRelease(XEvent &aEv)
 	return false;
 }
 
-// Passthrough re-injection: when a grabbed combination must be passed
-// through (tilde, HotIf false, key-up hotkey's non-firing phase), the event
-// is re-injected with XTEST.  While a passive grab is active the whole
-// keyboard belongs to the grabbing client, so re-injecting under the grab
-// would feed the event back into our own queue (infinite loop).  The active
-// keyboard grab is therefore released first (the passive grab
-// registrations stay installed) and the injected event reaches the normal
-// target window.  The injected press re-activates the passive grab and is
-// grabbed back by us; those copies are suppressed through a short log of
-// recent injections (keycode + direction).  A multi-entry log (rather than
-// a single "last injection" mark) is required because the real release
-// travels on the shared X connection while the injected copy comes back on
-// the hotkey connection: the two connections are independent, so the copy
-// may arrive AFTER the release has already updated the mark.  This is the
-// documented X11 equivalent of ReplayKeyboard (check0818 P0-3; sync grabs
-// were rejected because frozen events never notify the grabbing client,
-// which deadlocks).  Note: releasing the active keyboard grab also ends any
-// XGrabKeyboard grab by other code paths (e.g. BlockInput) -- acceptable
-// for passthrough hotkeys, which are rare.
-struct PassthruMark
-{
-	bool is_button;    // Mouse button event (otherwise a key event).
-	unsigned int id;   // KeyCode for keys, X11 button number for buttons.
-	DWORD when;        // GetTickCount() at injection time.
-	bool is_up;
-};
-PassthruMark sPassthruLog[8];
-int sPassthruHead = 0;
+// Passthrough re-injection and copy suppression are implemented at file
+// scope below (so core_capture_linux.cpp can call LinuxInjectKey).
 
-void LinuxInjectKey(Display *d, XEvent &ev)
-{
-	XUngrabKeyboard(d, CurrentTime);
-	XTestFakeKeyEvent(d, ev.xkey.keycode, ev.type == KeyPress ? True : False, CurrentTime);
-	XFlush(d);
-	PassthruMark &m = sPassthruLog[sPassthruHead++ % _countof(sPassthruLog)];
-	m = PassthruMark{false, (unsigned int)ev.xkey.keycode, GetTickCount(), ev.type == KeyRelease};
-}
 
 void LinuxButtonPassthrough(Display *d, unsigned int aButton, XEvent &ev)
 {
@@ -615,13 +571,12 @@ void LinuxButtonPassthrough(Display *d, unsigned int aButton, XEvent &ev)
 	// is still held is swallowed by the server (unlike keyboard repeat
 	// delivery, which the key passthrough relies on).  Forwarding a press
 	// therefore removes the passive grabs for the button (restored by the
-	// next reconcile, which runs on every dispatch), releases the active
-	// pointer grab, and re-injects an un-press/press pair; the window under
-	// the pointer receives the click (with a harmless leading release it
-	// never saw a press for).  The release phase is forwarded with a single
-	// XTEST release.  No injection marks are needed: with the passive grabs
-	// removed and the active grab released, nothing can be delivered back
-	// to this connection.
+	// next reconcile), releases the active pointer grab, and re-injects an
+	// un-press/press pair; the window under the pointer receives the click
+	// (with a harmless leading release it never saw a press for).  The
+	// release phase is forwarded with a single XTEST release.  No injection
+	// marks are needed: with the passive grabs removed and the active grab
+	// released, nothing can be delivered back to this connection.
 	Window root = DefaultRootWindow(d);
 	if (ev.type == ButtonPress)
 	{
@@ -635,6 +590,8 @@ void LinuxButtonPassthrough(Display *d, unsigned int aButton, XEvent &ev)
 			else
 				++it;
 		}
+		// The removed grabs must be restored by the next (lazy) reconcile.
+		LinuxSetReconcileDirty();
 		XUngrabPointer(d, CurrentTime);
 		XTestFakeButtonEvent(d, aButton, False, CurrentTime);
 		XTestFakeButtonEvent(d, aButton, True, CurrentTime);
@@ -646,26 +603,6 @@ void LinuxButtonPassthrough(Display *d, unsigned int aButton, XEvent &ev)
 		XTestFakeButtonEvent(d, aButton, False, CurrentTime);
 		XFlush(d);
 	}
-}
-
-bool LinuxIsPassthruCopy(XEvent &ev)
-{
-	bool is_button = ev.type == ButtonPress || ev.type == ButtonRelease;
-	bool is_up = is_button ? ev.type == ButtonRelease : ev.type == KeyRelease;
-	unsigned int id = is_button ? (unsigned int)ev.xbutton.button : (unsigned int)ev.xkey.keycode;
-	DWORD now = GetTickCount();
-	// A generous window (1 s) tolerates slow servers/parallel-connection
-	// reordering; repeated real input of the same key/button/phase within it
-	// is rare for pass-through hotkeys and the cost of a missed copy is a
-	// single swallowed event, while a missed match here would re-inject and
-	// loop.
-	for (int i = 0; i < _countof(sPassthruLog); ++i)
-		if (sPassthruLog[i].is_button == is_button
-			&& sPassthruLog[i].id == id
-			&& sPassthruLog[i].is_up == is_up
-			&& now - sPassthruLog[i].when < 1000)
-			return true;
-	return false;
 }
 
 void LinuxHandleKeyEvent(Display *d, XEvent &ev)
@@ -715,10 +652,13 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 	{
 		// No variant may fire (HotIf false, Suspend, thread limits) or this
 		// event belongs to a pass-through/key-up hotkey's non-firing phase:
-		// re-inject the event so the normal target window receives it.
+		// give the typed-text capture engine a chance to hold/consume it
+		// (hotstrings), then re-inject so the normal target window receives it.
 		// (X11 passive grabs hand the event to us; passthrough is done by
 		// releasing the active keyboard grab and re-injecting with XTEST --
 		// check0818 P0-3, documented deviation from ReplayKeyboard.)
+		if (LinuxCaptureKeyEvent(d, ev))
+			return;
 		LinuxInjectKey(d, ev);
 	}
 }
@@ -801,6 +741,138 @@ void LinuxHandleButtonEvent(Display *d, XEvent &ev)
 } // namespace
 
 // ---------------------------------------------------------------------------
+// Passthrough re-injection (file scope: used by the capture engine)
+// ---------------------------------------------------------------------------
+// When a grabbed combination must be passed through (tilde, HotIf false,
+// key-up hotkey's non-firing phase, or any typed key while hotstrings are
+// active), the event is re-injected with XTEST after releasing the active
+// keyboard grab (the passive grabs stay installed).  On servers where the
+// injected event re-activates the passive grab, the copy comes back to us;
+// it is suppressed through a short log keyed on the SERVER time of the
+// injected event -- the copy is the same server event (same time), while a
+// real repeat has a later time, so typed text (which re-injects every key)
+// is never swallowed.  This is the documented X11 equivalent of
+// ReplayKeyboard (check0818 P0-3; sync grabs were rejected because frozen
+// events never notify the grabbing client, which deadlocks).
+struct PassthruMark
+{
+	unsigned int id;   // KeyCode.
+	DWORD when;        // GetTickCount() just before injection.
+	bool is_up;
+};
+PassthruMark sPassthruLog[8];
+int sPassthruHead = 0;
+
+void LinuxInjectKey(Display *d, XEvent &ev)
+{
+	XUngrabKeyboard(d, CurrentTime);
+	XTestFakeKeyEvent(d, ev.xkey.keycode, ev.type == KeyPress ? True : False, CurrentTime);
+	XFlush(d);
+	PassthruMark &m = sPassthruLog[sPassthruHead++ % _countof(sPassthruLog)];
+	m = PassthruMark{(unsigned int)ev.xkey.keycode, GetTickCount(), ev.type == KeyRelease};
+}
+
+// Inject a raw keycode with a copy-suppression mark (used by the typed-text
+// capture engine for forwarded text and hotstring replacements, whose
+// re-grabbed copies must not re-enter the engine).
+void LinuxInjectMarked(Display *d, unsigned int aKeycode, bool aIsPress)
+{
+	XUngrabKeyboard(d, CurrentTime);
+	XTestFakeKeyEvent(d, (KeyCode)aKeycode, aIsPress ? True : False, CurrentTime);
+	XFlush(d);
+	PassthruMark &m = sPassthruLog[sPassthruHead++ % _countof(sPassthruLog)];
+	m = PassthruMark{aKeycode, GetTickCount(), !aIsPress};
+}
+
+bool LinuxIsPassthruCopy(XEvent &ev)
+{
+	bool is_up = ev.type == KeyRelease;
+	unsigned int id = (unsigned int)ev.xkey.keycode;
+	DWORD now = GetTickCount();
+	// A generous window (1 s) tolerates slow servers/parallel-connection
+	// reordering; repeated real input of the same key/phase within it is
+	// rare for pass-through hotkeys and the mark entries are replaced as
+	// new events are injected, so a long window does not accumulate.
+	for (int i = 0; i < _countof(sPassthruLog); ++i)
+		if (sPassthruLog[i].id == id
+			&& sPassthruLog[i].is_up == is_up
+			&& now - sPassthruLog[i].when < 1000)
+			return true;
+	return false;
+}
+
+// ---------------------------------------------------------------------------
+// Lazy reconcile + state-change hooks
+// ---------------------------------------------------------------------------
+
+// Set when the grab set may have changed (hotkey/hotstring/suspend state,
+// capture mode, mapping, button-passthrough).  The dispatch loop re-runs
+// LinuxReconcileHotkeyGrabs only when this is set, so hotkey-state changes
+// must go through LinuxHotkeyStateChanged()/LinuxSetReconcileDirty().
+bool sReconcileDirty = true;
+
+void LinuxSetReconcileDirty()
+{
+	sReconcileDirty = true;
+}
+
+// Hotkey::ManifestAllHotkeysHotstringsHooks() calls this after every
+// hotkey/hotstring/suspend change.
+void LinuxHotkeyStateChanged()
+{
+	sReconcileDirty = true;
+	LinuxCaptureStateChanged();
+}
+
+// ---------------------------------------------------------------------------
+// Typed-text capture grab set (all keys x all main-modifier combos)
+// ---------------------------------------------------------------------------
+
+std::set<GrabSpec> sCaptureSpecs;
+bool sCaptureSpecsDirty = true;
+
+void LinuxCaptureAddSpecs(std::set<GrabSpec> &aDesired)
+{
+	if (!LinuxCaptureActive())
+	{
+		return;
+	}
+	if (sCaptureSpecsDirty)
+	{
+		sCaptureSpecs.clear();
+		unsigned int prim[4] = { ControlMask, ShiftMask, sAltMask, sSuperMask };
+		unsigned int lock_combos[8];
+		int nlock = 1;
+		lock_combos[0] = 0;
+		for (int i = 0; i < sLockMaskCount && nlock < 8; ++i)
+		{
+			int n = nlock;
+			for (int j = 0; j < n; ++j)
+				lock_combos[nlock++] = lock_combos[j] | sLockMasks[i];
+		}
+		for (int kc = 8; kc <= 255; ++kc)
+			for (int t = 0; t < 16; ++t)
+			{
+				unsigned int m = 0;
+				for (int p = 0; p < 4; ++p)
+					if (t & (1 << p))
+						m |= prim[p];
+				for (int c = 0; c < nlock; ++c)
+					sCaptureSpecs.insert(GrabSpec{(KeyCode)kc, 0, m | lock_combos[c]});
+			}
+		sCaptureSpecsDirty = false;
+	}
+	for (std::set<GrabSpec>::const_iterator it = sCaptureSpecs.begin(); it != sCaptureSpecs.end(); ++it)
+		aDesired.insert(*it);
+}
+
+void LinuxCaptureMappingNotify()
+{
+	sCaptureSpecsDirty = true;
+	sReconcileDirty = true;
+}
+
+// ---------------------------------------------------------------------------
 // Public interface
 // ---------------------------------------------------------------------------
 
@@ -835,6 +907,7 @@ void LinuxReconcileHotkeyGrabs()
 
 	std::set<GrabSpec> desired;
 	LinuxBuildDesired(d, desired);
+	LinuxCaptureAddSpecs(desired);
 	bool changed = false;
 
 	// Ungrab combinations that are no longer desired.
@@ -911,7 +984,11 @@ void LinuxDispatchHotkeys()
 	Display *d = LinuxHotkeyDisplay();
 	if (!d)
 		return;
-	LinuxReconcileHotkeyGrabs();
+	if (sReconcileDirty)
+	{
+		LinuxReconcileHotkeyGrabs();
+		sReconcileDirty = false;
+	}
 	if (sIndexDirty)
 	{
 		LinuxBuildHotkeyIndex(d);
@@ -961,6 +1038,8 @@ void LinuxDispatchHotkeys()
 			LinuxUpdateModifierMap(d);
 			LinuxUpdateModifierKeycodes(d);
 			sIndexDirty = true;
+			sReconcileDirty = true;
+			LinuxCaptureMappingNotify();
 			{
 				Window root = DefaultRootWindow(d);
 				for (std::set<GrabSpec>::iterator it = sInstalled.begin(); it != sInstalled.end(); ++it)

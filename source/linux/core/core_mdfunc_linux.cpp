@@ -1036,6 +1036,10 @@ BIF_DECL(BIF_Linux_Hotstring)
 	FResult fr = BIF_Hotstring(name ? name : name_buf, repl, toggle, aResultToken);
 	if (FAILED(fr))
 		FResultToError(aResultToken, aParam, aParamCount, fr, 0);
+	// Upstream only manifests when the Windows keybd hook is absent; the
+	// Linux typed-text capture needs to know about every registration and
+	// On/Off toggle.
+	LinuxHotkeyStateChanged();
 }BIF_DECL(BIF_Linux_RunAs)
 {
 	// (In_Opt, String, User), (In_Opt, String, Password), (In_Opt, String,

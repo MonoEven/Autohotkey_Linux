@@ -479,7 +479,7 @@ CI 中应去掉 Xvfb doc-check 的 `continue-on-error`，并将 XWayland 专项�
 - XDG Global Shortcuts Portal。⏳ 计划（Wayland 全局快捷键）
 - 鼠标热键。⏳ 计划（XGrabButton 可先支持按钮）
 - 可选 evdev/uinput broker。⏳ 计划（完整钩子语义，需安全边界）
-- 最后再基于统一事件流实现 InputHook 和 Hotstring。⏳ 计划
+- 最后再基于统一事件流实现 InputHook 和 Hotstring。🔄 Hotstring 已在 round-32 经按键捕获引擎先行落地(见 AUDIT §2.1);InputHook 实时采集仍待接入统一事件流。
 
 ---
 
@@ -500,7 +500,7 @@ CI 中应去掉 Xvfb doc-check 的 `continue-on-error`，并将 XWayland 专项�
 | P1 测试"自己测自己" | ✅ 已解决 | 新增 `assert_hotkey_pt`(xkeycap 独立前台客户端持有输入焦点):普通热键抑制、`~` 透传、Off 解除抓取、HotIf-false 透传,直接观察前台客户端收到的按键 |
 | CI continue-on-error | ✅ 已解决 | `.github/workflows/ci.yml` doc-check 步骤已去掉 `continue-on-error`,失败阻止合并 |
 
-验证基线:doc-check **1026/1026**(core+ASan)、回归 27/27、Wayland 13/13、
+验证基线:doc-check **1047/1047**(core+ASan)、回归 27/27、Wayland 13/13、
 XWayland 247/247。
 
 ## 第二批(简单热键语义增强)——round-31 已完成
