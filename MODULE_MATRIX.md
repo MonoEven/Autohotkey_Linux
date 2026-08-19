@@ -1,7 +1,7 @@
 # AutoHotkey v2.0.26 Linux 移植 —— 模块验证矩阵
 
 > 对照 AutoHotkey v2 官方文档逐模块确认可用性。完整逐模块校验报告见
-> `tests/doccheck/CHECK_REPORT.md`（1053/1053 断言，普通 + ASan 双构建）。
+> `tests/doccheck/CHECK_REPORT.md`（1063/1063 断言，普通 + ASan 双构建）。
 > 状态图例：✅ 已实现并有 .ahk 验证；⚠️ 部分实现/依赖外部工具；❌ 未实现（明确报错）。
 > GUI 类功能区分「有画面」(DISPLAY 可用，X11/WSLg/XFCE/XWayland) 与「无画面」(headless)。
 
@@ -67,8 +67,8 @@
 | Send/SendEvent/SendInput/SendPlay/SendText | ✅ | X11:XTEST;Wayland:虚拟键盘/指针(40 断言,以 xkeycap 实测) |
 | Click/Mouse*/KeyWait/GetKeyState/BlockInput | ✅ | X11 实测;锁键开关、阻断语义 |
 | Hotkey / HotIf | ✅ | X11/XWayland:XGrabKey(10 断言,以 Send 触发实测);**鼠标热键**(round-30,XGrabButton:左/右/中/X1/X2/滚轮)、**左右修饰键 `<^a`/`>^a` 与通配 `*`**(round-31)、哈希索引、动态 modifier map、BadAccess 冲突报错、Off/透传(round-29) |
-| Hotstring | ✅ | **round-32 真实触发**:全键捕获引擎 hold/flush/match,支持 C/*/O/X 选项、大小写跟随、HotIf;触发词抑制并发送替换(或回调);xkeycap 独立客户端验证(11 断言) |
-| InputHook | ✅ | **round-33 按键采集核心**:捕获引擎实时喂键——缓冲收集、结束键(EndChar/EndKey)、匹配表(Match)、退格撤销、输入抑制(6 断言);OnChar/OnKeyDown 通知回调待接入 |
+| Hotstring | ✅ | **round-32 真实触发**:全键捕获引擎 hold/flush/match,支持 C/*/O/X 选项、大小写跟随、HotIf;触发词抑制并发送替换(或回调);xkeycap 独立客户端验证(11 断言);round-34 增 Unicode 触发词(中文端到端) |
+| InputHook | ✅ | **round-33 按键采集核心**:捕获引擎实时喂键——缓冲收集、结束键(EndChar/EndKey)、匹配表(Match)、退格撤销、输入抑制(6 断言);**round-34 增 OnChar/OnKeyDown/OnKeyUp 排队通知**(主循环派发;Windows 参数语义;SC=X11 keycode)+ Unicode 字符流,共 10 断言 |
 
 ## 6. GUI(有画面 / 无画面)
 
@@ -109,9 +109,10 @@
 
 ## 汇总
 
-- **1053/1053** doc-check 断言通过（普通 + ASan 双构建，含 Xvfb 窗口/输入/控件/像素/定时器/热键/热字串/InputHook/图像/形状/GUI/菜单实测）
+- **1063/1063** doc-check 断言通过（普通 + ASan 双构建，含 Xvfb 窗口/输入/控件/像素/定时器/热键/热字串/InputHook/图像/形状/GUI/菜单实测；输入模块含 Unicode 发送 3 项）
 - **367/370** 内置函数已实现（3 个有意未实现:ComObjArray、TrayTip、TraySetIcon，见 `tests/doccheck/worklist.tsv`）
-- **27/27** headless 回归测试；Wayland 13 项 + XWayland 247 项独立套件
+- **27/27** headless 回归测试；Wayland 15 项 + XWayland 247 项独立套件
+- Unicode 文本发送（round-34）:X11/XWayland 非 ASCII 经 keysym 传输（借键码重映射），纯 Wayland 走剪贴板粘贴回退（wlroots），无注入路径明确报错
 - 未实现（有意、明确报错）:ComObjArray、TrayTip、TraySetIcon、OnMessage/SendMessage/PostMessage、纯 Wayland 窗口枚举/hotstring/InputHook（需 XWayland）；SoundGet*/SoundSet* 依赖 pactl/amixer
 - 完整逐模块报告:`tests/doccheck/CHECK_REPORT.md`
 

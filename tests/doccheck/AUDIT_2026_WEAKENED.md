@@ -73,6 +73,61 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
   ImageSearch 内容级校验 \+ 1 项区域可见性等待断言),doc-check 1002→1026
   (core+ASan 双绿)。
 
+### 1.6 [round-34,check0819 审查] Unicode 文本发送 + 输入后端加固
+- **[已修复,原 P0-1] 非 ASCII 字符被静默丢弃**:
+  `LinuxSendChar` 原本对 `ks > 0x7E` 直接 `return`,导致
+  `SendText "你好"` 不输出任何字符且无报错。重构为:
+  - **X11/XWayland**:任意 Unicode 字符按 keysym 传输——Latin-1 直接用
+    其 keysym(U+00E9 == XK_eacute),其他码点用 Unicode keysym 区
+    (0x01000000|cp);布局已绑定该 keysym 时复用现有键码,否则把空键码
+    (全 NoSymbol 且不在 XKB modmap 中,从高到低找)临时重映射后发送并
+    立即还原(xdotool 同款方案;服务器按连接 FIFO 先发 MappingNotify
+    再发按键事件,刷新映射的客户端即可正确解析)。热字串替换路径
+    `LinuxCaptureSendMarked`(XSendEvent 合成投递)同样接入该事务。
+    两个实测竞态修复:① 客户端映射刷新(GetKeyboardMapping 回复)可能
+    晚于还原 → revert 前保留 30ms 处理窗口;② 本进程 capture 引擎延迟
+    处理键事件时服务器映射已还原 → Send 引擎维护进程内 FIFO borrow 日志
+    (`LinuxConsumeBorrowedKeySym`,借键顺序=事件顺序),capture 解析时
+    按序消费,中文多字符序列(你好)逐字正确。③ borrow 广播的 MappingNotify
+    会触发热键后端全量重建 ~2000 抓取(每字符 2 次),导致 X 连接 TCP 填满
+    死锁(XUngrabKey 写阻塞) → `LinuxBorrowRecent()` 500ms 窗口内跳过
+    全量重建(仅刷新 modifier map;真实布局切换仍重建)。测试里
+    InputHook/热字串回调用具名函数而非箭头函数(v2 闭包按值捕获局部变量);
+    `assert_inputhook` 的 xkeycap 存活延长到 300s(30s 到期恰逢段 5 会
+    干扰焦点)。
+  - **纯 Wayland(wlroots,有虚拟键盘)**:非 ASCII 文本运行改走受控
+    剪贴板粘贴回退(存旧剪贴板→设新→Ctrl+V→延时还原)。
+  - **无任何注入路径(如 GNOME,无 zwp_virtual_keyboard_v1)**:抛明确
+    OSError 并指明字符 U+XXXX,不再静默丢字符;`LinuxWaylandCanInjectKeys()`
+    为能力查询。
+  - 验证:`xkeycap` 增加 MappingNotify→XRefreshKeyboardMapping(否则借来
+    的键码解析为 NoSymbol);`assert_input` 增 3 项(CJK U4F60/U597D、
+    Latin-1 eacute、借键码还原后普通键不受影响),doc-check 1053→1063;
+    `assert_wayland` 增 2 项(Control_L+v 到达 sway bindsym、剪贴板还原),
+    Wayland 13→15。
+- **[已修复,原 P0-2] GNOME Shell 后端 D-Bus 逻辑加固**(
+  `input_backend_gnome_shell.cpp` + `extension/`):
+  - Activated/Deactivated 严格区分:handler 只消费 `member='Activated'`,
+    Deactivated 显式忽略(不再可能双触发);
+  - match rule 收紧为 `sender=<well-known>+path+interface+member`,发送者
+    再校验;NameOwnerChanged 规则加 `sender='org.freedesktop.DBus'`;
+  - 信号改为**定向发给注册 owner**(`Gio.DBus.session.emit_signal(owner,...)`),
+    不再全广播——会话内其他进程无法接收/伪造他人热键;
+  - `ClearOwner()` 去掉 owner 参数,扩展用 `invocation.get_sender()`;
+  - 热键 ID 改为 `<unique-bus-name>/<hotkey>`(扩展强制 `<owner>/` 前缀
+    校验,跨进程零冲突);
+  - 新增批量 `RegisterMany`/`UnregisterMany`(一次 D-Bus 往返注册几十个
+    热键,不再逐个 10s 同步阻塞);单次超时 10s→3s、探测 3s→1s;
+  - 事件队列从固定 64 数组改为动态 vector(上限 8192)+ 溢出计数与一次
+    性警告。
+- **[已修复,原 P0-4 配置解析]**:`AHK_FORCE_GLOBAL_SHORTCUTS` 现在只把
+  `1/true/yes/on`(大小写不敏感)当真,`0/false/no/off` 与垃圾值不再强制
+  Portal;未知 `AHK_INPUT_BACKEND` 值打印明确启动警告并留 sticky error
+  (可经 `LinuxInputBackendLastError()` 读取),不再静默落到 auto。
+- 验证:doc-check **1063/1063**(core+ASan 双构建)、回归 27/27、
+  Wayland 15/15、XWayland 247/247 全绿;发布 v2.0.26-linux.13。
+  项目定位文档整体改为 **technology preview**(见 README / linux-port.htm)。
+
 ---
 
 ## 2. 弱化实现清单(审计结果)
@@ -106,9 +161,13 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
   `input_type::CollectChar` 从纯追加桩改为完整结束字/匹配/上限逻辑;
   `GetEndReason` 对单字符结束键返回 EndChar。验证:`assert_inputhook` 6 断言
   (缓冲 ab、EndChar z、匹配 stop、退格撤销、抑制 xkeycap 未见)。
-  限制(文档化):OnChar/OnKeyDown 通知回调仍未接入——从原生捕获派发现场调用
-  脚本回调会重入解释器挂起;命名 VK 结束键(如 {Esc} 已支持,Esc/Tab/Enter
-  经 keysym→VK 提示)与 OnKeyDown 的 VK/SC 参数待后续接入统一事件流。
+  **round-34 已接入 OnChar/OnKeyDown/OnKeyUp 通知**:捕获引擎只把通知排队
+  (native 派发现场调脚本回调会重入挂起),主循环/MsgSleep 派发时经
+  `LinuxCaptureDispatchInputNotifies` 触发——Windows 参数语义(key → VK/SC,
+  其中 SC=X11 keycode;char → 字符,含 Unicode keysym 转换后的中文);
+  只通知当前活跃的钩子(g_input),输入结束后不再触碰其对象(防 UAF)。
+  `assert_inputhook` 6→10 断言;命名 VK 结束键(Esc/Tab/Enter 经 keysym→VK)
+  与剩余限制见下文(SendLevel/每热字串 send-mode 时序未建模)。
 - [次要] **OnClipboardChange 注册但回调永不触发**:
   `script.cpp:753 EnableClipboardListener` → `AddClipboardFormatListener`
   在 Linux 是 no-op 桩(`stdafx_linux.h:2419`),没有
@@ -267,8 +326,8 @@ Windows/官方文档被弱化(可调用但不完整/模拟/依赖外部环境)"�
    g_BIF 注册为可运行错误路径(build 流程打印 NOT_IMPL=6);
    54 个非函数页(语句/指令/类别/索引)已识别,其中语句/类别/指令/
    索引页代码形式本轮已纳入 `assert_statements`(19 断言)。
-2. **行为断言**:doc-check **1026 断言**(core + asan 双构建全绿),
-   逐条对照官方文档语义;回归 27/27;Wayland 13;XWayland 235。
+2. **行为断言**:doc-check **1063 断言**(core + asan 双构建全绿),
+   逐条对照官方文档语义;回归 27/27;Wayland 15;XWayland 247。
 3. **示例审计**:`verify_examples*.py` 对 docs-v2 全部 1390 个示例块
    做 headless + Xvfb 自动化审计,244 个无法独立运行的已分类
    (绝大多数是依赖上下文的教学片段,非移植缺陷)。

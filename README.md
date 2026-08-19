@@ -5,16 +5,25 @@ automation utility for Linux. It is driven by a custom scripting language
 with special provision for defining keyboard shortcuts, otherwise known as
 hotkeys.
 
+> **Status: technology preview (not "official release").** The v2 language
+> coverage is broad (367 built-ins, 1063 doc-check assertions) and the
+> X11/XWayland backend is usable for real automation, but native-Wayland
+> global hotkeys, Unicode input on compositors without a virtual keyboard,
+> and cross-app control automation are still young; there is no large
+> external user base yet. See [docs-v2/docs/linux-port.htm](docs-v2/docs/linux-port.htm)
+> for the honest capability/limitation matrix before relying on it in
+> production.
+
 - **Language: AutoHotkey v2 only.** This port implements the v2 language.
   The v1 language, v1 commands and v1-to-v2 migration material are **not**
   part of this project.
 - **Upstream**: https://www.autohotkey.com/ (the original Windows project;
   this repository is a fork of the v2.0.26 release with a Linux port of the
   interpreter on the `linux-port` branch).
-- **Latest build**: `v2.0.26-linux.12` (see
+- **Latest build**: `v2.0.26-linux.13` (see
   [Releases](https://github.com/MonoEven/Autohotkey_Linux/releases)).
-  Doc-check **1053/1053** (regular + ASan), regression 27/27,
-  Wayland 13/13, XWayland 247/247.
+  Doc-check **1063/1063** (regular + ASan), regression 27/27,
+  Wayland 15/15, XWayland 247/247.
 
 ## Features ##
 
@@ -27,32 +36,47 @@ hotkeys.
   `Monitor*`, `ImageSearch`), dialogs (`MsgBox`, `InputBox`,
   `FileSelect`/`DirSelect`), `ToolTip`, window shapes (`WinSetRegion`),
   GTK3 `Gui`/`Menu` and the whole doc-checked v2 API surface —
-  **1053/1053** assertions pass under Xvfb.
+  **1063/1063** assertions pass under Xvfb.
+- **Unicode text input** (linux.13): `SendText`/`Send` and hotstring
+  replacements deliver non-ASCII characters (Chinese, Japanese, Korean,
+  accented Latin, Emoji) on X11/XWayland via keysym transmission (a spare
+  keycode is temporarily remapped when the layout has no binding, like
+  xdotool); on pure Wayland non-ASCII runs use the controlled
+  clipboard-paste fallback on virtual-keyboard compositors (wlroots/sway)
+  and raise a clear error elsewhere instead of silently dropping
+  characters.
 - **Native Wayland backend** (used when no X display is available):
   xdg-shell windows, virtual keyboard/pointer input
   (`zwp_virtual_keyboard_v1` / `zwlr_virtual_pointer_manager_v1`),
-  screen capture via `wlr-screencopy` — **13** Wayland + **247**
+  screen capture via `wlr-screencopy` — **15** Wayland + **247**
   XWayland assertions pass under sway.
-- **Unified input backend** (linux.12): `AHK_INPUT_BACKEND=auto|x11|
+- **Unified input backend** (linux.12+): `AHK_INPUT_BACKEND=auto|x11|
   portal|gnome-shell|evdev` selects the global-hotkey backend — X11
   `XGrabKey`/`XGrabButton` on X sessions; the **GNOME Shell extension**
   (GNOME 49 Wayland, zero-confirmation exclusive hotkeys:
   `1::`/`^1::`/`F12::` grab the physical key with no per-binding dialog,
   with automatic re-registration after a shell reload and fail-open
-  release on exit); and the standard **XDG Global Shortcuts Portal**
+  release on exit; linux.13 hardens the protocol: activations are directed
+  to the registering owner, ids are owner-scoped, `ClearOwner` takes no
+  owner argument, only `Activated` is consumed, registrations are batched
+  with bounded timeouts); and the standard **XDG Global Shortcuts Portal**
   backend as the KDE/other-Wayland fallback.
   `AHK_FORCE_GLOBAL_SHORTCUTS=1` keeps its documented meaning (explicitly
-  require the Portal backend).
+  require the Portal backend; only `1/true/yes/on` count as true, and an
+  unknown `AHK_INPUT_BACKEND` value prints a clear startup warning).
 - **Hotstring** (round-32): real expansion of `Hotstring()` from the typed
   stream — the all-keys capture engine holds trigger prefixes and, on a
   full match (end char or `*`), suppresses the trigger and sends the
   replacement (or runs the `X`-option callback).  Options `C`/`*`/`O`/`X`,
   case conforming, `HotIf` criteria; verified against the independent
-  `xkeycap` client.
-- **InputHook** (round-33): live key capture while a hook is `InProgress` —
+  `xkeycap` client.  Round-34: Unicode trigger words (CJK, accented text)
+  are matched character-for-character through the Unicode keysym stream.
+- **InputHook** (round-33/34): live key capture while a hook is `InProgress` —
   buffer fill, single-char/named end keys (`EndChar`/`EndKey`), match list,
-  backspace undo, input suppression; `OnChar`/`OnKeyDown` notifications
-  still pending the unified event-stream work.
+  backspace undo, input suppression; `OnChar`/`OnKeyDown`/`OnKeyUp`
+  notifications (round-34) are queued by the capture engine and fired from
+  the main-loop dispatch (Windows semantics: VK/SC for keys, the character
+  for OnChar, Unicode included).
 - **System clipboard**: `A_Clipboard` integrates with the desktop
   clipboard (X11 CLIPBOARD selection on X11/XWayland, wl_data_device on
   Wayland; process-internal fallback headless), verified cross-process
@@ -96,7 +120,7 @@ The installer places the `ahk` launcher, the interpreter and the
 documentation under the chosen prefix:
 
 ```bash
-ahk --version         # AutoHotkey v2.0.26 Linux port v2.0.26-linux.12
+ahk --version         # AutoHotkey v2.0.26 Linux port v2.0.26-linux.13
 ahk --check           # integrity, install method, latest release check
 ahk your-script.ahk
 ahk --uninstall       # cleanly remove this installation
@@ -164,7 +188,26 @@ The docs site is English-only.
   global hotkeys go through the GNOME Shell extension or the Global
   Shortcuts Portal (see the input-backend bullet above; bare `~`-style
   passthrough and full remapping on Wayland are the evdev/ahk-inputd
-  roadmap).
+  roadmap — see `docs-v2/docs/linux-port.htm` for the compatibility
+  matrix and the evdev/inputd design notes).
+
+## Related work and credits ##
+
+This port is an independent implementation, but it builds on the ideas and
+feedback of the wider AutoHotkey-on-Linux community:
+
+- [**AHK_X11**](https://github.com/phil294/AHK_X11) — a from-scratch
+  reimplementation of AutoHotkey v1 (2004-era syntax) in
+  [Crystal](https://crystal-lang.org/), X11-only (XRecord global key
+  monitoring + XTEST injection), with its own single-binary AppImage
+  distribution.  It is the most widely used AutoHotkey-on-Linux project
+  before this one and a frequent reference point for X11 key capture and
+  injection behavior (see also the [AHK_X11 thread on the AutoHotkey
+  forum](https://www.autohotkey.com/boards/viewtopic.php?f=81&t=106640)).
+- [AutoHotkey v2](https://www.autohotkey.com/) — the upstream Windows
+  project this fork is based on; all language semantics come from it.
+- The [AutoHotkey Community forum](https://www.autohotkey.com/boards/) —
+  the primary support channel for the language.
 
 ## Support ##
 

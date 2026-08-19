@@ -1,7 +1,7 @@
 # AutoHotkey Linux 化迁移目标
 
 > 目标随进展持续更新。基线：AutoHotkey v2.0.26，分支：`linux-port`。
-> **状态：全部核心目标已完成并发布（最新 v2.0.26-linux.12：统一输入后端 + GNOME Shell 零确认全局热键，doc-check core+ASan 1053/1053，回归 27/27，Wayland 13/13，XWayland 247/247，CI 全绿；站点文档为英文单语，中文概览页已移除）。**
+> **状态：核心目标已完成并发布（最新 v2.0.26-linux.13：Unicode 文本发送 + 输入后端加固，doc-check core+ASan 1063/1063，回归 27/27，Wayland 15/15，XWayland 247/247，CI 全绿；项目定位为 technology preview；站点文档为英文单语，中文概览页已移除）。**
 
 ## 总目标
 
@@ -30,8 +30,11 @@
       （`source/linux/core/core_*_linux.cpp`），效果等同且更贴合移植版结构
 - [x] 实现 X11 后端（Xlib + XTest + XRandR/Xinerama + XGrabKey 热键 + XGrabButton 鼠标热键）
 - [x] 热键、Send、窗口枚举/操作、剪贴板、像素/显示器、对话框、ToolTip、
-      ImageSearch、WinSetRegion 全部可用（doc-check **1053/1053** 断言通过，
+      ImageSearch、WinSetRegion 全部可用（doc-check **1063/1063** 断言通过，
       含 DllCall 29 项、D-Bus COM 18 项与 GTK3 GUI/Menu 26 项）
+- [x] Unicode 文本发送（round-34，check0819 审查）：`SendText`/`Send`/热字串替换
+      非 ASCII 字符 X11/XWayland 经 keysym 传输（借键码临时重映射，xdotool 方案），
+      纯 Wayland 走受控剪贴板粘贴回退（wlroots），无注入路径时明确报错不静默丢字符
 
 ### M4：GUI 与系统集成 ✅（按 Linux 实际情况落地）
 - [x] 消息框/输入框/文件选择对话框：真实 X11 对话框（`source/linux/gui/x11_gui.cpp`），
@@ -50,10 +53,13 @@
       `GetPos`/`Opt` 可用。`Menu`/`MenuBar` 由 `script_menu_linux.cpp` 实现；
       metadata 成员调用以 libffi 替代 Windows DynaCall（26 项 Xvfb 断言）
 - [x] 原生 Wayland 后端：xdg-shell 窗口、虚拟键盘/指针、wlr-screencopy 抓屏
-      （无 X11 时亦可运行；XWayland 回退 247 断言 + 纯 Wayland 13 断言通过）
+      （无 X11 时亦可运行；XWayland 回退 247 断言 + 纯 Wayland 15 断言通过）
+- [x] GNOME Shell 后端加固（round-34，check0819 审查）：Activated/Deactivated 严格区分、
+      match rule 限定 sender/path/member、信号定向发给 owner、ClearOwner 无参数用调用者
+      sender、热键 ID owner-scoped、RegisterMany/UnregisterMany 批量、事件队列动态化+溢出计数
 
 ### M5：完善与发布 ✅
-- [x] 移植测试用例：27 项回归 + 1053 项 doc-check（Xvfb，含 GUI/未移植错误行为/覆盖补全断言）
+- [x] 移植测试用例：27 项回归 + 1063 项 doc-check（Xvfb，含 GUI/未移植错误行为/覆盖补全断言）
       + Wayland/XWayland 套件
 - [x] Wayland 兼容性：原生 Wayland 后端 + XWayland 回退（sway headless 验证）
 - [x] 打包：`tools/linux/pack.sh` 生成 **tar.gz + .deb**；CLI 安装器
@@ -61,9 +67,12 @@
 - [x] 发布与清理：历经 **v2.0.26-linux.1/.2/.3**（归档）→ **.4/.5**（归档）→
       **linux.6**（覆盖补全，994 doc-check，归档）→ **linux.7**（Reload + 热键审计第一批 +
       GIF/CUR/JPEG 图像 + 鼠标热键，1026 doc-check）→ **linux.8**（round-31 左右/通配/哈希/XI2，
-      1036 doc-check，归档）→ **正式版 linux.9**（round-32 热字串真实现 + 文档站修复，
+      1036 doc-check，归档）→ **linux.9**（round-32 热字串真实现 + 文档站修复，
       1047 doc-check；清理旧包，1→8 全部更新点汇总）→ **linux.10**（round-33 InputHook
-      实时按键采集，1053 doc-check）；旧包已从 Release 清理，latest 收敛为 linux.10
+      实时按键采集，1053 doc-check）→ **linux.11**（统一输入后端骨架+Portal 冻结）→
+      **linux.12**（GNOME Shell backend 产品化，launcher `--` 命令 + deb postrm）→
+      **linux.13**（round-34：Unicode 文本发送 + GNOME D-Bus 加固 + 配置解析修正，
+      1063 doc-check）；旧包已从 Release 清理，latest 收敛为 linux.13
 - [x] 文档：官方 v2 文档镜像重建为 Linux 移植版（删除 v1 迁移内容，
       新增 linux-port.htm；DllCall/COM 页面含 Linux 可运行示例；
       25 个平台专属页面标注 Linux note），GitHub Pages 发布：
@@ -88,10 +97,25 @@
   - **热字串**（round-32）：真实触发（全键捕获引擎，C/*/O/X 选项、大小写跟随、
     HotIf 条件；触发词抑制并发送替换/回调），xkeycap 独立客户端验证
   - **InputHook 采集**（round-33）：捕获引擎实时喂键（缓冲/结束键 EndChar/EndKey/
-    匹配表 Match/退格撤销/输入抑制）；OnChar/OnKeyDown 通知回调待接入
+    匹配表 Match/退格撤销/输入抑制）；**OnChar/OnKeyDown/OnKeyUp 通知回调
+    （round-34）经排队 + 主循环派发接入**（Windows 语义参数；Unicode 字符流含 CJK）
   - Reload 真重启（round-28，退出原因 Reload，回归 t26_reload）
+- **Unicode 文本与中文输入**（round-34,check0819）：
+  - SendText/Send 非 ASCII 字符 X11/XWayland 经 keysym 传输（借键码临时重映射，
+    xdotool 同款）；纯 Wayland（wlroots）走受控剪贴板粘贴回退；无注入路径明确报错
+  - 热字串 Unicode 触发词（中文"你好"端到端匹配并替换）+ InputHook OnChar Unicode 字符流
+- **GNOME Shell 后端加固**（round-34,check0819）：Activated/Deactivated 严格区分、
+  match rule 限定 sender/path/member、信号定向发给 owner、ClearOwner 无参数用调用者
+  sender、热键 ID owner-scoped、RegisterMany/UnregisterMany 批量、事件队列动态化+溢出计数
+- **配置解析修正**（round-34）：AHK_FORCE_GLOBAL_SHORTCUTS 只把 1/true/yes/on 当真；
+  未知 AHK_INPUT_BACKEND 值清晰启动警告
+- **报告一致性校验**（round-34）：`tests/doccheck/verify_report_numbers.sh` 从 expect
+  文件重算全部发布数字（X11 合计/XWayland/Wayland/表行）并与 CHECK_REPORT.md 比对，
+  CI 强制——"847"“235 vs 247”类的文档漂移不再可能
 - **CI**：GitHub Actions 常规 + ASan 双构建 + 依赖安装韧性加固（apt 重试/超时/
-      azure 镜像回退，应对 runner 端 apt 源抖动）
+      azure 镜像回退，应对 runner 端 apt 源抖动）+ verify_report_numbers 校验步骤
+- **定位**：项目整体标注为 **technology preview**（README/linux-port.htm），
+  并引用参考项目 **AHK_X11**（phil294，Crystal 版 Linux AHK v1，X11-only）于致谢
 
 ## 后续增强（已完成）
 
@@ -133,6 +157,28 @@
 - [x] **InputHook 按键采集**（round-33）：捕获引擎实时喂键——缓冲/结束键/
       匹配/上限/退格撤销/输入抑制；`CollectChar` 补全上游逻辑、`GetEndReason`
       返回 EndChar；`assert_inputhook` 6 断言（xkeycap 独立客户端）
+- [x] **InputHook OnChar/OnKeyDown/OnKeyUp 通知**（round-34）：捕获引擎只排队
+       通知（native 派发现场调脚本回调会重入挂起），主循环/MsgSleep 派发时经
+       `LinuxCaptureDispatchInputNotifies` 触发（Windows 语义:key → (VK,SC)、
+       char → 字符;SC=X11 keycode）；Unicode 字符（中文 keysym）经转换送至
+       OnChar；`assert_inputhook` 6→10 断言
+- [x] **热字串 Unicode 触发词**（round-34）：`LinuxCaptureChar` keysym→Unicode
+       转换（Latin-1/Unicode keysym 区），中文触发词经 SendText 借键码注入
+       端到端匹配并替换；`assert_hotstring` 11→13 断言
+- [x] **Unicode 文本发送**（round-34,check0819 P0-1）：`LinuxSendChar`
+       非 ASCII 不再静默丢弃——X11/XWayland keysym 传输（借键码
+       XChangeKeyboardMapping 临时重映射+xdotool 式还原）、纯 Wayland 剪贴板
+       粘贴回退（wlroots）、无注入路径亮错报字符；热字串替换路径同样接入；
+       `xkeycap` 加 MappingNotify 刷新解析 Unicode keysym
+- [x] **GNOME Shell 后端 D-Bus 加固**（round-34,check0819 P0-2/P0-3）：
+       Activated/Deactivated 严格区分、match rule 限定 sender/path/member、
+       信号定向发给 owner、ClearOwner 无参数用调用者 sender、热键 ID
+       owner-scoped、RegisterMany/UnregisterMany 批量、事件队列动态化+
+       溢出计数
+- [x] **配置解析修正**（round-34,check0819 P0-4）：`AHK_FORCE_GLOBAL_SHORTCUTS`
+       只认 1/true/yes/on；未知 `AHK_INPUT_BACKEND` 值清晰启动警告
+- [x] **报告一致性机器校验**（round-34,check0819 P2）：`verify_report_numbers.sh`
+       从 expect 文件重算全部发布数字并比对 CHECK_REPORT.md，接入 CI
 - [x] **XDG Global Shortcuts Portal**（round-34）：`core_gshortcut_linux.*` 实现
       org.freedesktop.portal.GlobalShortcuts（v1）客户端——纯 Wayland 会话全局
       热键直接经合成器注册/触发（GNOME 45+/KDE）；正确处理 CreateSession 的
@@ -171,14 +217,18 @@
 
 ## 后续候选增强（未实现）
 
-- [ ] InputHook OnChar/OnKeyDown 通知回调接入（统一事件流，native 派发现场调用
-      脚本回调需准线程启动；当前为文档化限制）
+- [ ] **evdev/uinput 低层输入 broker**（`ahk-inputd`：EVIOCGRAB + uinput replay，
+      完整 AHK 输入语义 `~1::`/remap/`A & B` 到原生 Wayland；权限模型 =
+      input 组 / polkit 规则（io.github.autohotkey.inputd）；设计文档见
+      linux-port.htm "Compatibility matrix and roadmap"）
 - [ ] 扫描码热键与 `A & B` 前缀（需按键缓冲状态机/统一事件流；注册时已能力校验拒绝）
 - [ ] GNOME Shell backend 能力边界补全：`~1::` passthrough、`1 up::`（依赖
       accelerator-deactivated 实测）、完整 `*` wildcard、多 script 同键冲突策略、
       shell restart 后 runtime 重连重注册（状态真相在 runtime，扩展只是投影）
-- [ ] evdev/uinput 低层输入 broker（ahk-inputd：EVIOCGRAB + uinput replay，
-      完整 AHK 输入语义 `~1::`/remap/`A & B`；作为 gnome-shell backend 的
-      远期完整路线，非现在）
-- [ ] 输入法实际集成（Phase 1：XIM 事件过滤 + IME 状态变量）
-- [ ] Wayland text-input（zwp_text_input_v3）Send 文本投递
+- [ ] 输入法实际集成（Phase 1：XIM 事件过滤 + IME 状态变量；Unicode 热字串/
+      InputHook 已在 keysym 层可用）
+- [ ] Wayland text-input（zwp_text_input_v3）Send 文本投递（当前纯 Wayland 走
+      剪贴板粘贴回退）
+- [ ] AT-SPI 控件自动化后端（真实跨应用 GTK/Qt/Electron 控件操作，经
+      accessibility tree；无实现）
+- [ ] 桌面兼容矩阵扩展（CI 增加 Fedora/Debian/Arch 容器构建 + GNOME/KDE 实机）

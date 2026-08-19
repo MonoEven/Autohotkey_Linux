@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **1053 / 1053 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 40 项、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、**热键透传/解除抓取模块 8 项**(round-29)、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 26 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 6 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 29 项** 与 **D-Bus COM 18 项**;27 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 13 项** 与 **XWayland 回退 235 项** 独立套件通过(见第 10 节)
+- **结果**: **1063 / 1063 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 43 项(含 Unicode 文本发送 3 项,round-34)、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、**热键透传/解除抓取模块 8 项**(round-29)、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 44 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 6 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 29 项** 与 **D-Bus COM 18 项**;round-34 增 **热字串 Unicode 触发词 2 项** 与 **InputHook OnChar/OnKeyDown/OnKeyUp 通知 4 项**;27 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 15 项** 与 **XWayland 回退 247 项** 独立套件通过(见第 10 节)
 
 ---
 
@@ -25,28 +25,31 @@
 |---|---|---|
 | 数学 | `assert_math.ahk` | 44 |
 | 字符串 | `assert_string.ahk` | 47 |
-| 对象/数组/Map/类 | `assert_object.ahk` | 33 |
+| 对象/数组/Map/类 | `assert_object.ahk` | 35 |
 | 文件/目录 | `assert_file.ahk` | 31 |
-| 日期时间 | `assert_datetime.ahk` | 33 |
-| 通用/环境/进程/驱动器/INI/剪贴板 | `assert_general.ahk` | 31 |
+| 日期时间 | `assert_datetime.ahk` | 34 |
+| 通用/环境/进程/驱动器/INI/剪贴板/A_Args | `assert_general.ahk` | 50 |
 | 二进制互操作 (NumGet/NumPut/StrGet/StrPut/Buffer) | `assert_interop.ahk` | 20 |
 | 正则 (RegExMatch/RegExReplace/~= 运算符/命名子组) | `assert_regex.ahk` | 22 |
-| 注册表 (RegRead/RegWrite/RegDelete/RegDeleteKey/RegCreateKey) | `assert_registry.ahk` | 19 |
+| 注册表 (RegRead/RegWrite/RegDelete/RegDeleteKey/RegCreateKey,Linux 按文档报错路径) | `assert_registry.ahk` | 19 |
 | 系统/设置/进程/文件操作/网络 (CoordMode/DetectHidden*/Set*Delay/SendMode/SendLevel/SetRegView/FileEncoding/SetStoreCapsLockMode/ProcessGet*/FileCopy/FileMove/FileInstall/FileRecycle/FileGetVersion/SysGet/SysGetIPAddresses/Download/Drive*/SoundPlay) | `assert_sys.ahk` | 106 |
+| DllCall 归属模块说明:二进制互操作页 (dlopen/dlsym + libffi,.so 调用) | `assert_dllcall.ahk` | 29 |
+| D-Bus COM (ComObject/ComObjGet/ComObjActive/ComValue/ComObjType/ComObjValue/ComObjFlags/ComCall) | `assert_com.ahk` | 18 |
 | 窗口管理 (WinExist/WinActive/WinGet*/WinSet*/WinMove/WinClose/WinKill/WinWait*/WinActivate/WinMinimize/Maximize/Restore/Hide/Show/Redraw/Group*,X11 后端) | `assert_win.ahk` | 67 |
-| 输入模拟 (Send/SendEvent/SendInput/SendPlay/SendText/Click/MouseMove/MouseClick/MouseClickDrag/MouseGetPos/KeyWait/BlockInput/InstallKeybdHook/InstallMouseHook/SetCapsLockState/SetNumLockState/SetScrollLockState/GetKeyState,XTEST 后端) | `assert_input.ahk` | 40 |
+| 输入模拟 (Send/SendEvent/SendInput/SendPlay/SendText/Click/MouseMove/MouseClick/MouseClickDrag/MouseGetPos/KeyWait/BlockInput/InstallKeybdHook/InstallMouseHook/SetCapsLockState/SetNumLockState/SetScrollLockState/GetKeyState,XTEST 后端;round-34 增 Unicode 发送 3 项:CJK U4F60/U597D、Latin-1 eacute、借键码还原) | `assert_input.ahk` | 43 |
 | 控件 (ControlGetText/SetText/GetPos/Move/GetHwnd/GetClassNN/Focus/GetFocus/GetSetStyle/ExStyle/GetSetEnabled/GetSetChecked/GetVisible/Show/Hide/Click/Send/SendText/Combo-List 系列/ShowHideDropDown + WinGetControls/WinGetControlsHwnd,X11 子窗口后端) | `assert_ctrl.ahk` | 62 |
-| 显示器/像素/状态栏 (MonitorGet/GetCount/GetName/GetPrimary/GetWorkArea + PixelGetColor/PixelSearch + StatusBarGetText/StatusBarWait,XRandR/Xinerama + XGetImage 后端) | `assert_monitor.ahk` | 26 |
+| 显示器/像素/状态栏 (MonitorGet/GetCount/GetName/GetPrimary/GetWorkArea + PixelGetColor/PixelSearch + StatusBarGetText/StatusBarWait,XRandR/Xinerama + XGetImage 后端) | `assert_monitor.ahk` | 25 |
 | 显示/快捷方式 (FileCreateShortcut/FileGetShortcut + ListVars/ListHotkeys/KeyHistory,.desktop/.url 与 headless 输出) | `assert_display.ahk` | 15 |
 | 定时器/悬浮提示 (SetTimer + ToolTip,主循环 + X11 override-redirect 窗口) | `assert_timer.ahk` | 11 |
 | 热键 (Hotkey + XGrabKey 激活) | `assert_hotkey.ahk` | 10 |
 | 热键透传/解除抓取 (round-29:普通热键抑制、`~` 透传、Off 解除抓取、HotIf-false 透传,经独立 xkeycap 前台客户端验证) | `assert_hotkey_pt.ahk` | 8 |
 | 热键按钮 (round-30:XGrabButton 抓取左/右/中/X1/X2 与滚轮 4-7,`~`/HotIf-false/Off 以"暂撤被动抓取+XTEST 反注入"确定性透传,经独立 xkeycap 前台客户端验证) | `assert_hotkey_btn.ahk` | 12 |
+| 热键左右修饰 (round-31:Shift_L/Shift_R 等左右修饰键区分,经 xkeycap 前台客户端验证) | `assert_hotkey_lr.ahk` | 10 |
 | 编辑/列表 (Edit/EditGet*/EditPaste + ListViewGetContent,虚拟编辑/列表状态) | `assert_edit.ahk` | 47 |
 | 文件对话框 (FileSelect/DirSelect,内置 X11 路径输入对话框 + 无显示 stdin 回退) | `assert_dialog.ahk` | 16 |
 | 消息/热字串/RunAs (OnMessage/SendMessage/PostMessage/MenuSelect/Hotstring/RunAs) | `assert_msg.ahk` | 49 |
-| 热字串展开 (round-32:按键捕获引擎的 hold/flush/match,C/*/O/X 选项,端字符与大小写跟随;xkeycap 独立客户端验证) | `assert_hotstring.ahk` | 11 |
-| InputHook 按键采集 (round-33:捕获引擎实时喂键——缓冲/结束键/匹配/退格撤销/抑制,xkeycap 独立客户端验证;OnChar/OnKeyDown 通知待接入) | `assert_inputhook.ahk` | 6 |
+| 热字串展开 (round-32:按键捕获引擎的 hold/flush/match,C/*/O/X 选项,端字符与大小写跟随;xkeycap 独立客户端验证;round-34 增 Unicode 触发词 2 项:中文"你好"→"nn"替换与触发词抑制) | `assert_hotstring.ahk` | 13 |
+| InputHook 按键采集 (round-33:捕获引擎实时喂键——缓冲/结束键/匹配/退格撤销/抑制,xkeycap 独立客户端验证;round-34 增 OnChar/OnKeyDown/OnKeyUp 排队通知 3 项与 Unicode 字符流 1 项) | `assert_inputhook.ahk` | 10 |
 | 图像 (LoadPicture/IL_*/ImageSearch,BMP/ICO/PNG/GIF/CUR/JPEG/PPM 解码 + XGetImage 屏幕匹配) | `assert_image.ahk` | 44 |
 | 窗口形状 (WinSetRegion,X11 SHAPE 扩展;xshape_probe 端到端验证) | `assert_shape.ahk` | 19 |
 | GUI/控件/菜单 (Gui/GuiControl/Menu/MenuBar,GTK3 窗口;Edit/DDL/List/ListView/TreeView/StatusBar/Submit/OnEvent/菜单属性/HWND 反查等) | `assert_gui.ahk` | 32 |
@@ -54,9 +57,9 @@
 | 声音/光标/回调/输入钩子 (SoundGet*/SoundSet*/CaretGetPos/CallbackCreate+Free/InputHook,pactl/amixer + X11 + libffi 后端) | `assert_sound_etc.ahk` | 15 |
 | 语句/指令/类别/索引页代码形式 (If/Else/For/While/Switch/Try/Catch/Throw/Loop/Until/Break/Continue/Return/Block + Array/Map/Object/Buffer/Error/Number/String 类别 + `#Requires`/`#Warn` 等) | `assert_statements.ahk` | 19 |
 | 覆盖补全 (round-27:54 个未直引用函数中的 51 个 + String/Class/Menu/ObjBindMethod/Persistent/WinWaitNotActive 名称引用;含 Exit/Reload/Shutdown/InputBox 的"不可自动化"文档块) | `assert_misc_cov.ahk` | 75 |
-| **合计 (X11/headless)** | | **1053** |
-| Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端(含修饰键组合与鼠标按钮)、ToolTip xdg 窗口、X11 专属表面报错) | `assert_wayland.ahk` | 13 |
-| **合计 (Wayland)** | | **847** |
+| **合计 (X11/headless,各 expect 文件行数之和 + assert_display_content 自由格式 4 项;由 verify_report_numbers.sh 机器校验,与 run_check.sh 实际 PASS 一致)** | | **1063** |
+| Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端(含修饰键组合与鼠标按钮)、ToolTip xdg 窗口、X11 专属表面报错;round-34 增非 ASCII 剪贴板粘贴回退 2 项:Control_L+v 到达 compositor 与剪贴板还原) | `assert_wayland.ahk` | 15 |
+| **合计 (Wayland)** | | **15** |
 | XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 247 |
 
 复现命令:
@@ -353,7 +356,7 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 | 下载 (Download) | ✅ 3/3 | 本地 HTTP 服务实测:内容一致、404 保存错误页(文档)、坏路径 OSError |
 | 驱动器/声音错误路径 (DriveSetLabel/DriveEject/DriveLock/DriveUnlock/DriveRetract/SoundPlay) | ✅ 6/6 | 不存在设备/无播放器按文档抛 OSError(Shutdown 已实现但测试中不实际执行,防误关机) |
 | 窗口管理 (WinExist/WinActive/WinGet*/WinSet*/WinMove/WinClose/WinKill/WinWait*/WinActivate/WinMinimize/Maximize/Restore/Hide/Show/Redraw/Group*) | ✅ 67/67 | Xvfb 下以 xwin_helper 实测:条件匹配(标题/类/exe/pid/id/RegEx/排除)、几何/样式/透明度/置顶、隐藏与 DetectHiddenWindows 联动、关闭/强杀/等待、分组循环 |
-| 输入模拟 (Send/SendEvent/SendInput/SendPlay/SendText/Click/Mouse*/KeyWait/BlockInput/Install*Hook/Set*LockState/GetKeyState) | ✅ 40/40 | Xvfb 下以 xkeycap 实测:Send 事件序列(字面/Shift 合成/修饰符/按住/重复/Text)、Mouse 坐标/按钮/计数/按住、KeyWait 与 GetKeyState 状态、锁键开关、BlockInput On/Default/Off 阻断语义;XTEST 后端,无显示时按文档抛 OSError |
+| 输入模拟 (Send/SendEvent/SendInput/SendPlay/SendText/Click/Mouse*/KeyWait/BlockInput/Install*Hook/Set*LockState/GetKeyState) | ✅ 43/43 | Xvfb 下以 xkeycap 实测:Send 事件序列(字面/Shift 合成/修饰符/按住/重复/Text)、Mouse 坐标/按钮/计数/按住、KeyWait 与 GetKeyState 状态、锁键开关、BlockInput On/Default/Off 阻断语义;round-34 增 Unicode 发送 3 项(CJK U4F60/U597D、Latin-1 eacute、借键码还原);XTEST 后端,无显示时按文档抛 OSError |
 | 控件 (ControlGetText/SetText/GetPos/Move/GetHwnd/GetClassNN/Focus/GetFocus/Style/Enabled/Checked/Visible/Click/Send/Combo-List/ShowDropDown + WinGetControls) | ✅ 62/62 | Xvfb 下以 xwin_helper 子窗口实测:ClassNN/HWND/文本三种标识与优先级、文本匹配随 TitleMatchMode、几何/移动、聚焦、点击与按键事件落到正确控件、样式位运算、启用/勾选/可见性、Combo 列表增删查选、文档规定的 TargetError/Error 错误路径 |
 | 显示器/像素 (MonitorGet/GetCount/GetName/GetPrimary/GetWorkArea/PixelGetColor/PixelSearch) | ✅ 18/18 | Xvfb 下以 XRandR/Xinerama + XGetImage 实测:单屏几何/名称/主显示器、越界 N 抛 ValueError、像素颜色十六进制串、PixelSearch 命中/未命中(输出置空)/Variation 容差/反向搜索、CoordMode Pixel Client 坐标 |
 | 状态栏 (StatusBarGetText/StatusBarWait) | ✅ 7/7 | Xvfb 下以 msctls_statusbar32 子窗口实测:Part1=文本/Part>1=空、ControlSetText 联动、等待命中/超时、窗口缺失与无状态栏窗口抛 TargetError |
@@ -369,20 +372,20 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 | 声音 (SoundGet*/SoundSet*,pactl/amixer 后端) | ✅ 8/8 | 无 mixer 工具时按文档抛 OSError(此前空 stub 静默返回垃圾值;实测 SoundGetMute 曾返回地址残留);SoundGetInterface 返回 0 |
 | 光标 (CaretGetPos,GTK 文本控件) | ✅ 1/1 | Xvfb 下以 Xvfb 单屏实测:GDK 活动窗口内聚焦 GtkEntry 的光标屏幕坐标换算正确 |
 | 回调 (CallbackCreate/CallbackFree,libffi closure) | ✅ 4/4 | 地址整数返回/释放;DllCall(addr,"Int64",...) 调用回调实测返回正确;ASan 捕获并修复 stack-use-after-scope(optl<int> 引用块内局部变量) |
-| 输入钩子 (InputHook,X11 状态机) | ✅ 5/5 | Start→InProgress、超时 EndReason=Timeout、Stop→EndReason=Stopped(无显示时超时仍生效;X 键捕获/抓取因 GDK 双消费崩溃已禁用,文档化) |
+| 输入钩子 (InputHook,X11 状态机 + 实时按键采集) | ✅ 5/5 | Start→InProgress、超时 EndReason=Timeout、Stop→EndReason=Stopped(无显示时超时仍生效);round-33 起经独立热键 X 连接的捕获引擎实时喂键(缓冲/结束键/匹配/退格撤销/抑制),round-34 增 OnChar/OnKeyDown/OnKeyUp 排队通知与 Unicode 字符流(见 §1 表) |
 | 语句/指令/类别/索引页代码形式 (assert_statements) | ✅ 19/19 | If/Else/For/While/Switch/Try/Catch/Throw/Loop/Until/Break/Continue/Return/Block + Array/Map/Object/Buffer/Error/Number/String 方法 + `#Requires` + index.htm 索引页 |
 
 ## 5. 回归与构建验证
 
 ```
 普通构建: tests/run_tests.sh        PASS=27 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=1002 FAIL=0
-          tests/doccheck/wayland_run.sh PASS=13 FAIL=0 (Wayland 模式)
-          tests/doccheck/wayland_run.sh --xwayland PASS=235 FAIL=0 (XWayland 回退)
+          tests/doccheck/run_check.sh --xvfb PASS=1063 FAIL=0
+          tests/doccheck/wayland_run.sh PASS=15 FAIL=0 (Wayland 模式)
+          tests/doccheck/wayland_run.sh --xwayland PASS=247 FAIL=0 (XWayland 回退)
 ASan 构建: tests/run_tests.sh        PASS=27 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=1002 FAIL=0
-          tests/doccheck/wayland_run.sh PASS=13 FAIL=0
-          tests/doccheck/wayland_run.sh --xwayland PASS=235 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=1063 FAIL=0
+          tests/doccheck/wayland_run.sh PASS=15 FAIL=0
+          tests/doccheck/wayland_run.sh --xwayland PASS=247 FAIL=0
 ```
 
 ## 5.4 文档示例审计(Linux 可运行性)

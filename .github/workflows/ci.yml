@@ -88,6 +88,13 @@ jobs:
         env:
           XDG_RUNTIME_DIR: /tmp
 
+      # check0819: the published numbers in CHECK_REPORT.md used to drift by
+      # hand (Wayland "847", XWayland 235 vs 247).  This recomputes every
+      # count from the expect files and fails the pipeline on any mismatch,
+      # so the docs can never go stale again.
+      - name: Verify report numbers match the suites
+        run: bash tests/doccheck/verify_report_numbers.sh
+
   package:
     runs-on: ubuntu-24.04
     needs: build-and-test

@@ -57,7 +57,7 @@ examples fall into three groups on Linux:</p>
 <h2>What works on Linux</h2>
 <p>All <b>367</b> built-in functions listed in the worklist are implemented
 (3 not-implemented error paths: ComObjArray, TrayTip, TraySetIcon);
-1053 doc-check assertions pass under Xvfb (including 29
+1063 doc-check assertions pass under Xvfb (including 29
 for <code>DllCall</code> against native <b>.so</b> libraries and 18 for the
 D-Bus COM layer). The port has two display backends:</p>
 <ul>
@@ -89,6 +89,14 @@ D-Bus COM layer). The port has two display backends:</p>
         key, kill -9 releases the grab fail-open, <code>Ctrl+1</code>/<code>F12</code>
         and key-repeat work, and a gnome-shell extension reload
         (disable/enable) is followed by automatic re-registration).
+        Protocol hardening (v2): activations are delivered <em>directed</em>
+        to the registering owner only (no broadcast); hotkey ids are
+        owner-scoped (<code>&lt;unique-bus-name&gt;/&lt;hotkey&gt;</code>);
+        <code>ClearOwner</code> takes no owner argument (the caller's own
+        unique name is used); registrations are batched
+        (<code>RegisterMany</code>/<code>UnregisterMany</code>) with bounded
+        timeouts, and only the <code>Activated</code> signal is consumed
+        (<code>Deactivated</code> is explicitly ignored).
         Capability scope (v1): exclusive hotkeys only &mdash; <code>~1::</code>
         passthrough, remaps, <code>a &amp; b::</code> and full wildcards are
         NOT in this backend (evdev/ahk-inputd lane); <code>1 up::</code> has
@@ -110,8 +118,22 @@ D-Bus COM layer). The port has two display backends:</p>
     &ldquo;backend not installed&rdquo; until ahk-inputd ships).
     <code>AHK_FORCE_GLOBAL_SHORTCUTS=1</code> keeps its documented meaning:
     explicitly require the standard Portal backend (it is not reused for the
-    GNOME Shell backend).  An XWayland/Xorg session remains the stable
-    fallback on all systems.</li>
+    GNOME Shell backend); only <code>1/true/yes/on</code> count as true, and
+    an unknown <code>AHK_INPUT_BACKEND</code> value prints a clear startup
+    warning instead of silently running a different backend.  An
+    XWayland/Xorg session remains the stable fallback on all systems.</li>
+  <li><b>Unicode text input</b> (round-34): <code>SendText</code>/<code>Send</code>
+    and hotstring replacements now deliver non-ASCII characters instead of
+    dropping them.  On X11/XWayland every Unicode character is sent as a key
+    event mapped to its keysym (a spare keycode is temporarily remapped when
+    the layout has no binding for the character, exactly like xdotool);
+    Chinese, Japanese, Korean, accented Latin, Emoji and combining marks all
+    work.  On a pure Wayland session non-ASCII runs use the controlled
+    clipboard-paste fallback (set clipboard &rarr; <code>Ctrl+V</code> &rarr;
+    restore) on compositors with the virtual-keyboard protocol (wlroots-based
+    desktops such as sway); on compositors without it (e.g. GNOME) the send
+    raises a clear error naming the character instead of silently dropping
+    it.</li>
 </ul>
 
 <h2>Differences from Windows AutoHotkey</h2>
@@ -148,10 +170,28 @@ D-Bus COM layer). The port has two display backends:</p>
 for the complete per-module report.</p>
 
 <h2>Latest release</h2>
-<p>The latest official release is
-<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.12</a>.
+<p>The project is in <b>technology-preview</b> status: the language coverage
+is broad and the X11/XWayland backend is usable for real automation, but
+native-Wayland global hotkeys, Unicode input on compositors without a
+virtual keyboard, and cross-app control automation remain young; treat new
+installs accordingly.  The latest release is
+<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.13</a>.
 Highlights of this release:</p>
 <ul>
+  <li><b>Unicode text input</b>: <code>SendText</code>/<code>Send</code> and
+    hotstring replacements deliver non-ASCII characters on X11/XWayland
+    (keysym transmission, xdotool-style spare-keycode remap) and via the
+    clipboard-paste fallback on virtual-keyboard Wayland compositors; a
+    clear error is raised where no injection path exists (see "What works"
+    above).</li>
+  <li><b>GNOME Shell backend hardening</b>: activations are directed to the
+    registering owner, ids are owner-scoped, <code>ClearOwner</code> no
+    longer accepts an owner argument, only <code>Activated</code> is
+    consumed, registrations are batched with bounded timeouts, and the event
+    queue is dynamic with overflow counting.</li>
+  <li><b>Configuration correctness</b>: <code>AHK_FORCE_GLOBAL_SHORTCUTS</code>
+    only treats <code>1/true/yes/on</code> as true; unknown
+    <code>AHK_INPUT_BACKEND</code> values print a clear startup warning.</li>
   <li><b>Unified input backend</b> (<code>input_backend.h</code>):
     <code>AHK_INPUT_BACKEND=auto|x11|portal|gnome-shell|evdev</code>
     auto-selection; <code>AHK_FORCE_GLOBAL_SHORTCUTS=1</code> keeps its
@@ -166,8 +206,77 @@ Highlights of this release:</p>
     triggering with C/*/O/X options, case-follow, HotIf and end characters;
     <code>InputHook</code> key capture (round-33) and mouse hotkeys
     (round-30) are also in.</li>
-  <li>Doc-check: 1053/1053 assertions pass on both the normal and the ASan
-    builds; regression 27/27, Wayland 13/13, XWayland 247/247.</li>
+  <li>Doc-check: 1063/1063 assertions pass on both the normal and the ASan
+    builds; regression 27/27, Wayland 15/15, XWayland 247/247.</li>
+</ul>
+
+<h2>Compatibility matrix and roadmap</h2>
+<p>What works where (verified environments in parentheses):</p>
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>Capability</th><th>X11 / XWayland (Xvfb suites, Xorg on
+      Debian/Ubuntu)</th><th>GNOME 49 Wayland (Ubuntu 25.10)</th>
+      <th>wlroots Wayland, e.g. sway (headless suites)</th><th>KDE/other
+      Wayland</th></tr>
+  <tr><td>Global hotkeys</td><td>Full: XGrabKey/XGrabButton,
+      <code>~</code> passthrough, <code>*</code> wildcard, left/right
+      modifiers, key-up, <code>a &amp; b</code> combos, BadAccess conflict
+      reporting</td><td>Exclusive only: <code>1::</code>/<code>^1::</code>/
+      <code>F12::</code> (zero-confirm, suppression, auto re-register after
+      reload)</td><td>Global hotkeys via Portal or the XWayland fallback</td>
+      <td>Portal (may require an app identity; see above)</td></tr>
+  <tr><td>Send / Mouse simulation</td><td>Full XTEST, Unicode keysym
+      transmission</td><td>Not available (no virtual-keyboard protocol);
+      clear error</td><td>Virtual keyboard/pointer protocols; non-ASCII via
+      clipboard-paste fallback</td><td>Depends on compositor support for the
+      virtual protocols (usually absent)</td></tr>
+  <tr><td>Hotstrings / InputHook</td><td>Full capture engine, Unicode
+      trigger words, OnChar/OnKeyDown/OnKeyUp notifications</td>
+      <td colspan="3">Not available (the capture engine requires the X11
+      grab machinery; use an XWayland/Xorg session)</td></tr>
+  <tr><td>Window/control automation (Win*, Control*, Gui)</td>
+      <td>Full (GTK3 Gui included)</td><td colspan="3">Via XWayland
+      fallback only (native Wayland window enumeration is
+      compositor-controlled)</td></tr>
+  <tr><td>Cross-app accessibility control automation (AT-SPI)</td>
+      <td colspan="4">Roadmap &mdash; no implementation yet (see below)</td></tr>
+</table>
+<p><b>Roadmap (P1/P2 of the check0819 review):</b></p>
+<ul>
+  <li><b>evdev/uinput broker (<code>ahk-inputd</code>)</b> &mdash; the lane
+    that would bring passthrough, remaps, key-up, custom combos and
+    wildcards to native Wayland.  Design notes: a small privileged daemon
+    reads <code>/dev/input/event*</code> (evdev) for key events and injects
+    through <code>/dev/uinput</code>; the permission model is
+    <code>input</code> group membership or a polkit rule granting
+    <code>io.github.autohotkey.inputd</code> read/inject; hotkey policy
+    stays in the AHK runtime (the daemon only mirrors key events and
+    injected output, the XRecord+XTEST analogue on X11).  Not started yet;
+    tracked in GOALS.md.</li>
+  <li><b>IME integration</b> &mdash; Unicode hotstrings/InputHook already
+    work at the keysym level (round-34); a full IME (ibus/fcitx) commit
+    path needs the Wayland text-input protocol or the evdev lane.</li>
+  <li><b>AT-SPI control backend</b> &mdash; real cross-app control
+    automation for GTK/Qt/Electron via the accessibility tree; no
+    implementation yet.</li>
+  <li><b>Desktop compatibility matrix</b> &mdash; CI currently verifies
+    Ubuntu 24.04 (Xvfb/sway/XWayland); Fedora, Debian, Arch and
+    GNOME/KDE/older-GNOME runs are planned (see GOALS.md).</li>
+</ul>
+
+<h2>Related work and credits</h2>
+<p>This port is an independent implementation, but it builds on the ideas
+and feedback of the AutoHotkey-on-Linux community:</p>
+<ul>
+  <li><a href="https://github.com/phil294/AHK_X11">AHK_X11</a> &mdash; a
+    from-scratch reimplementation of AutoHotkey v1 (2004-era syntax) in
+    <a href="https://crystal-lang.org/">Crystal</a>, X11-only (XRecord
+    global key monitoring + XTEST injection), distributed as a single
+    AppImage; the most widely used AutoHotkey-on-Linux project and a
+    frequent reference for X11 key capture/injection behavior (see also its
+    <a href="https://www.autohotkey.com/boards/viewtopic.php?f=81&t=106640">forum
+    thread</a>).</li>
+  <li>AutoHotkey v2 &mdash; the upstream Windows project this fork is based
+    on; all language semantics come from it.</li>
 </ul>
 
 <h2>Build and install</h2>
