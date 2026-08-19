@@ -11,7 +11,7 @@ hotkeys.
 - **Upstream**: https://www.autohotkey.com/ (the original Windows project;
   this repository is a fork of the v2.0.26 release with a Linux port of the
   interpreter on the `linux-port` branch).
-- **Latest build**: `v2.0.26-linux.10` (see
+- **Latest build**: `v2.0.26-linux.12` (see
   [Releases](https://github.com/MonoEven/Autohotkey_Linux/releases)).
   Doc-check **1053/1053** (regular + ASan), regression 27/27,
   Wayland 13/13, XWayland 247/247.
@@ -31,9 +31,18 @@ hotkeys.
 - **Native Wayland backend** (used when no X display is available):
   xdg-shell windows, virtual keyboard/pointer input
   (`zwp_virtual_keyboard_v1` / `zwlr_virtual_pointer_manager_v1`),
-  modifier-combo hotkey-style bindings and screen capture via
-  `wlr-screencopy` — **13** Wayland + **247** XWayland assertions pass
-  under sway.
+  screen capture via `wlr-screencopy` — **13** Wayland + **247**
+  XWayland assertions pass under sway.
+- **Unified input backend** (linux.12): `AHK_INPUT_BACKEND=auto|x11|
+  portal|gnome-shell|evdev` selects the global-hotkey backend — X11
+  `XGrabKey`/`XGrabButton` on X sessions; the **GNOME Shell extension**
+  (GNOME 49 Wayland, zero-confirmation exclusive hotkeys:
+  `1::`/`^1::`/`F12::` grab the physical key with no per-binding dialog,
+  with automatic re-registration after a shell reload and fail-open
+  release on exit); and the standard **XDG Global Shortcuts Portal**
+  backend as the KDE/other-Wayland fallback.
+  `AHK_FORCE_GLOBAL_SHORTCUTS=1` keeps its documented meaning (explicitly
+  require the Portal backend).
 - **Hotstring** (round-32): real expansion of `Hotstring()` from the typed
   stream — the all-keys capture engine holds trigger prefixes and, on a
   full match (end char or `*`), suppresses the trigger and sends the
@@ -144,8 +153,11 @@ The docs site is English-only.
   `SoundGet*`/`SoundSet*` need `pactl`/`amixer` installed.  There is no
   tray icon, so `TrayTip` / `TraySetIcon` raise a clear error.
 - Hotkeys, hotstrings and InputHook capture work through **XGrabKey** +
-  the typed-text capture engine on X11/XWayland; in pure Wayland there is
-  no global-hotkey input protocol, so those need an XWayland session.
+  the typed-text capture engine on X11/XWayland; in Wayland sessions
+  global hotkeys go through the GNOME Shell extension or the Global
+  Shortcuts Portal (see the input-backend bullet above; bare `~`-style
+  passthrough and full remapping on Wayland are the evdev/ahk-inputd
+  roadmap).
 
 ## Support ##
 
