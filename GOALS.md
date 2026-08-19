@@ -140,6 +140,29 @@
       a(sa{sv}) 格式与 app_id（GNOME 后端需要合法应用身份；裸 CLI 会因空
       app_id 被丢弃，需从 .desktop/app scope 运行或用 Xorg/XWayland 会话）；
       已在 Ubuntu 25.10 + GNOME 49 上打通会话/绑定/Activated 全链路
+- [x] **统一输入后端接口**（round-35）：`input_backend.h/.cpp` 抽象
+      Register/Unregister/Enable/Disable/capabilities/事件回调骨架，形成
+      x11/portal/gnome-shell/evdev 四 backend；`AHK_INPUT_BACKEND=auto|x11|
+      portal|gnome-shell|evdev` 自动选择（X11 会话→X11；GNOME Wayland+扩展→
+      gnome-shell；其他 Wayland→portal；evdev 暂报 not installed）；
+      `AHK_FORCE_GLOBAL_SHORTCUTS=1` 语义保留=明确要求 Portal backend
+      （不被偷改）；Portal 后端冻结为稳定基线/KDE 回退
+- [x] **GNOME Shell extension backend**（round-35）：`extension/` 极薄 D-Bus
+      broker（`io.github.autohotkey.GlobalHotkeys1`：Register/Unregister/
+      ClearOwner + Activated/Deactivated），Mutter 侧
+      `grab_accelerator + Main.wm.allowKeybinding` 零确认裸键抓取（已实测
+      GNOME 49 上裸 `1`/`a`/`space` 全部 ACTIVATED，5/5；缺 allowKeybinding
+      会被 `_filterKeybinding` 白名单静默过滤——源码级确认）；C++ 侧
+      `input_backend_gnome_shell.*`（libdbus 客户端：NameHasOwner 探测、
+      差量注册/注销、Activated 队列→新线程触发热键、ClearOwner/peer-vanished
+      双保险释放）；接入 LinuxHotkeyStateChanged 与主循环 dispatch；
+      **实机 E2E 全链路验证**（Ubuntu 25.10 + GNOME 49）：启动零授权窗口、
+      物理 `1` → Activated → 回调 fired、suppression（编辑器收不到键）、
+      退出后按键恢复（unregister）、kill -9 后 grab 自动释放（fail-open）、
+      `^1`/`F12`/按住 repeat（~30ms 间隔）触发、Deactivated 信号中继
+      （`1 up::` 的信号源就绪）、多 script 同键冲突（先注册者持有，后者被拒）、
+      扩展 disable→enable 后 AHK 自动重注册恢复（NameOwnerChanged →
+      sNeedResync → Dispatch 重同步）
 - [x] **pages 站点维护**：语言切换仅中英文 + 中文页 `docs/zh.htm` + 安装指南
       改为 Linux 实际方式（`docs/howto/Install.htm`）
 
@@ -148,7 +171,11 @@
 - [ ] InputHook OnChar/OnKeyDown 通知回调接入（统一事件流，native 派发现场调用
       脚本回调需准线程启动；当前为文档化限制）
 - [ ] 扫描码热键与 `A & B` 前缀（需按键缓冲状态机/统一事件流；注册时已能力校验拒绝）
-- [ ] XDG Global Shortcuts Portal（Wayland 桌面全局热键协议，能力评估后实施）
-- [ ] evdev/uinput 低层输入 broker（绕过 X 抓取的独立输入源）
+- [ ] GNOME Shell backend 能力边界补全：`~1::` passthrough、`1 up::`（依赖
+      accelerator-deactivated 实测）、完整 `*` wildcard、多 script 同键冲突策略、
+      shell restart 后 runtime 重连重注册（状态真相在 runtime，扩展只是投影）
+- [ ] evdev/uinput 低层输入 broker（ahk-inputd：EVIOCGRAB + uinput replay，
+      完整 AHK 输入语义 `~1::`/remap/`A & B`；作为 gnome-shell backend 的
+      远期完整路线，非现在）
 - [ ] 输入法实际集成（Phase 1：XIM 事件过滤 + IME 状态变量）
 - [ ] Wayland text-input（zwp_text_input_v3）Send 文本投递

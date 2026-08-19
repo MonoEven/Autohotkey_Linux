@@ -27,6 +27,7 @@
 #include "core_hotkey_linux.h"
 #include "core_capture_linux.h"
 #include "core_gshortcut_linux.h"
+#include "input_backend.h"
 #include "core_clipboard_linux.h"
 #include "core_wayland_linux.h"
 #include "../gui/script_gui_linux.h"
@@ -187,9 +188,9 @@ void LinuxRunMainLoop()
 		}
 		else
 			ScriptSleep(sleep_ms);
-		// Portal-driven global hotkeys (Wayland mode or AHK_FORCE_...) need
-		// pumping regardless of which backend the loop waited on.
-		LinuxGShortcutDispatch();
+		// Global-hotkey backends (portal / GNOME Shell) need pumping
+		// regardless of which backend the loop waited on.
+		LinuxInputBackendDispatch();
 		LinuxCheckScriptTimers();
 		// A non-persistent GUI script ends when its last window closes (and
 		// there are no timers to keep it alive) - the same way the Windows

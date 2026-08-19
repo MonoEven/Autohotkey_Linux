@@ -69,14 +69,49 @@ D-Bus COM layer). The port has two display backends:</p>
   <li><b>Native Wayland backend</b> (used when no X display is available):
     xdg-shell windows, virtual keyboard/pointer input
     (zwp_virtual_keyboard_v1 / zwlr_virtual_pointer_manager_v1),
-    screen capture via wlr-screencopy. Hotkeys work in Wayland sessions through the
-    XDG Global Shortcuts Portal (org.freedesktop.portal.GlobalShortcuts, GNOME 45+/KDE):
-    Hotkey registrations bind with the compositor and fire on the physical key.
-    Caveat: a few compositor/driver builds (e.g. Ubuntu 25.10 &rsquo;s xdg-desktop-portal
-    1.20.3 + GNOME 49) only accept binds when they can resolve a valid app identity
-    for the caller (a bare CLI resolves none and is rejected); run from a matching
-    .desktop/app scope, use AHK_FORCE_GLOBAL_SHORTCUTS=1 to force the portal path
-    behind XWayland, or use an XWayland/Xorg session on those systems.</li>
+    screen capture via wlr-screencopy. Global hotkeys in Wayland sessions go
+    through the unified input backend (<code>input_backend.h</code>), which
+    selects automatically:
+    <ul>
+      <li><b>GNOME Shell extension backend</b> (GNOME 49, zero-confirmation
+        exclusive hotkeys: <code>1::</code>/<code>^1::</code>/<code>F12::</code>
+        grab and suppress the physical key with no per-binding dialog).  The
+        companion extension (<code>extension/</code> in the repo) is a thin
+        D-Bus broker (<code>io.github.autohotkey.GlobalHotkeys1</code>) that
+        registers accelerators through
+        <code>Meta.Display.grab_accelerator()</code> +
+        <code>Main.wm.allowKeybinding()</code> (the whitelist step the portal
+        backend performs via shellDBus) and relays activations back; it never
+        parses AHK, executes commands or forks.
+        <b>Verified on Ubuntu 25.10 + GNOME 49</b> (E2E: physical
+        <code>1</code> fires the hotkey with no confirmation dialog, the key
+        is suppressed from the focused app, exiting the script restores the
+        key, kill -9 releases the grab fail-open, <code>Ctrl+1</code>/<code>F12</code>
+        and key-repeat work, and a gnome-shell extension reload
+        (disable/enable) is followed by automatic re-registration).
+        Capability scope (v1): exclusive hotkeys only &mdash; <code>~1::</code>
+        passthrough, remaps, <code>a &amp; b::</code> and full wildcards are
+        NOT in this backend (evdev/ahk-inputd lane); <code>1 up::</code> has
+        its signal source (accelerator-deactivated is relayed) but is not yet
+        consumed by the runtime.</li>
+      <li><b>XDG Global Shortcuts Portal backend</b>
+        (org.freedesktop.portal.GlobalShortcuts, GNOME 45+/KDE, the standard
+        safe fallback): Hotkey registrations bind with the compositor and fire
+        on the physical key.  Caveat: a few compositor/driver builds (e.g.
+        Ubuntu 25.10 &rsquo;s xdg-desktop-portal 1.20.3 + GNOME 49) only accept
+        binds when they can resolve a valid app identity for the caller (a
+        bare CLI resolves none and is rejected); run from a matching
+        .desktop/app scope on those systems.</li>
+    </ul>
+  </li>
+  <li>Backend selection: <code>AHK_INPUT_BACKEND=auto|x11|portal|gnome-shell|evdev</code>
+    (auto: X11 session &rarr; X11; GNOME Wayland with the extension installed
+    &rarr; gnome-shell; other Wayland &rarr; portal; <code>evdev</code> reports
+    &ldquo;backend not installed&rdquo; until ahk-inputd ships).
+    <code>AHK_FORCE_GLOBAL_SHORTCUTS=1</code> keeps its documented meaning:
+    explicitly require the standard Portal backend (it is not reused for the
+    GNOME Shell backend).  An XWayland/Xorg session remains the stable
+    fallback on all systems.</li>
 </ul>
 
 <h2>Differences from Windows AutoHotkey</h2>

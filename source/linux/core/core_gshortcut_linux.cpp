@@ -16,6 +16,7 @@
 //    2 = permission pending/dismissed).
 //  Signals on the session object: Activated(o, s id, t, a{sv}) etc.
 #include "core_gshortcut_linux.h"
+#include "input_backend.h"
 #include "../../script.h"
 #include "../../globaldata.h"
 #include "../../script_func_impl.h"
@@ -54,9 +55,11 @@ void SetError(const char *aText)
 
 bool Applicable()
 {
-	if (getenv("DISPLAY"))
-		return getenv("AHK_FORCE_GLOBAL_SHORTCUTS") != nullptr; // Force behind XWayland.
-	return true; // Pure Wayland (no X).
+	// Follow the unified input-backend selection: the portal activates only
+	// when the router chose it for this session (Wayland without the GNOME
+	// Shell extension, or explicit AHK_INPUT_BACKEND=portal /
+	// AHK_FORCE_GLOBAL_SHORTCUTS=1).  X11 sessions keep XGrabKey instead.
+	return LinuxInputBackendKind() == AhkInputBackendKind::PORTAL;
 }
 
 void WideToUtf8(const wchar_t *aIn, char *aOut, size_t aSize)

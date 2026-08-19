@@ -1,0 +1,107 @@
+// Unified input backend abstraction for the Linux port.
+//
+// Backend kinds and selection policy:
+//
+//   AHK_INPUT_BACKEND=auto          (default; see below)
+//   AHK_INPUT_BACKEND=x11           force X11 XGrabKey/XRecord path
+//   AHK_INPUT_BACKEND=portal        force XDG Global Shortcuts Portal
+//   AHK_INPUT_BACKEND=gnome-shell   force GNOME Shell extension backend
+//   AHK_INPUT_BACKEND=evdev         force native evdev/uinput (ahk-inputd);
+//                                   reports "backend not installed" for now
+//
+//   AHK_FORCE_GLOBAL_SHORTCUTS=1    keeps its documented meaning: "explicitly
+//                                   require the standard GlobalShortcuts
+//                                   Portal backend".  It is NOT reused for the
+//                                   GNOME Shell backend (different privilege
+//                                   level), so it wins over auto selection.
+//
+// auto selection:
+//   X11 session                       -> X11
+//   Wayland session + GNOME Shell ext -> gnome-shell (zero-confirm bare keys)
+//   Wayland session (GNOME w/o ext,
+//     KDE, other)                     -> portal (safe baseline)
+//
+// The X11 path is deeply integrated in core_hotkey_linux.cpp (XGrabKey /
+// XRecord / reconcile) and is not re-routed through this interface: when the
+// resolved kind is X11, LinuxInputBackendSync()/Dispatch() are no-ops and the
+// X11 machinery keeps running as today.
+//
+// The Portal backend (core_gshortcut_linux.cpp) is frozen: no new
+// GNOME-49-specific workarounds go into it.  The GNOME Shell backend
+// (input_backend_gnome_shell.cpp) talks over the session bus to the "thin"
+// extension shipped in extension/ (Register/Unregister/ClearOwner D-Bus
+// methods, Activated/Deactivated signals, grab_accelerator + allowKeybinding,
+// no AHK parsing/execution inside the shell).
+#pragma once
+
+#include "../../stdafx.h"
+#include <string>
+
+enum class AhkInputBackendKind
+{
+	AUTO,        // Not yet resolved (LinuxInputBackendKind() resolves it).
+	X11,         // XGrabKey / XRecord (existing core_hotkey_linux.cpp).
+	PORTAL,      // XDG Global Shortcuts Portal.
+	GNOME_SHELL, // GNOME Shell extension broker.
+	EVDEV,       // Native evdev/uinput (ahk-inputd) - future.
+};
+
+// What a backend can do.  The GNOME Shell backend is an exclusive-hotkey
+// backend: 1::/^1::/F12:: work zero-confirm with suppression; ~1::, remaps,
+// a & b::, complete wildcards and Send are out of scope for it (that is the
+// evdev/ahk-inputd lane).
+struct AhkInputBackendCaps
+{
+	bool global_hotkeys;   // Can register global hotkeys.
+	bool suppress;         // Hotkey consumes the key (exclusive).
+	bool passthrough;      // ~1:: observe without consuming.
+	bool key_up;           // 1 up:: (accelerator-deactivated semantics).
+	bool wildcard;         // *1:: modifier-wildcard.
+	bool bare_keys;        // Keys without modifiers (1, a, F12, ...).
+	bool zero_confirm;     // No per-binding confirmation dialog.
+	bool dynamic;          // Runtime register/unregister.
+	bool multi_owner;      // Multiple scripts can register concurrently.
+};
+
+// Resolve the effective backend from the environment (see file header).
+AhkInputBackendKind LinuxInputBackendKind();
+
+// Capabilities of the currently effective backend (kind + caps).
+const AhkInputBackendCaps *LinuxInputBackendCaps();
+const char *LinuxInputBackendName();
+
+// Hotkey set changed (called from LinuxHotkeyStateChanged): let the active
+// backend reconcile its registrations.  No-op for X11/EVDEV.
+void LinuxInputBackendSync();
+
+// Pump the active backend's async events from the main event loop.
+void LinuxInputBackendDispatch();
+
+// Release everything (script exit / reload).
+void LinuxInputBackendShutdown();
+
+// Human-readable failure reason (empty when the last operation succeeded).
+const wchar_t *LinuxInputBackendLastError();
+
+// True when the active backend currently has shortcuts bound.
+bool LinuxInputBackendActive();
+
+// --- shared helpers (used by the portal + gnome-shell backends) -------------
+// Kept here so neither backend duplicates the hotkey fire logic; the X11
+// machinery in core_hotkey_linux.cpp is not affected.
+
+struct Hotkey;      // ../../hotkey.h
+struct HotkeyVariant;
+
+// Enabled/suspended + normal/hook type check.
+bool AhkBackendHotkeyEnabled(Hotkey *aHk);
+
+// Variant-level fireability (enabled, suspend-exempt, HotIf criterion).
+bool AhkBackendVariantFireable(Hotkey *aHk, HotkeyVariant *aV);
+
+// Fire the hotkey body in a new thread (same semantics as the portal path).
+void AhkBackendFireHotkey(Hotkey *aHk);
+
+// GTK-accelerator string for a hotkey ("1", "<Control>1", ...).  Returns an
+// empty string when the key cannot be represented.
+std::string AhkBackendComboForHotkey(Hotkey *aHk);

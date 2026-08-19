@@ -16,6 +16,7 @@
 #include "core_capture_linux.h"
 #include "core_wayland_linux.h"
 #include "core_gshortcut_linux.h"
+#include "input_backend.h"
 #include "core_clipboard_linux.h"
 #include "../gui/script_gui_linux.h"
 #include <X11/Xlib.h>
@@ -73,7 +74,7 @@ bool MsgSleep(int aDuration, MessageMode)
 			LinuxClipboardDispatchX11(d);
 		if (LinuxWaylandActive())
 			LinuxWaylandDispatch();
-		LinuxGShortcutDispatch();
+		LinuxInputBackendDispatch();
 		if (LinuxRestartRequested())
 		{
 			g_script.ExitApp(EXIT_RELOAD);
@@ -94,7 +95,7 @@ bool MsgSleep(int aDuration, MessageMode)
 			LinuxClipboardDispatchX11(d);
 		if (LinuxWaylandActive())
 			LinuxWaylandDispatch();
-		LinuxGShortcutDispatch();
+		LinuxInputBackendDispatch();
 		if (LinuxRestartRequested())
 		{
 			g_script.ExitApp(EXIT_RELOAD);

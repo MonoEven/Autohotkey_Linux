@@ -105,6 +105,8 @@ add_executable(ahk_core
     core_hotkey_linux.cpp
     core_capture_linux.cpp
     core_gshortcut_linux.cpp
+    input_backend.cpp
+    input_backend_gnome_shell.cpp
     core_clipboard_linux.cpp
     core_dllcall_linux.cpp
     core_com_dbus_linux.cpp
