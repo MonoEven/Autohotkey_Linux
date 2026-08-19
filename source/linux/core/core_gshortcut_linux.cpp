@@ -392,7 +392,21 @@ void DoBind()
 	dbus_message_iter_close_container(&it, &arr);
 	const char *parent = "/";
 	dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &parent);
-	AppendEmptyDict(&it);
+	{
+		// Also carry the app_id in the bind options: some backends (GNOME's
+		// GlobalShortcutsProvider) reject binds with an empty app_id.
+		DBusMessageIter opts, de, var;
+		dbus_message_iter_open_container(&it, DBUS_TYPE_ARRAY, "{sv}", &opts);
+		const char *ka = "app_id";
+		dbus_message_iter_open_container(&opts, DBUS_TYPE_DICT_ENTRY, NULL, &de);
+		dbus_message_iter_append_basic(&de, DBUS_TYPE_STRING, &ka);
+		const char *av = "org.autohotkey.linux";
+		dbus_message_iter_open_container(&de, DBUS_TYPE_VARIANT, "s", &var);
+		dbus_message_iter_append_basic(&var, DBUS_TYPE_STRING, &av);
+		dbus_message_iter_close_container(&de, &var);
+		dbus_message_iter_close_container(&opts, &de);
+		dbus_message_iter_close_container(&it, &opts);
+	}
 	if (SendNoReply(msg))
 		sBindPending = true; // Outcome via Request::Response (0 bound / 2 pending-permission).
 }
@@ -443,7 +457,6 @@ void LinuxGShortcutSync()
 void LinuxGShortcutDispatch()
 {
 	static int dbg = 0;
-	if ((++dbg % 40) == 1) fprintf(stderr, "[gsh] dispatch#%d conn=%p\n", dbg, (void*)sConn);
 	if (!sConn) return;
 	if (dbus_connection_read_write_dispatch(sConn, 0) == FALSE)
 	{
