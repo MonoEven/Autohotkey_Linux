@@ -55,7 +55,9 @@ for_window [title="ImgMain"] move position 50 60
 bindsym a exec touch /tmp/wl_key_a
 bindsym Shift+Return exec touch /tmp/wl_key_sr
 bindsym Control+Return exec touch /tmp/wl_key_cr
-bindsym Control_L+v exec touch /tmp/wl_key_cv
+# Generic 'Control' (not 'Control_L'): sway matches the modifier STATE, and
+# the virtual keyboard pushes the xkb Control bit before the key event.
+bindsym Control+v exec touch /tmp/wl_key_cv
 bindsym button3 exec touch /tmp/wl_btn3
 EOF
 cd /tmp/swayhome || exit 1

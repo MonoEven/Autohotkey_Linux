@@ -406,7 +406,16 @@ unsigned int LinuxWaylandKeycodeForVk(unsigned int aVK)
 	// The evdev keyboard rows are NOT contiguous like the Windows VK range:
 	// KEY_0..KEY_9 run 11,2,3,...9,10 and F10 comes before F11 (KEY_F1..F10
 	// = 59..68, KEY_F11/F12 = 87/88, KEY_F13..F24 = 183..194).  Use explicit
-	// tables instead of arithmetic offsets (check0818 P1).
+	// tables instead of arithmetic offsets (check0818 P1).  The LETTERS are
+	// also QWERTY-ordered and non-contiguous (KEY_A..KEY_L = 30..38, then
+	// KEY_Z=44, KEY_X=45, KEY_C=46, KEY_V=47, KEY_B=48, KEY_N=49, KEY_M=50)
+	// -- KEY_A + offset would map 'V' to KEY_COMMA(51), so the paste-path
+	// Ctrl+V never matched sway's bindsym (round-34 catch).
+	static constexpr unsigned int letters[] = {
+		KEY_A, KEY_B, KEY_C, KEY_D, KEY_E, KEY_F, KEY_G, KEY_H, KEY_I, KEY_J,
+		KEY_K, KEY_L, KEY_M, KEY_N, KEY_O, KEY_P, KEY_Q, KEY_R, KEY_S, KEY_T,
+		KEY_U, KEY_V, KEY_W, KEY_X, KEY_Y, KEY_Z
+	};
 	static constexpr unsigned int digits[] = {
 		KEY_0, KEY_1, KEY_2, KEY_3, KEY_4,
 		KEY_5, KEY_6, KEY_7, KEY_8, KEY_9
@@ -418,7 +427,7 @@ unsigned int LinuxWaylandKeycodeForVk(unsigned int aVK)
 		KEY_F19, KEY_F20, KEY_F21, KEY_F22, KEY_F23, KEY_F24
 	};
 	if (aVK >= 'A' && aVK <= 'Z')
-		return KEY_A + (aVK - 'A');
+		return letters[aVK - 'A'];
 	if (aVK >= '0' && aVK <= '9')
 		return digits[aVK - '0'];
 	if (aVK >= 0x70 && aVK <= 0x87) // F1-F24.
