@@ -40,6 +40,7 @@ install -m 0755 "$CORE" "$STAGE/ahk_core"
 install -m 0755 tools/linux/install.sh   "$STAGE/tools/linux/install.sh"
 install -m 0755 tools/linux/install-gui.sh "$STAGE/tools/linux/install-gui.sh"
 install -m 0644 tools/linux/ahk-launcher.in "$STAGE/tools/linux/ahk-launcher.in"
+printf '%s' "$VER" > "$STAGE/tools/linux/VERSION"
 cp -r docs-v2 "$STAGE/docs-v2"
 install -m 0644 README.md "$STAGE/README.md"
 if [ -f LICENSE ]; then
@@ -63,12 +64,13 @@ if command -v dpkg-deb >/dev/null 2>&1; then
   cp -r docs-v2 "$DEBROOT/usr/share/doc/autohotkey/docs-v2"
   install -m 0644 README.md "$DEBROOT/usr/share/doc/autohotkey/README.md"
   [ -f LICENSE ] && install -m 0644 LICENSE "$DEBROOT/usr/share/doc/autohotkey/LICENSE"
-  # Full launcher (update/uninstall) rendered from the shared template;
-  # the deb layout matches install.sh --prefix /usr.
+  # Full launcher (--update/--uninstall/--check) rendered from the shared
+  # template; the deb layout matches install.sh --prefix /usr.
   sed -e "s|@PREFIX@|/usr|g" \
       -e "s|@LIB_SUB@|share/autohotkey|g" \
       -e "s|@BIN_SUB@|bin|g" \
       -e "s|@DOC_SUB@|share/doc/autohotkey|g" \
+      -e "s|@AHK_VERSION@|$VER|g" \
       "$REPO_DIR/tools/linux/ahk-launcher.in" > "$DEBROOT/usr/bin/ahk"
   chmod 0755 "$DEBROOT/usr/bin/ahk"
   DEB_SIZE=$(du -sk "$DEBROOT" | awk '{print $1}')

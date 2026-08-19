@@ -12,6 +12,8 @@
 #                     $prefix/share/autohotkey)
 #   --doc DIR         directory for documentation (default:
 #                     $prefix/share/doc/autohotkey)
+#   --version VER     release to stamp into the launcher (e.g. 2.0.26-linux.12;
+#                     default: from AHK_VERSION env or "unknown")
 #   --uninstall       remove an existing installation (needs the same
 #                     --prefix it was installed with)
 #   --yes             do not prompt
@@ -26,6 +28,7 @@ set -u
 PREFIX="${PREFIX:-}"
 UNINSTALL=0
 YES=0
+AHK_VERSION="${AHK_VERSION:-}"
 BIN_SUB=bin
 LIB_SUB=share/autohotkey
 DOC_SUB=share/doc/autohotkey
@@ -38,6 +41,7 @@ while [ $# -gt 0 ]; do
     --bin) BIN_SUB="$2"; shift 2 ;;
     --lib) LIB_SUB="$2"; shift 2 ;;
     --doc) DOC_SUB="$2"; shift 2 ;;
+    --version) AHK_VERSION="$2"; shift 2 ;;
     --uninstall) UNINSTALL=1; shift ;;
     --yes) YES=1; shift ;;
     --help|-h) usage 0 ;;
@@ -115,11 +119,17 @@ mkdir -p "$BINDIR" "$LIBDIR" "$DOCDIR" || { echo "install.sh: cannot create dire
 install -m 0755 "$CORE" "$LIBDIR/ahk_core" || exit 1
 
 # A tiny wrapper so scripts can run `ahk script.ahk`; rendered from the
-# shared launcher template (update/uninstall live in the template).
+# shared launcher template (--update/--uninstall/--check live in it).
+# Stamp the release: --version wins, then AHK_VERSION, then a VERSION file
+# shipped in release tarballs, else "unknown".
+[ -n "$AHK_VERSION" ] || AHK_VERSION=$(cat "$SELF_DIR/VERSION" 2>/dev/null || true)
+[ -n "$AHK_VERSION" ] || AHK_VERSION=$(cat "$REPO_DIR/tools/linux/VERSION" 2>/dev/null || true)
+[ -n "$AHK_VERSION" ] || AHK_VERSION="unknown"
 sed -e "s|@PREFIX@|$PREFIX|g" \
     -e "s|@LIB_SUB@|$LIB_SUB|g" \
     -e "s|@BIN_SUB@|$BIN_SUB|g" \
     -e "s|@DOC_SUB@|$DOC_SUB|g" \
+    -e "s|@AHK_VERSION@|$AHK_VERSION|g" \
     "$REPO_DIR/tools/linux/ahk-launcher.in" > "$BINDIR/ahk"
 chmod 0755 "$BINDIR/ahk"
 

@@ -1,27 +1,110 @@
 #!/bin/sh
 # AutoHotkey v2 Linux port launcher (shared template).
 # Substituted by install.sh and pack.sh: @PREFIX@, @LIB_SUB@, @BIN_SUB@,
-# @DOC_SUB@.  Installed as <prefix>/bin/ahk (tarball) or /usr/bin/ahk (deb).
-#   ahk script.ahk       run a script with the interpreter
-#   ahk uninstall        cleanly remove this installation
-#   ahk update [VER]     update (or downgrade) to the latest / given release
-#                         (VER like 2.0.26-linux.8; blank = latest)
+# @DOC_SUB@, @AHK_VERSION@ (e.g. "2.0.26-linux.12").  Installed as
+# <prefix>/bin/ahk (tarball) or /usr/bin/ahk (deb).
+#
+# Commands are all "--" prefixed so plain names (e.g. `ahk check.ahk`,
+# `ahk update.ahk`) are passed to the interpreter as scripts, never
+# interpreted as built-ins.
+#
+#   ahk script.ahk            run a script with the interpreter
+#   ahk --version             print the port version, incl. the release
+#   ahk --help                show this help
+#   ahk --check               integrity / install method / latest release
+#   ahk --uninstall           cleanly remove this installation
+#   ahk --update [VER]        update (or downgrade) to latest / given release
+#                              (VER like 2.0.26-linux.8; blank = latest)
 AHK_PREFIX="@PREFIX@"
+AHK_VERSION="@AHK_VERSION@"
 AHK_LIB="$AHK_PREFIX/@LIB_SUB@"
 AHK_BIN="$AHK_PREFIX/@BIN_SUB@"
 AHK_DOC="$AHK_PREFIX/@DOC_SUB@"
 
+# True when this prefix carries the Debian/Ubuntu package (dpkg state).
+is_deb() {
+  [ "$AHK_PREFIX" = "/usr" ] && command -v dpkg >/dev/null 2>&1 \
+    && dpkg -l autohotkey-linux >/dev/null 2>&1
+}
+
 cmd="${1:-}"
 case "$cmd" in
-  uninstall)
-    if [ ! -f "$AHK_BIN/ahk" ]; then
+  --version|-v)
+    if [ -n "$AHK_VERSION" ]; then
+      echo "AutoHotkey v2.0.26 Linux port v$AHK_VERSION"
+    else
+      echo "AutoHotkey v2.0.26 Linux port (unknown release)"
+    fi
+    exit 0
+    ;;
+  --help|-h)
+    echo "AutoHotkey v2 Linux port launcher"
+    echo "Usage: ahk [OPTION] [script.ahk [args...]]"
+    echo "  --version, -v      print the port version (incl. release) and exit"
+    echo "  --check            check install integrity, method and latest release"
+    echo "  --uninstall        cleanly remove this installation"
+    echo "  --update [VER]     update (or downgrade) to the latest / given release"
+    echo "  --help, -h         show this help"
+    echo "Anything else is treated as a script name and given to the interpreter."
+    exit 0
+    ;;
+  --check)
+    echo "ahk --check: AutoHotkey v2 Linux port"
+    echo "  installed version : ${AHK_VERSION:-unknown}"
+    echo "  prefix            : $AHK_PREFIX"
+    echo "  interpreter       : $AHK_LIB/ahk_core"
+    if is_deb; then
+      echo "  install method    : Debian/Ubuntu package (dpkg)"
+    else
+      echo "  install method    : tarball (install.sh)"
+    fi
+    # Integrity of the core files.
+    ok=1
+    if [ ! -e "$AHK_LIB/ahk_core" ]; then echo "  MISSING           : $AHK_LIB/ahk_core"; ok=0; fi
+    [ -x "$AHK_LIB/ahk_core" ] || { echo "  NOT EXECUTABLE    : $AHK_LIB/ahk_core"; ok=0; }
+    if [ ! -e "$AHK_BIN/ahk" ]; then echo "  MISSING           : $AHK_BIN/ahk"; ok=0; fi
+    if [ "$AHK_VERSION" != "@AHK_VERSION@" ] && [ -n "$AHK_VERSION" ]; then
+      [ "$AHK_VERSION" = "unknown" ] || {
+        if [ ! -f "$AHK_BIN/ahk" ] || [ "$(dirname "$AHK_BIN/ahk")" != "$AHK_BIN" ]; then :; fi
+      }
+    fi
+    if [ "$ok" = 1 ]; then echo "  integrity         : OK"; else echo "  integrity         : PROBLEMS FOUND"; fi
+    # Docs present? (informational)
+    if [ -d "$AHK_DOC" ]; then echo "  docs              : $AHK_DOC"; else echo "  docs              : (none)"; fi
+    # Latest release from GitHub.
+    if command -v curl >/dev/null 2>&1; then
+      tag=$(curl -fsSL --connect-timeout 15 "https://api.github.com/repos/MonoEven/Autohotkey_Linux/releases/latest" 2>/dev/null)
+    elif command -v wget >/dev/null 2>&1; then
+      tag=$(wget -qO- --timeout=15 "https://api.github.com/repos/MonoEven/Autohotkey_Linux/releases/latest" 2>/dev/null)
+    else
+      tag=""
+    fi
+    latest=$(printf '%s\n' "$tag" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\([^"]*\)".*/\1/p' | head -1)
+    if [ -n "$latest" ]; then
+      echo "  latest release    : v$latest"
+      cur=$(printf '%s\n' "$AHK_VERSION" | sed 's/^v//')
+      if [ -n "$cur" ] && [ "$cur" != "unknown" ] && [ "$cur" != "$latest" ]; then
+        if is_deb; then
+          echo "  update available  : yes (use apt or install the new .deb)"
+        else
+          echo "  update available  : yes (ahk --update)"
+        fi
+      else
+        echo "  update available  : no (up to date)"
+      fi
+    else
+      echo "  latest release    : (could not reach GitHub)"
+    fi
+    exit 0
+    ;;
+  --uninstall)
+    if ! [ -f "$AHK_BIN/ahk" ]; then
       echo "ahk: no installation found at $AHK_PREFIX" >&2
       exit 1
     fi
     # If this wrapper came from the Debian/Ubuntu package, prefer dpkg so
     # the package state stays consistent.
-    if [ "$AHK_PREFIX" = "/usr" ] && command -v dpkg >/dev/null 2>&1 \
-       && dpkg -l autohotkey-linux >/dev/null 2>&1; then
+    if is_deb; then
       echo "This installation is the Debian package 'autohotkey-linux'."
       echo "Remove it with:  sudo apt remove autohotkey-linux"
       exit 1
@@ -41,8 +124,14 @@ case "$cmd" in
     echo "Done.  AutoHotkey has been uninstalled."
     exit 0
     ;;
-  update)
+  --update)
     ver="${2:-}"
+    if is_deb; then
+      echo "This installation is the Debian package 'autohotkey-linux'."
+      echo "Update it with:  sudo apt update && sudo apt install --only-upgrade autohotkey-linux"
+      echo "(or download the new .deb from the GitHub release and run: sudo apt install ./autohotkey-linux-<ver>-amd64.deb)"
+      exit 1
+    fi
     if [ -z "$ver" ]; then
       # Resolve the latest release tag from the GitHub API.
       if command -v curl >/dev/null 2>&1; then
@@ -52,19 +141,11 @@ case "$cmd" in
         tag=$(wget -qO- --timeout=15 \
           "https://api.github.com/repos/MonoEven/Autohotkey_Linux/releases/latest" 2>/dev/null)
       else
-        echo "ahk: update needs curl or wget" >&2
+        echo "ahk: --update needs curl or wget" >&2
         exit 1
       fi
       ver=$(printf '%s\n' "$tag" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\([^"]*\)".*/\1/p' | head -1)
       [ -n "$ver" ] || { echo "ahk: could not determine the latest version" >&2; exit 1; }
-    fi
-    # Debian package: prefer apt (keeps dpkg state in sync).
-    if [ "$AHK_PREFIX" = "/usr" ] && command -v dpkg >/dev/null 2>&1 \
-       && dpkg -l autohotkey-linux >/dev/null 2>&1; then
-      echo "This installation is the Debian package 'autohotkey-linux'."
-      echo "Update it with:  sudo apt update && sudo apt install --only-upgrade autohotkey-linux"
-      echo "(or download the new .deb from the GitHub release and run: sudo apt install ./autohotkey-linux-<ver>-amd64.deb)"
-      exit 1
     fi
     tmp=$(mktemp -d) || exit 1
     trap 'rm -rf "$tmp"' EXIT
@@ -92,6 +173,21 @@ case "$cmd" in
     else
       echo "ahk: $AHK_PREFIX is not writable and sudo is unavailable" >&2
       rc=1
+    fi
+    # IMPORTANT: the downloaded tarball may carry an older install.sh that
+    # writes a bare wrapper (no --update/--check/--version handling).  We
+    # always restore the full launcher from the current installation and
+    # re-stamp the new release, so the command set stays identical no matter
+    # which direction (upgrade or downgrade) we went.
+    if [ "$rc" = 0 ] && [ -f "$AHK_BIN/ahk" ]; then
+      cp "$0" "$AHK_BIN/ahk.new" 2>/dev/null || true
+      if [ -f "$AHK_BIN/ahk.new" ]; then
+        sed -e "s|^AHK_PREFIX=.*|AHK_PREFIX=\"$AHK_PREFIX\"|" \
+            -e "s|^AHK_VERSION=.*|AHK_VERSION=\"$ver\"|" \
+            "$AHK_BIN/ahk.new" > "$AHK_BIN/ahk" 2>/dev/null || true
+        chmod 0755 "$AHK_BIN/ahk"
+        rm -f "$AHK_BIN/ahk.new"
+      fi
     fi
     if [ "$rc" = 0 ]; then
       echo "AutoHotkey updated to v$ver."

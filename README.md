@@ -96,12 +96,19 @@ The installer places the `ahk` launcher, the interpreter and the
 documentation under the chosen prefix:
 
 ```bash
-ahk --version        # AutoHotkey v2.0.26 Linux port (X11/Wayland)
+ahk --version         # AutoHotkey v2.0.26 Linux port v2.0.26-linux.12
+ahk --check           # integrity, install method, latest release check
 ahk your-script.ahk
-ahk uninstall        # cleanly remove this installation
-ahk update           # update to the latest GitHub release
-ahk update 2.0.26-linux.8   # or a specific release (upgrade or downgrade)
+ahk --uninstall       # cleanly remove this installation
+ahk --update          # update to the latest GitHub release
+ahk --update 2.0.26-linux.8   # or a specific release (upgrade or downgrade)
 ```
+
+> Note: launcher commands are `--` prefixed (`--update`, `--uninstall`,
+> `--check`, `--version`) so plain names such as `ahk update.ahk` are always
+> treated as scripts.  Old releases were removed from the GitHub Releases
+> page; only the latest release is published, so `ahk --update` always
+> resolves to a version whose launcher matches.
 
 ## Build from source ##
 
