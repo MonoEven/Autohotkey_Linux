@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: AutoHotkey Community forum
+    url: https://www.autohotkey.com/boards/
+    about: The primary support channel for the AutoHotkey language (Windows and this port).

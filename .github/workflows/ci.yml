@@ -151,3 +151,13 @@ jobs:
           [ $tar_rc -eq 0 ] || [ $tar_rc -eq 141 ]
           dpkg-deb --info dist/autohotkey-linux-*.deb | head -8
           ls dist/*.AppImage dist/*.rpm 2>/dev/null || true
+
+      # check0819 P2-1: actually INSTALL each package, run the interpreter
+      # and the launcher commands, then remove it again -- the previous
+      # 'Verify packages' step only listed archive contents and read .deb
+      # metadata.  The tarball update step downloads the release asset from
+      # GitHub, so this also proves the published asset round-trips.
+      - name: Install/run/uninstall the packages
+        run: |
+          VER=$(ls dist/autohotkey-linux-*-amd64.deb | sed -n 's/.*linux-\([0-9.]*-linux\.[0-9]*\)-amd64.deb/\1/p' | head -1)
+          bash tools/linux/verify-packages.sh "$VER"

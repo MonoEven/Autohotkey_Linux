@@ -14,7 +14,14 @@ set -u
 REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$REPO_DIR" || exit 1
 
-VER="${1:-2.0.26-linux.11}"
+VER="${1:-}"
+if [ -z "$VER" ] && command -v git >/dev/null 2>&1; then
+  # Derive the release from the newest linux tag (the CI package job has no
+  # argument; hardcoding a version here drifted to linux.11 while the
+  # project was at linux.13 -- check0819 round-34 catch).
+  VER=$(git describe --tags --abbrev=0 --match 'v2.0.26-linux.*' 2>/dev/null | sed 's/^v//')
+fi
+VER="${VER:-2.0.26-linux.13}"
 ARCH=$(uname -m)
 case "$ARCH" in
   x86_64) ARCH=amd64 ;;
