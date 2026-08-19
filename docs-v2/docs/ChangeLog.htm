@@ -12,10 +12,35 @@
 </head>
 <body>
 <h1>Changes &amp; New Features</h1>
-<p> covers the differences between v1.1 and v2.0.</p>
-<p>For full technical details of changes, refer to <a href="https://github.com/AutoHotkey/AutoHotkey">GitHub</a>.</p>
+<div style="border:1px solid #36c;background:#eef;padding:6px 10px;margin:8px 0;"><b>Linux port:</b> the sections below this box are the upstream <b>Windows</b> AutoHotkey v2.0.26 changelog. The Linux port's own changes are listed first. See <a href="linux-port.htm">Linux Port</a> for the current release and backends.</div>
 
-<h2 id="v2.0.26">2.0.26 - May 4, 2026</h2>
+<h2 id="linux">Linux port changes</h2>
+
+<h3 id="linux.12">v2.0.26-linux.12</h3>
+<p>Unified input backend (<code>AHK_INPUT_BACKEND=auto|x11|portal|gnome-shell|evdev</code>) and a new <b>GNOME Shell extension backend</b> for GNOME 49 Wayland: zero-confirmation exclusive global hotkeys (<code>1::</code>/<code>^1::</code>/<code>F12::</code> grab the physical key with no per-binding dialog), automatic re-registration after a shell/extension reload, and fail-open release on exit or crash. The XDG Global Shortcuts Portal backend stays the standard fallback (KDE/other Wayland); <code>AHK_FORCE_GLOBAL_SHORTCUTS=1</code> keeps its documented meaning.</p>
+
+<h3 id="linux.11">v2.0.26-linux.11</h3>
+<p>Official release: MsgBox/ToolTip rendering fixed under a window manager; the <code>ahk</code> launcher gains <code>uninstall</code> and <code>update [VER]</code>; documentation site language switcher fixed and install guide rewritten for Linux; old Release packages cleaned up (latest converges on linux.11).</p>
+
+<h3 id="linux.10">v2.0.26-linux.10</h3>
+<p>InputHook real-time key capture (capture engine feeds keys live; buffer/end-key/match/cap/backspace-undo/suppression), <code>CollectChar</code>, <code>GetEndReason</code>.</p>
+
+<h3 id="linux.9">v2.0.26-linux.9</h3>
+<p>Hotstrings implemented for real (full capture-engine hold/flush/match, C/*/O/X options, case-follow, HotIf, end characters).</p>
+
+<h3 id="linux.8">v2.0.26-linux.8</h3>
+<p>Left/right modifier keys and wildcard hotkeys, hash-indexed hotkey resolution, XI2 raw-event observer.</p>
+
+<h3 id="linux.7">v2.0.26-linux.7</h3>
+<p>Reload implemented for real (exit reason "Reload"), hotkey audit first batch (isolated hotkey display, grab diff + XUngrabKey on Off/Suspend, BadAccess conflict reporting), GIF/CUR/JPEG image decoding, mouse hotkeys.</p>
+
+<h3 id="linux.6">v2.0.26-linux.6</h3>
+<p>Hotkey audit second batch; dynamic modifier map; coverage completion for the docs worklist.</p>
+
+<p>For the full per-module status report see
+<a href="https://github.com/MonoEven/Autohotkey_Linux/blob/linux-port/tests/doccheck/CHECK_REPORT.md">CHECK_REPORT.md</a>.</p>
+
+<h2 id="v2.0.26">Upstream v2.0.26 (Windows) - May 4, 2026</h2>
 <p>Fixed ControlGetItems/ControlGetChoice not throwing for Tab controls.</p>
 <p>Fixed error reporting for ComObjArray().__Enum(), if it ever fails.</p>
 <p>Fixed <code>TraySetIcon("HBITMAP:" handle)</code> without *.</p>

@@ -53,6 +53,25 @@ symlinked into <code>~/.local/bin</code> (or <code>/usr/local/bin</code>).</p>
 specific release for upgrading/downgrading, e.g.
 <code>ahk update 2.0.26-linux.8</code>).</p>
 
+<h2>GNOME 49 Wayland zero-confirmation global hotkeys (optional)</h2>
+<p>On GNOME 49 Wayland, <code>1::</code>-style global hotkeys can grab the
+physical key with <em>no</em> confirmation dialog (and even with no
+modifier) using the bundled GNOME Shell extension:</p>
+<pre>mkdir -p ~/.local/share/gnome-shell/extensions
+cp -r /path/to/autohotkey-linux/extension/ahk-global-hotkeys@autohotkey.org \
+      ~/.local/share/gnome-shell/extensions/
+# ... then log out and back in (GNOME Shell loads extensions at startup),
+# and enable it:
+gnome-extensions enable ahk-global-hotkeys@autohotkey.org</pre>
+<p>The extension is a thin D-Bus broker; the interpreter picks the
+<code>gnome-shell</code> backend automatically on GNOME Wayland
+(<code>AHK_INPUT_BACKEND=auto</code>, default), or explicitly with
+<code>AHK_INPUT_BACKEND=gnome-shell</code>. Without the extension, or on
+other Wayland compositors, hotkeys fall back to the standard
+<a href="../linux-port.htm">Global Shortcuts Portal</a> backend
+(<code>AHK_FORCE_GLOBAL_SHORTCUTS=1</code> forces Portal even behind
+XWayland).</p>
+
 <h2>Build from source</h2>
 <pre>git clone --branch linux-port https://github.com/MonoEven/Autohotkey_Linux.git
 cd Autohotkey_Linux

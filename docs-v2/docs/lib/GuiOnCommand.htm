@@ -14,7 +14,7 @@
 
 <h1>OnCommand (GUI)</h1>
 
-<div class="warning" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> GUI events are not available (no GUI windows on this port).</div>
+<div class="note" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> <code>OnCommand</code> registration is implemented over GTK3; the subset of control notifications that GTK exposes is delivered. The examples below are for reference.</div>
 
 <p>Registers a function or method to be called when a control notification is received via the <a href="#WM_COMMAND">WM_COMMAND</a> message.</p>
 <pre class="Syntax"><a href="GuiControl.htm">GuiCtrl</a>.<span class="func">OnCommand</span>(NotifyCode, Callback <span class="optional">, AddRemove</span>)</pre>

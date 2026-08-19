@@ -44,9 +44,9 @@ examples fall into three groups on Linux:</p>
     <b>.so</b> libraries or the <b>D-Bus</b> bus; the original Windows
     examples are kept for reference only.</li>
   <li><b>Not available on Linux.</b> Examples using Windows-only features
-    (GUI windows via <code>Gui</code>/<code>GuiControl</code>/<code>Menu</code>,
-    <code>SoundBeep</code>/<code>SoundPlay</code>, <code>TrayTip</code>, <code>SendMessage</code>/
-    <code>PostMessage</code>/<code>OnMessage</code>, <code>Hotstring</code>,
+    (tray icon via <code>TrayTip</code>/<code>TraySetIcon</code>, SafeArray
+    creation via <code>ComObjArray</code>, <code>SendMessage</code>/
+    <code>PostMessage</code>/<code>OnMessage</code>, the Windows registry,
     ...) are kept for reference; calling those functions raises a clear
     error.  Many examples elsewhere are also short <em>snippets</em> that
     depend on context (a preceding variable, a hotkey label, a window with
@@ -57,7 +57,7 @@ examples fall into three groups on Linux:</p>
 <h2>What works on Linux</h2>
 <p>All <b>367</b> built-in functions listed in the worklist are implemented
 (3 not-implemented error paths: ComObjArray, TrayTip, TraySetIcon);
-1026 doc-check assertions pass under Xvfb (including 29
+1053 doc-check assertions pass under Xvfb (including 29
 for <code>DllCall</code> against native <b>.so</b> libraries and 18 for the
 D-Bus COM layer). The port has two display backends:</p>
 <ul>
@@ -116,8 +116,9 @@ D-Bus COM layer). The port has two display backends:</p>
 
 <h2>Differences from Windows AutoHotkey</h2>
 <ul>
-  <li>No GUI windows (Gui, GuiControl, Menu objects are not portable and
-    are not implemented); use text-based or external tools.</li>
+  <li><b>GUI windows are implemented over GTK3</b> (<code>Gui</code>/
+    <code>GuiControl</code>/<code>Menu</code> work on X11/XWayland and need
+    a display; pure headless sessions raise a clear error).</li>
   <li><b>COM is implemented over D-Bus</b>: <code>ComObject("service")</code>
     (or ComObjGet) creates a proxy for a D-Bus service; method calls and
     property access map to D-Bus method/property calls; ComValue wraps
@@ -138,7 +139,9 @@ D-Bus COM layer). The port has two display backends:</p>
     (terminal/X11 bell) work too. The tray icon (<code>TrayTip</code>) and
     compiled-script packaging are not available.</li>
   <li>CoordMode/SendMode semantics are honored; hotkeys work through
-    XGrabKey (keys) and XGrabButton (mouse buttons/wheels) on X11/XWayland.
+    XGrabKey (keys) and XGrabButton (mouse buttons/wheels) on X11/XWayland,
+    and through the GNOME Shell extension or the Global Shortcuts Portal on
+    Wayland (see the "Native Wayland backend" section above).
     LoadPicture decodes BMP/ICO/PNG/GIF/CUR/JPEG/PPM.</li>
 </ul>
 <p>See <a href="https://github.com/MonoEven/Autohotkey_Linux/blob/linux-port/tests/doccheck/CHECK_REPORT.md">CHECK_REPORT.md</a>
@@ -146,20 +149,24 @@ for the complete per-module report.</p>
 
 <h2>Latest release</h2>
 <p>The latest official release is
-<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.11</a>.
+<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.12</a>.
 Highlights of this release:</p>
 <ul>
-  <li>LoadPicture now decodes <b>GIF</b> (first frame; GCT/LCT palettes, GCE
-    transparency, interlace, hand-written LZW), <b>CUR</b> (ICONDIR type 2,
-    DIB shared with ICO) and <b>JPEG</b> (via libjpeg, baseline and
-    progressive) in addition to BMP/ICO/PNG/PPM.  Transparency maps to the
-    magenta sentinel like the other formats.</li>
-  <li><b>Mouse hotkeys</b> (XGrabButton): LButton/RButton/MButton/XButton1/
-    XButton2 and WheelUp/Down/Left/Right, with modifier combinations,
-    key-up variants, and deterministic passthrough for <code>~</code>/HotIf-false/
-    Off hotkeys (passive grab removed + XTEST re-injection; the server
-    swallows a press injected while the button is held).</li>
-  <li>Doc-check: 1047/1047 assertions pass on both the normal and the ASan
+  <li><b>Unified input backend</b> (<code>input_backend.h</code>):
+    <code>AHK_INPUT_BACKEND=auto|x11|portal|gnome-shell|evdev</code>
+    auto-selection; <code>AHK_FORCE_GLOBAL_SHORTCUTS=1</code> keeps its
+    documented meaning (explicitly require the Portal backend).</li>
+  <li><b>GNOME Shell extension backend</b> (GNOME 49 Wayland): zero-
+    confirmation exclusive hotkeys (<code>1::</code>/<code>^1::</code>/
+    <code>F12::</code> grab the physical key with no per-binding dialog),
+    with automatic re-registration after a shell/extension reload and
+    fail-open release on script exit or crash.  See the "Native Wayland
+    backend" section above.</li>
+  <li><b>Hotstrings are implemented</b> (round-32): full capture-engine
+    triggering with C/*/O/X options, case-follow, HotIf and end characters;
+    <code>InputHook</code> key capture (round-33) and mouse hotkeys
+    (round-30) are also in.</li>
+  <li>Doc-check: 1053/1053 assertions pass on both the normal and the ASan
     builds; regression 27/27, Wayland 13/13, XWayland 247/247.</li>
 </ul>
 

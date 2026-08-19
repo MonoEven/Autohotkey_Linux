@@ -14,7 +14,7 @@
 
 <h1>GuiFromHwnd</h1>
 
-<div class="warning" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> GUI windows are not implemented on this port; <code>GuiFromHwnd</code> raises an error.</div>
+<div class="note" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> <code>GuiFromHwnd</code> works on X11/XWayland (GUI windows are implemented over GTK3); it returns 0 on a pure headless session.</div>
 
 
 <p>Retrieves the <a href="Gui.htm">Gui object</a> of a GUI window associated with the specified window handle.</p>

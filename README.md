@@ -127,9 +127,7 @@ The docs live in `docs-v2/`. The v1-to-v2 change documentation is omitted
 because v1 is not supported by this port; see
 [docs-v2/docs/linux-port.htm](docs-v2/docs/linux-port.htm) for the Linux
 port overview (backends, differences from Windows, build/install notes).
-The language switcher on the docs site offers English and Chinese only
-(a maintained Chinese overview is at `docs-v2/docs/zh.htm`); it never
-leaves this fork.
+The docs site is English-only.
 
 ## Differences from Windows AutoHotkey ##
 

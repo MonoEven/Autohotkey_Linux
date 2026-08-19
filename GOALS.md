@@ -1,7 +1,7 @@
 # AutoHotkey Linux 化迁移目标
 
 > 目标随进展持续更新。基线：AutoHotkey v2.0.26，分支：`linux-port`。
-> **状态：全部核心目标已完成并发布（最新 v2.0.26-linux.10：round-32 热字串真实现 + round-33 InputHook 实时按键采集，doc-check 1053/1053，回归 27/27，Wayland 13/13，XWayland 247/247，pages 站点语言/安装说明已修复）。**
+> **状态：全部核心目标已完成并发布（最新 v2.0.26-linux.12：统一输入后端 + GNOME Shell 零确认全局热键，doc-check core+ASan 1053/1053，回归 27/27，Wayland 13/13，XWayland 247/247，CI 全绿；站点文档为英文单语，中文概览页已移除）。**
 
 ## 总目标
 
@@ -165,6 +165,9 @@
       sNeedResync → Dispatch 重同步）
 - [x] **pages 站点维护**：语言切换仅中英文 + 中文页 `docs/zh.htm` + 安装指南
       改为 Linux 实际方式（`docs/howto/Install.htm`）
+- [x] **站点文档收敛为英文单语**：移除中文概览页 `docs/zh.htm`（含站点语言
+      切换器中的 zh 项、首页中文链接），文档站点只保留英文；README 相应
+      更新（本轮）
 
 ## 后续候选增强（未实现）
 
