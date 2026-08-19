@@ -22,6 +22,8 @@
 #include "../../application.h"
 #include <cstring>
 #include <cstdlib>
+#include <cstdio>
+#include <strings.h>
 #include <string>
 
 namespace
@@ -54,9 +56,38 @@ bool DesktopIsGNOME()
 	return strstr(d, "GNOME") != nullptr;
 }
 
+// Parse a boolean-ish environment flag.  Only 1/true/yes/on (case-
+// insensitive) count as true; 0/false/no/off are false; anything else is
+// rejected with a visible warning (a typo must never silently flip a
+// backend choice - check0819 P0-4).
+bool EnvFlag(const char *aName, bool &aExisted)
+{
+	const char *v = getenv(aName);
+	if (!v || !*v)
+	{
+		aExisted = false;
+		return false;
+	}
+	aExisted = true;
+	if (!strcasecmp(v, "1") || !strcasecmp(v, "true")
+		|| !strcasecmp(v, "yes") || !strcasecmp(v, "on"))
+		return true;
+	if (!strcasecmp(v, "0") || !strcasecmp(v, "false")
+		|| !strcasecmp(v, "no") || !strcasecmp(v, "off"))
+		return false;
+	fprintf(stderr,
+		"AHK warning: %s=\"%s\" is not a recognized boolean "
+		"(expected 1/true/yes/on or 0/false/no/off); treating it as false\n",
+		aName, v);
+	return false;
+}
+
 AhkInputBackendKind ResolveBackend()
 {
-	// Explicit override.
+	// Explicit override.  An unknown value is a loud startup warning + a
+	// sticky error (visible through LinuxInputBackendLastError()), NOT a
+	// silent fall-through: the user must never believe a forced backend is
+	// active while another one runs (check0819 P0-4).
 	if (const char *b = getenv("AHK_INPUT_BACKEND"))
 	{
 		if (!strcmp(b, "x11")) return AhkInputBackendKind::X11;
@@ -64,13 +95,22 @@ AhkInputBackendKind ResolveBackend()
 		if (!strcmp(b, "gnome-shell")) return AhkInputBackendKind::GNOME_SHELL;
 		if (!strcmp(b, "evdev")) return AhkInputBackendKind::EVDEV;
 		if (strcmp(b, "auto") != 0)
+		{
+			fprintf(stderr,
+				"AHK warning: AHK_INPUT_BACKEND=\"%s\" is not one of "
+				"auto|x11|portal|gnome-shell|evdev; falling back to auto "
+				"selection\n", b);
 			SetError("AHK_INPUT_BACKEND: unknown value (auto|x11|portal|gnome-shell|evdev)");
-		// "auto" and unknown values fall through to auto selection.
+		}
+		// "auto" (and unknown values) fall through to auto selection.
 	}
-	// AHK_FORCE_GLOBAL_SHORTCUTS=1 keeps its documented meaning: explicitly
+	// AHK_FORCE_GLOBAL_SHORTCUTS keeps its documented meaning: explicitly
 	// require the standard GlobalShortcuts Portal backend.  It is NOT reused
-	// for the GNOME Shell backend, so it wins over auto selection.
-	if (getenv("AHK_FORCE_GLOBAL_SHORTCUTS"))
+	// for the GNOME Shell backend, so it wins over auto selection.  Only
+	// 1/true/yes/on force it; 0/false/no/off and junk values do not
+	// (previously ANY set value, including "0", forced Portal - check0819).
+	bool existed = false;
+	if (EnvFlag("AHK_FORCE_GLOBAL_SHORTCUTS", existed) && existed)
 		return AhkInputBackendKind::PORTAL;
 	if (!SessionIsWayland())
 		return AhkInputBackendKind::X11; // X11 session (or unknown).

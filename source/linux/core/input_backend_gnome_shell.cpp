@@ -3,9 +3,13 @@
 // Wire protocol (verified against gnome-shell 49.0 sources + mutter 49.0):
 //  The extension registers a session-bus service
 //    io.github.autohotkey.GlobalHotkeys1
-//  with methods Register(u id, s accelerator, u flags) -> b,
-//  Unregister(u id) -> b, ClearOwner(s owner) and signals
-//  Activated(u id, u timestamp), Deactivated(u id, u timestamp).
+//  with methods Register(s id, s accelerator, u flags) -> b,
+//  RegisterMany(as ids, as accelerators, au flags) -> ab,
+//  Unregister(s id) -> b, UnregisterMany(as ids) -> b,
+//  ClearOwner() -> b (owner = the CALLER's unique bus name, never an
+//  argument) and signals Activated(s id, u timestamp),
+//  Deactivated(s id, u timestamp) that the extension emits DIRECTED to the
+//  registering owner only (no broadcast).
 //  The extension uses global.display.grab_accelerator() followed by
 //  Main.wm.allowKeybinding() - the exact whitelist step that
 //  xdg-desktop-portal-gnome performs via shellDBus GrabAccelerators
@@ -13,11 +17,18 @@
 //  Main.wm._allowedKeybindings; without allowKeybinding the binding is
 //  registered in mutter but silently filtered and never activates).
 //
-// Registration model:
-//  Each script/process is an independent D-Bus peer (owner).  The extension
-//  tracks owner = unique bus name; ClearOwner is sent on shutdown so a dead
-//  script can never leave grabs behind (the extension also cleans up on
-//  name-vanished, fail-open either way).
+// Registration model (check0819 hardening):
+//  Each script/process is an independent D-Bus peer (owner).  Hotkey ids are
+//  owner-scoped: "<unique-bus-name>/<pointer>" (no cross-process collision,
+//  no need for a global namespace).  ClearOwner is sent on shutdown so a
+//  dead script can never leave grabs behind (the extension also cleans up on
+//  name-vanished, fail-open either way).  Signals are filtered on
+//  sender/path/member and only Activated is consumed (v1); Deactivated is
+//  deliberately ignored (no key-up semantics claimed yet).  The event queue
+//  is a dynamic vector: overflow is counted and reported instead of silently
+//  dropping.  Register/Unregister use the batch methods (RegisterMany /
+//  UnregisterMany) and short timeouts so binding dozens/hundreds of hotkeys
+//  cannot block the main loop for seconds each.
 #include "input_backend_gnome_shell.h"
 #include "input_backend.h"
 #include "../../hotkey.h"
@@ -25,6 +36,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <map>
+#include <vector>
 #include <string>
 
 namespace
@@ -34,14 +46,22 @@ namespace
 #define GS_OBJ_PATH "/io/github/autohotkey/GlobalHotkeys1"
 #define GS_IFACE    "io.github.autohotkey.GlobalHotkeys1"
 
+// Per-call/reply timeout (ms).  The previous 10 s per binding meant a dozen
+// hotkeys could stall startup for minutes when the extension was absent;
+// 3 s per call with batch registration is the practical bound.
+#define GS_CALL_TIMEOUT_MS 3000
+// Upper cap on the pending-event queue (a runaway compositor flood cannot
+// unboundedly grow memory).  Past the cap events are dropped and counted.
+#define GS_MAX_PENDING 8192
+
 DBusConnection *sConn = nullptr;
 char *sOwnerName = nullptr; // Our unique bus name ("owner" for ClearOwner).
 bool sFailed = false;       // Sticky connection failure.
 bool sRegistered = false;   // At least one registration is live.
 wchar_t sLastErrorBuf[512] = { 0 };
 
-// Desired registration set (id -> accelerator), keyed by hotkey pointer
-// address so Sync() can diff cheaply.
+// Desired registration set (id -> accelerator), keyed by the owner-scoped id
+// so Sync() can diff cheaply.
 struct RegEntry
 {
 	std::string accel;
@@ -55,10 +75,12 @@ std::map<std::string, RegEntry> sLive;     // actually registered
 // next Dispatch must re-sync instead of waiting for a hotkey state change.
 bool sNeedResync = false;
 
-#define GS_MAX_PENDING 64
-Hotkey *sPendingHk[GS_MAX_PENDING];
-unsigned sPendingTs[GS_MAX_PENDING];
-int sPendingCount = 0;
+// Pending Activated events (dynamic; fixed in round "check0819" - the old
+// 64-entry array silently dropped events past 64).
+std::vector<Hotkey *> sPendingHk;
+std::vector<unsigned> sPendingTs;
+unsigned int sPendingOverflows = 0; // Cumulative dropped-event count.
+bool sOverflowWarned = false;
 
 void SetError(const char *aText)
 {
@@ -66,10 +88,15 @@ void SetError(const char *aText)
 	sLastErrorBuf[_countof(sLastErrorBuf) - 1] = 0;
 }
 
+// Owner-scoped hotkey id: "<unique-bus-name>/<hotkey>".  The pointer keeps
+// the id stable across Sync() calls within this process; the unique-name
+// prefix makes ids collision-free across processes (the extension enforces
+// the "<owner>/" prefix on Register too).
 std::string IdForHotkey(Hotkey *aHk)
 {
-	char id[48];
-	snprintf(id, sizeof(id), "ahk_%p", (void *)aHk);
+	char id[96];
+	snprintf(id, sizeof(id), "%s/ahk_%p",
+		sOwnerName ? sOwnerName : "?", (void *)aHk);
 	return std::string(id);
 }
 
@@ -95,13 +122,16 @@ bool EnsureConnection()
 	}
 	dbus_error_free(&err);
 	dbus_connection_set_exit_on_disconnect(sConn, FALSE);
-	// Subscribe to the broker's signals (Activated/Deactivated).  Without a
-	// match rule the bus daemon never forwards the broadcast to this client.
+	// Subscribe to the broker's Activated/Deactivated signals.  The match
+	// rules are as narrow as D-Bus allows: fixed sender (the broker's
+	// well-known name), fixed object path, interface and member, so no
+	// other session peer can inject signals into this client (check0819).
 	DBusError em;
 	dbus_error_init(&em);
-	char rule[256];
+	char rule[320];
 	snprintf(rule, sizeof(rule),
-		"type='signal',interface='%s'", GS_IFACE);
+		"type='signal',sender='%s',path='%s',interface='%s',member='Activated'",
+		GS_BUS_NAME, GS_OBJ_PATH, GS_IFACE);
 	dbus_bus_add_match(sConn, rule, &em);
 	if (dbus_error_is_set(&em))
 	{
@@ -114,15 +144,14 @@ bool EnsureConnection()
 		return false;
 	}
 	dbus_error_free(&em);
-	// Also watch the broker's well-known name: an extension reload
-	// (disable/enable) drops every grab while the session bus stays up, so a
-	// NameOwnerChanged (owner going away) is the cue to forget our projection
-	// state; the next Sync re-registers everything.
 	{
-		char rule2[256];
+		// Deactivated is also subscribed so the handler can explicitly
+		// consume (and deliberately ignore) it rather than leave it to the
+		// bus to drop -- keeps the protocol surface explicit.
+		char rule2[320];
 		snprintf(rule2, sizeof(rule2),
-			"type='signal',interface='org.freedesktop.DBus',member='NameOwnerChanged',"
-			"arg0='%s'", GS_BUS_NAME);
+			"type='signal',sender='%s',path='%s',interface='%s',member='Deactivated'",
+			GS_BUS_NAME, GS_OBJ_PATH, GS_IFACE);
 		DBusError em2;
 		dbus_error_init(&em2);
 		dbus_bus_add_match(sConn, rule2, &em2);
@@ -130,6 +159,25 @@ bool EnsureConnection()
 			dbus_error_free(&em2);
 		else
 			dbus_error_free(&em2);
+	}
+	// Also watch the broker's well-known name: an extension reload
+	// (disable/enable) drops every grab while the session bus stays up, so a
+	// NameOwnerChanged (owner going away) is the cue to forget our projection
+	// state; the next Sync re-registers everything.  NameOwnerChanged is
+	// emitted BY the bus daemon, so constrain sender to it.
+	{
+		char rule3[320];
+		snprintf(rule3, sizeof(rule3),
+			"type='signal',sender='org.freedesktop.DBus',"
+			"interface='org.freedesktop.DBus',member='NameOwnerChanged',"
+			"arg0='%s'", GS_BUS_NAME);
+		DBusError em3;
+		dbus_error_init(&em3);
+		dbus_bus_add_match(sConn, rule3, &em3);
+		if (dbus_error_is_set(&em3))
+			dbus_error_free(&em3);
+		else
+			dbus_error_free(&em3);
 	}
 	// Route matched messages through our signal handler.
 	dbus_connection_add_filter(sConn, Handler, nullptr, nullptr);
@@ -146,7 +194,8 @@ bool CallBool(const char *aMethod, DBusMessage *aMsg)
 		return false;
 	DBusError err;
 	dbus_error_init(&err);
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(sConn, aMsg, 10000, &err);
+	DBusMessage *rep = dbus_connection_send_with_reply_and_block(
+		sConn, aMsg, GS_CALL_TIMEOUT_MS, &err);
 	dbus_message_unref(aMsg);
 	if (!rep)
 	{
@@ -172,6 +221,114 @@ bool CallBool(const char *aMethod, DBusMessage *aMsg)
 		SetError(buf);
 	}
 	return ok;
+}
+
+// One-shot batch call; executes at most aBatch items (used to split huge
+// registrations across several RegisterMany calls).
+bool SendRegisterMany(const std::vector<std::string> &aIds
+	, const std::vector<std::string> &aAccels)
+{
+	if (aIds.empty())
+		return true;
+	DBusMessage *msg = dbus_message_new_method_call(GS_BUS_NAME, GS_OBJ_PATH,
+		GS_IFACE, "RegisterMany");
+	if (!msg) return false;
+	DBusMessageIter it, sub;
+	dbus_message_iter_init_append(msg, &it);
+	// as ids
+	if (!dbus_message_iter_open_container(&it, DBUS_TYPE_ARRAY, "s", &sub))
+	{ dbus_message_unref(msg); return false; }
+	for (size_t i = 0; i < aIds.size(); ++i)
+	{
+		const char *id = aIds[i].c_str();
+		dbus_message_iter_append_basic(&sub, DBUS_TYPE_STRING, &id);
+	}
+	dbus_message_iter_close_container(&it, &sub);
+	// as accelerators
+	if (!dbus_message_iter_open_container(&it, DBUS_TYPE_ARRAY, "s", &sub))
+	{ dbus_message_unref(msg); return false; }
+	for (size_t i = 0; i < aAccels.size(); ++i)
+	{
+		const char *accel = aAccels[i].c_str();
+		dbus_message_iter_append_basic(&sub, DBUS_TYPE_STRING, &accel);
+	}
+	dbus_message_iter_close_container(&it, &sub);
+	// au flags (all 0 = exclusive)
+	if (!dbus_message_iter_open_container(&it, DBUS_TYPE_ARRAY, "u", &sub))
+	{ dbus_message_unref(msg); return false; }
+	for (size_t i = 0; i < aIds.size(); ++i)
+	{
+		dbus_uint32_t f = 0;
+		dbus_message_iter_append_basic(&sub, DBUS_TYPE_UINT32, &f);
+	}
+	dbus_message_iter_close_container(&it, &sub);
+
+	if (!sConn)
+	{ dbus_message_unref(msg); return false; }
+	DBusError err;
+	dbus_error_init(&err);
+	DBusMessage *rep = dbus_connection_send_with_reply_and_block(
+		sConn, msg, GS_CALL_TIMEOUT_MS, &err);
+	// Note: dbus_message_unref(msg) happens after the call (the API refs it
+	// internally; we drop our own reference below).
+	if (!rep)
+	{
+		SetError(err.message ? err.message : "RegisterMany");
+		dbus_error_free(&err);
+		dbus_message_unref(msg);
+		return false;
+	}
+	dbus_error_free(&err);
+	dbus_message_unref(msg);
+	// Reply: ab results (one bool per registration).  Any false = partial
+	// failure -> report and return false so the caller falls back.
+	bool ok = true;
+	DBusMessageIter rit;
+	dbus_message_iter_init(rep, &rit);
+	if (dbus_message_iter_get_arg_type(&rit) == DBUS_TYPE_ARRAY)
+	{
+		DBusMessageIter sub2;
+		dbus_message_iter_recurse(&rit, &sub2);
+		size_t idx = 0;
+		while (dbus_message_iter_get_arg_type(&sub2) == DBUS_TYPE_BOOLEAN)
+		{
+			dbus_bool_t b = FALSE;
+			dbus_message_iter_get_basic(&sub2, &b);
+			if (!b && idx < aIds.size())
+			{
+				ok = false;
+				char err[192];
+				snprintf(err, sizeof(err),
+					"GNOME Shell backend: RegisterMany rejected %s "
+					"(id collision or bad accelerator)", aIds[idx].c_str());
+				SetError(err);
+			}
+			dbus_message_iter_next(&sub2);
+			++idx;
+		}
+	}
+	dbus_message_unref(rep);
+	return ok;
+}
+
+bool SendUnregisterMany(const std::vector<std::string> &aIds)
+{
+	if (aIds.empty())
+		return true;
+	DBusMessage *msg = dbus_message_new_method_call(GS_BUS_NAME, GS_OBJ_PATH,
+		GS_IFACE, "UnregisterMany");
+	if (!msg) return false;
+	DBusMessageIter it, sub;
+	dbus_message_iter_init_append(msg, &it);
+	if (!dbus_message_iter_open_container(&it, DBUS_TYPE_ARRAY, "s", &sub))
+	{ dbus_message_unref(msg); return false; }
+	for (size_t i = 0; i < aIds.size(); ++i)
+	{
+		const char *id = aIds[i].c_str();
+		dbus_message_iter_append_basic(&sub, DBUS_TYPE_STRING, &id);
+	}
+	dbus_message_iter_close_container(&it, &sub);
+	return CallBool("UnregisterMany", msg);
 }
 
 bool SendRegister(const std::string &aId, const std::string &aAccel)
@@ -206,32 +363,38 @@ void SendClearOwner()
 {
 	if (!sConn || !sOwnerName)
 		return;
+	// Protocol v2: ClearOwner() takes NO owner argument; the extension uses
+	// the caller's unique bus name (one peer cannot clear another's grabs).
 	DBusMessage *msg = dbus_message_new_method_call(GS_BUS_NAME, GS_OBJ_PATH,
 		GS_IFACE, "ClearOwner");
 	if (!msg) return;
-	DBusMessageIter it;
-	dbus_message_iter_init_append(msg, &it);
-	const char *owner = sOwnerName;
-	dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &owner);
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(sConn, msg, 10000, nullptr);
+	DBusMessage *rep = dbus_connection_send_with_reply_and_block(
+		sConn, msg, GS_CALL_TIMEOUT_MS, nullptr);
 	dbus_message_unref(msg); // send_with_reply_and_block refs internally; we own ours.
 	if (rep)
 		dbus_message_unref(rep);
 }
 
 // --- D-Bus filter: Activated/Deactivated signals ----------------------------
+// The match rules (sender=GS_BUS_NAME, path, interface, member) already narrow
+// what reaches us; the handler re-checks sender/interface/member as defense in
+// depth so a spoofed/forged message can never fire a hotkey.
 
-DBusHandlerResult Handler(DBusConnection *, DBusMessage *aMsg, void *)
+DBusHandlerResult Handler(DBusConnection *aConn, DBusMessage *aMsg, void *)
 {
+	if (!aMsg)
+		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 	const char *iface = dbus_message_get_interface(aMsg);
 	const char *member = dbus_message_get_member(aMsg);
+	const char *sender = dbus_message_get_sender(aMsg);
 	if (!iface || !member)
 		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 
 	// Extension reload (disable/enable): the well-known name loses its owner,
 	// which drops every grab in the compositor.  Forget our projection state
 	// so the next Sync re-registers everything (state truth is the runtime).
-	if (!strcmp(iface, "org.freedesktop.DBus") && !strcmp(member, "NameOwnerChanged"))
+	if (!strcmp(iface, "org.freedesktop.DBus") && !strcmp(member, "NameOwnerChanged")
+		&& sender && !strcmp(sender, "org.freedesktop.DBus"))
 	{
 		DBusMessageIter it;
 		dbus_message_iter_init(aMsg, &it);
@@ -259,6 +422,8 @@ DBusHandlerResult Handler(DBusConnection *, DBusMessage *aMsg, void *)
 					dbus_message_iter_get_basic(&it, &newOwner);
 				}
 				sLive.clear();
+				sPendingHk.clear();
+				sPendingTs.clear();
 				sRegistered = false;
 				if (newOwner && newOwner[0])
 					sNeedResync = true; // new extension instance is live
@@ -268,6 +433,15 @@ DBusHandlerResult Handler(DBusConnection *, DBusMessage *aMsg, void *)
 	}
 
 	if (strcmp(iface, GS_IFACE) != 0)
+		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+	// The signal must come from the broker's well-known name (the match rule
+	// already enforces it; this double-checks against spoofing).
+	if (!sender || strcmp(sender, GS_BUS_NAME) != 0)
+		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+
+	// v1 consumes ONLY Activated: Deactivated (key-up) is a future capability
+	// and must never fire a normal hotkey.  Anything else is ignored.
+	if (strcmp(member, "Activated") != 0)
 		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 
 	DBusMessageIter it;
@@ -283,23 +457,33 @@ DBusHandlerResult Handler(DBusConnection *, DBusMessage *aMsg, void *)
 		dbus_message_iter_get_basic(&it, &t);
 		ts = (unsigned)t;
 	}
-	if (!id || sPendingCount >= GS_MAX_PENDING)
+	if (!id)
 		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 
 	// Resolve the id to the registered Hotkey once, here (off the hot path).
 	Hotkey *hk = nullptr;
 	for (std::map<std::string, RegEntry>::iterator l = sLive.begin(); l != sLive.end(); ++l)
+		if (l->first == id) { hk = l->second.hk; break; }
+	// The extension only emits for ids it registered, and only to the owning
+	// owner; an unknown id (stale grab) is simply dropped.
+	if (!hk)
+		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+
+	if (sPendingHk.size() >= GS_MAX_PENDING)
 	{
-		if (l->first == id)
+		// Overflow: count and warn once (an invisible loss is the worst case
+		// for a hotkey/macro tool).
+		++sPendingOverflows;
+		if (!sOverflowWarned)
 		{
-			hk = l->second.hk;
-			break;
+			sOverflowWarned = true;
+			SetError("GNOME Shell backend: hotkey event queue overflow "
+				"(events dropped; script too slow or desktop stalled)");
 		}
+		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 	}
-	sPendingHk[sPendingCount] = hk;
-	sPendingTs[sPendingCount] = ts;
-	sPendingCount++;
-	(void)member; // Activated vs Deactivated: v1 only consumes Activated.
+	sPendingHk.push_back(hk);
+	sPendingTs.push_back(ts);
 	return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 }
 
@@ -329,7 +513,7 @@ bool LinuxGnomeShellAvailable()
 	dbus_message_iter_init_append(msg, &it);
 	const char *name = GS_BUS_NAME;
 	dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &name);
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(c, msg, 3000, nullptr);
+	DBusMessage *rep = dbus_connection_send_with_reply_and_block(c, msg, 1000, nullptr);
 	dbus_connection_unref(c);
 	if (!rep)
 		return false;
@@ -366,23 +550,41 @@ void LinuxGnomeShellSync()
 		sWanted[IdForHotkey(hk)] = e;
 	}
 
-	// Diff: unregister gone, register new.
-	for (std::map<std::string, RegEntry>::iterator l = sLive.begin(); l != sLive.end();)
-	{
+	// Diff: unregister gone, register new.  Batch amortizes the D-Bus
+	// round-trips (a few hundred hotkeys = a few calls, not hundreds).
+	std::vector<std::string> to_remove, to_add, add_accels;
+	for (std::map<std::string, RegEntry>::iterator l = sLive.begin(); l != sLive.end(); ++l)
 		if (sWanted.find(l->first) == sWanted.end())
-		{
-			SendUnregister(l->first);
-			sLive.erase(l++);
-			continue;
-		}
-		++l;
-	}
+			to_remove.push_back(l->first);
 	for (std::map<std::string, RegEntry>::iterator w = sWanted.begin(); w != sWanted.end(); ++w)
+		if (sLive.find(w->first) == sLive.end())
+		{
+			to_add.push_back(w->first);
+			add_accels.push_back(w->second.accel);
+		}
+
+	if (to_remove.size() > 1)
 	{
-		if (sLive.find(w->first) != sLive.end())
-			continue;
-		if (SendRegister(w->first, w->second.accel))
-			sLive[w->first] = w->second;
+		if (SendUnregisterMany(to_remove))
+			for (size_t i = 0; i < to_remove.size(); ++i)
+				sLive.erase(to_remove[i]);
+	}
+	else if (to_remove.size() == 1)
+	{
+		if (SendUnregister(to_remove[0]))
+			sLive.erase(to_remove[0]);
+	}
+
+	if (to_add.size() > 1)
+	{
+		if (SendRegisterMany(to_add, add_accels))
+			for (size_t i = 0; i < to_add.size(); ++i)
+				sLive[to_add[i]] = sWanted[to_add[i]];
+	}
+	else if (to_add.size() == 1)
+	{
+		if (SendRegister(to_add[0], add_accels[0]))
+			sLive[to_add[0]] = sWanted[to_add[0]];
 	}
 	sRegistered = !sLive.empty();
 }
@@ -409,6 +611,8 @@ void LinuxGnomeShellDispatch()
 		// in the AHK runtime; the extension is only a compositor projection,
 		// so re-registering everything after a restart is the recovery path.
 		sLive.clear();
+		sPendingHk.clear();
+		sPendingTs.clear();
 		sRegistered = false;
 		sNeedResync = true;
 		SetError("GNOME Shell backend: connection lost (reconnecting)");
@@ -428,13 +632,14 @@ void LinuxGnomeShellDispatch()
 		sNeedResync = false;
 		LinuxGnomeShellSync();
 	}
-	if (sPendingCount)
+	if (!sPendingHk.empty())
 	{
-		Hotkey *hks[GS_MAX_PENDING];
-		int n = sPendingCount;
-		for (int i = 0; i < n; ++i) hks[i] = sPendingHk[i];
-		sPendingCount = 0;
-		for (int i = 0; i < n; ++i)
+		// Swap out the pending batch (a script's hotkey bodies may itself send
+		// or trigger Sync, which must not re-enter this queue).
+		std::vector<Hotkey *> hks = sPendingHk;
+		sPendingHk.clear();
+		sPendingTs.clear();
+		for (size_t i = 0; i < hks.size(); ++i)
 			if (hks[i])
 				AhkBackendFireHotkey(hks[i]);
 	}
@@ -453,6 +658,8 @@ void LinuxGnomeShellShutdown()
 	if (sOwnerName) { free(sOwnerName); sOwnerName = nullptr; }
 	sLive.clear();
 	sWanted.clear();
+	sPendingHk.clear();
+	sPendingTs.clear();
 	sRegistered = false;
 	sFailed = false;
 }

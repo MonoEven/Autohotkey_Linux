@@ -14,6 +14,12 @@
 //                                   Portal backend".  It is NOT reused for the
 //                                   GNOME Shell backend (different privilege
 //                                   level), so it wins over auto selection.
+//                                   Only 1/true/yes/on (case-insensitive)
+//                                   count as true; 0/false/no/off and any
+//                                   other value do NOT force Portal.
+//   Unknown AHK_INPUT_BACKEND values print a clear startup warning and leave
+//   a sticky error (LinuxInputBackendLastError()) instead of silently
+//   running a different backend than the user asked for.
 //
 // auto selection:
 //   X11 session                       -> X11

@@ -34,9 +34,20 @@ const IFACE = 'io.github.autohotkey.GlobalHotkeys1';
 
 // Interface (protocol root): string ids, accelerators, booleans.
 // Register(s id, s accelerator, u flags) -> b   (flags reserved; 0 = exclusive)
+// RegisterMany(as ids, as accelerators, au flags) -> ab
 // Unregister(s id) -> b
-// ClearOwner(s owner)
+// UnregisterMany(as ids) -> b
+// ClearOwner() -> b   (owner = the caller's unique bus name)
 // signals: Activated(s id, u timestamp), Deactivated(s id, u timestamp)
+//   emitted DIRECTED to the registering owner (never broadcast).
+//
+// Security model (2026-08 check0819 review):
+//   - ids are owner-scoped: "<unique-bus-name>/<registration>" and Register
+//     rejects ids outside the caller's namespace;
+//   - ClearOwner acts on the caller's own unique name (no owner argument);
+//   - Unregister/UnregisterMany only touch the caller's own registrations;
+//   - Activated/Deactivated are delivered to the owning peer only, so no
+//     other session peer can receive or forge another process's hotkeys.
 const ifaceXml = `
 <node>
   <interface name="${IFACE}">
@@ -46,12 +57,21 @@ const ifaceXml = `
       <arg type="u" name="flags" direction="in"/>
       <arg type="b" name="success" direction="out"/>
     </method>
+    <method name="RegisterMany">
+      <arg type="as" name="ids" direction="in"/>
+      <arg type="as" name="accelerators" direction="in"/>
+      <arg type="au" name="flags" direction="in"/>
+      <arg type="ab" name="results" direction="out"/>
+    </method>
     <method name="Unregister">
       <arg type="s" name="id" direction="in"/>
       <arg type="b" name="success" direction="out"/>
     </method>
+    <method name="UnregisterMany">
+      <arg type="as" name="ids" direction="in"/>
+      <arg type="b" name="success" direction="out"/>
+    </method>
     <method name="ClearOwner">
-      <arg type="s" name="owner" direction="in"/>
       <arg type="b" name="success" direction="out"/>
     </method>
     <signal name="Activated">
@@ -131,21 +151,82 @@ export default class AhkGlobalHotkeysExtension extends Extension {
 
     RegisterAsync([id, accelerator, flags], invocation) {
         const owner = invocation.get_sender();
-        if (!owner || this._grabs.has(id)) {
+        if (!owner) {
             invocation.return_value(new GLib.Variant('(b)', [false]));
             return;
         }
+        invocation.return_value(new GLib.Variant('(b)',
+            [this._registerOne(owner, String(id), String(accelerator), flags)]));
+    }
+
+    RegisterManyAsync([ids, accels, flags], invocation) {
+        const owner = invocation.get_sender();
+        if (!owner || !Array.isArray(ids) || !Array.isArray(accels)
+                || ids.length !== accels.length) {
+            invocation.return_value(new GLib.Variant('(ab)', [[]]));
+            return;
+        }
+        const results = [];
+        for (let i = 0; i < ids.length; i++) {
+            const fl = Array.isArray(flags) ? Number(flags[i] || 0) : 0;
+            results.push(this._registerOne(owner, String(ids[i]),
+                String(accels[i]), fl));
+        }
+        invocation.return_value(new GLib.Variant('(ab)', [results]));
+    }
+
+    UnregisterAsync([id], invocation) {
+        const owner = invocation.get_sender();
+        const g = this._grabs.get(String(id));
+        if (!g || g.owner !== owner) {
+            invocation.return_value(new GLib.Variant('(b)', [false]));
+            return;
+        }
+        this._ungrab(String(id), g);
+        invocation.return_value(new GLib.Variant('(b)', [true]));
+    }
+
+    UnregisterManyAsync([ids], invocation) {
+        const owner = invocation.get_sender();
+        if (!Array.isArray(ids)) {
+            invocation.return_value(new GLib.Variant('(b)', [false]));
+            return;
+        }
+        for (const id of ids) {
+            const g = this._grabs.get(String(id));
+            if (g && g.owner === owner)
+                this._ungrab(String(id), g);
+        }
+        invocation.return_value(new GLib.Variant('(b)', [true]));
+    }
+
+    ClearOwnerAsync([], invocation) {
+        // The caller's own unique bus name; no owner argument is accepted,
+        // so one peer can never clear another peer's registrations.
+        const owner = invocation.get_sender();
+        const set = owner ? this._owners.get(owner) : null;
+        if (set) {
+            for (const id of [...set])
+                this._ungrab(id, this._grabs.get(id));
+        }
+        invocation.return_value(new GLib.Variant('(b)', [true]));
+    }
+
+    // One registration attempt (shared by Register and RegisterMany).
+    _registerOne(owner, id, accelerator, flags) {
+        if (this._grabs.has(id))
+            return false;
+        // Owner-scoped ids ("<unique-name>/<registration>"): reject foreign
+        // ids so no peer can register into another peer's namespace.
+        if (!id.startsWith(owner + '/'))
+            return false;
         // v1: only exclusive (suppress) registrations, flags=0.
-        if (flags !== 0) {
-            invocation.return_value(new GLib.Variant('(b)', [false]));
-            return;
-        }
+        if (flags !== 0)
+            return false;
         const action = global.display.grab_accelerator(
             accelerator, Meta.KeyBindingFlags.TRIGGER_RELEASE);
-        if (action === Meta.KeyBindingAction.NONE) {
-            invocation.return_value(new GLib.Variant('(b)', [false]));
-            return;
-        }
+        if (action === Meta.KeyBindingAction.NONE)
+            return false;
         // Whitelist the binding in gnome-shell, exactly like the portal path.
         const name = Meta.external_binding_name_for_action(action);
         Main.wm.allowKeybinding(name, Shell.ActionMode.NORMAL);
@@ -156,27 +237,7 @@ export default class AhkGlobalHotkeysExtension extends Extension {
             this._owners.set(owner, new Set());
         this._owners.get(owner).add(id);
         this._watchOwner(owner);
-        invocation.return_value(new GLib.Variant('(b)', [true]));
-    }
-
-    UnregisterAsync([id], invocation) {
-        const owner = invocation.get_sender();
-        const g = this._grabs.get(id);
-        if (!g || g.owner !== owner) {
-            invocation.return_value(new GLib.Variant('(b)', [false]));
-            return;
-        }
-        this._ungrab(id, g);
-        invocation.return_value(new GLib.Variant('(b)', [true]));
-    }
-
-    ClearOwnerAsync([owner], invocation) {
-        const set = this._owners.get(owner);
-        if (set) {
-            for (const id of [...set])
-                this._ungrab(id, this._grabs.get(id));
-        }
-        invocation.return_value(new GLib.Variant('(b)', [true]));
+        return true;
     }
 
     // --- signal handlers -----------------------------------------------------
@@ -185,16 +246,25 @@ export default class AhkGlobalHotkeysExtension extends Extension {
         const id = this._byAction.get(action);
         if (id === undefined)
             return;
-        this._dbus.emit_signal('Activated', new GLib.Variant('(su)',
-            [id, timestamp]));
+        const g = this._grabs.get(id);
+        if (!g)
+            return;
+        // Directed to the registering owner only (never broadcast): another
+        // session peer can neither receive nor spoof this hotkey.
+        if (!Gio.DBus.session.emit_signal(g.owner, OBJ_PATH, IFACE, 'Activated',
+                new GLib.Variant('(su)', [id, timestamp])))
+            log(`[AHK-GS] Activated delivery to ${g.owner} failed`);
     }
 
     _onDeactivated(display, action, device, timestamp) {
         const id = this._byAction.get(action);
         if (id === undefined)
             return;
-        this._dbus.emit_signal('Deactivated', new GLib.Variant('(su)',
-            [id, timestamp]));
+        const g = this._grabs.get(id);
+        if (!g)
+            return;
+        Gio.DBus.session.emit_signal(g.owner, OBJ_PATH, IFACE, 'Deactivated',
+            new GLib.Variant('(su)', [id, timestamp]));
     }
 
     // --- helpers -------------------------------------------------------------
