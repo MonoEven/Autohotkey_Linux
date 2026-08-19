@@ -214,6 +214,16 @@
 - [x] **站点文档收敛为英文单语**：移除中文概览页 `docs/zh.htm`（含站点语言
       切换器中的 zh 项、首页中文链接），文档站点只保留英文；README 相应
       更新（本轮）
+- [x] **发布包安装/运行/卸载验证**（round-34,check0819 P2-1）：
+       \	ools/linux/verify-packages.sh\ 真实安装 .deb（apt）与 tarball
+       （install.sh --prefix），跑 \hk --version/--check/脚本\、真实
+       \hk --update\（下载 GitHub 资产重装、launcher 存活）、apt remove /
+       \--uninstall\ 干净清理（含 dpkg 状态断言）；接入 CI package job
+       （此前只列归档/读 metadata）；\pack.sh\ 版本号改从最新
+       \2.0.26-linux.*\ git tag 自动推导（原硬编码漂移到 linux.11），
+       CI checkout 相应 \etch-depth: 0- [x] **开放 Issue + bug 模板**（round-34,check0819 P2-5）：仓库 Issues 已开启，
+       \.github/ISSUE_TEMPLATE/\ 提供 bug 报告表单（版本/安装方式/会话/
+       最小复现/期望/实际/环境）与 config
 
 ## 后续候选增强（未实现）
 
