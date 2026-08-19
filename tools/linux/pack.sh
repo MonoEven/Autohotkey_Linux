@@ -115,6 +115,26 @@ fi
 exit 0
 EOF
   chmod 0755 "$DEBROOT/DEBIAN/prerm"
+  cat > "$DEBROOT/DEBIAN/postrm" <<'EOF'
+#!/bin/sh
+set -e
+# Clean up anything that survived dpkg's own file removal: the launcher
+# (or its symlink) may have been overwritten by a tarball install or by
+# `ahk --update` after the .deb was installed, in which case dpkg refuses
+# to remove the modified files and they would linger after apt remove.
+# Only do this on remove/purge, never during an upgrade.
+case "$1" in
+  remove|purge)
+    rm -f /usr/bin/ahk /usr/bin/ahk_core /usr/bin/autohotkey \
+          /usr/share/autohotkey/ahk_core /usr/share/autohotkey/ahk.ahk
+    rm -rf /usr/share/autohotkey /usr/share/doc/autohotkey 2>/dev/null || true
+    ;;
+  upgrade|failed-upgrade)
+    ;;
+esac
+exit 0
+EOF
+  chmod 0755 "$DEBROOT/DEBIAN/postrm"
   DEB="dist/autohotkey-linux-$VER-$ARCH.deb"
   ( cd "$(dirname "$DEBROOT")" && dpkg-deb --build --root-owner-group "$(basename "$DEBROOT")" "$REPO_DIR/$DEB" )
   rm -rf "$DEBROOT"
