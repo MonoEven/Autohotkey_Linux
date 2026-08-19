@@ -391,6 +391,12 @@ bool LinuxWaylandActive()
 	return LinuxWlConnect();
 }
 
+bool LinuxWaylandCanInjectKeys()
+{
+	LinuxWaylandState &s = LinuxWl();
+	return s.active && s.vkbd != nullptr;
+}
+
 // ---------------------------------------------------------------------------
 // vk -> evdev keycode (US-ish layout; the same keys the Send engine emits)
 // ---------------------------------------------------------------------------

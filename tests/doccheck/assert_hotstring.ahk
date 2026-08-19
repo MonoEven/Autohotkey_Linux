@@ -30,6 +30,7 @@ Hotstring("::xq", "ZZ")     ; end char required.
 Hotstring(":O:cd", "Q")     ; omit the end char.
 Hotstring(":X:ef", CB)      ; callback form.
 Hotstring(":*:ab", "W")     ; no end char required.
+Hotstring(":*:你好", "nn")  ; round-34: Unicode trigger (CJK).
 Sleep(300)
 
 Send("xq ")                 ; -> "ZZ" + space.
@@ -37,6 +38,7 @@ Send("cd ")                 ; -> "Q", space omitted.
 Send("ef.")                 ; callback fires; '.' forwarded.
 Send("abz")                 ; -> "W" + 'z'.
 Send("hello ")              ; no match -> passthrough.
+SendText("你好")             ; round-34: CJK trigger -> "cn".
 Sleep(800)
 
 ; Callback result.
@@ -54,6 +56,8 @@ Log("hs_b_hidden=" (InStr(kc, "k:down:b:", true) ? 0 : 1))
 Log("hs_c_hidden=" (InStr(kc, "k:down:c:", true) ? 0 : 1))
 Log("hs_d_hidden=" (InStr(kc, "k:down:d:", true) ? 0 : 1))
 Log("hs_hello=" (InStr(kc, "k:down:h:") ? 1 : 0))        ; unmatched text passes.
+Log("hs_unicode=" (InStr(kc, "k:down:n:") ? 1 : 0))      ; CJK replacement (nn).
+Log("hs_cjk_hidden=" ((InStr(kc, "U4F60", true) or InStr(kc, "U597D", true)) ? 0 : 1)) ; CJK trigger suppressed.
 ; The O option must omit exactly the "cd " end char: count spaces in
 ; the client log (xq's + hello's = 2).
 sp := 0

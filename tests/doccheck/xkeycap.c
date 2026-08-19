@@ -127,6 +127,18 @@ int main(int argc, char **argv)
             case DestroyNotify:
                 g_running = 0;
                 break;
+            case MappingNotify:
+                /* The Send engine borrows a spare keycode for non-ASCII
+                 * characters by temporarily remapping it (XChangeKeyboard
+                 * Mapping), sends the key events, then reverts.  Xlib caches
+                 * the keyboard map per client; without refreshing on
+                 * MappingNotify this client would resolve the borrowed
+                 * keycode to NoSymbol and the Unicode character would be
+                 * reported as "?".  The server delivers MappingNotify before
+                 * the key events (FIFO per-connection), so refreshing here
+                 * resolves the temporary mapping correctly. */
+                XRefreshKeyboardMapping(&ev.xmapping);
+                break;
             }
         }
         if (now_ms() - start > ms)

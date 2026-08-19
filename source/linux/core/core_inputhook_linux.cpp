@@ -531,6 +531,12 @@ static wchar_t LinuxInputKeySymToChar(KeySym ks)
 // main loop and MsgSleep (like LinuxDispatchHotkeys).
 extern "C" void LinuxDispatchInputHook(Display *d)
 {
+	// Fire the queued InputHook notifications (OnChar/OnKeyDown/OnKeyUp):
+	// the capture engine only queues them while feeding raw X events; the
+	// script callbacks run here, from the main-loop/MsgSleep dispatch --
+	// the same context hotkeys fire from (round-34, check0819 P1-3).
+	LinuxCaptureDispatchInputNotifies();
+
 	// Capture depends on gdk/grab state; with no active input just return.
 	input_type *active = g_input;
 	if (!active || !active->InProgress())

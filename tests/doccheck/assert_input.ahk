@@ -83,6 +83,22 @@ SendText("a{bc")
 Sleep(60)
 Log("sendtext=" (downs(next_lines()) = "a,Shift_L,braceleft,b,c" ? 1 : 0))
 
+; --- SendText/Send: non-ASCII (Unicode keysym transmission). ---
+; CJK: no keycode produces these on a US layout, so the send engine borrows a
+; spare keycode (transient XChangeKeyboardMapping) and delivers the Unicode
+; keysym; xkeycap refreshes its map on MappingNotify and reports U+4F60/U+597D.
+SendText("你好")
+Sleep(80)
+Log("sendtext_unicode_cjk=" (downs(next_lines()) = "U4F60,U597D" ? 1 : 0))
+; Latin-1 supplement: XK_eacute (0x00E9) via the same borrowed-keycode path.
+SendText("é")
+Sleep(80)
+Log("sendtext_unicode_latin1=" (downs(next_lines()) = "eacute" ? 1 : 0))
+; The borrowed keycode must be reverted: a plain char still resolves to "b".
+Send("b")
+Sleep(80)
+Log("sendtext_after_unicode=" (downs(next_lines()) = "b" ? 1 : 0))
+
 ; --- SendMode variants: all deliver XTEST events on Linux. ---
 SendEvent("x")
 Sleep(60)

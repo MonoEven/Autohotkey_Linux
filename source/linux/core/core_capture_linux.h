@@ -24,3 +24,18 @@ void LinuxCaptureStateChanged();
 
 // Keyboard map changed: the grab set must be rebuilt.
 void LinuxCaptureMappingNotify();
+
+// Keysym -> Unicode character (ASCII/Latin-1 direct, Unicode keysym range
+// 0x01000000.. by subtraction, \r/\t/\b for the named keys).  0 = not text.
+// Used by the hotstring capture and InputHook character streams so CJK and
+// accented text typed through Unicode keysyms (IME-composed keys, borrowed
+// keycodes from the Send engine) can be matched and notified.
+wchar_t LinuxCharFromKeySym(KeySym aKs);
+
+// Fire the queued InputHook notifications (OnChar/OnKeyDown/OnKeyUp).  The
+// capture engine only QUEUES notifications while feeding raw X events; the
+// script callbacks are invoked from the main-loop dispatch (this function,
+// called by LinuxDispatchInputHook) because invoking them from the native
+// capture dispatch would re-enter the interpreter.  A no-op when the input
+// ended before the dispatch ran (its object may already be released).
+void LinuxCaptureDispatchInputNotifies();

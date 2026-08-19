@@ -19,12 +19,14 @@
 #include "../../script_func_impl.h"
 #include "core_win_linux.h" // LinuxX11ActiveWindow
 #include "core_wayland_linux.h"
+#include "core_clipboard_linux.h" // LinuxClipboardGetText/SetText (paste path)
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
 #include <X11/extensions/XTest.h>
 #include <X11/XKBlib.h>
 #include <cwctype>
+#include <cwchar>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -438,6 +440,273 @@ static vk_type LinuxCharVk(wchar_t c)
 	return (vk_type)(unsigned)c;
 }
 
+// ---------------------------------------------------------------------------
+// Unicode characters (non-ASCII) in SendText/Send
+// ---------------------------------------------------------------------------
+//
+// X11/XWayland: any Unicode character is delivered as a key event whose
+// keycode maps to the character's keysym.  Latin-1 characters (U+0000-U+00FF)
+// use their direct keysym value (e.g. U+00E9 == XK_eacute); other code points
+// use the X11 Unicode keysym range (0x01000000 | code point), which modern
+// toolkits (GTK/Qt) accept.  When the layout already binds the keysym to a
+// keycode (e.g. é on a French layout) that keycode is reused; otherwise a
+// spare keycode (currently bound to no keysym) is temporarily remapped, the
+// key events are sent, and the mapping is reverted.  The X server delivers
+// MappingNotify before the resulting KeyPress/KeyRelease on every client
+// connection (FIFO per connection), so a client that refreshes its cached
+// map on MappingNotify resolves the temporary mapping correctly.  This is the
+// same approach xdotool uses for `type` of non-ASCII text.
+//
+// Pure Wayland: virtual-keyboard key events carry only keycodes (no Unicode
+// keysyms), so a run of text containing non-ASCII characters is delivered via
+// the controlled clipboard-paste path (set clipboard -> Ctrl+V -> restore).
+// On compositors without the virtual-keyboard protocol (e.g. GNOME) there is
+// no injection path at all: the send fails with a clear error instead of
+// silently dropping characters.
+
+// X11 keysym for a Unicode code point (exported; the hotstring capture
+// engine uses it for Unicode replacements).
+KeySym LinuxCharToKeySym(wchar_t aChar)
+{
+	unsigned int cp = (unsigned int)aChar;
+	if (cp < 0x100)
+		return (KeySym)cp; // Latin-1: keysym value == code point.
+	return (KeySym)(0x01000000u | cp); // Unicode keysym range.
+}
+
+// A keycode whose level-0 keysym is aKeysym (so it can be sent unshifted).
+static KeyCode LinuxFindKeycodeForKeySym(Display *d, KeySym aKeysym)
+{
+	if (!d)
+		return 0;
+	int min_kc = 0, max_kc = 0;
+	XDisplayKeycodes(d, &min_kc, &max_kc);
+	int ks_per_kc = 0;
+	KeySym *map = XGetKeyboardMapping(d, (KeyCode)min_kc, max_kc - min_kc + 1, &ks_per_kc);
+	if (!map)
+		return 0;
+	KeyCode found = 0;
+	for (int kc = min_kc; kc <= max_kc && !found; ++kc)
+	{
+		KeySym *row = map + (size_t)(kc - min_kc) * ks_per_kc;
+		if (ks_per_kc == 1 && row[0] == aKeysym) // Unmodified key.
+			found = (KeyCode)kc;
+		else if (ks_per_kc > 1 && row[0] == aKeysym) // Level 0 match.
+			found = (KeyCode)kc;
+	}
+	XFree(map);
+	return found;
+}
+
+// A keycode currently bound to no keysym at all (so it can be borrowed for a
+// transient Unicode mapping without disturbing real keys).  Skips keycodes
+// that participate in the XKB modifier map (e.g. NumLock bindings).
+static KeyCode LinuxSpareKeycode(Display *d)
+{
+	if (!d)
+		return 0;
+	int min_kc = 0, max_kc = 0;
+	XDisplayKeycodes(d, &min_kc, &max_kc);
+	int ks_per_kc = 0;
+	KeySym *map = XGetKeyboardMapping(d, (KeyCode)min_kc, max_kc - min_kc + 1, &ks_per_kc);
+	if (!map)
+		return 0;
+	// Modifier-map mask computed via Xkb (a spare must not be a modifier).
+	XkbDescPtr xkb = XkbGetMap(d, XkbKeySymsMask | XkbModifierMapMask, XkbUseCoreKbd);
+	KeyCode spare = 0;
+	for (int kc = max_kc; kc >= min_kc && !spare; --kc)
+	{
+		KeySym *row = map + (size_t)(kc - min_kc) * ks_per_kc;
+		bool empty = true;
+		for (int l = 0; l < ks_per_kc; ++l)
+			if (row[l] != NoSymbol) { empty = false; break; }
+		if (!empty)
+			continue;
+		if (xkb && kc < 256 && xkb->map && xkb->map->modmap && xkb->map->modmap[kc])
+			continue; // Used as a modifier key.
+		spare = (KeyCode)kc;
+	}
+	if (xkb)
+		XkbFreeClientMap(xkb, 0, TRUE);
+	XFree(map);
+	return spare;
+}
+
+// Borrow-and-restore bookkeeping for Unicode keycode transmission.
+//
+// The key events and the temporary mapping change are both sent while the
+// mapping is installed, but the *consumers* resolve the keycode at their own
+// pace: an X client that processes events late (e.g. our own input-capture
+// engine, which drains grabbed events from its dedicated hotkey connection
+// on the main loop) may translate the keycode AFTER the mapping has been
+// reverted and see NoSymbol.  This process owns the borrows, so it keeps a
+// process-local LOG of every transient borrow: the capture engine resolves
+// borrowed keycodes against this log (in FIFO order -- the order it
+// consumes the key events matches the order the borrows were made), then
+// falls back to the server maps for real keyboards.
+static std::vector<std::pair<KeyCode, KeySym>> sBorrowLog;
+static DWORD sLastBorrowMs = 0; // See LinuxBorrowRecent() below.
+#define GS_BORROW_LOG_MAX 128
+
+// Borrow-or-find a keycode for aKeysym.  Returns 0 when neither an existing
+// mapping nor a spare keycode is available.  When a spare is remapped,
+// *aRemapped is set to true and the caller must call LinuxUnicodeRestore()
+// after the key events have been sent (the mapping change is server-wide, so
+// the borrow window must be as short as possible).
+KeyCode LinuxUnicodeKeycode(Display *d, KeySym aKeysym, bool &aRemapped)
+{
+	aRemapped = false;
+	if (KeyCode kc = LinuxFindKeycodeForKeySym(d, aKeysym))
+		return kc;
+	KeyCode spare = LinuxSpareKeycode(d);
+	if (!spare)
+		return 0;
+	if (!aKeysym)
+		return 0;
+	XChangeKeyboardMapping(d, spare, 1, &aKeysym, 1);
+	XSync(d, False); // Server must process the remap before the key events.
+	// Log the borrow (FIFO; the capture engine consumes it in event order).
+	if (sBorrowLog.size() >= GS_BORROW_LOG_MAX)
+		sBorrowLog.erase(sBorrowLog.begin());
+	sBorrowLog.push_back(std::make_pair(spare, aKeysym));
+	sLastBorrowMs = GetTickCount();
+	aRemapped = true;
+	return spare;
+}
+
+// Revert a borrowed keycode after LinuxUnicodeKeycode() remapped it.  The
+// process-local borrow log is deliberately KEPT: the capture engine may
+// still need to resolve the (already reverted) keycode, and the log entry is
+// consumed (FIFO) by LinuxConsumeBorrowedKeySym() when the event is
+// processed.
+void LinuxUnicodeRestore(Display *d, KeyCode aKeycode)
+{
+	if (!d || !aKeycode)
+		return;
+	KeySym none = NoSymbol;
+	XChangeKeyboardMapping(d, aKeycode, 1, &none, 1);
+	XSync(d, False);
+}
+
+// Consume the OLDEST borrow-log entry for aKeycode and return its keysym
+// (NoSymbol when the keycode was never borrowed).  The capture engine calls
+// this when it processes a key event whose keycode was transiently remapped:
+// the borrow order equals the event order, so consuming FIFO maps each
+// event to the keysym that was installed when it was generated.
+KeySym LinuxConsumeBorrowedKeySym(KeyCode aKeycode)
+{
+	for (size_t i = 0; i < sBorrowLog.size(); ++i)
+		if (sBorrowLog[i].first == aKeycode)
+		{
+			KeySym ks = sBorrowLog[i].second;
+			sBorrowLog.erase(sBorrowLog.begin() + i);
+			return ks;
+		}
+	return NoSymbol;
+}
+
+// True while a Unicode borrow was made recently (within the keep-window).
+// The hotkey backend uses this to skip the full grab rebuild that a
+// MappingNotify triggers: borrows intentionally broadcast MappingNotify but
+// only retarget a spare keycode (modifier slots and grab targets are
+// unaffected), and rebuilding ~2000 capture grabs per borrow floods the X
+// connection (check0819 round-34).
+bool LinuxBorrowRecent()
+{
+	DWORD now = GetTickCount();
+	return now >= sLastBorrowMs && now - sLastBorrowMs < 500;
+}
+
+// The last non-ASCII character that could not be delivered (for the error).
+static wchar_t sLastUnsendable = 0;
+
+static void LinuxSendChar(Display *d, wchar_t aChar, LinuxHeldMods &aHeld); // fwd
+
+// Send one non-ASCII character through the X11 path (per-character keysym
+// transmission).  Returns true when the char was delivered.
+static bool LinuxSendCharUnicode(Display *d, wchar_t aChar)
+{
+	KeySym ks = LinuxCharToKeySym(aChar);
+	bool remapped = false;
+	KeyCode kc = LinuxUnicodeKeycode(d, ks, remapped);
+	if (!kc)
+	{
+		sLastUnsendable = aChar;
+		return false;
+	}
+	XTestFakeKeyEvent(d, kc, True, CurrentTime);
+	XTestFakeKeyEvent(d, kc, False, CurrentTime);
+	XFlush(d);
+	if (remapped)
+	{
+		// Race (round-34, observed in the doc-check): a client that
+		// refreshes its keymap on MappingNotify (XRefreshKeyboardMapping
+		// -> XGetKeyboardMapping) can see the REVERTED mapping if the
+		// revert wins the race, resolving the keycode to NoSymbol and
+		// dropping the character (both xkeycap and the rename capture
+		// engine hit this).  Give clients a short window to process the
+		// key events before the borrow is returned; the mapping change is
+		// server-wide, so the window is kept as small as practical.
+		XSync(d, False);
+		usleep(30000);
+		LinuxUnicodeRestore(d, kc);
+	}
+	return true;
+}
+
+// Paste a literal run via the clipboard (pure Wayland fallback for text
+// containing non-ASCII characters).  Returns true on success.
+static bool LinuxSendRunPaste(const wchar_t *aStart, const wchar_t *aEnd)
+{
+	std::wstring saved;
+	bool had = LinuxClipboardGetText(saved);
+	std::wstring run(aStart, aEnd);
+	if (!LinuxClipboardSetText(run))
+		return false;
+	// Ctrl+V via the virtual keyboard (wlroots compositors deliver these to
+	// the focused surface).  The focused app reads the clipboard when it
+	// processes the paste key; give it a short window, then restore the
+	// previous clipboard so ordinary use is disrupted as little as possible.
+	LinuxFakeKey(nullptr, 0x11, true);  // Control_L.
+	LinuxFakeKey(nullptr, 0x56, true);  // V.
+	LinuxFakeKey(nullptr, 0x56, false);
+	LinuxFakeKey(nullptr, 0x11, false);
+	usleep(60000);
+	if (had)
+		LinuxClipboardSetText(saved);
+	return true;
+}
+
+// Send a run of literal text ([aStart, aEnd)) to the focused window.  ASCII
+// (or any text when an X display is present, or while modifiers are held) is
+// sent per-character; a non-ASCII run on a pure-Wayland session uses the
+// clipboard-paste path.  Returns false when a character cannot be delivered
+// (sLastUnsendable names the offending character).
+static bool LinuxSendLiteralRun(Display *d, const wchar_t *aStart, const wchar_t *aEnd
+	, LinuxHeldMods &aHeld)
+{
+	sLastUnsendable = 0;
+	bool has_non_ascii = false;
+	for (const wchar_t *q = aStart; q < aEnd; ++q)
+		if (*q > 0x7E) { has_non_ascii = true; break; }
+	if (!has_non_ascii || d || aHeld.Any())
+	{
+		for (const wchar_t *q = aStart; q < aEnd; ++q)
+		{
+			LinuxSendChar(d, *q, aHeld);
+			if (sLastUnsendable)
+				return false; // A Unicode char could not be delivered.
+		}
+		return true;
+	}
+	// Pure Wayland with non-ASCII text and no modifiers held.
+	if (LinuxWaylandActive() && LinuxWaylandCanInjectKeys())
+		return LinuxSendRunPaste(aStart, aEnd);
+	for (const wchar_t *q = aStart; q < aEnd; ++q)
+		if (*q > 0x7E) { sLastUnsendable = *q; break; }
+	return false;
+}
+
 // Send a literal character.
 static void LinuxSendChar(Display *d, wchar_t aChar, LinuxHeldMods &aHeld)
 {
@@ -453,7 +722,16 @@ static void LinuxSendChar(Display *d, wchar_t aChar, LinuxHeldMods &aHeld)
 	}
 	KeySym ks = (KeySym)(unsigned int)aChar;
 	if (ks > 0x7E)
-		return; // Non-ASCII: no reliable keysym on a US layout.
+	{
+		// Non-ASCII: Unicode keysym transmission on X11; on a pure-Wayland
+		// session the run-level clipboard-paste fallback handles it (a bare
+		// call with no run context reports failure instead of dropping).
+		if (d)
+			LinuxSendCharUnicode(d, aChar);
+		else
+			sLastUnsendable = aChar;
+		return;
+	}
 	// Shifted characters are not directly mapped; use the base keycode.
 	wchar_t base = LinuxCharBase(aChar);
 	bool need_shift = LinuxCharNeedsShift(aChar);
@@ -620,13 +898,15 @@ static void LinuxSendBrace(Display *d, const std::wstring &aToken, LinuxHeldMods
 // Convert script coordinates (per CoordMode Mouse) to screen coordinates.
 static void LinuxMouseCoords(Display *d, int aX, int aY, int &aOutX, int &aOutY);
 
-// The main Send engine.
-static void LinuxSendKeys(Display *d, const wchar_t *aKeys)
+// The main Send engine.  Returns false when a literal run could not be
+// delivered (sLastUnsendable names the offending character).
+static bool LinuxSendKeys(Display *d, const wchar_t *aKeys)
 {
 	LinuxHeldMods held;
 	bool blind = false;
+	bool ok = true;
 	const wchar_t *p = aKeys;
-	while (*p)
+	while (*p && ok)
 	{
 		if (held.Any() && !blind)
 		{
@@ -646,8 +926,7 @@ static void LinuxSendKeys(Display *d, const wchar_t *aKeys)
 			if (text_mode)
 			{
 				// The rest of the string is sent literally.
-				for (; *p; ++p)
-					LinuxSendChar(d, *p, held);
+				ok = LinuxSendLiteralRun(d, p, p + wcslen(p), held);
 				break;
 			}
 			continue;
@@ -672,24 +951,30 @@ static void LinuxSendKeys(Display *d, const wchar_t *aKeys)
 				p = end + 1;
 				if (text_mode)
 				{
-					for (; *p; ++p)
-						LinuxSendChar(d, *p, held);
+					ok = LinuxSendLiteralRun(d, p, p + wcslen(p), held);
 					break;
 				}
 			}
 			else if (*p)
 			{
 				LinuxSendChar(d, *p, held);
+				if (sLastUnsendable)
+					ok = false;
 				++p;
 			}
 			for (auto m : mods)
 				LinuxSetMod(d, held, m, false);
 			continue;
 		}
-		LinuxSendChar(d, *p, held);
-		++p;
+		// A run of literal text: send it as a unit (this is where a pure-
+		// Wayland non-ASCII run switches to the clipboard-paste path).
+		const wchar_t *run = p;
+		while (*p && *p != L'{' && *p != L'^' && *p != L'+' && *p != L'!' && *p != L'#')
+			++p;
+		ok = LinuxSendLiteralRun(d, run, p, held);
 	}
 	LinuxReleaseAllMods(d, held);
+	return ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -735,15 +1020,29 @@ static void LinuxSendWrapper(ResultToken &aResultToken, ExprTokenType *aParam[],
 	LPTSTR keys = aParamCount > 0 ? TokenToString(*aParam[0], keys_buf, nullptr) : nullptr;
 	if (!keys)
 		keys = keys_buf;
+	sLastUnsendable = 0;
+	bool ok = true;
 	if (aRaw)
 	{
 		LinuxHeldMods held;
-		for (const wchar_t *p = keys; *p; ++p)
-			LinuxSendChar(d, *p, held);
+		ok = LinuxSendLiteralRun(d, keys, keys + wcslen(keys), held);
 		LinuxReleaseAllMods(d, held);
 	}
 	else
-		LinuxSendKeys(d, keys);
+		ok = LinuxSendKeys(d, keys);
+	if (!ok && sLastUnsendable)
+	{
+		TCHAR buf[256];
+		_tcsncpy(buf, _T("Non-ASCII character U+"), _countof(buf));
+		TCHAR hex[32];
+		sntprintf(hex, _countof(hex), _T("%04X"), (unsigned)sLastUnsendable);
+		_tcsncat(buf, hex, _countof(buf));
+		_tcsncat(buf, _T(" cannot be sent on this session (no X display and the "
+			"compositor provides no virtual keyboard); use X11/XWayland, or "
+			"check that the Wayland compositor exposes a virtual keyboard)."),
+			_countof(buf));
+		aResultToken.Error(buf, _T(""), ErrorPrototype::OS);
+	}
 }
 
 BIF_DECL(BIF_Linux_Send)      { LinuxSendWrapper(aResultToken, aParam, aParamCount, false); }
@@ -775,8 +1074,7 @@ void LinuxSendKeysString(Display *d, const wchar_t *aKeys)
 void LinuxSendCharsString(Display *d, const wchar_t *aKeys)
 {
 	LinuxHeldMods held;
-	for (const wchar_t *p = aKeys; *p; ++p)
-		LinuxSendChar(d, *p, held);
+	LinuxSendLiteralRun(d, aKeys, aKeys + wcslen(aKeys), held);
 	LinuxReleaseAllMods(d, held);
 }
 

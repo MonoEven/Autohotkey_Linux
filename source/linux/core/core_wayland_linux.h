@@ -28,6 +28,13 @@ bool LinuxWaylandWheelEvent(unsigned int aButton, bool aDown);
 bool LinuxWaylandMotionEvent(int aDX, int aDY); // Relative motion.
 bool LinuxWaylandMotionTo(int aX, int aY);      // Absolute intent (tracked position).
 
+// True when the compositor exposes the virtual-keyboard protocol and the
+// active Wayland connection holds a virtual keyboard (i.e. key events can
+// actually be injected into the focused surface).  Compositors such as
+// GNOME do not implement zwp_virtual_keyboard_v1: key injection, and with
+// it the clipboard-paste Unicode fallback, are unavailable there.
+bool LinuxWaylandCanInjectKeys();
+
 // vk -> Linux evdev keycode (used by the virtual keyboard; no server
 // round-trip needed).  0 when unmapped.
 unsigned int LinuxWaylandKeycodeForVk(unsigned int aVK);

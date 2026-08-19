@@ -1038,8 +1038,18 @@ void LinuxDispatchHotkeys()
 		}
 		case MappingNotify:
 			// Keyboard map/layout changed: refresh the modifier slots and
-			// rebuild every grab from scratch.
+			// rebuild every grab from scratch.  EXCEPTION (round-34): the
+			// Send engine's Unicode borrows (XChangeKeyboardMapping) also
+			// broadcast MappingNotify, but they only retarget a spare
+			// keycode -- modifier slots and grab targets are unaffected,
+			// and rebuilding the ~2000 capture grabs per borrow floods the
+			// X connection (a classic TCP fill deadlock observed in the
+			// doc-check under Xvfb).  Skip the full rebuild while a borrow
+			// is recent; a real layout switch outside that window still
+			// rebuilds as before.
 			XRefreshKeyboardMapping(&ev.xmapping);
+			if (LinuxBorrowRecent())
+				break;
 			LinuxUpdateModifierMap(d);
 			LinuxUpdateModifierKeycodes(d);
 			sIndexDirty = true;

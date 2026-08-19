@@ -32,6 +32,7 @@
 #include <X11/keysym.h>
 #include <X11/XKBlib.h>
 #include <set>
+#include <vector>
 #include <cstring>
 #include <cwctype>
 #include "../../hook.h"
@@ -65,27 +66,76 @@ bool LinuxIsModifierKey(KeySym ks)
 	return false;
 }
 
-// The character a key press produces (US layout).  Shift selects the
-// shifted keysym; CapsLock toggles the case of letters (X11 keysyms do not
-// apply caps themselves).  0 = not text.
+// Layout-aware keysym for a key event, with a live core-map fallback: the
+// layout-aware lookup (XKB) is tried first; a transient borrowed keycode
+// (SendText's Unicode transmission) changes only the CORE map, so when XKB
+// yields NoSymbol the server's current core mapping is queried directly.
+// The process-local borrow log is consulted BEFORE the server queries: this
+// engine may process the key event after the borrow was already reverted,
+// and the log (consumed FIFO, in the same order the events were generated)
+// is the only race-free answer for those late events.
+KeySym LinuxEventKeySym(Display *d, XEvent &ev)
+{
+	if (KeySym ks = LinuxConsumeBorrowedKeySym(ev.xkey.keycode))
+		return ks;
+	bool shift = (ev.xkey.state & ShiftMask) != 0;
+	KeySym ks = XkbKeycodeToKeysym(d, ev.xkey.keycode, shift ? 1 : 0, 0);
+	if (ks != NoSymbol)
+		return ks;
+	int kspk = 0;
+	KeySym *row = XGetKeyboardMapping(d, ev.xkey.keycode, 1, &kspk);
+	if (row && kspk > 0)
+		ks = row[(shift && kspk > 1) ? 1 : 0];
+	if (row)
+		XFree(row);
+	return ks;
+}
+
+// The character a key press produces.  Shift selects the shifted keysym;
+// CapsLock toggles the case of ASCII letters (X11 keysyms do not apply caps
+// themselves); non-ASCII characters (Unicode keysyms from IME-composed keys
+// or the Send engine's borrowed keycodes) are returned as-is.  0 = not text.
 wchar_t LinuxCaptureChar(Display *d, XEvent &ev)
 {
 	bool shift = (ev.xkey.state & ShiftMask) != 0;
 	bool caps = (ev.xkey.state & LockMask) != 0;
-	KeySym ks = XkbKeycodeToKeysym(d, ev.xkey.keycode, shift ? 1 : 0, 0);
-	if (ks >= 0x20 && ks <= 0x7e)
-	{
-		wchar_t c = (wchar_t)ks;
-		if (iswalpha(c))
-			return (shift ^ caps) ? (wchar_t)towupper(c) : (wchar_t)towlower(c);
-		return c;
-	}
-	switch (ks)
-	{
-	case XK_Return: case XK_KP_Enter: return L'\n';
-	case XK_Tab: return L'\t';
-	}
-	return 0;
+	KeySym ks = LinuxEventKeySym(d, ev);
+	wchar_t c = LinuxCharFromKeySym(ks);
+	if (c >= 0x20 && c <= 0x7e && iswalpha(c))
+		return (shift ^ caps) ? (wchar_t)towupper(c) : (wchar_t)towlower(c);
+	return c;
+}
+
+// ---------------------------------------------------------------------------
+// Deferred InputHook notifications (OnChar/OnKeyDown/OnKeyUp), round-34
+// ---------------------------------------------------------------------------
+// Script callbacks must NOT run from the native capture dispatch: invoking
+// the interpreter from there (inside X event feeding) hangs.  Notifications
+// are therefore queued here while events are fed, and fired from the
+// main-loop dispatch via LinuxCaptureDispatchInputNotifies() (called by
+// LinuxDispatchInputHook), the same context hotkeys fire from.  The queue
+// only ever references the CURRENT hook (g_input): after an input ends its
+// object may be released at any time, and a stale pointer must never be
+// dereferenced (the dispatch drops notifications for a hook that is no
+// longer InProgress).
+enum InputNotifyKind { NOTIFY_KEYDOWN = 0, NOTIFY_KEYUP = 1, NOTIFY_CHAR = 2 };
+struct InputNotify
+{
+	input_type *input;
+	int kind;
+	vk_type vk;
+	sc_type sc;
+	wchar_t ch;
+};
+std::vector<InputNotify> sInputNotifies;
+
+static void LinuxInputNotifyQueue(input_type *aInput, int aKind
+	, vk_type aVk, sc_type aSc, wchar_t aCh)
+{
+	if (!aInput || !aInput->ScriptObject)
+		return;
+	InputNotify n = { aInput, aKind, aVk, aSc, aCh };
+	sInputNotifies.push_back(n);
 }
 
 // Does aBuf[aLen-sl..aLen) equal aStr (case per aCaseSensitive)?
@@ -159,9 +209,12 @@ void LinuxCaptureFlush(Display *d)
 	sBufLen = 0;
 }
 // Send replacement text through the capture engine's synthetic-forward path
-// (send_event; see LinuxCaptureForward).  ASCII letters/characters are mapped to keycodes; the
-// shifted letters press/release the left Shift.  Unmappable characters are
-// skipped (documented).  This intentionally does not go through the general
+// (send_event; see LinuxCaptureForward).  ASCII letters/characters are mapped
+// to keycodes; the shifted letters press/release the left Shift.  Non-ASCII
+// characters are delivered with the Unicode keysym transaction (see
+// core_input_linux.cpp): a spare keycode is temporarily remapped to the
+// character's keysym, the key events are forwarded with XSendEvent, and the
+// mapping is reverted.  This intentionally does not go through the general
 // Send engine (which writes no copy marks).
 void LinuxCaptureSendMarked(Display *d, const wchar_t *aText)
 {
@@ -185,6 +238,28 @@ void LinuxCaptureSendMarked(Display *d, const wchar_t *aText)
 			break;
 		}
 		KeyCode kc = ks ? XKeysymToKeycode(d, ks) : 0;
+		if (!kc && ks == 0 && base != 0)
+		{
+			// Non-ASCII character: Unicode keysym transaction.  The mapping
+			// reverts only after a short window so clients (including our
+			// own capture dispatch) resolve the keycode while the keysym is
+			// still installed (see LinuxSendCharUnicode in core_input).
+			KeySym uks = LinuxCharToKeySym(base);
+			bool remapped = false;
+			KeyCode ukc = LinuxUnicodeKeycode(d, uks, remapped);
+			if (ukc)
+			{
+				LinuxCaptureForwardKey(d, (unsigned)ukc, true, 0);
+				LinuxCaptureForwardKey(d, (unsigned)ukc, false, 0);
+				if (remapped)
+				{
+					XSync(d, False);
+					usleep(30000); // Client processing window (see above).
+					LinuxUnicodeRestore(d, ukc);
+				}
+			}
+			continue;
+		}
 		if (!kc)
 			continue; // Unmappable character: skipped (documented).
 		if (needs_shift && shift)
@@ -259,6 +334,62 @@ void LinuxCaptureFire(Display *d, Hotstring *aHs, int aCaseMode, bool aForwardEn
 // Public interface
 // ---------------------------------------------------------------------------
 
+wchar_t LinuxCharFromKeySym(KeySym aKs)
+{
+	if (aKs >= 0x20 && aKs <= 0x7e)
+		return (wchar_t)aKs;
+	if (aKs >= 0xa0 && aKs <= 0xff)
+		return (wchar_t)aKs; // Latin-1 supplement (é, ü, ¥, ...).
+	if (aKs >= 0x01000000u && aKs <= 0x0110ffffu)
+		return (wchar_t)(aKs - 0x01000000u); // Unicode keysym range.
+	switch (aKs)
+	{
+	case XK_Return: case XK_KP_Enter: return L'\n';
+	case XK_Tab: return L'\t';
+	case XK_BackSpace: return L'\b';
+	}
+	return 0;
+}
+
+// Fire the queued InputHook notifications (see the queue comment above).
+void LinuxCaptureDispatchInputNotifies()
+{
+	if (sInputNotifies.empty())
+		return;
+	std::vector<InputNotify> batch = sInputNotifies; // Copy: a callback may queue more.
+	sInputNotifies.clear();
+	for (size_t i = 0; i < batch.size(); ++i)
+	{
+		InputNotify &n = batch[i];
+		// Only the CURRENT hook may be notified (see the queue comment).
+		if (n.input != g_input || !n.input->InProgress() || !n.input->ScriptObject)
+			continue;
+		IObject *cb = n.kind == NOTIFY_CHAR ? n.input->ScriptObject->onChar
+			: (n.kind == NOTIFY_KEYDOWN ? n.input->ScriptObject->onKeyDown
+			                            : n.input->ScriptObject->onKeyUp);
+		if (!cb)
+			continue;
+		if (n.kind == NOTIFY_CHAR)
+		{
+			// Windows semantics: OnChar(This, Char).
+			TCHAR chars[2] = { n.ch, L'\0' };
+			ExprTokenType params[] = { n.input->ScriptObject, chars };
+			IObjectPtr(cb)->ExecuteInNewThread(_T("InputHook"), params, _countof(params));
+		}
+		else
+		{
+			// Windows semantics: OnKeyDown/OnKeyUp(This, VK, SC).
+			ExprTokenType params[] =
+			{
+				n.input->ScriptObject,
+				(__int64)n.vk,
+				(__int64)n.sc,
+			};
+			IObjectPtr(cb)->ExecuteInNewThread(_T("InputHook"), params, _countof(params));
+		}
+	}
+}
+
 bool LinuxCaptureActive()
 {
 	// Capture is needed while any hotstring is enabled or an InputHook is
@@ -309,20 +440,18 @@ vk_type LinuxKeysymToVk(KeySym ks)
 	return 0;
 }
 
-// Character a key press produces for the InputHook stream (Return/Tab/
-// BackSpace + printable ASCII at the current shift level).
+// Character a key press produces for the InputHook stream: printable
+// ASCII/Latin-1/Unicode at the current shift level (Unicode keysyms from
+// IME-composed keys and the Send engine's borrowed keycodes are converted
+// by LinuxCharFromKeySym), plus the control characters for the named keys
+// (Return collects CR, matching Windows).
 wchar_t LinuxInputHookChar(Display *d, XEvent &ev)
 {
-	KeySym ks = XkbKeycodeToKeysym(d, ev.xkey.keycode, (ev.xkey.state & ShiftMask) ? 1 : 0, 0);
-	if (ks >= 0x20 && ks <= 0x7e)
-		return (wchar_t)ks;
-	switch (ks)
-	{
-	case XK_Return: case XK_KP_Enter: return L'\r';
-	case XK_Tab: return L'\t';
-	case XK_BackSpace: return L'\b';
-	}
-	return 0;
+	KeySym ks = LinuxEventKeySym(d, ev);
+	wchar_t c = LinuxCharFromKeySym(ks);
+	if (c == L'\n') // Enter: Windows InputHook collects CR.
+		return L'\r';
+	return c;
 }
 
 // Feed one key event to the active InputHook (live key capture on Linux via
@@ -338,10 +467,27 @@ bool LinuxCaptureFeedInput(Display *d, XEvent &ev)
 	if (!active || !active->InProgress())
 		return false;
 	if (ev.type != KeyPress)
+	{
+		// KeyRelease: notify OnKeyUp (queued, fired from the main-loop
+		// dispatch) and consume the release while the input is active.
+		if (ev.type == KeyRelease && active->ScriptObject && active->ScriptObject->onKeyUp)
+		{
+			KeySym ks0 = XkbKeycodeToKeysym(d, ev.xkey.keycode, 0, 0);
+			LinuxInputNotifyQueue(active, NOTIFY_KEYUP, LinuxKeysymToVk(ks0)
+				, (sc_type)ev.xkey.keycode, 0);
+		}
 		return true; // Releases are consumed while the input is active.
+	}
 	KeySym ks0 = XkbKeycodeToKeysym(d, ev.xkey.keycode, 0, 0);
 	if (LinuxIsModifierKey(ks0))
 		return true;
+	// OnKeyDown notification (queued; fired from the main-loop dispatch).
+	// SC is the X11 keycode (there is no Windows scancode on Linux;
+	// documented).  VK is 0 for keys with no Win32-VK equivalent (e.g.
+	// Unicode keysyms).
+	if (active->ScriptObject && active->ScriptObject->onKeyDown)
+		LinuxInputNotifyQueue(active, NOTIFY_KEYDOWN, LinuxKeysymToVk(ks0)
+			, (sc_type)ev.xkey.keycode, 0);
 	wchar_t ch = LinuxInputHookChar(d, ev);
 	if (ch == L'\b' && active->BackspaceIsUndo)
 	{
@@ -371,15 +517,13 @@ bool LinuxCaptureFeedInput(Display *d, XEvent &ev)
 	}
 	if (ch)
 	{
+		// OnChar notification (queued; fired from the main-loop dispatch).
+		// Windows semantics: every character (including the end char) is
+		// reported.
+		if (active->ScriptObject && active->ScriptObject->onChar)
+			LinuxInputNotifyQueue(active, NOTIFY_CHAR, 0, 0, ch);
 		TCHAR cbuf[2] = { (TCHAR)ch, 0 };
 		active->CollectChar(cbuf, 1); // Ends on end char/match/limit internally.
-		// Note: the OnChar/OnKeyDown notifications are not fired here.
-		// Invoking a script callback from the native capture dispatch
-		// re-enters the interpreter and hangs (the OnExit/OnClipboardChange
-		// monitor pattern would require a proper quasi-thread launch from a
-		// non-dispatch context).  The core live capture -- buffer fill, end
-		// chars, match list, limit, backspace undo, timeout, and input
-		// suppression -- is complete; OnChar/OnKeyDown remain limited.
 	}
 	return true;
 }

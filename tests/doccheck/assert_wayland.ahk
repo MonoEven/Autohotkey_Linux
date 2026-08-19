@@ -50,6 +50,15 @@ Log("wl_send_ctrl_enter=" (FileExist(KCR) ? 1 : 0))
 Send("Hello World") ; Text send: must not raise.
 Sleep(500)
 Log("wl_send_text=1")
+; Non-ASCII SendText on pure Wayland: the clipboard-paste fallback (set
+; clipboard -> Ctrl+V -> restore).  sway's Control_L+v bindsym marker
+; proves the paste key sequence reached the compositor; the restore is
+; verified through A_Clipboard.
+A_Clipboard := "wl-saved-clip"
+SendText("你")
+Sleep(1200)
+Log("wl_unicode_paste=" (FileExist("/tmp/wl_key_cv") ? 1 : 0))
+Log("wl_unicode_restore=" (A_Clipboard = "wl-saved-clip" ? 1 : 0))
 ; GetKeyState cannot query a Wayland seat: reports 0 (documented).
 Log("wl_gks=" (GetKeyState("a") = 0 ? 1 : 0))
 

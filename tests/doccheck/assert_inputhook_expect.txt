@@ -1,4 +1,8 @@
 ih_ab=1
+ih2_char=1
+ih2_kd=1
+ih2_ku=1
+ih3_unicode=1
 ih3_val=1
 ih3_end=1
 ih4_end=1

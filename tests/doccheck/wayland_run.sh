@@ -41,7 +41,7 @@ pkill -x Xwayland 2>/dev/null
 sleep 0.5
 rm -rf /tmp/swayhome
 mkdir -p /tmp/swayhome
-rm -f /tmp/wl_key_a /tmp/wl_sway_tree.txt /tmp/wl_key_sr /tmp/wl_key_cr /tmp/wl_btn3
+rm -f /tmp/wl_key_a /tmp/wl_sway_tree.txt /tmp/wl_key_sr /tmp/wl_key_cr /tmp/wl_btn3 /tmp/wl_key_cv
 cat > /tmp/swayhome/config <<EOF
 seat * xcursor_theme empty
 input "*" xkb_layout us
@@ -55,6 +55,7 @@ for_window [title="ImgMain"] move position 50 60
 bindsym a exec touch /tmp/wl_key_a
 bindsym Shift+Return exec touch /tmp/wl_key_sr
 bindsym Control+Return exec touch /tmp/wl_key_cr
+bindsym Control_L+v exec touch /tmp/wl_key_cv
 bindsym button3 exec touch /tmp/wl_btn3
 EOF
 cd /tmp/swayhome || exit 1
