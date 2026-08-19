@@ -69,9 +69,14 @@ D-Bus COM layer). The port has two display backends:</p>
   <li><b>Native Wayland backend</b> (used when no X display is available):
     xdg-shell windows, virtual keyboard/pointer input
     (zwp_virtual_keyboard_v1 / zwlr_virtual_pointer_manager_v1),
-    screen capture via wlr-screencopy. Window management and hotkeys are
-    not available in pure Wayland (no global-hotkey protocol); use
-    XWayland for those.</li>
+    screen capture via wlr-screencopy. Hotkeys work in Wayland sessions through the
+    XDG Global Shortcuts Portal (org.freedesktop.portal.GlobalShortcuts, GNOME 45+/KDE):
+    Hotkey registrations bind with the compositor and fire on the physical key.
+    Caveat: a few compositor/driver builds (e.g. Ubuntu 25.10 &rsquo;s xdg-desktop-portal
+    1.20.3 + GNOME 49) only accept binds when they can resolve a valid app identity
+    for the caller (a bare CLI resolves none and is rejected); run from a matching
+    .desktop/app scope, use AHK_FORCE_GLOBAL_SHORTCUTS=1 to force the portal path
+    behind XWayland, or use an XWayland/Xorg session on those systems.</li>
 </ul>
 
 <h2>Differences from Windows AutoHotkey</h2>
@@ -106,7 +111,7 @@ for the complete per-module report.</p>
 
 <h2>Latest release</h2>
 <p>The latest official release is
-<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.9</a>.
+<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.11</a>.
 Highlights of this release:</p>
 <ul>
   <li>LoadPicture now decodes <b>GIF</b> (first frame; GCT/LCT palettes, GCE

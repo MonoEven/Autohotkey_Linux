@@ -133,6 +133,13 @@
 - [x] **InputHook 按键采集**（round-33）：捕获引擎实时喂键——缓冲/结束键/
       匹配/上限/退格撤销/输入抑制；`CollectChar` 补全上游逻辑、`GetEndReason`
       返回 EndChar；`assert_inputhook` 6 断言（xkeycap 独立客户端）
+- [x] **XDG Global Shortcuts Portal**（round-34）：`core_gshortcut_linux.*` 实现
+      org.freedesktop.portal.GlobalShortcuts（v1）客户端——纯 Wayland 会话全局
+      热键直接经合成器注册/触发（GNOME 45+/KDE）；正确处理 CreateSession 的
+      Request/Response 异步句柄、dash-free token（规避 &lt;=1.20.x 的 SEGV）、
+      a(sa{sv}) 格式与 app_id（GNOME 后端需要合法应用身份；裸 CLI 会因空
+      app_id 被丢弃，需从 .desktop/app scope 运行或用 Xorg/XWayland 会话）；
+      已在 Ubuntu 25.10 + GNOME 49 上打通会话/绑定/Activated 全链路
 - [x] **pages 站点维护**：语言切换仅中英文 + 中文页 `docs/zh.htm` + 安装指南
       改为 Linux 实际方式（`docs/howto/Install.htm`）
 
