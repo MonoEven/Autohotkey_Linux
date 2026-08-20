@@ -130,6 +130,10 @@ for ahk in assert_*.ahk; do
     echo "SKIP: assert_inputhook (run with --xvfb: xkeycap foreground client)"
     continue
   fi
+  if [ "$base" = "assert_unicode_lease" ] && [ "$XVFB" != 1 ]; then
+    echo "SKIP: assert_unicode_lease (run with --xvfb: xkeycap foreground client)"
+    continue
+  fi
   if [ "$base" = "assert_edit" ] && [ "$XVFB" != 1 ]; then
     echo "SKIP: assert_edit (run with --xvfb)"
     continue
@@ -171,7 +175,7 @@ for ahk in assert_*.ahk; do
   # Display-dependent suites run under Xvfb (MsgBox would open a real
   # dialog with a display present); everything else stays headless.
   case "$base" in
-    assert_win|assert_input|assert_ctrl|assert_monitor|assert_timer|assert_hotkey|assert_hotkey_pt|assert_hotkey_btn|assert_hotkey_lr|assert_hotstring|assert_inputhook|assert_edit|assert_dialog|assert_msg|assert_image|assert_shape|assert_gui|assert_statements|assert_misc_cov)
+    assert_win|assert_input|assert_ctrl|assert_monitor|assert_timer|assert_hotkey|assert_hotkey_pt|assert_hotkey_btn|assert_hotkey_lr|assert_hotstring|assert_inputhook|assert_unicode_lease|assert_edit|assert_dialog|assert_msg|assert_image|assert_shape|assert_gui|assert_statements|assert_misc_cov)
       XDISPLAY=:99 ;;
     *) XDISPLAY="" ;;
   esac
@@ -215,6 +219,7 @@ for ahk in assert_*.ahk; do
     assert_hotkey_lr) out_src="/tmp/ahk_dc_hotkeylr_out.txt" ;;
     assert_hotstring) out_src="/tmp/ahk_dc_hotstring_out.txt" ;;
     assert_inputhook) out_src="/tmp/ahk_dc_inputhook_out.txt" ;;
+    assert_unicode_lease) out_src="/tmp/ahk_dc_lease_out.txt" ;;
     assert_edit)    out_src="/tmp/ahk_dc_edit_out.txt" ;;
     assert_dialog)  out_src="/tmp/ahk_dc_dialog_out.txt" ;;
     assert_msg)     out_src="/tmp/ahk_dc_msg_out.txt" ;;
