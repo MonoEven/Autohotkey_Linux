@@ -315,6 +315,37 @@ and feedback of the AutoHotkey-on-Linux community:</p>
     on; all language semantics come from it.</li>
 </ul>
 
+<h2>Packaging formats &mdash; status (check0820)</h2>
+<p>Release artifacts and their evaluation:</p>
+<ul>
+  <li><b>tarball + <code>.deb</code></b> (amd64; arm64 builds the same way)
+    &mdash; shipped with every release, plus <code>CKSUMS.txt</code>
+    (SHA-256) and an OpenPGP detached signature
+    (<code>CKSUMS.txt.asc</code>, key <code>tools/linux/ahk-release.pub</code>).</li>
+  <li><b>AppImage</b> &mdash; built by <code>tools/linux/pack-appimage.sh</code>
+    (appimagetool; icon handling and no-FUSE extraction fixed in linux.15).
+    Carries the interpreter and a launcher; GUI toolkits come from the host.</li>
+  <li><b>RPM</b> &mdash; built by <code>tools/linux/pack-rpm.sh</code>
+    (rpmbuild, private <code>_dbpath</code>, disabled debuginfo so no
+    <code>eu-strip</code> is needed).  Suitable for Fedora/openSUSE
+    users.</li>
+  <li><b>Arch Linux PKGBUILD</b> &mdash; <code>tools/linux/PKGBUILD</code>
+    builds from the git tag (v2.0.26-linux.N); package name
+    <code>autohotkey-linux</code>.</li>
+  <li><b>Flatpak/Snap</b> &mdash; <b>not provided</b>.  Flatpak sandboxes
+    would block the global-key injection/capture lanes (grab/uinput/XTEST
+    need host access) and require portal plumbing that does not exist yet;
+    Snap's confinement has the same problem and needs a store account.
+    Both are re-evaluated once the privilege model (ahk-inputd) lands.</li>
+  <li><b>A distribution repository</b> (Debian/Fedora/Arch official
+    packages) &mdash; not yet; the project is a technology preview.  The
+    <code>.deb</code>/RPM/PKGBUILD skeletons are the starting point the
+    distro packages would copy.</li>
+  <li><b>ARM64</b> &mdash; supported at build level (CMake builds it; the
+    pack scripts map <code>aarch64</code>); no ARM hardware is available
+    for CI today, so ARM binaries are untested artifacts (documented).</li>
+</ul>
+
 <h2>Build and install</h2>
 <pre>git clone --branch linux-port https://github.com/MonoEven/Autohotkey_Linux.git
 cd Autohotkey_Linux
