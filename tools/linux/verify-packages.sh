@@ -147,9 +147,11 @@ chk "ext: --uninstall --gnome-extension removes it" "test ! -e '$ext_dir2'"
 rm -rf "$fake_home2"
 
 echo "=== RPM / AppImage artifact presence ==="
-RPMF=$(ls dist/autohotkey-linux-*.rpm 2>/dev/null | head -1)
+DIST_ROOT="$(pwd)/dist"
+echo "DIAG pwd=$(pwd) dist_has_rpm=$(ls "$DIST_ROOT" 2>/dev/null | grep -c '\.rpm$') dist_has_ai=$(ls "$DIST_ROOT" 2>/dev/null | grep -c '\.AppImage$')"
+RPMF=$(find "$DIST_ROOT" -maxdepth 1 -name 'autohotkey-linux-*.rpm' -print 2>/dev/null | head -1)
 if [ -n "$RPMF" ]; then
-  chk "rpm: artifact built" "test -s 'dist/$RPMF'"
+  chk "rpm: artifact built" "test -s '$RPMF'"
   # The RPM's launcher (--update + rpm branch) and extension payload are
   # enforced by pack-rpm.sh's build-time self-check, which fails the
   # "Build packages" step if they are missing; a fragile rpm2cpio/cpio
@@ -157,9 +159,9 @@ if [ -n "$RPMF" ]; then
 else
   echo "SKIP: no rpm artifact" >&2
 fi
-AIIM=$(ls dist/autohotkey-linux-*.AppImage 2>/dev/null | head -1)
+AIIM=$(find "$DIST_ROOT" -maxdepth 1 -name 'autohotkey-linux-*.AppImage' -print 2>/dev/null | head -1)
 if [ -n "$AIIM" ]; then
-  chk "ai: artifact built" "test -s 'dist/$AIIM'"
+  chk "ai: artifact built" "test -s '$AIIM'"
   # pack-appimage.sh self-checks the AppDir extension + AppRun flags.
 else
   echo "SKIP: no AppImage artifact" >&2
