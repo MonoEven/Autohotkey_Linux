@@ -159,6 +159,10 @@ for ahk in assert_*.ahk; do
     echo "SKIP: assert_shape (run with --xvfb)"
     continue
   fi
+  if [ "$base" = "assert_repeat" ] && [ "$XVFB" != 1 ]; then
+    echo "SKIP: assert_repeat (run with --xvfb: auto-repeat + xkeycap)"
+    continue
+  fi
   if [ "$base" = "assert_layout" ] && [ "$XVFB" != 1 ]; then
     echo "SKIP: assert_layout (run with --xvfb: layout switch + xkeycap)"
     continue
@@ -188,7 +192,7 @@ for ahk in assert_*.ahk; do
   # Display-dependent suites run under Xvfb (MsgBox would open a real
   # dialog with a display present); everything else stays headless.
   case "$base" in
-    assert_win|assert_input|assert_ctrl|assert_monitor|assert_timer|assert_hotkey|assert_hotkey_pt|assert_hotkey_btn|assert_hotkey_lr|assert_hotstring|assert_inputhook|assert_unicode_lease|assert_edit|assert_dialog|assert_msg|assert_image|assert_shape|assert_gui|assert_statements|assert_misc_cov|assert_clipboard|assert_layout)
+    assert_win|assert_input|assert_ctrl|assert_monitor|assert_timer|assert_hotkey|assert_hotkey_pt|assert_hotkey_btn|assert_hotkey_lr|assert_hotstring|assert_inputhook|assert_unicode_lease|assert_edit|assert_dialog|assert_msg|assert_image|assert_shape|assert_gui|assert_statements|assert_misc_cov|assert_clipboard|assert_layout|assert_repeat)
       XDISPLAY=:99 ;;
     *) XDISPLAY="" ;;
   esac
@@ -245,6 +249,7 @@ for ahk in assert_*.ahk; do
     assert_misc_cov) out_src="/tmp/ahk_dc_misc_out.txt" ;;
     assert_clipboard) out_src="/tmp/ahk_dc_clip_out.txt" ;;
     assert_layout) out_src="/tmp/ahk_dc_layout_out.txt" ;;
+    assert_repeat) out_src="/tmp/ahk_dc_repeat_out.txt" ;;
   esac
   if [ -n "$out_src" ] && [ -f "$out_src" ]; then
     cp "$out_src" "$tmp" && mv -f "$tmp" "$final"

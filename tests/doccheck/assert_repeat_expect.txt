@@ -1,0 +1,4 @@
+repeat_aaaa=1
+repeat_hold_each=1
+repeat_single_tilde_cnt=1
+repeat_single_tilde_fg=1
