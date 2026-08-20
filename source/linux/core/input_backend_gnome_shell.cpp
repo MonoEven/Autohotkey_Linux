@@ -56,6 +56,13 @@ namespace
 
 DBusConnection *sConn = nullptr;
 char *sOwnerName = nullptr; // Our unique bus name ("owner" for ClearOwner).
+// The broker's UNIQUE bus name (e.g. ":1.13"), cached so the signal handler
+// can reject forged/dangling senders.  D-Bus never uses well-known names in
+// the sender field of a delivered message, so a sender check against
+// GS_BUS_NAME would silently drop every real Activation (check0820).  The
+// daemon-side match rule (sender=GS_BUS_NAME) is still the authority; this
+// cache is defense-in-depth against spoofed peeks.
+char *sBrokerUnique = nullptr;
 bool sFailed = false;       // Sticky connection failure.
 bool sRegistered = false;   // At least one registration is live.
 wchar_t sLastErrorBuf[512] = { 0 };
@@ -103,6 +110,52 @@ std::string IdForHotkey(Hotkey *aHk)
 DBusHandlerResult Handler(DBusConnection *, DBusMessage *, void *); // forward
 
 // --- D-Bus plumbing ---------------------------------------------------------
+
+// Cache the broker's current UNIQUE bus name (":1.NNN").  D-Bus delivers
+// signals with the unique name in the sender field, never the well-known
+// name; the daemon-side match rule already scopes to GS_BUS_NAME's owner, and
+// this cache is the defense-in-depth sender check in Handler().
+void CacheBrokerUniqueName()
+{
+	if (!sConn)
+		return;
+	if (sBrokerUnique)
+	{
+		free(sBrokerUnique);
+		sBrokerUnique = nullptr;
+	}
+	// GetNameOwner over the bus (dbus_bus_get_name_owner is not part of this
+	// libdbus build's headers; the canonical way is the method call itself).
+	DBusMessage *msg = dbus_message_new_method_call("org.freedesktop.DBus",
+		"/org/freedesktop/DBus", "org.freedesktop.DBus", "GetNameOwner");
+	if (!msg)
+		return;
+	DBusMessageIter it;
+	dbus_message_iter_init_append(msg, &it);
+	const char *name = GS_BUS_NAME;
+	dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &name);
+	DBusError err;
+	dbus_error_init(&err);
+	DBusMessage *rep = dbus_connection_send_with_reply_and_block(
+		sConn, msg, 1000, &err);
+	dbus_message_unref(msg);
+	if (!rep)
+	{
+		dbus_error_free(&err);
+		return; // Name not owned (yet): cache stays empty; daemon rule guards.
+	}
+	dbus_error_free(&err);
+	DBusMessageIter rit;
+	dbus_message_iter_init(rep, &rit);
+	if (dbus_message_iter_get_arg_type(&rit) == DBUS_TYPE_STRING)
+	{
+		const char *u = nullptr;
+		dbus_message_iter_get_basic(&rit, &u);
+		if (u)
+			sBrokerUnique = strdup(u);
+	}
+	dbus_message_unref(rep);
+}
 
 bool EnsureConnection()
 {
@@ -184,6 +237,7 @@ bool EnsureConnection()
 	const char *u = dbus_bus_get_unique_name(sConn);
 	if (u)
 		sOwnerName = strdup(u);
+	CacheBrokerUniqueName();
 	return true;
 }
 
@@ -427,6 +481,9 @@ DBusHandlerResult Handler(DBusConnection *aConn, DBusMessage *aMsg, void *)
 				sRegistered = false;
 				if (newOwner && newOwner[0])
 					sNeedResync = true; // new extension instance is live
+				// The broker's unique name changed (reload/restart): refresh
+				// the sender cache used by the Activated sender check.
+				CacheBrokerUniqueName();
 			}
 		}
 		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
@@ -434,9 +491,18 @@ DBusHandlerResult Handler(DBusConnection *aConn, DBusMessage *aMsg, void *)
 
 	if (strcmp(iface, GS_IFACE) != 0)
 		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
-	// The signal must come from the broker's well-known name (the match rule
-	// already enforces it; this double-checks against spoofing).
-	if (!sender || strcmp(sender, GS_BUS_NAME) != 0)
+	// The signal must come from the broker.  D-Bus delivers the sender as the
+	// broker's UNIQUE name (":1.NNN"), never the well-known name, so compare
+	// against the cached unique name (defense-in-depth; the daemon-side match
+	// rule sender=GS_BUS_NAME is the real authority).  When the cache is empty
+	// (broker name not yet resolved) accept and re-check on next load - a
+	// spoofed sender could not have passed the daemon's match rule anyway.
+	if (sBrokerUnique)
+	{
+		if (!sender || strcmp(sender, sBrokerUnique) != 0)
+			return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+	}
+	else if (!sender)
 		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 
 	// v1 consumes ONLY Activated: Deactivated (key-up) is a future capability
@@ -663,6 +729,8 @@ void LinuxGnomeShellShutdown()
 	sPendingTs.clear();
 	sRegistered = false;
 	sFailed = false;
+	if (sOwnerName) { free(sOwnerName); sOwnerName = nullptr; }
+	if (sBrokerUnique) { free(sBrokerUnique); sBrokerUnique = nullptr; }
 }
 
 const wchar_t *LinuxGnomeShellLastError()

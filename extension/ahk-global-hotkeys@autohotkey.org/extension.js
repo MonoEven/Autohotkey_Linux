@@ -27,7 +27,7 @@ import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
-import {Config} from 'resource:///org/gnome/shell/misc/config.js';
+import * as Config from 'resource:///org/gnome/shell/misc/config.js';
 
 const BUS_NAME = 'io.github.autohotkey.GlobalHotkeys1';
 const OBJ_PATH = '/io/github/autohotkey/GlobalHotkeys1';
