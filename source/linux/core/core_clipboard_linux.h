@@ -19,6 +19,21 @@ bool LinuxClipboardGetText(std::wstring &aText);
 // owned and served on request); false when unreachable.
 bool LinuxClipboardSetText(const std::wstring &aText);
 
+// --- Clipboard-paste fallback transaction (pure-Wayland Send path) ---
+//
+// The paste fallback temporarily replaces the clipboard (set text, inject
+// Ctrl+V, restore).  These three calls manage one transaction so the
+// target application actually consumes the data before it is restored, and
+// an empty original clipboard comes back empty (the pasted text never
+// lingers):
+//   PasteSet(aText, aSaved)  remember the original + set the paste text
+//   PasteWaitConsumed(aMs)   wait for the target to request the offer
+//   PasteRestore(aHadText)   restore aSaved (or clear when the clipboard
+//                            originally had no text); falls back on timeout.
+bool LinuxClipboardPasteSet(const std::wstring &aText, const std::wstring &aSaved);
+bool LinuxClipboardPasteWaitConsumed(int aTimeoutMs);
+void LinuxClipboardPasteRestore(bool aHadText);
+
 // Dispatch X11 clipboard events (SelectionRequest/SelectionClear) while
 // the script waits.  Called from the main loop and MsgSleep; a no-op
 // unless this process owns the CLIPBOARD selection.

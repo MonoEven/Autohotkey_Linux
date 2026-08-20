@@ -114,6 +114,12 @@ static std::wstring LinuxUtf8ToWide(const std::string &aUtf8)
 // X11 CLIPBOARD selection
 // ---------------------------------------------------------------------------
 
+// Paste transaction flags (check0820 P1): shared by the Wayland source-send
+// handler and the X11 SelectionRequest handler, which both run before the
+// public paste API below.  File scope so either handler can observe them.
+static bool sPasteActive = false;
+static bool sPasteServed = false;
+
 namespace {
 
 Display *gClipX11Display = nullptr;
@@ -274,6 +280,10 @@ static void LinuxClipX11ServeRequest(Display *d, XSelectionRequestEvent *req)
 	}
 	XSendEvent(d, req->requestor, False, 0, (XEvent *)&sel);
 	XFlush(d);
+	// A clipboard-paste transaction asked for our data: the target pulled
+	// the offer, so the paste is consumed (see PasteWaitConsumed).
+	if (sPasteActive)
+		sPasteServed = true;
 }
 
 void LinuxClipboardDispatchX11(Display *d)
@@ -393,6 +403,8 @@ void LinuxClipWlSourceSend(void *aData, wl_data_source *aSource, const char *aMi
 			off += (size_t)n;
 		}
 		close(aFd);
+		if (sPasteActive)
+			sPasteServed = true; // The app pulled our offer (the actual paste).
 	}
 }
 
@@ -574,4 +586,53 @@ bool LinuxClipboardSetText(const std::wstring &aText)
 	else if (LinuxWaylandActive())
 		return LinuxClipboardWaylandWrite(LinuxWaylandDisplay(), aText);
 	return true;
+}
+
+// ---------------------------------------------------------------------------
+// Clipboard-paste fallback transaction (pure-Wayland Send path)
+// ---------------------------------------------------------------------------
+// Lifecycle: the Send engine saves the existing text into PasteSet (together
+// with the pasted text), injects Ctrl+V and calls PasteWaitConsumed; the
+// original is restored with PasteRestore.  The restore happens once the
+// target app has ACTUALLY requested our data offer (LinuxClipWlSourceSend /
+// LinuxClipboardX11ServeRequest arm the flag), instead of a bare usleep, and
+// an originally-empty clipboard comes back empty (check0820 P1).
+
+static std::wstring sPasteOriginal; // Clipboard text saved at PasteSet time.
+
+bool LinuxClipboardPasteSet(const std::wstring &aText, const std::wstring &aSaved)
+{
+	sPasteActive = true;
+	sPasteServed = false;
+	sPasteOriginal = aSaved;
+	if (!LinuxClipboardSetText(aText))
+	{
+		sPasteActive = false;
+		return false;
+	}
+	return true;
+}
+
+// Wait for the target to actually request the pasted data (bounded); the
+// caller restores after the deadline regardless (the paste may still land).
+bool LinuxClipboardPasteWaitConsumed(int aTimeoutMs)
+{
+	if (sPasteServed)
+		return true;
+	int waited = 0;
+	while (sPasteActive && !sPasteServed && waited < aTimeoutMs)
+	{
+		usleep(5000);
+		waited += 5;
+	}
+	return sPasteServed;
+}
+
+void LinuxClipboardPasteRestore(bool aHadText)
+{
+	sPasteActive = false;
+	if (aHadText)
+		LinuxClipboardSetText(sPasteOriginal);
+	else
+		LinuxClipboardSetText(L""); // Was empty: do not leave the sentinel.
 }

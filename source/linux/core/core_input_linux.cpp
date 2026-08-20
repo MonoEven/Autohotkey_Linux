@@ -20,6 +20,7 @@
 #include "core_win_linux.h" // LinuxX11ActiveWindow
 #include "core_wayland_linux.h"
 #include "core_clipboard_linux.h" // LinuxClipboardGetText/SetText (paste path)
+#include "core_uinput_linux.h" // uinput injection lane (check0820)
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
@@ -33,6 +34,7 @@
 #include <string>
 #include <vector>
 #include <unistd.h>
+#include <strings.h> // strcasecmp (AHK_WAYLAND_PASTE switch).
 
 void ScriptSleep(int aDelay);
 
@@ -227,12 +229,19 @@ SHORT GetAsyncKeyState(int aVK)
 // XTEST helpers (Wayland virtual keyboard/pointer used when no X display)
 // ---------------------------------------------------------------------------
 
+// uinput relative-motion anchor (kept by LinuxFakeMotion for the lane).
+static int sUinputLastX = 0;
+static int sUinputLastY = 0;
+
 static void LinuxFakeKey(Display *d, vk_type aVK, bool aDown)
 {
 	if (!d && LinuxWaylandKeyEvent((unsigned)aVK, aDown))
 		return; // Wayland virtual keyboard.
+	if (!d && LinuxUinputKeyEvent((unsigned)aVK, aDown))
+		return; // uinput fallback (GNOME/KWin lack the virtual-keyboard
+			// protocol; check0820 direction-B).
 	if (!d)
-		return; // No X display and Wayland injection unavailable: no-op.
+		return; // No X display and no injection lane: no-op.
 	KeyCode kc = LinuxKeycodeForVk(d, aVK);
 	if (!kc)
 		return;
@@ -246,10 +255,15 @@ static void LinuxFakeButton(Display *d, unsigned int aButton, bool aDown)
 	{
 		if (aButton >= 4 && aButton <= 7)
 		{
-			LinuxWaylandWheelEvent(aButton, aDown);
-			return;
+			if (LinuxWaylandWheelEvent(aButton, aDown))
+				return;
+			if (LinuxUinputWheelEvent(aButton, aDown))
+				return;
+			return; // Unsupported button on Wayland: no-op (documented).
 		}
 		if (LinuxWaylandButtonEvent(aButton, aDown))
+			return;
+		if (LinuxUinputButtonEvent(aButton, aDown))
 			return;
 		return; // Unsupported button on Wayland: no-op (documented).
 	}
@@ -262,6 +276,9 @@ static void LinuxFakeMotion(Display *d, int aX, int aY)
 	if (!d)
 	{
 		LinuxWaylandMotionTo(aX, aY);
+		LinuxUinputMotionEvent(aX - sUinputLastX, aY - sUinputLastY);
+		sUinputLastX = aX;
+		sUinputLastY = aY;
 		return;
 	}
 	XTestFakeMotionEvent(d, DefaultScreen(d), aX, aY, CurrentTime);
@@ -532,7 +549,7 @@ static KeyCode LinuxSpareKeycode(Display *d)
 	return spare;
 }
 
-// Borrow-and-restore bookkeeping for Unicode keycode transmission.
+// Borrow-and-borrow bookkeeping for Unicode keycode transmission.
 //
 // The key events and the temporary mapping change are both sent while the
 // mapping is installed, but the *consumers* resolve the keycode at their own
@@ -544,9 +561,80 @@ static KeyCode LinuxSpareKeycode(Display *d)
 // borrowed keycodes against this log (in FIFO order -- the order it
 // consumes the key events matches the order the borrows were made), then
 // falls back to the server maps for real keyboards.
+//
+// The mapping change itself is server-wide, so a *second* AHK process on the
+// same X server must never remap the same spare keycode while the first one
+// is in a borrow window.  All borrows are therefore serialized through an X
+// selection (AHK_UNICODE_BORROW): taking ownership asserts the lease, and
+// ownership is automatically reclaimed by the server when a client dies
+// (crash / kill -9), so no stale lease can block the second process.
 static std::vector<std::pair<KeyCode, KeySym>> sBorrowLog;
 static DWORD sLastBorrowMs = 0; // See LinuxBorrowRecent() below.
 #define GS_BORROW_LOG_MAX 128
+
+static Display *sLeaseDpy = nullptr;
+static Window sLeaseWin = 0;
+static Atom sLeaseSel = 0;
+static int sLeaseDepth = 0;   // Reentrant borrows within one process.
+
+// Acquire the cross-process borrow lease.  Waits (bounded) when another
+// process is mid-borrow; returns false when the lease cannot be taken
+// within the timeout (the caller then reports the char as undeliverable).
+static bool LinuxBorrowLeaseAcquire(Display *d, int aTimeoutMs)
+{
+	if (!d)
+		return true; // No X display: no server-wide mapping to protect.
+	if (sLeaseDepth > 0)
+	{
+		// Already held by this process.  A nested borrow can come from a
+		// DIFFERENT connection to the same server (the capture engine runs
+		// on the hotkey display while a Send is in progress); ownership is
+		// server-side, so the lease stays with our window either way.
+		++sLeaseDepth;
+		return true;
+	}
+	if (sLeaseWin == 0)
+	{
+		sLeaseWin = XCreateSimpleWindow(d, DefaultRootWindow(d), -100, -100, 1, 1, 0, 0, 0);
+		sLeaseSel = XInternAtom(d, "AHK_UNICODE_BORROW_LEASE", False);
+	}
+	int waited = 0;
+	for (;;)
+	{
+		XSync(d, False);
+		if (XGetSelectionOwner(d, sLeaseSel) == None)
+		{
+			XSetSelectionOwner(d, sLeaseSel, sLeaseWin, CurrentTime);
+			XSync(d, False);
+			if (XGetSelectionOwner(d, sLeaseSel) == sLeaseWin)
+			{
+				sLeaseDpy = d;
+				sLeaseDepth = 1;
+				return true;
+			}
+			// Lost the race (another client took ownership in between);
+			// retry unless the timeout has expired.
+		}
+		if (waited >= aTimeoutMs)
+			return false;
+		int step = aTimeoutMs - waited;
+		if (step > 5)
+			step = 5;
+		usleep((unsigned)step * 1000);
+		waited += step;
+	}
+}
+
+static void LinuxBorrowLeaseRelease(Display *d)
+{
+	if (!sLeaseDepth)
+		return;
+	if (--sLeaseDepth > 0)
+		return; // Nested borrow still inside; keep the lease.
+	XSetSelectionOwner(d, sLeaseSel, None, CurrentTime); // Release the lease.
+	XSync(d, False);
+	sLeaseDpy = nullptr;
+}
 
 // Borrow-or-find a keycode for aKeysym.  Returns 0 when neither an existing
 // mapping nor a spare keycode is available.  When a spare is remapped,
@@ -562,6 +650,13 @@ KeyCode LinuxUnicodeKeycode(Display *d, KeySym aKeysym, bool &aRemapped)
 	if (!spare)
 		return 0;
 	if (!aKeysym)
+		return 0;
+	// Server-wide remap: take the cross-process lease first so no second
+	// AHK can remap the same spare keycode inside this borrow window
+	// (check0820 P1).  The window is short but a busy other process may still
+	// hold the lease; then this char is reported undeliverable rather than
+	// clobbering the other process's mapping.
+	if (!LinuxBorrowLeaseAcquire(d, 150))
 		return 0;
 	XChangeKeyboardMapping(d, spare, 1, &aKeysym, 1);
 	XSync(d, False); // Server must process the remap before the key events.
@@ -586,6 +681,9 @@ void LinuxUnicodeRestore(Display *d, KeyCode aKeycode)
 	KeySym none = NoSymbol;
 	XChangeKeyboardMapping(d, aKeycode, 1, &none, 1);
 	XSync(d, False);
+	// Release the cross-process lease (check0820 P1): the borrow window is
+	// over, so the next AHK process may remap its own Unicode keysym now.
+	LinuxBorrowLeaseRelease(d);
 }
 
 // Consume the OLDEST borrow-log entry for aKeycode and return its keysym
@@ -658,22 +756,55 @@ static bool LinuxSendCharUnicode(Display *d, wchar_t aChar)
 // containing non-ASCII characters).  Returns true on success.
 static bool LinuxSendRunPaste(const wchar_t *aStart, const wchar_t *aEnd)
 {
+	// check0820 P1 (hardened): the fallback is a compatibility lane, so it
+	// can be disabled entirely and the owner can be warned about the brief
+	// clipboard handover (password managers, sensitive input).
+	static bool sPasteWarned = false;
+	if (const char *v = getenv("AHK_WAYLAND_PASTE"))
+	{
+		if (!strcasecmp(v, "0") || !strcasecmp(v, "off")
+			|| !strcasecmp(v, "false") || !strcasecmp(v, "no"))
+		{
+			sLastUnsendable = aStart < aEnd ? *aStart : L'?';
+			return false;
+		}
+	}
+	if (!sPasteWarned)
+	{
+		fprintf(stderr,
+			"AHK warning: SendText on a native-Wayland session without a "
+			"virtual-keyboard protocol uses the clipboard as a paste channel "
+			"(text is placed in the system clipboard for a moment and then "
+			"restored). Set AHK_WAYLAND_PASTE=0 to disable this fallback.\n");
+		sPasteWarned = true;
+	}
+
 	std::wstring saved;
 	bool had = LinuxClipboardGetText(saved);
 	std::wstring run(aStart, aEnd);
-	if (!LinuxClipboardSetText(run))
+	if (!LinuxClipboardPasteSet(run, saved))
 		return false;
 	// Ctrl+V via the virtual keyboard (wlroots compositors deliver these to
 	// the focused surface).  The focused app reads the clipboard when it
-	// processes the paste key; give it a short window, then restore the
-	// previous clipboard so ordinary use is disrupted as little as possible.
+	// processes the paste key; wait (bounded) until the app actually asks
+	// for our offer before restoring, then restore the previous clipboard --
+	// an originally-empty clipboard comes back empty (check0820 P1).
 	LinuxFakeKey(nullptr, 0x11, true);  // Control_L.
 	LinuxFakeKey(nullptr, 0x56, true);  // V.
 	LinuxFakeKey(nullptr, 0x56, false);
 	LinuxFakeKey(nullptr, 0x11, false);
-	usleep(60000);
-	if (had)
-		LinuxClipboardSetText(saved);
+	// Wait (bounded) until the target app actually pulls our offer; the
+	// deadline must stay small enough that headless docs (sway never asks)
+	// still restore in time (check0820 P1).  Slow apps/Electron/remote can
+	// raise it via AHK_WAYLAND_PASTE_TIMEOUT_MS.
+	int wait_ms = 800;
+	if (const char *t = getenv("AHK_WAYLAND_PASTE_TIMEOUT_MS")) {
+		int v = atoi(t);
+		if (v > 0 && v <= 10000)
+			wait_ms = v;
+	}
+	LinuxClipboardPasteWaitConsumed(wait_ms);
+	LinuxClipboardPasteRestore(had);
 	return true;
 }
 
@@ -699,8 +830,11 @@ static bool LinuxSendLiteralRun(Display *d, const wchar_t *aStart, const wchar_t
 		}
 		return true;
 	}
-	// Pure Wayland with non-ASCII text and no modifiers held.
-	if (LinuxWaylandActive() && LinuxWaylandCanInjectKeys())
+	// Pure Wayland with non-ASCII text and no modifiers held.  The paste
+	// fallback needs a key-injection lane for its Ctrl+V pair: the virtual
+	// keyboard, or the uinput lane (GNOME/KWin lack the protocol).
+	if (LinuxWaylandActive()
+		&& (LinuxWaylandCanInjectKeys() || LinuxUinputInjectionAvailable()))
 		return LinuxSendRunPaste(aStart, aEnd);
 	for (const wchar_t *q = aStart; q < aEnd; ++q)
 		if (*q > 0x7E) { sLastUnsendable = *q; break; }

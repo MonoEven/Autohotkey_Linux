@@ -759,11 +759,23 @@ void LinuxHandleButtonEvent(Display *d, XEvent &ev)
 struct PassthruMark
 {
 	unsigned int id;   // KeyCode.
-	DWORD when;        // GetTickCount() just before injection.
+	DWORD when;        // GetTickCount() just before injection (expiry base).
 	bool is_up;
+	bool consumed;     // Already matched the injected copy; see below.
 };
 PassthruMark sPassthruLog[8];
 int sPassthruHead = 0;
+
+// The copy is the FIRST delivered event for the same keycode/phase after
+// the injection (the server processes requests in order), so each mark
+// matches ONCE and is then consumed: a genuine repeat from the user --
+// double letters "ll"/"oo", held-key auto-repeat, double-taps -- is never
+// swallowed by a stale suppression record.  The window only bounds the
+// case where the injected event never comes back (some servers do not
+// re-activate the passive grab); a consumed mark can never swallow a
+// SECOND real press, so the window is kept generous for slow servers
+// (check0820 P0/P1).
+#define PASSTHRU_COPY_MS_WINDOW 1000
 
 void LinuxInjectKey(Display *d, XEvent &ev)
 {
@@ -771,7 +783,7 @@ void LinuxInjectKey(Display *d, XEvent &ev)
 	XTestFakeKeyEvent(d, ev.xkey.keycode, ev.type == KeyPress ? True : False, CurrentTime);
 	XFlush(d);
 	PassthruMark &m = sPassthruLog[sPassthruHead++ % _countof(sPassthruLog)];
-	m = PassthruMark{(unsigned int)ev.xkey.keycode, GetTickCount(), ev.type == KeyRelease};
+	m = PassthruMark{(unsigned int)ev.xkey.keycode, GetTickCount(), ev.type == KeyRelease, false};
 }
 
 // Inject a raw keycode with a copy-suppression mark (used by the typed-text
@@ -783,7 +795,7 @@ void LinuxInjectMarked(Display *d, unsigned int aKeycode, bool aIsPress)
 	XTestFakeKeyEvent(d, (KeyCode)aKeycode, aIsPress ? True : False, CurrentTime);
 	XFlush(d);
 	PassthruMark &m = sPassthruLog[sPassthruHead++ % _countof(sPassthruLog)];
-	m = PassthruMark{aKeycode, GetTickCount(), !aIsPress};
+	m = PassthruMark{aKeycode, GetTickCount(), !aIsPress, false};
 }
 
 bool LinuxIsPassthruCopy(XEvent &ev)
@@ -791,15 +803,27 @@ bool LinuxIsPassthruCopy(XEvent &ev)
 	bool is_up = ev.type == KeyRelease;
 	unsigned int id = (unsigned int)ev.xkey.keycode;
 	DWORD now = GetTickCount();
-	// A generous window (1 s) tolerates slow servers/parallel-connection
-	// reordering; repeated real input of the same key/phase within it is
-	// rare for pass-through hotkeys and the mark entries are replaced as
-	// new events are injected, so a long window does not accumulate.
-	for (int i = 0; i < _countof(sPassthruLog); ++i)
-		if (sPassthruLog[i].id == id
-			&& sPassthruLog[i].is_up == is_up
-			&& now - sPassthruLog[i].when < 1000)
-			return true;
+	// Consume-once (check0820 P1): a mark matches only the copy -- the first
+	// event for the same keycode + phase after the injection -- and is marked
+	// used immediately, so a second identical event (a genuine repeat, e.g.
+	// double letters or auto-repeat) is NEVER swallowed by the same record.
+	// Expired entries (the injected event never came back) are released so
+	// the next press is forwarded normally.
+	for (int i = 0; i < (int)_countof(sPassthruLog); ++i)
+	{
+		PassthruMark &m = sPassthruLog[i];
+		if (m.id != id || m.is_up != is_up)
+			continue;
+		if (m.consumed)
+			continue;
+		if (now - m.when >= (DWORD)PASSTHRU_COPY_MS_WINDOW)
+		{
+			m.id = 0; // Never came back; not this event.
+			continue;
+		}
+		m.consumed = true;
+		return true;
+	}
 	return false;
 }
 
