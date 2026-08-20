@@ -165,6 +165,8 @@ static void print_targets(void)
 int main(int argc, char **argv)
 {
     int delay_ms = 0;
+    int serve_delay_ms = 0; /* --serve-delay: respond to a request only
+                               after this long - a slow app/owner (check0820) */
     const char *mode = NULL;
     const char *target_name = NULL;
     const char *outfile = NULL;
@@ -177,6 +179,10 @@ int main(int argc, char **argv)
         {
             if (i + 1 < argc) delay_ms = atoi(argv[++i]);
         }
+        else if (!strcmp(argv[i], "--serve-delay"))
+        {
+            if (i + 1 < argc) serve_delay_ms = atoi(argv[++i]);
+        }
         else if (!strcmp(argv[i], "-out") && i + 1 < argc)
             outfile = argv[++i];
         else if (mode && !strcmp(mode, "--ask-target") && !target_name)
@@ -184,7 +190,7 @@ int main(int argc, char **argv)
     }
     if (!mode || (!strcmp(mode, "--ask-target") && !target_name))
     {
-        fprintf(stderr, "usage: xclip_probe {--targets|--get [--delay MS]|--set [--delay MS]|--ask-target NAME} [-out FILE]\n");
+        fprintf(stderr, "usage: xclip_probe {--targets|--get [--delay MS]|--set [--delay MS] [--serve-delay MS]|--ask-target NAME} [-out FILE]\n");
         return 2;
     }
     if (outfile)
@@ -217,7 +223,11 @@ int main(int argc, char **argv)
                 XEvent ev;
                 XNextEvent(g_d, &ev);
                 if (ev.type == SelectionRequest)
+                {
+                    if (serve_delay_ms > 0)
+                        usleep((useconds_t)serve_delay_ms * 1000);
                     serve_request(&ev.xselectionrequest);
+                }
             }
             usleep(10000);
         }

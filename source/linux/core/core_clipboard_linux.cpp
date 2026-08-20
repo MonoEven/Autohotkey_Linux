@@ -46,6 +46,31 @@ static std::wstring &LinuxClipboardFallback()
 	return s;
 }
 
+// Clipboard transaction timeout (ms).  Some clipboard owners (a slow app
+// that only serves SelectionRequest after it finishes its own work) need
+// longer than the default 2 s to answer a read; conversely a short value
+// bounds a hung owner.  Configurable per environment so scripts can match
+// their workload without a rebuild (check0820 regression: slow consumers):
+//   AHK_CLIPBOARD_TIMEOUT_MS=<ms>   (default 2000)
+static int LinuxClipTimeoutMs()
+{
+	static int s = -1;
+	if (s == -1)
+	{
+		s = 2000;
+		if (const char *v = getenv("AHK_CLIPBOARD_TIMEOUT_MS"))
+		{
+			long n = strtol(v, nullptr, 10);
+			if (n > 0 && n <= 600000)
+				s = (int)n;
+			else
+				fprintf(stderr, "AHK warning: AHK_CLIPBOARD_TIMEOUT_MS=%s "
+					"ignored (need 1..600000)\n", v);
+		}
+	}
+	return s;
+}
+
 // ---------------------------------------------------------------------------
 // Text <-> UTF-8 (the clipboard interchange format)
 // ---------------------------------------------------------------------------
@@ -182,8 +207,11 @@ static bool LinuxClipboardX11Read(Display *d, std::wstring &aText)
 	XConvertSelection(d, gClipX11Clipboard, gClipX11Utf8, gClipX11Prop, gClipX11Window, CurrentTime);
 	XFlush(d);
 
-	// Wait for SelectionNotify (bounded: 2 s).
-	time_t deadline = time(nullptr) + 2;
+	// Wait for SelectionNotify (bounded: AHK_CLIPBOARD_TIMEOUT_MS, default
+	// 2 s - a slow owner may take a while to serve the request, check0820).
+	time_t deadline = time(nullptr) + LinuxClipTimeoutMs() / 1000;
+	if (LinuxClipTimeoutMs() % 1000)
+		++deadline; // Round up partial seconds.
 	while (!gClipX11ReadDone && !gClipX11ReadFailed && time(nullptr) < deadline)
 	{
 		struct pollfd pfd;
@@ -495,9 +523,10 @@ static bool LinuxClipboardWaylandRead(wl_display *dpy, std::wstring &aText)
 	aText.clear();
 	if (!gClipWlDevice)
 		return false;
-	// Give the compositor a moment to deliver the current selection.
+	// Give the compositor a moment to deliver the current selection
+	// (bounded by the configured transaction timeout; usually <100 ms).
 	gClipWlOfferHasText = false;
-	if (!LinuxClipWlWait(dpy, gClipWlOfferHasText, 1500))
+	if (!LinuxClipWlWait(dpy, gClipWlOfferHasText, LinuxClipTimeoutMs()))
 		return false;
 	if (!gClipWlOffer)
 		return false;
@@ -510,9 +539,13 @@ static bool LinuxClipboardWaylandRead(wl_display *dpy, std::wstring &aText)
 	wl_data_offer_receive(gClipWlOffer, "text/plain;charset=utf-8", fds[1]);
 	close(fds[1]);
 	wl_display_flush(dpy);
-	// Read whatever the compositor writes (bounded).
+	// Read whatever the compositor writes (bounded by the configured
+	// transaction timeout; the offer wait above already consumed part of
+	// the same budget).
 	std::vector<char> buf(65536);
-	time_t deadline = time(nullptr) + 2;
+	time_t deadline = time(nullptr) + LinuxClipTimeoutMs() / 1000;
+	if (LinuxClipTimeoutMs() % 1000)
+		++deadline; // Round up partial seconds.
 	while (time(nullptr) < deadline)
 	{
 		struct pollfd pfd;

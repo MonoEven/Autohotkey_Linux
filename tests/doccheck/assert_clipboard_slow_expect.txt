@@ -1,0 +1,4 @@
+slow_owner_ready=1
+slow_default_text=0
+slow_default_timedout=1
+slow_env_child=1
