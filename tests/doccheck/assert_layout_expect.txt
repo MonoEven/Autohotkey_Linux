@@ -1,0 +1,6 @@
+layout_baseline_f7=1
+layout_de_f7=1
+layout_de_ctrl_f12=1
+layout_de_send_a=1
+layout_us_f7=1
+layout_us_send_z=1

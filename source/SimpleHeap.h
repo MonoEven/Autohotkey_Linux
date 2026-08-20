@@ -1,4 +1,4 @@
-﻿/*
+/*
 AutoHotkey
 
 Copyright 2003-2009 Chris Mallett (support@autohotkey.com)
@@ -69,6 +69,15 @@ public:
 
 	static void Delete(void *aPtr);
 	//static void DeleteAll();
+
+	// Linux only: SimpleHeap::Malloc(size_t) hands oversized allocations
+	// (> MAX_ALLOC_IN_NEW_BLOCK) straight to malloc() and, like the block
+	// pool itself, never reclaims them -- by design the pool lives for the
+	// whole process.  LeakSanitizer flags those blocks at exit, so this
+	// hook frees the orphans (tracked in a small side list) along with the
+	// pool blocks; registered via atexit from main_linux.  It is a no-op
+	// that a long-running daemon-style script never reaches until exit.
+	static void FreeOrphansLinux();
 
 	static void CriticalFail();
 

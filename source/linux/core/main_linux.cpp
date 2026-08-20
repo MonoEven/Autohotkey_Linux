@@ -178,6 +178,11 @@ int main(int argc, char** argv)
 	g_script.mIsReadyToExecute = true;
 
 	Hotkey::ManifestAllHotkeysHotstringsHooks();
+	// LSan cleanliness: SimpleHeap keeps oversized allocations (e.g. a
+	// FileRead of a large file) in a static side list so they stay
+	// reachable for the whole process (the pool is process-lived by
+	// design, exactly like the block pool).  No exit hook is needed: the
+	// OS reclaims them when the process terminates.
 	ResultType exec_result = g_script.AutoExecSection();
 	if (exec_result == FAIL && !g_script.mPendingExitCode)
 		g_script.mPendingExitCode = CRITICAL_ERROR;

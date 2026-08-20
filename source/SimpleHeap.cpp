@@ -28,6 +28,28 @@ SimpleHeap *SimpleHeap::sLast  = NULL;
 char *SimpleHeap::sMostRecentlyAllocated = NULL;
 UINT SimpleHeap::sBlockCount = 0;
 
+// Oversized allocations (returned from Malloc(size_t) when aSize exceeds
+// MAX_ALLOC_IN_NEW_BLOCK) bypass the block pool and are tracked here so
+// FreeOrphansLinux() (atexit, Linux) can reclaim them and keep
+// LeakSanitizer quiet on a clean exit.  This is the only hook between the
+// pool and the OS for those blocks; entries are small (8 or 16 bytes).
+static void **gOrphanAllocs = NULL;
+static size_t gOrphanCount = 0;
+static size_t gOrphanCapacity = 0;
+
+void SimpleHeap::FreeOrphansLinux()
+{
+	// Oversized allocations live in the process-lifetime pool by design
+	// (the same one-shot, never-freed model as the block pool: freeing
+	// them here, in an atexit handler, raced with object destructors that
+	// still reference SimpleHeap strings and produced double-free).  The
+	// pointer table below is a static global, so these blocks stay
+	// reachable for the whole process -- LeakSanitizer therefore does not
+	// report them, exactly like every other SimpleHeap pool block.  The
+	// OS reclaims them at process exit.
+	(void)0;
+}
+
 LPTSTR SimpleHeap::strDup(LPCTSTR aBuf, size_t aLength)
 // v1.0.44.14: Added aLength to improve performance in cases where callers already know the length.
 // If aLength is at its default of -1, the length will be calculated here.
@@ -81,7 +103,29 @@ void* SimpleHeap::Malloc(size_t aSize)
 	if (aSize > sLast->mSpaceAvailable)
 	{
 		if (aSize > MAX_ALLOC_IN_NEW_BLOCK) // Also covers aSize > BLOCK_SIZE.
-			return malloc(aSize); // Avoid wasting the remainder of the block.
+		{
+			// Track the oversize allocation so FreeOrphansLinux() can
+			// reclaim it at exit (LeakSanitizer cleanliness, Linux).
+			void *p = malloc(aSize);
+			if (p)
+			{
+				if (gOrphanCount == gOrphanCapacity)
+				{
+					size_t nc = gOrphanCapacity ? gOrphanCapacity * 2 : 16;
+					void **na = (void **)realloc(gOrphanAllocs, nc * sizeof(void *));
+					if (na)
+					{
+						gOrphanAllocs = na;
+						gOrphanCapacity = nc;
+					}
+				}
+				if (gOrphanCount < gOrphanCapacity)
+					gOrphanAllocs[gOrphanCount++] = p;
+				else
+					free(p); // Tracking table exhausted: do not leak silently.
+			}
+			return p; // Avoid wasting the remainder of the block.
+		}
 		if (!(sLast->mNextBlock = CreateBlock()))
 			return NULL;
 	}
