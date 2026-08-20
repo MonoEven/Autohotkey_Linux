@@ -92,6 +92,37 @@ Log("pt_f8_seen=" (InStr(kc, "F8") ? 1 : 0))        ; tilde passthrough.
 Log("pt_f9_seen=" (InStr(kc, "F9") ? 1 : 0))        ; Off ungrabbed.
 Log("pt_f10_seen=" (InStr(kc, "F10") ? 1 : 0))      ; HotIf-false passthrough.
 
+; check0820 (audit): a script killed with SIGKILL must release its X grabs
+; automatically (X server cleans grabs when the connection closes), so the
+; hotkey is not left stolen.  Spawn a child AHK that grabs F12 (writes its
+; pid), kill -9 it, then verify THIS process can still register/use F12.
+FileDelete("/tmp/ahk_kill9_child.ahk")
+FileAppend('#Requires AutoHotkey v2.0`nPersistent(True)`nFileAppend(Str(A_PID), "/tmp/ahk_kill9.pid")`nF12:: { FileAppend("child-fired`n", "/tmp/ahk_kill9_fired.txt") }`n', "/tmp/ahk_kill9_child.ahk")
+FileDelete("/tmp/ahk_kill9.pid")
+Run(A_AhkPath ' /tmp/ahk_kill9_child.ahk')
+i := 0
+while !FileExist("/tmp/ahk_kill9.pid") && i < 100 {
+    Sleep(50)
+    i += 1
+}
+cpid := FileExist("/tmp/ahk_kill9.pid") ? Integer(FileRead("/tmp/ahk_kill9.pid")) : 0
+if cpid
+    RunWait('kill -9 ' cpid)
+RunWait("pkill -9 -f ahk_kill9_child")
+Sleep(300)
+; Rebind F12 in this process: previously owned by the child -> must now
+; succeed (a stale grab from the dead child would BadAccess and throw).
+cnt6 := 0
+CB6(ThisHotkey) {
+    global cnt6
+    cnt6++
+}
+Hotkey("F12", CB6)
+Sleep(200)
+Send("{F12}")
+Sleep(400)
+Log("pt_kill9_cnt6=" (cnt6 >= 1 ? 1 : 0))
+
 ; Clean up the foreground client so later suites (PixelSearch etc.) are
 ; not disturbed by its window.
 RunWait("pkill -x xkeycap")

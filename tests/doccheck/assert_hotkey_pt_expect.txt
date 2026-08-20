@@ -7,3 +7,4 @@ pt_f7_hidden=1
 pt_f8_seen=1
 pt_f9_seen=1
 pt_f10_seen=1
+pt_kill9_cnt6=1
