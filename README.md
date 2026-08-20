@@ -37,18 +37,23 @@ hotkeys.
   `FileSelect`/`DirSelect`), `ToolTip`, window shapes (`WinSetRegion`),
   GTK3 `Gui`/`Menu` and the whole doc-checked v2 API surface —
   **1063/1063** assertions pass under Xvfb.
-- **Unicode text input** (linux.13): `SendText`/`Send` and hotstring
+- **Unicode text input** (linux.13/linux.14): `SendText`/`Send` and hotstring
   replacements deliver non-ASCII characters (Chinese, Japanese, Korean,
   accented Latin, Emoji) on X11/XWayland via keysym transmission (a spare
   keycode is temporarily remapped when the layout has no binding, like
-  xdotool); on pure Wayland non-ASCII runs use the controlled
-  clipboard-paste fallback on virtual-keyboard compositors (wlroots/sway)
-  and raise a clear error elsewhere instead of silently dropping
-  characters.
+  xdotool; linux.14 serializes the borrow through an X selection lease so
+  concurrent AHK processes never clash); on pure Wayland non-ASCII runs use
+  the controlled clipboard-paste fallback (which waits for the target to
+  consume the offer, restores an empty original to empty, and can be
+  disabled with `AHK_WAYLAND_PASTE=0`) whenever a key-injection lane
+  exists — the virtual-keyboard protocol (wlroots/sway) or the uinput
+  virtual keyboard (`/dev/uinput`, GNOME/KWin; `AHK_UINPUT=0` disables);
+  where no lane exists a clear error names the character instead of
+  silently dropping it.
 - **Native Wayland backend** (used when no X display is available):
   xdg-shell windows, virtual keyboard/pointer input
   (`zwp_virtual_keyboard_v1` / `zwlr_virtual_pointer_manager_v1`),
-  screen capture via `wlr-screencopy` — **15** Wayland + **247**
+  screen capture via `wlr-screencopy` — **17** Wayland + **247**
   XWayland assertions pass under sway.
 - **Unified input backend** (linux.12+): `AHK_INPUT_BACKEND=auto|x11|
   portal|gnome-shell|evdev` selects the global-hotkey backend — X11
