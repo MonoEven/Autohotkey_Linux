@@ -16,6 +16,61 @@
 
 <h2 id="linux">Linux port changes</h2>
 
+<h2 id="linux.15">v2.0.26-linux.15</h2>
+<p><b>check0820 direction-B core (round-37):</b></p>
+<ul>
+  <li><b><code>Hotkey()</code> reaches the Wayland backends</b>: the old
+    X-only guard (&ldquo;no global hotkey protocol; use XWayland&rdquo;)
+    made <code>Hotkey()</code> fail on every Wayland session before the
+    backend could be consulted.  It now routes by the resolved input
+    backend (gnome-shell/portal/evdev) through
+    <code>LinuxInputBackendSync()</code>, with per-backend error surfacing
+    (verified live on GNOME 49).</li>
+  <li><b>GNOME Shell extension backend end-to-end</b>: the
+    <code>Activated</code> sender check compared the signal sender against
+    the broker&rsquo;s <i>well-known</i> name, but D-Bus delivers unique bus
+    names (<code>:1.NNN</code>); the handler now caches the broker&rsquo;s
+    unique name (GetNameOwner, refreshed on NameOwnerChanged).  The
+    extension&rsquo;s own version-guard import (<code>import {Config}</code>)
+    was broken on GNOME 49 (the module is a namespace export) - fixed to
+    <code>import * as Config</code>.  VM-verified end-to-end: F12 and Ctrl+1
+    fire, and extension disable &rarr; enable re-registers automatically
+    (dedicated GNOME VM test scripts).</li>
+  <li><b>AT-SPI control automation</b>: <code>ControlGetText</code>,
+    <code>ControlSetText</code> and <code>ControlClick</code> now use the
+    org.a11y.atspi bus in Wayland sessions (text read / editable-text set /
+    <code>Action.DoAction("click")</code>); fixed the Control/WinTitle
+    parameter indexing and the session gate (GNOME Wayland with XWayland
+    present must still take the at-SPI path).  Verified on a GTK3 app:
+    read label &rarr; click button &rarr; label changed.</li>
+  <li><b>IME active-state detection</b>: new <code>ImeGetState()</code>
+    builtin returns <code>framework|group</code> (ibus/fcitx5 by session-bus
+    owner; current XKB group on X11).  Preedit read, IME toggling and
+    wlroots input-method-v2 text delivery are recorded as out of scope with
+    the concrete reasons (mutter links no input-method symbols at all;
+    sway ships only v1 XML and no v2 backend) in
+    <code>docs/IME-Integration.md</code>; a client scaffold documents the
+    v2 bind shape.</li>
+  <li><b>Clipboard slow-owner timeout</b>: <code>AHK_CLIPBOARD_TIMEOUT_MS</code>
+    (default 2000) bounds the X11 SelectionNotify and Wayland
+    offer/receive waits; a slow app that only serves after 2.5&nbsp;s times
+    out cleanly at the default and succeeds when the env is raised
+    (regression: <code>assert_clipboard_slow</code>, 4 assertions).</li>
+  <li><b>Portal deny/cancel regression</b>: with the extension disabled the
+    portal backend is active; an ungranted bind must not crash, must not
+    fire, and must exit cleanly on SIGTERM (GNOME VM regression script).
+    The interactive GNOME permission dialog itself is not automatable
+    headlessly - recorded in check0820.md.</li>
+  <li><b>evdev/uinput permission model</b>:
+    <code>tools/linux/permissions/</code> ships the udev rule
+    (<code>/dev/uinput</code> 0666), the input-group setup for reading
+    <code>/dev/input/event*</code>, a polkit action for a future
+    privileged capture helper, and an install script (VM-verified).</li>
+  <li>Doc-check: 1099/1099 assertions pass on both the normal and the ASan
+    builds; regression 27/27, Wayland 17/17, XWayland 247/247 (counts are
+    machine-verified in CI by <code>verify_report_numbers.sh</code>).</li>
+</ul>
+
 <h3 id="linux.14">v2.0.26-linux.14</h3>
 <p><b>Reliability fixes from the check0820 review (round-36):</b></p>
 <ul>

@@ -253,21 +253,52 @@
     `CKSUMS.txt`（SHA-256），`ahk --update <VER>` 升降级真实可行
   - 陈旧文档修复：source/linux/README.md（"X11 尚未开始"→现状）、
     CMakeLists、GitHub About 1053→1063
+- [x] **check0820 方向 B 核心贯通（round-37）**：
+  - `Hotkey()` 后端路由修复：BIF_Linux_Hotkey 不再是 X-only 守卫——
+    Wayland 会话按统一 input backend（gnome-shell/portal/evdev）注册；
+    修复 NUL 字节损坏；GNOME 49 VM 实机：F12/^1 经扩展触发、
+    扩展 disable→enable **自动重注册**（reregister E2E 4/4）
+  - GNOME Shell backend 信号修复：Activated 的 sender 是 unique bus
+    名（:1.NNN）而非 well-known 名——Handler 现按缓存 unique 名校验
+    （GetNameOwner + NameOwnerChanged 刷新），扩展 v2 协议端到端生效；
+    扩展自身 version-guard 的 `import {Config}` 改为 `import * as Config`
+    （GNOME 49 模块是命名空间导出）
+  - **AT-SPI 控件自动化**：Control*/Win* 在 Wayland 会话自动走
+    org.a11y.atspi（读文本/设文本/DoAction("click")），修 Control
+    参数索引与 XWayland 会话门；GTK 应用端到端（读标签→点击按钮→
+    标签变化）3/3 实测 PASS
+  - **IME 激活状态检测**：`ImeGetState()`（框架=ibus/fcitx5 经会话总线
+    owner，组=X11 XKB group）；GNOME 实测 "ibus|0"；wlroots
+    input-method-v2 客户端原型记为 scaffold（sway 无 v2 XML/后端、
+    mutter 无 input-method 符号——如实记录不可行原因）
+  - 剪贴板慢应用超时：`AHK_CLIPBOARD_TIMEOUT_MS`（默认 2000）——
+    xclip_probe `--serve-delay` 模拟 2.5s 慢应答，默认干净超时/调高后
+    成功读取，回归 4/4；Portal 拒绝/取消回归（无授予绑定时不触发、
+    不崩溃、SIGTERM 干净退出）
+  - **权限模型**：`tools/linux/permissions/`——udev 规则（/dev/uinput
+    0666）+ input 组读 /dev/input/event* + polkit action（未来
+    inputd 用，当前用户态无需 root）；VM 实测安装成功
 
 ## 后续候选增强（未实现）
 
 - [ ] **evdev/uinput 低层输入 broker**（`ahk-inputd`：EVIOCGRAB + uinput replay，
       完整 AHK 输入语义 `~1::`/remap/`A & B` 到原生 Wayland；权限模型 =
-      input 组 / polkit 规则（io.github.autohotkey.inputd）；设计文档见
+      input 组 / polkit 规则（io.github.autohotkey.inputd，round-37 已提供
+      规则文件与安装脚本，指未来 root helper）；设计文档见
       linux-port.htm "Compatibility matrix and roadmap"）
 - [ ] 扫描码热键与 `A & B` 前缀（需按键缓冲状态机/统一事件流；注册时已能力校验拒绝）
 - [ ] GNOME Shell backend 能力边界补全：`~1::` passthrough、`1 up::`（依赖
-      accelerator-deactivated 实测）、完整 `*` wildcard、多 script 同键冲突策略、
-      shell restart 后 runtime 重连重注册（状态真相在 runtime，扩展只是投影）
-- [ ] 输入法实际集成（Phase 1：XIM 事件过滤 + IME 状态变量；Unicode 热字串/
+      accelerator-deactivated 实测）、完整 `*` wildcard、多 script 同键冲突策略
+      （disable→enable 自动重注册已实测；shell 整体重启待实机复验）
+- [ ] 输入法实际集成（Phase 1：XIM 事件过滤；状态检测 `ImeGetState()` 已实现
+      round-37，preedit 读取与 IME 切换未做；Unicode 热字串/
       InputHook 已在 keysym 层可用）
-- [ ] Wayland text-input（zwp_text_input_v3）Send 文本投递（当前纯 Wayland 走
-      剪贴板粘贴回退）
-- [ ] AT-SPI 控件自动化后端（真实跨应用 GTK/Qt/Electron 控件操作，经
-      accessibility tree；无实现）
+- [ ] Wayland text-input（zwp_text_input_v3 / wlroots input-method-v2）Send
+      文本投递（当前纯 Wayland 走剪贴板粘贴回退；客户端原型 scaffold 见
+      tools/linux/wm_input_method_v2_probe.c；mutter 不实现 zwlr 协议——
+      GNOME 侧不可行原因已记录 docs/IME-Integration.md）
+- [x] **AT-SPI 控件自动化（round-37 最小路径）**：ControlGetText/
+      ControlSetText/ControlClick 在 Wayland 会话自动走 org.a11y.atspi
+      （读文本/设文本/DoAction("click")），GTK 应用端到端实测 PASS；
+      窗口枚举/角色查询经 at-spi 树（诊断脚本留 tests/doccheck）
 - [ ] 桌面兼容矩阵扩展（CI 增加 Fedora/Debian/Arch 容器构建 + GNOME/KDE 实机）

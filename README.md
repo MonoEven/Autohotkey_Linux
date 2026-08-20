@@ -6,13 +6,15 @@ with special provision for defining keyboard shortcuts, otherwise known as
 hotkeys.
 
 > **Status: technology preview (not "official release").** The v2 language
-> coverage is broad (367 built-ins, 1063 doc-check assertions) and the
-> X11/XWayland backend is usable for real automation, but native-Wayland
-> global hotkeys, Unicode input on compositors without a virtual keyboard,
-> and cross-app control automation are still young; there is no large
-> external user base yet. See [docs-v2/docs/linux-port.htm](docs-v2/docs/linux-port.htm)
-> for the honest capability/limitation matrix before relying on it in
-> production.
+> coverage is broad (367 built-ins, 1099 doc-check assertions) and the
+> X11/XWayland backend is usable for real automation; native-Wayland
+> global hotkeys (GNOME Shell extension / Portal / evdev lanes), Unicode
+> input on compositors without a virtual keyboard, AT-SPI control
+> automation and IME state detection are implemented and machine-verified,
+> while full cross-app automation depth and large-scale community
+> validation are still young. See
+> [docs-v2/docs/linux-port.htm](docs-v2/docs/linux-port.htm) for the honest
+> capability/limitation matrix before relying on it in production.
 
 - **Language: AutoHotkey v2 only.** This port implements the v2 language.
   The v1 language, v1 commands and v1-to-v2 migration material are **not**
@@ -20,10 +22,10 @@ hotkeys.
 - **Upstream**: https://www.autohotkey.com/ (the original Windows project;
   this repository is a fork of the v2.0.26 release with a Linux port of the
   interpreter on the `linux-port` branch).
-- **Latest build**: `v2.0.26-linux.13` (see
+- **Latest build**: `v2.0.26-linux.15` (see
   [Releases](https://github.com/MonoEven/Autohotkey_Linux/releases)).
-  Doc-check **1069/1069** (regular + ASan), regression 27/27,
-  Wayland 15/15, XWayland 247/247.
+  Doc-check **1099/1099** (regular + ASan), regression 27/27,
+  Wayland 17/17, XWayland 247/247.
 
 ## Features ##
 
@@ -36,7 +38,7 @@ hotkeys.
   `Monitor*`, `ImageSearch`), dialogs (`MsgBox`, `InputBox`,
   `FileSelect`/`DirSelect`), `ToolTip`, window shapes (`WinSetRegion`),
   GTK3 `Gui`/`Menu` and the whole doc-checked v2 API surface —
-  **1069/1069** assertions pass under Xvfb.
+  **1099/1099** assertions pass under Xvfb.
 - **Unicode text input** (linux.13/linux.14): `SendText`/`Send` and hotstring
   replacements deliver non-ASCII characters (Chinese, Japanese, Korean,
   accented Latin, Emoji) on X11/XWayland via keysym transmission (a spare
@@ -62,12 +64,15 @@ hotkeys.
   `XGrabKey`/`XGrabButton` on X sessions; the **GNOME Shell extension**
   (GNOME 49 Wayland, zero-confirmation exclusive hotkeys:
   `1::`/`^1::`/`F12::` grab the physical key with no per-binding dialog,
-  with automatic re-registration after a shell reload and fail-open
-  release on exit; linux.13 hardens the protocol: activations are directed
-  to the registering owner, ids are owner-scoped, `ClearOwner` takes no
-  owner argument, only `Activated` is consumed, registrations are batched
-  with bounded timeouts); and the standard **XDG Global Shortcuts Portal**
-  backend as the KDE/other-Wayland fallback.
+  with automatic re-registration after extension disable/enable (VM
+  verified) and fail-open release on exit; linux.15 fixes
+  `Hotkey()` never reaching the Wayland backends on Wayland sessions
+  (the X-only guard is gone), and the Activated signal sender check now
+  matches the broker's unique bus name (D-Bus delivers unique names, not
+  well-known ones) — the extension backend is end-to-end usable; the
+  standard **XDG Global Shortcuts Portal** backend remains the
+  KDE/other-Wayland fallback (deny/cancel: no crash, no fire, clean
+  exit — regression suite).
   `AHK_FORCE_GLOBAL_SHORTCUTS=1` keeps its documented meaning (explicitly
   require the Portal backend; only `1/true/yes/on` count as true, and an
   unknown `AHK_INPUT_BACKEND` value prints a clear startup warning).
@@ -87,7 +92,23 @@ hotkeys.
 - **System clipboard**: `A_Clipboard` integrates with the desktop
   clipboard (X11 CLIPBOARD selection on X11/XWayland, wl_data_device on
   Wayland; process-internal fallback headless), verified cross-process
-  with xclip.
+  with xclip.  The bounded read/wait window is configurable:
+  `AHK_CLIPBOARD_TIMEOUT_MS` (default 2000) covers slow clipboard owners
+  (a slow app that only serves the request late); the slow-owner
+  regression is part of the doc-check suite.
+- **AT-SPI control automation** (Wayland): `ControlGetText`,
+  `ControlSetText` and `ControlClick` in a Wayland session (GNOME 49
+  verified) resolve the control as an AT-SPI accessible name over the
+  org.a11y.atspi bus (read text / `EditableText.SetTextContents` /
+  `Action.DoAction("click")`), so GTK/Qt/Electron apps with
+  accessibility enabled can be driven without an X display.  Verified
+  end-to-end on a GTK3 app (read label → click button → label changed).
+- **IME active-state detection**: `ImeGetState()` returns the active
+  input-method framework (ibus / fcitx5 by session-bus owner) and the
+  current XKB group (the effective layout/IME group on X11).  Preedit
+  reading, IME toggling and wlroots input-method-v2 text delivery are
+  documented as out of scope (mutter does not implement the zwlr
+  protocol — see docs/IME-Integration.md for the honest record).
 - **DllCall for native libraries**: calls functions in Linux shared
   objects (`.so`) via dlopen/dlsym + libffi — full type support
   (`Int`/`Int64`/`Short`/`Char`/`Float`/`Double`/`Ptr`/`Str`/`AStr`/

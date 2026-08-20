@@ -187,55 +187,41 @@ the GitHub Releases page, each with a <code>CKSUMS.txt</code> (SHA-256)
 alongside the <code>.tar.gz</code> and <code>.deb</code>, so
 <code>ahk --update &lt;VER&gt;</code> can genuinely upgrade <i>or
 downgrade</i> (rollback) to any published release.  The latest release is
-<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.14</a>.
+<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.15</a>.
 Highlights of this release:</p>
 <ul>
-  <li><b>Unicode text input</b>: <code>SendText</code>/<code>Send</code> and
-    hotstring replacements deliver non-ASCII characters on X11/XWayland
-    (keysym transmission, xdotool-style spare-keycode remap with an X
-    selection lease so concurrent AHK processes never collide on the spare
-    keycode) and via the clipboard-paste fallback on Wayland compositors
-    that expose either the virtual-keyboard protocol or uinput; the
-    fallback waits for the target to actually consume the paste, restores
-    an empty original clipboard to empty, can be disabled with
-    <code>AHK_WAYLAND_PASTE=0</code>, and warns on first use (password
-    managers / sensitive input); a clear error is raised where no injection
-    path exists.</li>
-  <li><b>Passthrough copy handling</b>: each injected passthrough is
-    consumed ONCE (a genuine fast repeat of the same key -- double letters
-    like "ll", auto-repeat, double-taps -- is no longer swallowed by a
-    stale copy-suppression record).</li>
-  <li><b>GNOME Shell extension version range</b>: <code>shell-version</code>
-    now declares 45-50 (the API surface <code>grab_accelerator</code> +
-    <code>allowKeybinding</code> is stable across the series); a runtime
-    warning is logged when loading on a major other than the verified
-    49 (see "Native Wayland backend").</li>
-  <li><b>uinput injection lane</b>: on compositors with no virtual-keyboard
-    protocol (GNOME/KWin), <code>Send</code>/<code>Mouse*</code> can fall
-    back to a persistent uinput virtual keyboard when
-    <code>/dev/uinput</code> is accessible (root or <code>input</code>
-    group); <code>AHK_UINPUT=0</code> disables it (check0820 direction-B).</li>
-  <li><b>Configuration correctness</b>: <code>AHK_FORCE_GLOBAL_SHORTCUTS</code>
-    only treats <code>1/true/yes/on</code> as true; unknown
-    <code>AHK_INPUT_BACKEND</code> values print a clear startup warning.</li>
-  <li><b>Unified input backend</b> (<code>input_backend.h</code>):
-    <code>AHK_INPUT_BACKEND=auto|x11|portal|gnome-shell|evdev</code>
-    auto-selection; <code>AHK_FORCE_GLOBAL_SHORTCUTS=1</code> keeps its
-    documented meaning (explicitly require the Portal backend).</li>
-  <li><b>GNOME Shell extension backend</b> (GNOME 49 Wayland): zero-
-    confirmation exclusive hotkeys (<code>1::</code>/<code>^1::</code>/
-    <code>F12::</code> grab the physical key with no per-binding dialog),
-    with automatic re-registration after a shell/extension reload and
-    fail-open release on script exit or crash.  See the "Native Wayland
-    backend" section above.</li>
-  <li><b>Hotstrings are implemented</b> (round-32): full capture-engine
-    triggering with C/*/O/X options, case-follow, HotIf and end characters;
-    <code>InputHook</code> key capture (round-33) and mouse hotkeys
-    (round-30) are also in.</li>
-  <li>Doc-check: 1069/1069 assertions pass on both the normal and the ASan
-    builds; regression 27/27, Wayland 15/15, XWayland 247/247. (Counts will
-    rise with the new check0820 regression cases; the authoritative numbers
-    are machine-verified in CI by <code>verify_report_numbers.sh</code>.)</li>
+  <li><b><code>Hotkey()</code> works on Wayland</b>: the X-only guard is
+    gone — <code>Hotkey()</code> routes through the unified input backend
+    (gnome-shell/portal/evdev) and reports per-backend errors; verified
+    end-to-end on the GNOME 49 VM (F12 and Ctrl+1 fire through the
+    extension, disable &rarr; enable re-registers automatically).</li>
+  <li><b>GNOME Shell extension backend fixed and usable</b>: the
+    <code>Activated</code> sender check now matches the broker&rsquo;s
+    unique bus name (D-Bus delivers <code>:1.NNN</code>, not the
+    well-known name) and the extension&rsquo;s GNOME-49 version-guard
+    import was corrected; live VM verification (see the "Native Wayland
+    backend" section).</li>
+  <li><b>AT-SPI control automation (minimal path)</b>:
+    <code>ControlGetText</code>/<code>ControlSetText</code>/
+    <code>ControlClick</code> drive GTK/Qt/Electron accessibility objects
+    on Wayland (text read, editable-text set, <code>DoAction("click")</code>);
+    verified end-to-end on a GTK3 app.</li>
+  <li><b>IME active-state detection</b>: <code>ImeGetState()</code>
+    (framework by session-bus owner + current XKB group).  wlroots
+    input-method-v2 text delivery is recorded as out of scope with the
+    concrete reasons (mutter implements no input-method symbols; sway
+    ships v1 XML only) — see <code>docs/IME-Integration.md</code>.</li>
+  <li><b>Clipboard slow-owner timeout</b>:
+    <code>AHK_CLIPBOARD_TIMEOUT_MS</code> (default 2000) bounds reads;
+    regression with a slow-owner probe.</li>
+  <li><b>Portal deny/cancel regression</b> and
+    <b>evdev/uinput permission artifacts</b>
+    (<code>tools/linux/permissions/</code>: udev rule, input group,
+    polkit action, install script — VM-verified).</li>
+  <li>Doc-check: 1099/1099 assertions pass on both the normal and the ASan
+    builds; regression 27/27, Wayland 17/17, XWayland 247/247. (The
+    authoritative numbers are machine-verified in CI by
+    <code>verify_report_numbers.sh</code>.)</li>
 </ul>
 
 <h2>Compatibility matrix and roadmap</h2>
@@ -268,13 +254,20 @@ Highlights of this release:</p>
       grab machinery; use an XWayland/Xorg session)</td></tr>
   <tr><td>Window/control automation (Win*, Control*, Gui)</td>
       <td>Full (GTK3 Gui included)</td><td colspan="3">Via XWayland
-      fallback only (native Wayland window enumeration is
-      compositor-controlled)</td></tr>
+      fallback for X11 windows; native-Wayland apps are driven through the
+      AT-SPI bus for text read/set and click (round-37)</td></tr>
   <tr><td>Cross-app accessibility control automation (AT-SPI)</td>
-      <td colspan="4">Roadmap &mdash; no implementation yet (see below)</td></tr>
+      <td>Via at-SPI too (any GTK/Qt/Electron app with accessibility on)</td>
+      <td><b>Yes (check0820, round-37)</b>: <code>ControlGetText</code>/
+      <code>ControlSetText</code>/<code>ControlClick</code> (read text,
+      editable-text set, <code>Action.DoAction("click")</code>) over the
+      org.a11y.atspi bus; GTK3 app verified end-to-end</td>
+      <td>Via at-SPI bus (compositor-independent)</td>
+      <td>Via at-SPI bus (compositor-independent)</td></tr>
 </table>
-<p><b>Roadmap (check0819/check0820 reviews; uinput injection is done,
-the rest of the evdev lane remains):</b></p>
+<p><b>Roadmap (check0819/check0820 reviews; uinput injection, AT-SPI
+minimal path, GNOME Shell backend and permission artifacts are done; the
+full evdev capture lane remains):</b></p>
 <ul>
   <li><b>evdev/uinput</b> &mdash; the injection half is implemented in
     <code>core_uinput_linux.cpp</code> (a persistent uinput virtual
@@ -283,16 +276,23 @@ the rest of the evdev lane remains):</b></p>
     side (pass-through, remaps, key-up, custom combos, wildcards on native
     Wayland) still needs the <code>ahk-inputd</code> broker: a small
     privileged daemon reads <code>/dev/input/event*</code> (evdev) for key
-    events and mirrors them to the runtime; the permission model is
-    <code>input</code> group membership or a polkit rule granting
-    <code>io.github.autohotkey.inputd</code> read/inject; hotkey policy
-    stays in the AHK runtime.  Not started yet; tracked in GOALS.md.</li>
-  <li><b>IME integration</b> &mdash; Unicode hotstrings/InputHook already
-    work at the keysym level (round-34); a full IME (ibus/fcitx) commit
-    path needs the Wayland text-input protocol or the evdev lane.</li>
-  <li><b>AT-SPI control backend</b> &mdash; real cross-app control
-    automation for GTK/Qt/Electron via the accessibility tree; no
-    implementation yet.</li>
+    events and mirrors them to the runtime; the permission artifacts
+    (udev rule, <code>input</code> group, polkit action
+    <code>io.github.autohotkey.inputd</code>, install script) are shipped
+    in <code>tools/linux/permissions/</code> (round-37) and VM-verified;
+    hotkey policy stays in the AHK runtime.  Tracked in GOALS.md.</li>
+  <li><b>IME integration</b> &mdash; state detection is done
+    (<code>ImeGetState()</code>: framework by session-bus owner + XKB
+    group).  Unicode hotstrings/InputHook already work at the keysym level
+    (round-34); preedit reading, IME toggling and a wlroots
+    input-method-v2 commit path remain out of scope with the concrete
+    reasons recorded in <code>docs/IME-Integration.md</code> (mutter
+    implements no input-method symbols; sway ships v1 XML only, no v2
+    backend in CI/VM).</li>
+  <li><b>AT-SPI control backend</b> &mdash; minimal path is done
+    (text read/set + click on the accessibility tree, GNOME VM
+    GTK3 end-to-end).  Full automation depth (enumerating arbitrary
+    windows/properties for scripts, Qt/Electron matrix) is next.</li>
   <li><b>Desktop compatibility matrix</b> &mdash; CI currently verifies
     Ubuntu 24.04 (Xvfb/sway/XWayland) and the GNOME 49 VM validates the
     extension/uinput lane; Fedora, Debian, Arch and different GNOME

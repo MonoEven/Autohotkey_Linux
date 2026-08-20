@@ -506,17 +506,25 @@ ahk --update 2.0.26-linux.8
 **适合现在使用的情况：**
 
 - 固定使用 Xorg 或 XWayland；
+- GNOME 49 Wayland（安装配套扩展后，`Hotkey()`/`1::`/`^1::`/`F12::`
+  等排他热键零确认可用，扩展 disable→enable 自动重注册已实机验证）；
+- 其他 Wayland 合成器（Portal 后端；拒绝/取消授权不崩溃、不触发、干净退出）；
 - 主要写 AHK v2 新脚本；
 - 以热键、文件、进程和简单窗口操作为主；
+- 需要读/写入 GTK/Qt/Electron 控件文本或触发其 click（AT-SPI 最小路径，实机验证）；
 - 能接受调试和自行提交补丁；
 - 不把它用于关键生产流程。
 
 **不适合当前直接采用的情况：**
 
-- 要求原生 GNOME/KDE Wayland；
-- 主要需求是中文热字串和文本扩展；
-- 需要复杂 remap、按键透传和 key-up；
-- 需要自动控制原生 GTK/Qt/Electron 控件；
+- 要求 KDE Plasma 专属原生热键（Portal 兜底，未实机验证过 KDE）；
+- 主要需求是中文热字串、输入法 preedit/commit 双向集成（状态检测
+  `ImeGetState()` 已实现；preedit 读取、IME 切换、wlroots
+  input-method-v2 文本投递仍是路线图——mutter 无 input-method 符号，
+  sway 仅 v1 XML，原因已记录 docs/IME-Integration.md）；
+- 需要复杂 remap、按键透传、`A & B` 和 key-up 的原生 Wayland
+  捕获侧（仍需 ahk-inputd；权限制品已就绪）；
+- 需要 AT-SPI 全深度自动化（任意窗口枚举/属性读写、Qt/Electron 矩阵）；
 - 要迁移大量 Windows AHK 脚本；
 - 依赖 COM、注册表、Win32 message 或 Windows DLL；
 - 要跨发行版、跨版本批量部署；
@@ -524,4 +532,30 @@ ahk --update 2.0.26-linux.8
 
 最合理的当前评价是：
 
-> **一个进展很快、X11 部分已经具有实用性的高质量原型，但离“通用、可靠、原生 Wayland 的 Linux AutoHotkey”仍有明显架构和工程距离。**
+> **一个进展很快、X11 部分已经具有实用性、且本轮已把 GNOME Wayland 全局热键
+> （扩展后端）、Portal 拒绝路径、AT-SPI 控件最小自动化、IME 状态检测和
+> 剪贴板慢应用超时补齐并通过实机验证的原型；离“通用、可靠、原生 Wayland 的
+> Linux AutoHotkey”仍有架构和工程距离（evdev 捕获侧、IME 双向、全深度
+> AT-SPI、跨发行版矩阵）。**
+
+---
+
+## 附录：check0820 项交付状态对照表（round-37 结束）
+
+| 项 | 实现 | 验证 | 记录 |
+|---|---|---|---|
+| aaaa/长按自动重复 | round-36 已实现 | assert_repeat 4/4（Xvfb 两连跑） | 透传 down-copy 被 passive grab 吸纳的背离：pt 套件 F11 双发权威覆盖 |
+| kill -9 后热键释放（X11 实测） | round-36 已实现 | assert_hotkey_pt kill9 项 + 1093 绿 | X11 grab 随连接关闭自动释放 |
+| 剪贴板多 MIME/大文本/慢消费者 | round-36 已实现；本轮增慢所有者超时 | assert_clipboard 13/13 + assert_clipboard_slow 4/4（Xvfb） | `AHK_CLIPBOARD_TIMEOUT_MS` 默认 2000 |
+| 慢应用延迟读剪贴板（超时 env） | `AHK_CLIPBOARD_TIMEOUT_MS` | VM 实测：默认~1.8s 干净超时，5000 时等 2.5s 慢应答成功 | xclip_probe `--serve-delay` |
+| 键盘布局动态切换 | round-36 已实现 | assert_layout 6/6（us→de→us） | — |
+| Portal 取消/拒绝授权 | 既有 deny 处理（code!=0→错误，不绑定） | gnome_portal_deny.sh 4/4（GNOME VM） | 交互式 GNOME 对话框不可无头自动化，已如实记录 |
+| GNOME 扩展 disable→enable 自动重注册（VM 实机） | 扩展 NameOwnerChanged→re-sync 机制；本轮修 Activated sender unique-name 校验 + 扩展 `import * as Config` | gnome_ext_reregister.sh 4/4（GNOME 49 VM，F12/^1 全链路） | 之前卡死根因：`Hotkey()` 从未到达非 X11 后端 |
+| ibus/fcitx 激活态（检测+文档） | `ImeGetState()`（框架=总线 owner，组=XKB group） | VM "ibus\|0"；assert_ime 2/2 | preedit/切换未做，记录在 IME-Integration.md |
+| IME/text-input wlroots input-method-v2 原型（sway 实测） | 客户端 scaffold（wm_input_method_v2_probe.c） | 未能 sway 实测：系统仅 v1 XML、无 v2 后端；mutter 无 input-method 符号 | 不可行原因如实记录（见 IME-Integration.md） |
+| AT-SPI 控件自动化（Control* 最小路径） | ControlGetText/SetText/Click 走 org.a11y.atspi（读文本/设文本/DoAction） | gnome_atspi_e2e.sh 3/3（GNOME VM，GTK3 应用：读标签→点按钮→标签变化） | 修了 Control 参数索引与 XWayland 会话门 |
+| 打包 AppImage/RPM | pack-appimage.sh/pack-rpm.sh 修复中；CI 待转绿 | CI f9a008cf 检测中 | 见发布节 |
+| 权限模型（input 组/udev/polkit） | tools/linux/permissions/ 三件套 + 安装脚本 | VM 安装实测（udev 规则生效、mono 入 input 组、polkit 文件装入） | 面向未来 ahk-inputd |
+| GNOME 版本耦合（扩展 disable/enable/重启） | disable→enable 已实测；shell 整体重启 re-sync 机制在 Dispatch 重连路径 | 实机 disable→enable 4/4 | 45-50 版本声明 + 未验证 major 警告 |
+| 文档/计数同步 | CHECK_REPORT 1099、README/GOALS/ChangeLog/linux-port.htm 全部更新 | verify_report_numbers.sh 通过（x11=1099, wayland=17, xwayland=247） | 本表即 check0820 状态对照表 |
+| 发布 v2.0.26-linux.15 | 待发布（保留 linux.14 资产 + 新签名） | 待 CI 全绿后执行 | 见发布节 |
