@@ -153,6 +153,9 @@ jobs:
           # under `|| true`; now they must build).
           bash tools/linux/pack-appimage.sh
           bash tools/linux/pack-rpm.sh
+          # Regenerate CKSUMS.txt so it covers ALL dist artifacts (incl.
+          # AppImage/RPM) and re-sign it (pack.sh runs before those exist).
+          bash tools/linux/pack-finalize.sh
           ls -la dist/
 
       - name: Verify packages
