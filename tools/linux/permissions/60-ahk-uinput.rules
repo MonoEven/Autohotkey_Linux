@@ -1,0 +1,30 @@
+# AutoHotkey Linux - evdev/uinput permission rules (check0820).
+#
+# Goal (direction-B): the AHK input broker reads the physical keyboard
+# stream (/dev/input/event*) and, in SUPPRESS mode, writes synthesized
+# events through /dev/uinput.  Both need privileged kernel nodes:
+#
+#   /dev/input/event*   owner root:input  mode 0660 (Ubuntu default)
+#   /dev/uinput         owner root:root   mode 0666 (Ubuntu default)
+#
+# Therefore the minimal, least-privilege setup is: make the user a member
+# of the `input` group (grants READ of the keyboard stream) and install
+# this rule to guarantee /dev/uinput stays world-writable even on
+# distributions that ship it 0660 root:root.
+#
+# Install (root):
+#   sudo install -m 0644 60-ahk-uinput.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger --subsystem-match=input
+#
+# Membership:
+#   sudo usermod -aG input "$USER"     # re-login required
+#
+# Alternative (no group change, still no root daemon):
+#   sudo install -m 0644 60-ahk-input.rules /etc/udev/rules.d/
+#   (grants 'ahk' users rw access to both nodes via a dedicated group)
+
+KERNEL=="uinput", MODE="0666"
+
+# For a dedicated-automation-group variant, uncomment and adjust:
+# SUBSYSTEM=="input", KERNEL=="event*", GROUP="ahk", MODE="0660"

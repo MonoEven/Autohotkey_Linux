@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AutoHotkey Linux - evdev input broker policy (check0820).
+
+  polkit policy for the (future) privileged input daemon.  The current
+  port runs fully in userspace WITHOUT a privileged helper: it reads
+  /dev/input/event* as input-group member and writes /dev/uinput (0666).
+  That path needs no polkit at all.
+
+  This policy exists so a root "ahk-inputd" capture helper (EVIOCGRAB
+  suppression + uinput replay) can later be authorized per-session:
+  a Wayland session user running AHK may request the inputd action
+  without a password prompt, anything else stays in the interactive
+  admin bucket ("auth_admin_keep").
+
+  Install (polkit >= 0.106 / polkitd 126):
+    sudo install -m 0644 io.github.autohotkey.inputd.policy \
+      /usr/share/polkit-1/actions/
+  (no daemon reload needed; policy files are read on demand)
+-->
+<policyconfig>
+  <vendor>AutoHotkey Linux port project</vendor>
+  <vendor_url>https://github.com/MonoEven/Autohotkey_Linux</vendor_url>
+  <action id="io.github.autohotkey.inputd">
+    <description>Acquire the keyboard capture stream (evdev grab + uinput replay)</description>
+    <message>Authentication is required to let AutoHotkey capture the keyboard stream.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>no</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.imply">org.freedesktop.policykit.imply.session-active</annotate>
+  </action>
+</policyconfig>

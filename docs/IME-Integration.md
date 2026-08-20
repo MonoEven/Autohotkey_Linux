@@ -90,6 +90,41 @@ The most valuable, low-risk piece is **Phase 1 + 2 on X11**:
 - Expose a small `A_IME`-like variable (Linux extension) for state
   query, and an `IME`-toggle helper via group switch key injection.
 
+## Wayland wlroots input-method-v2 prototype (check0820)
+
+Status: **prototype sketched; live E2E blocked - honest reason recorded.**
+
+A client scaffold for the wlroots input-method v2 protocol is kept at
+`tools/linux/wm_input_method_v2_probe.c` (not compiled into ahk_core).
+It documents the exact v2 manager bind + preedit/commit listener shape
+AHK's Wayland Send path would use (replacing virtual-keyboard keycodes
+with committed preedit text).
+
+Why a live sway verification was not possible in this VM/CI matrix
+(measured, not assumed):
+
+1. **sway 1.10 / wlroots 0.18** on this system links the v2 manager
+   symbols (`wlr_input_method_manager_v2_create`,
+   `wlr_text_input_manager_v3_*`), so the wlroots layer is *capable* of
+   serving the protocol.  But the installed protocol definitions only
+   include `input-method-unstable-v1.xml` (no v2 XML), and this sway
+   build does not run an ibus/fcitx input-method backend end-to-end.
+2. **GNOME Shell / Mutter link NO input-method symbols at all**.  A
+   string scan of `/usr/bin/gnome-shell` and a `libmutter` share for
+   `input-method`, `text-input`, `zwp`, `zwlr` names returns nothing.
+   Mutter does not implement the wlroots input-method-v2 (or
+   text-input-v3) wire protocol; GNOME input methods go through mutter's
+   internal ibus/IM-context integration, which is a different, private
+   surface.  A wlroots input-method-v2 **client** therefore cannot be
+   exercised against a GNOME session at all, and the zwp protocol is not
+   a portable path for the GNOME desktop.
+3. Neither the standalone sway in CI/VM nor GNOME runs with both the v2
+   protocol exported AND an input-method backend providing preedit text,
+   so end-to-end delivery could not be demonstrated in this round.
+
+This is the concrete, recorded reason this sub-item is a scaffold, not
+an integrated feature (Phase 3 in the assessment above).
+
 ## Implemented: IME active-state detection (check0820)
 
 A minimal, deterministic IME *state query* is now implemented as the
