@@ -23,18 +23,33 @@ backend.  On Windows, install the official AutoHotkey from
 <h2>Prebuilt packages (recommended)</h2>
 <p>Every
 <a href="https://github.com/MonoEven/Autohotkey_Linux/releases">GitHub release</a>
-publishes two packages for 64-bit Linux:</p>
+publishes four package formats for 64-bit Linux plus the Arch PKGBUILD:</p>
 <ul>
   <li><code class="no-highlight">autohotkey-linux-&lt;version&gt;-amd64.deb</code>
-    &mdash; Debian/Ubuntu package.</li>
+    &mdash; Debian/Ubuntu package (system-wide; ships the GNOME Shell
+    extension, dpkg-managed).</li>
+  <li><code class="no-highlight">autohotkey-linux-&lt;version&gt;-amd64.rpm</code>
+    &mdash; Fedora/openSUSE RPM (system-wide; ships the extension,
+    dnf-managed).</li>
+  <li><code class="no-highlight">autohotkey-linux-&lt;version&gt;-amd64.AppImage</code>
+    &mdash; portable single file (extension installed per-user with
+    <code>--install-extension</code>).</li>
   <li><code class="no-highlight">autohotkey-linux-&lt;version&gt;-amd64.tar.gz</code>
     &mdash; generic tarball with the <code>ahk</code> launcher, the
-    interpreter and the CLI/GUI installers inside.</li>
+    interpreter, the CLI/GUI installers and the extension directory.</li>
 </ul>
+<p>The Arch <code>PKGBUILD</code> (in <code>tools/linux/</code>) builds the
+same system-wide package for pacman.</p>
 
-<h3>Install the .deb package</h3>
-<pre>sudo apt install ./autohotkey-linux-&lt;version&gt;-amd64.deb
-ahk your-script.ahk</pre>
+<h3>Install the .deb, RPM or AppImage</h3>
+<pre># Debian/Ubuntu (after install: gnome-extensions enable ... once per user)
+sudo apt install ./autohotkey-linux-&lt;version&gt;-amd64.deb
+
+# Fedora/openSUSE
+sudo dnf install ./autohotkey-linux-&lt;version&gt;-amd64.rpm
+
+# AppImage (portable)
+./autohotkey-linux-&lt;version&gt;-amd64.AppImage --install-extension</pre>
 
 <h3>Install from the tarball</h3>
 <p>Extract the archive, then run the CLI or GUI installer from the unpacked
@@ -42,8 +57,8 @@ tree:</p>
 <pre>tar xzf autohotkey-linux-&lt;version&gt;-amd64.tar.gz
 cd autohotkey-linux
 ./tools/linux/install-gui.sh        # graphical wizard (zenity/yad)
-./tools/linux/install.sh --prefix ~/.local
-./tools/linux/install.sh            # system-wide (requires root)</pre>
+./tools/linux/install.sh --prefix ~/.local --gnome-extension
+./tools/linux/install.sh --prefix /usr/local --gnome-extension   # system-wide</pre>
 <p>The installer places the <code>ahk</code> launcher, the interpreter
 (<code>ahk_core</code>) and the bundled manual; <code>ahk</code> is also
 symlinked into <code>~/.local/bin</code> (or <code>/usr/local/bin</code>).</p>
@@ -63,6 +78,35 @@ downgrade</em> to any published release; fixes and bespoke state can be rolled
 back.  Releases before linux.15 (linux.14 and earlier) were removed when the
 new installer line shipped &mdash; their source remains on the
 <code>v2.0.26-linux.*</code> git tags for source-level rollback.</p>
+
+<p><b>What <code>--update</code> / <code>--uninstall</code> do per install
+method.</b> The launcher detects how the copy was installed and routes the
+command to the matching tool:</p>
+<ul>
+  <li><b>tarball / user prefix</b> &mdash; <code>ahk --update [VER]</code>
+    downloads the release tarball and reinstalls over the same prefix
+    (upgrade or downgrade); <code>ahk --uninstall</code> removes the prefix
+    files.  Both leave the GNOME extension untouched.</li>
+  <li><b><code>.deb</code> (Debian/Ubuntu)</b> &mdash; <code>--update</code>
+    and <code>--uninstall</code> print the <code>apt</code>/<code>dpkg</code>
+    equivalent (<code>sudo apt install --only-upgrade autohotkey-linux</code>
+    / <code>sudo apt remove autohotkey-linux</code>) so the package state
+    stays consistent.  The extension is dpkg-managed: package upgrades
+    update it, <code>apt remove</code> deletes it.</li>
+  <li><b>RPM (Fedora/openSUSE)</b> &mdash; <code>--update</code> /
+    <code>--uninstall</code> print the <code>dnf</code>/<code>rpm</code>
+    equivalent (<code>sudo dnf update autohotkey-linux</code> / <code>sudo
+    dnf remove autohotkey-linux</code>).  The extension ships in the
+    package and is removed with it.</li>
+  <li><b>Arch (pacman)</b> &mdash; <code>--update</code> /
+    <code>--uninstall</code> print <code>sudo pacman -Syu</code> / <code>sudo
+    pacman -Rns autohotkey-linux</code>.  The extension ships in the
+    package and is removed with it.</li>
+  <li><b>AppImage</b> &mdash; <code>--install-extension</code> copies the
+    bundled extension to the user's GNOME extensions dir and enables it;
+    <code>--update</code> downloads the newest AppImage next to the running
+    file.  <code>ahk --check</code> shows which method is in use.</li>
+</ul>
 
 <h2>GNOME 49 Wayland zero-confirmation global hotkeys (optional)</h2>
 <p>On GNOME 49 Wayland, <code>1::</code>-style global hotkeys can grab the

@@ -133,15 +133,26 @@ Prebuilt packages are attached to each
 [GitHub Release](https://github.com/MonoEven/Autohotkey_Linux/releases):
 
 ```bash
-# Debian/Ubuntu
+# Debian/Ubuntu    (system-wide; extension ships in the deb, dpkg-managed)
 sudo apt install ./autohotkey-linux-<version>-amd64.deb
+#  ... after install: gnome-extensions enable ahk-global-hotkeys@autohotkey.org
+#     (one line, once per user; then restart GNOME Shell / Alt+F2 'r')
+
+# Fedora / openSUSE (RPM; system-wide, extension bundled, dnf-managed)
+sudo dnf install ./autohotkey-linux-<version>-amd64.rpm
+
+# Arch (PKGBUILD; system-wide, extension bundled, pacman-managed)
+#   (build from tools/linux/PKGBUILD into your package repo / AUR)
 
 # Generic tarball (run the GUI or CLI installer from the unpacked tree)
 tar xzf autohotkey-linux-<version>-amd64.tar.gz
 cd autohotkey-linux
 ./tools/linux/install-gui.sh        # graphical wizard (zenity/yad)
 # or
-./tools/linux/install.sh --prefix ~/.local
+./tools/linux/install.sh --prefix ~/.local --gnome-extension
+
+# AppImage (portable single file; extension copied user-side on demand)
+./autohotkey-linux-<version>-amd64.AppImage --install-extension
 ```
 
 The installer places the `ahk` launcher, the interpreter and the
@@ -160,11 +171,37 @@ ahk --update 2.0.26-linux.15   # or a specific release (upgrade or downgrade)
 > `--check`, `--version`) so plain names such as `ahk update.ahk` are always
 > treated as scripts.  Every release since v2.0.26-linux.15 stays published
 > on the GitHub Releases page (with a `CKSUMS.txt` of SHA-256 hashes), so
-> `ahk --update <VER>` can upgrade **or downgrade** to any published release;
-> fixes and bespoke state can therefore be rolled back to an older known
-> release.  Releases before linux.15 were removed when the new installer
-> line shipped; their source remains available on the `v2.0.26-linux.*` git
-> tags for source-level rollback.  See the release notes for the checksums.
+> the tarball's `ahk --update <VER>` can upgrade **or downgrade** to any
+> published release; fixes and bespoke state can therefore be rolled back
+> to an older known release.  Releases before linux.15 were removed when
+> the new installer line shipped; their source remains available on the
+> `v2.0.26-linux.*` git tags for source-level rollback.
+
+> **What `ahk --update` / `ahk --uninstall` do by install method.** The
+> launcher detects how the copy was installed and routes the command
+> accordingly:
+> - **tarball / user prefix**: `ahk --update [VER]` downloads the release
+>   tarball and reinstalls over the same prefix (upgrade or downgrade);
+>   `ahk --uninstall` removes the prefix files.  The GNOME extension is
+>   never touched by either.
+> - **`.deb` (Debian/Ubuntu)**: `--update`/`--uninstall` print the
+>   `apt`/`dpkg` equivalent (`sudo apt install --only-upgrade
+>   autohotkey-linux` / `sudo apt remove autohotkey-linux`) — package
+>   state stays consistent.  The extension is dpkg-managed: package
+>   upgrade updates it, `apt remove` deletes it.
+> - **RPM (Fedora/openSUSE)**: `--update`/`--uninstall` print the
+>   `dnf`/`rpm` equivalent (`sudo dnf update autohotkey-linux` /
+>   `sudo dnf remove autohotkey-linux`).  The extension ships with the
+>   package and is removed with it.
+> - **Arch (pacman)**: `--update`/`--uninstall` print
+>   `sudo pacman -Syu` / `sudo pacman -Rns autohotkey-linux`.  The
+>   extension ships with the package and is removed with it.
+> - **AppImage**: `--install-extension` copies the bundled extension to
+>   the user's GNOME extensions dir and enables it; `--update` downloads
+>   the newest AppImage next to the running file.  (The launcher-package
+>   commands apply to the deb/RPM/pacman/tarball installs; the AppImage
+>   handles these two passthrough commands itself and runs scripts
+>   otherwise.)  See the release notes for the checksums.
 
 > **First install on GNOME Wayland?** Run the installer once with
 > `--gnome-extension` (e.g. `./tools/linux/install.sh --prefix ~/.local

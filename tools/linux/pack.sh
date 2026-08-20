@@ -71,12 +71,22 @@ if command -v dpkg-deb >/dev/null 2>&1; then
   # chmod has no effect, which makes dpkg-deb reject the control dir.
   DEBROOT=$(mktemp -d /tmp/ahk-deb.XXXXXX)
   mkdir -p "$DEBROOT/usr/bin" "$DEBROOT/usr/share/autohotkey" \
-           "$DEBROOT/usr/share/doc/autohotkey" "$DEBROOT/DEBIAN"
+           "$DEBROOT/usr/share/doc/autohotkey" \
+           "$DEBROOT/usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org" \
+           "$DEBROOT/DEBIAN"
   chmod 0755 "$DEBROOT" "$DEBROOT/DEBIAN"
   install -m 0755 "$CORE" "$DEBROOT/usr/share/autohotkey/ahk_core"
   cp -r docs-v2 "$DEBROOT/usr/share/doc/autohotkey/docs-v2"
   install -m 0644 README.md "$DEBROOT/usr/share/doc/autohotkey/README.md"
   [ -f LICENSE ] && install -m 0644 LICENSE "$DEBROOT/usr/share/doc/autohotkey/LICENSE"
+  # The GNOME Shell extension ships system-wide with the deb (unlike the
+  # tarball, where it is optional and user-scoped).  dpkg then manages its
+  # lifecycle: apt upgrade replaces it, apt remove deletes it.  Enabling it
+  # is a per-session (gsettings) decision, so postinst only prints how.
+  if [ -d "$REPO_DIR/extension/ahk-global-hotkeys@autohotkey.org" ]; then
+    cp -r "$REPO_DIR/extension/ahk-global-hotkeys@autohotkey.org/." \
+          "$DEBROOT/usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org/"
+  fi
   # Full launcher (--update/--uninstall/--check) rendered from the shared
   # template; the deb layout matches install.sh --prefix /usr.
   sed -e "s|@PREFIX@|/usr|g" \
@@ -115,6 +125,19 @@ set -e
 if command -v update-alternatives >/dev/null 2>&1; then
   update-alternatives --install /usr/bin/autohotkey autohotkey /usr/bin/ahk 50 \
     >/dev/null 2>&1 || true
+fi
+# The GNOME Shell global-hotkey extension ships system-wide (dpkg-managed).
+# Enabling it is a per-user session choice (gsettings), which a root
+# postinst cannot do for the logged-in user -- print the one-time steps.
+if [ -d /usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org ]; then
+  echo
+  echo "AutoHotkey GNOME Shell extension installed system-wide."
+  echo "To use zero-confirmation global hotkeys on GNOME Wayland, do ONCE"
+  echo "per user while logged into the GNOME session:"
+  echo "    gnome-extensions enable ahk-global-hotkeys@autohotkey.org"
+  echo "then restart GNOME Shell (log out/in, or Alt+F2 and type 'r')."
+  echo "(apt remove will delete the extension together with the package.)"
+  echo
 fi
 exit 0
 EOF

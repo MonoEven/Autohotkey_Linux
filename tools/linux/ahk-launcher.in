@@ -27,6 +27,26 @@ is_deb() {
     && dpkg -l autohotkey-linux >/dev/null 2>&1
 }
 
+# True when the prefix carries the Fedora/openSUSE RPM (rpm db state).
+is_rpm() {
+  [ "$AHK_PREFIX" = "/usr" ] && command -v rpm >/dev/null 2>&1 \
+    && rpm -q autohotkey-linux >/dev/null 2>&1
+}
+
+# True when the prefix carries the Arch Linux package (pacman db state).
+is_pacman() {
+  [ "$AHK_PREFIX" = "/usr" ] && command -v pacman >/dev/null 2>&1 \
+    && pacman -Q autohotkey-linux >/dev/null 2>&1
+}
+
+# Install method for --check/--update/--uninstall messages.
+install_method() {
+  if is_deb; then echo "Debian/Ubuntu package (dpkg)";
+  elif is_rpm; then echo "RPM package (rpm/dnf)";
+  elif is_pacman; then echo "Arch Linux package (pacman)";
+  else echo "tarball (install.sh)"; fi
+}
+
 cmd="${1:-}"
 case "$cmd" in
   --version|-v)
@@ -55,6 +75,10 @@ case "$cmd" in
     echo "  interpreter       : $AHK_LIB/ahk_core"
     if is_deb; then
       echo "  install method    : Debian/Ubuntu package (dpkg)"
+    elif is_rpm; then
+      echo "  install method    : RPM package (rpm/dnf)"
+    elif is_pacman; then
+      echo "  install method    : Arch Linux package (pacman)"
     else
       echo "  install method    : tarball (install.sh)"
     fi
@@ -131,6 +155,16 @@ case "$cmd" in
       echo "Remove it with:  sudo apt remove autohotkey-linux"
       exit 1
     fi
+    if is_rpm; then
+      echo "This installation is the RPM package 'autohotkey-linux'."
+      echo "Remove it with:  sudo dnf remove autohotkey-linux   (Fedora/openSUSE)"
+      exit 1
+    fi
+    if is_pacman; then
+      echo "This installation is the Arch package 'autohotkey-linux'."
+      echo "Remove it with:  sudo pacman -Rns autohotkey-linux"
+      exit 1
+    fi
     echo "Removing AutoHotkey v2 Linux port from $AHK_PREFIX ..."
     rm -f "$AHK_BIN/ahk" "$AHK_BIN/ahk_core" \
           "$AHK_LIB/ahk_core" "$AHK_LIB/ahk.ahk" 2>/dev/null || true
@@ -162,6 +196,17 @@ case "$cmd" in
       echo "This installation is the Debian package 'autohotkey-linux'."
       echo "Update it with:  sudo apt update && sudo apt install --only-upgrade autohotkey-linux"
       echo "(or download the new .deb from the GitHub release and run: sudo apt install ./autohotkey-linux-<ver>-amd64.deb)"
+      exit 1
+    fi
+    if is_rpm; then
+      echo "This installation is the RPM package 'autohotkey-linux'."
+      echo "Update it with:  sudo dnf update autohotkey-linux"
+      echo "(or: download the new .rpm from the GitHub release and run sudo dnf install ./autohotkey-linux-<ver>-<arch>.rpm)"
+      exit 1
+    fi
+    if is_pacman; then
+      echo "This installation is the Arch package 'autohotkey-linux'."
+      echo "Update it with:  sudo pacman -Syu"
       exit 1
     fi
     if [ -z "$ver" ]; then

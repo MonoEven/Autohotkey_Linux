@@ -25,15 +25,47 @@ build() {
 package() {
   install -Dm755 "$srcdir"/build-core/source/linux/core/ahk_core \
     "$pkgdir"/usr/share/autohotkey/ahk_core
-  # launcher
-  cat > "$pkgdir/usr/bin/ahk" <<EOF
-#!/bin/sh
-exec /usr/share/autohotkey/ahk_core "\$@"
-EOF
+  # launcher: full --update/--uninstall/--check rendered from the shared
+  # template; the package layout matches /usr, so the launcher's
+  # install-method detection (pacman) works on Arch.
+  sed -e 's|@PREFIX@|/usr|g' \
+      -e 's|@LIB_SUB@|share/autohotkey|g' \
+      -e 's|@BIN_SUB@|bin|g' \
+      -e 's|@DOC_SUB@|share/doc/autohotkey|g' \
+      -e "s|@AHK_VERSION@|$pkgver|g" \
+      "$srcdir"/tools/linux/ahk-launcher.in > "$pkgdir/usr/bin/ahk"
   chmod 755 "$pkgdir/usr/bin/ahk"
   # docs
   install -d "$pkgdir/usr/share/doc/autohotkey"
   cp -r "$srcdir"/docs-v2 "$pkgdir/usr/share/doc/autohotkey/docs-v2"
   install -Dm644 "$srcdir/README.md" "$pkgdir/usr/share/doc/autohotkey/README.md"
   install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  # GNOME Shell global-hotkey extension (system-wide; pacman lifecycle:
+  # upgrades replace it, removal deletes it; enable per user via
+  # gnome-extensions enable, see post_install below).
+  EXT="$pkgdir/usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org"
+  install -d "$EXT"
+  install -Dm644 "$srcdir"/extension/ahk-global-hotkeys@autohotkey.org/metadata.json "$EXT/metadata.json"
+  install -Dm644 "$srcdir"/extension/ahk-global-hotkeys@autohotkey.org/extension.js "$EXT/extension.js"
+}
+
+post_install() {
+  echo
+  echo "AutoHotkey GNOME Shell extension installed system-wide."
+  echo "To use zero-confirmation global hotkeys on GNOME Wayland, do ONCE"
+  echo "per user while logged into the GNOME session:"
+  echo "    gnome-extensions enable ahk-global-hotkeys@autohotkey.org"
+  echo "then restart GNOME Shell (log out/in, or Alt+F2 and type 'r')."
+  echo "(removing the package will delete the extension too.)"
+}
+
+post_upgrade() {
+  post_install
+}
+
+post_remove() {
+  # Extension files are tracked by pacman and removed with the package;
+  # nothing extra to do.  (A user-enabled extension stays enabled in
+  # their gsettings; harmless once its files are gone.)
+  true
 }

@@ -54,11 +54,20 @@ chk "deb: ahk --check reports dpkg" "/usr/bin/ahk --check > /tmp/ahk_deb_check.l
 chk "deb: ahk --check integrity OK" "/usr/bin/ahk --check > /tmp/ahk_deb_check2.log 2>&1 && grep -q 'integrity         : OK' /tmp/ahk_deb_check2.log"
 /usr/bin/ahk /tmp/ahk_smoke.ahk
 chk "deb: runs a script" "grep -q 'smoke-ok' /tmp/ahk_smoke_out.txt"
+chk "deb: ships the GNOME extension system-wide" "test -f /usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org/metadata.json"
+# postinst hint: dpkg-deb -e extracts the control files (DEBIAN/) only;
+# the data tarball does not contain them.
+rm -rf /tmp/ahk_deb_ctrl && mkdir -p /tmp/ahk_deb_ctrl
+dpkg-deb -e "dist/autohotkey-linux-$VER-amd64.deb" /tmp/ahk_deb_ctrl >/dev/null 2>&1 || true
+chk "deb: postinst carries the extension enable hint" \
+  "grep -q 'gnome-extensions enable ahk-global-hotkeys@autohotkey.org' /tmp/ahk_deb_ctrl/postinst"
+rm -rf /tmp/ahk_deb_ctrl
 chk "deb: --uninstall guides to apt (rc=1)" "! /usr/bin/ahk --uninstall > /tmp/ahk_deb_uni.log 2>&1"
 run_sudo apt-get remove -y autohotkey-linux > /tmp/ahk_deb_remove.log 2>&1
 chk "deb: apt remove cleans /usr/bin/ahk" "test ! -e /usr/bin/ahk"
 chk "deb: apt remove cleans /usr/share/autohotkey" "test ! -e /usr/share/autohotkey"
 chk "deb: apt remove cleans docs" "test ! -e /usr/share/doc/autohotkey"
+chk "deb: apt remove cleans the GNOME extension" "test ! -e /usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org"
 chk "deb: dpkg state clean (no 'ii')" "! dpkg -l autohotkey-linux 2>/dev/null | grep -q '^ii'"
 
 echo "=== Tarball (user prefix) ==="
@@ -139,6 +148,36 @@ HOME="$fake_home2" bash "$INST" --prefix "$ahk_home2" --gnome-extension --yes > 
 HOME="$fake_home2" bash "$INST" --prefix "$ahk_home2" --gnome-extension --uninstall --yes > /tmp/ahk_ext_uni_ext.log 2>&1
 chk "ext: --uninstall --gnome-extension removes it" "test ! -e '$ext_dir2'"
 rm -rf "$fake_home2"
+
+echo "=== RPM payload (full launcher + extension) ==="
+RPMF=$(ls dist/autohotkey-linux-*.rpm 2>/dev/null | head -1)
+if [ -n "$RPMF" ] && command -v rpm2cpio >/dev/null 2>&1; then
+  rm -rf /tmp/ahk_rpm_x && mkdir -p /tmp/ahk_rpm_x
+  rpm2cpio "dist/$RPMF" > /tmp/ahk_rpm.cpio 2>/dev/null
+  if command -v cpio >/dev/null 2>&1; then
+    ( cd /tmp/ahk_rpm_x && cpio -idm < /tmp/ahk_rpm.cpio >/dev/null 2>&1 )
+  else
+    ( cd /tmp/ahk_rpm_x && tar xf /tmp/ahk_rpm.cpio >/dev/null 2>&1 )
+  fi
+  chk "rpm: full launcher (--update)" \
+    "grep -q -- '--update' /tmp/ahk_rpm_x/usr/bin/ahk"
+  chk "rpm: install-method branch (rpm/dnf)" \
+    "grep -q 'RPM package (rpm/dnf)' /tmp/ahk_rpm_x/usr/bin/ahk"
+  chk "rpm: ships the GNOME extension" \
+    "test -f /tmp/ahk_rpm_x/usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org/metadata.json"
+  rm -rf /tmp/ahk_rpm_x
+else
+  echo "SKIP: RPM payload check (no artifact or rpm2cpio unavailable)" >&2
+fi
+
+echo "=== AppImage artifact presence ==="
+AIIM=$(ls dist/autohotkey-linux-*.AppImage 2>/dev/null | head -1)
+if [ -n "$AIIM" ]; then
+  chk "ai: artifact built" "test -s 'dist/$AIIM'"
+  # pack-appimage.sh self-checks the AppDir extension + AppRun flags.
+else
+  echo "SKIP: no AppImage artifact" >&2
+fi
 
 echo "=============================="
 echo "PACKAGE VERIFY: fails=$fails"

@@ -12,7 +12,7 @@ set -u
 REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$REPO_DIR" || exit 1
 
-VER="${1:-2.0.26-linux.6}"
+VER="${1:-2.0.26-linux.15}"
 ARCH=$(uname -m)
 case "$ARCH" in
   x86_64) RPM_ARCH=x86_64 ;;
@@ -41,6 +41,21 @@ install -m 0755 "$CORE" "$SRCTREE/ahk_core"
 cp -r docs-v2 "$SRCTREE/docs-v2"
 install -m 0644 README.md "$SRCTREE/README.md"
 [ -f LICENSE ] && install -m 0644 LICENSE "$SRCTREE/LICENSE"
+# The GNOME Shell extension ships system-wide with the RPM (dpkg-style
+# lifecycle: uninstall removes it); %post prints the per-user enable steps.
+if [ -d "$REPO_DIR/extension/ahk-global-hotkeys@autohotkey.org" ]; then
+  cp -r "$REPO_DIR/extension" "$SRCTREE/extension"
+fi
+# The full launcher (--update/--uninstall/--check) rendered from the shared
+# template; the RPM layout matches /usr with install.sh --prefix /usr, so
+# the launcher's install-method detection (rpm/dnf) works on Fedora etc.
+# Written into the source tree BEFORE the tar so %install can find it.
+sed -e "s|@PREFIX@|/usr|g" \
+    -e "s|@LIB_SUB@|share/autohotkey|g" \
+    -e "s|@BIN_SUB@|bin|g" \
+    -e "s|@DOC_SUB@|share/doc/autohotkey|g" \
+    -e "s|@AHK_VERSION@|$VER|g" \
+    "$REPO_DIR/tools/linux/ahk-launcher.in" > "$SRCTREE/ahk-launcher"
 
 SRC="autohotkey-linux-$VER.tar.gz"
 ( cd "$RPMROOT/src" && tar czf "$RPMROOT/SOURCES/$SRC" "ahk-$VER" )
@@ -79,19 +94,33 @@ rm -rf %{buildroot}
 install -d %{buildroot}%{_bindir}
 install -d %{buildroot}%{_datadir}/autohotkey
 install -d %{buildroot}%{_docdir}/autohotkey
+install -d %{buildroot}%{_datadir}/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org
 install -m 0755 %{_builddir}/ahk-$VER/ahk_core %{buildroot}%{_datadir}/autohotkey/ahk_core
-cat > %{buildroot}%{_bindir}/ahk <<EOS
-#!/bin/sh
-exec %{_datadir}/autohotkey/ahk_core "\\$@"
-EOS
-chmod 0755 %{buildroot}%{_bindir}/ahk
+install -m 0755 %{_builddir}/ahk-$VER/ahk-launcher %{buildroot}%{_bindir}/ahk
 cp -r %{_builddir}/ahk-$VER/docs-v2 %{buildroot}%{_docdir}/autohotkey/
 install -m 0644 %{_builddir}/ahk-$VER/README.md %{buildroot}%{_docdir}/autohotkey/README.md
 [ -f %{_builddir}/ahk-$VER/LICENSE ] && install -m 0644 %{_builddir}/ahk-$VER/LICENSE %{buildroot}%{_docdir}/autohotkey/LICENSE
+install -m 0644 %{_builddir}/ahk-$VER/extension/ahk-global-hotkeys@autohotkey.org/metadata.json \
+  %{buildroot}%{_datadir}/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org/
+install -m 0644 %{_builddir}/ahk-$VER/extension/ahk-global-hotkeys@autohotkey.org/extension.js \
+  %{buildroot}%{_datadir}/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org/
+
+%post
+if [ -d %{_datadir}/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org ]; then
+  echo
+  echo "AutoHotkey GNOME Shell extension installed system-wide."
+  echo "To use zero-confirmation global hotkeys on GNOME Wayland, do ONCE"
+  echo "per user while logged into the GNOME session:"
+  echo "    gnome-extensions enable ahk-global-hotkeys@autohotkey.org"
+  echo "then restart GNOME Shell (log out/in, or Alt+F2 and type 'r')."
+  echo "(removing the package will delete the extension too.)"
+  echo
+fi
 
 %files
 %{_bindir}/ahk
 %{_datadir}/autohotkey/ahk_core
+%{_datadir}/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org/*
 %{_docdir}/autohotkey/*
 %license LICENSE
 
@@ -117,6 +146,21 @@ fi
 mkdir -p dist
 OUT=dist/autohotkey-linux-$VER-$RPM_ARCH.rpm
 cp "$RPMROOT"/RPMS/*/*.rpm "$OUT"
+# Build-time sanity BEFORE the RPMROOT goes away: the payload must carry
+# the full launcher (with the rpm install-method branch) and the GNOME
+# extension (both staged into $SRCTREE above).
+if [ ! -f "$SRCTREE/ahk-launcher" ] \
+   || ! grep -q -- '--update' "$SRCTREE/ahk-launcher" \
+   || ! grep -q 'RPM package (rpm/dnf)' "$SRCTREE/ahk-launcher"; then
+  echo "pack-rpm.sh: launcher in the source tree is not the full launcher" >&2
+  rm -rf "$RPMROOT"
+  exit 1
+fi
+if [ ! -f "$SRCTREE/extension/ahk-global-hotkeys@autohotkey.org/metadata.json" ]; then
+  echo "pack-rpm.sh: GNOME extension missing from the source tree" >&2
+  rm -rf "$RPMROOT"
+  exit 1
+fi
 rm -rf "$RPMROOT"
 echo "built: $OUT"
 ls -la "$OUT"

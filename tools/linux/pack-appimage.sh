@@ -10,7 +10,7 @@ set -u
 REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$REPO_DIR" || exit 1
 
-VER="${1:-2.0.26-linux.6}"
+VER="${1:-2.0.26-linux.15}"
 ARCH=$(uname -m)
 case "$ARCH" in
   x86_64) ARCH=x86_64 ;;
@@ -110,9 +110,18 @@ export APPIMAGE_EXTRACT_AND_RUN=1
 APP=dist/appimage/autohotkey.AppDir
 rm -rf dist/appimage
 mkdir -p "$APP/usr/bin" "$APP/usr/share/applications" \
-         "$APP/usr/share/icons/hicolor/scalable/apps"
+         "$APP/usr/share/icons/hicolor/scalable/apps" \
+         "$APP/usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org"
 
 install -m 0755 "$CORE" "$APP/usr/bin/ahk_core"
+# The GNOME Shell global-hotkey extension ships inside the AppImage (the
+# AppDir is a read-only single file, so `AppRun --install-extension`
+# copies it into the user's ~/.local/share/gnome-shell/extensions and
+# enables it -- see the AppRun below).
+if [ -d "$REPO_DIR/extension/ahk-global-hotkeys@autohotkey.org" ]; then
+  cp -r "$REPO_DIR/extension/ahk-global-hotkeys@autohotkey.org/." \
+        "$APP/usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org/"
+fi
 cat > "$APP/usr/bin/ahk" <<'EOF'
 #!/bin/sh
 SELF=$(readlink -f "$0")
@@ -178,6 +187,63 @@ cat > "$APP/AppRun" <<'EOF'
 #!/bin/sh
 SELF=$(readlink -f "$0")
 HERE=$(dirname "$SELF")
+# `ahk.AppImage --install-extension` installs the bundled GNOME Shell
+# global-hotkey extension for the current user (the AppImage itself is a
+# read-only single file, so the extension must be copied out of it).
+EXT_UUID="ahk-global-hotkeys@autohotkey.org"
+if [ "${1:-}" = "--install-extension" ]; then
+  SRC="$HERE/usr/share/gnome-shell/extensions/$EXT_UUID"
+  if [ ! -d "$SRC" ]; then
+    echo "ahk: no extension bundled in this AppImage (build without one?)" >&2
+    exit 1
+  fi
+  DEST="$HOME/.local/share/gnome-shell/extensions"
+  mkdir -p "$DEST"
+  if [ -d "$DEST/$EXT_UUID" ]; then
+    echo "GNOME extension already installed ($DEST/$EXT_UUID); kept as-is."
+  else
+    cp -r "$SRC" "$DEST/"
+    echo "GNOME extension installed: $DEST/$EXT_UUID"
+  fi
+  if command -v gnome-extensions >/dev/null 2>&1; then
+    gnome-extensions enable "$EXT_UUID" >/dev/null 2>&1 \
+      && echo "GNOME extension enabled." \
+      || echo "Enable it later with: gnome-extensions enable $EXT_UUID"
+  else
+    echo "gnome-extensions not available; enable it from the GNOME Extensions app."
+  fi
+  if pgrep -x gnome-shell >/dev/null 2>&1; then
+    echo "GNOME Shell is running now. Restart it so the new extension loads:"
+    echo "    log out and back in, or press Alt+F2 and type 'r'"
+  fi
+  exit 0
+fi
+# `ahk.AppImage --update` downloads the newest release AppImage into the
+# current directory and tells the user to replace this file with it.  (An
+# AppImage cannot reliably replace its own on-disk file while running -- at
+# runtime the path is the extraction mount, not the .AppImage file -- so
+# self-replacement is deliberately not attempted.)
+if [ "${1:-}" = "--update" ]; then
+  echo "ahk --update: checking https://github.com/MonoEven/Autohotkey_Linux/releases"
+  tag=$(curl -fsSL --connect-timeout 15 \
+    "https://api.github.com/repos/MonoEven/Autohotkey_Linux/releases/latest" 2>/dev/null |
+    printf '%s\n' | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\([^"]*\)".*/\1/p' | head -1)
+  if [ -z "$tag" ]; then
+    echo "ahk: could not determine the latest release (network?)" >&2
+    exit 1
+  fi
+  arch=$(uname -m)
+  case "$arch" in x86_64|amd64) arch=x86_64 ;; aarch64|arm64) arch=aarch64 ;; esac
+  url="https://github.com/MonoEven/Autohotkey_Linux/releases/download/v$tag/autohotkey-linux-$tag-$arch.AppImage"
+  out="autohotkey-linux-$tag-$arch.AppImage"
+  echo "Downloading AutoHotkey v$tag ..."
+  curl -fsSL --connect-timeout 20 -o "$out" "$url" || { echo "ahk: download failed" >&2; exit 1; }
+  echo "AutoHotkey v$tag downloaded to: $PWD/$out"
+  echo "Replace this AppImage file with it to update (the running file itself"
+  echo "cannot be overwritten from inside the App):"
+  echo "    mv $PWD/$out $SELF"
+  exit 0
+fi
 exec "$HERE/usr/bin/ahk_core" "$@"
 EOF
 chmod 0755 "$APP/AppRun"
@@ -226,6 +292,16 @@ rm -f "$ERRLOG"
 chmod +x "$OUT" 2>/dev/null || true
 if [ ! -s "$OUT" ]; then
   echo "pack-appimage.sh: appimagetool produced no output" >&2
+  exit 1
+fi
+# Build-time sanity: the AppDir must carry the GNOME extension and the
+# AppRun commands (guards a future edit that forgets them).
+if [ ! -f "$APP/usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org/metadata.json" ]; then
+  echo "pack-appimage.sh: AppDir missing the GNOME extension" >&2
+  exit 1
+fi
+if ! grep -q -- '--install-extension' "$APP/AppRun" || ! grep -q -- '--update' "$APP/AppRun"; then
+  echo "pack-appimage.sh: AppRun missing --install-extension/--update" >&2
   exit 1
 fi
 echo "built: $OUT"
