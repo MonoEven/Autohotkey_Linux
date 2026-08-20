@@ -66,7 +66,10 @@ PY
 fi
 # Prefer the extracted inner binary (avoids FUSE; GitHub-hosted runners
 # have no /dev/fuse, so the AppImage itself cannot be executed there).
-TOOLBIN=/tmp/squashfs-root/usr/bin/appimagetool
+# appimagetool's own AppRun adds its BUNDLED mksquashfs to PATH - using
+# it (instead of the inner ELF directly) is what makes the tool work on
+# a plain runner where the system squashfs-tools may differ (check0820).
+TOOLBIN=/tmp/squashfs-root/AppRun
 OFFSET="-1"
 if [ ! -x "$TOOLBIN" ]; then
   rm -rf /tmp/squashfs-root
@@ -90,6 +93,9 @@ PY
     fi
   fi
 fi
+if [ ! -x "$TOOLBIN" ] && [ -x /tmp/squashfs-root/usr/bin/appimagetool ]; then
+  TOOLBIN=/tmp/squashfs-root/usr/bin/appimagetool
+fi
 if [ -x "$TOOLBIN" ]; then
   TOOL="$TOOLBIN"
   echo "pack-appimage.sh: using $TOOLBIN"
@@ -97,6 +103,9 @@ elif [ "$OFFSET" = "-1" ]; then
   echo "pack-appimage.sh: downloaded appimagetool is not an AppImage (no hsqs)" >&2
   exit 1
 fi
+# In case the extracted AppRun itself re-executes an AppImage (older
+# appimagetool releases), force the no-FUSE path explicitly.
+export APPIMAGE_EXTRACT_AND_RUN=1
 
 APP=dist/appimage/autohotkey.AppDir
 rm -rf dist/appimage
@@ -189,11 +198,24 @@ OUT="dist/autohotkey-linux-$VER-$ARCH.AppImage"
 # its version banner to stderr; whatever diagnostic it emits has so far
 # gone to stdout (check0820 round), so neither stream is discarded.
 ERRLOG="$OUT.run.log"
-if ! "$TOOL" --no-appstream "$APP" "$OUT" >"$ERRLOG" 2>&1; then
-  if ! "$TOOL" "$APP" "$OUT" >>"$ERRLOG" 2>&1; then
-    echo "pack-appimage.sh: appimagetool failed (rc=$?)" >&2
+run_tool() { # args... ; runs with full capture, returns tool exit code
+  "$TOOL" "$@" >"$ERRLOG" 2>&1
+}
+rc1=0; rc2=0
+if ! run_tool --no-appstream "$APP" "$OUT"; then
+  rc1=$?
+  if ! run_tool "$APP" "$OUT"; then
+    rc2=$?
+    echo "pack-appimage.sh: appimagetool failed (--no-appstream rc=$rc1, plain rc=$rc2)" >&2
     if [ -s "$ERRLOG" ]; then
       echo "pack-appimage.sh: appimagetool output follows:" >&2
+      sed 's/^/  /' "$ERRLOG" >&2
+    fi
+    # Verbose retry with the tool diagnosed on stderr: on the CI runner
+    # the tool exits 0 without producing a file; show what it was doing.
+    run_tool -v --no-appstream "$APP" "$OUT" || true
+    if [ -s "$ERRLOG" ]; then
+      echo "pack-appimage.sh: verbose retry output:" >&2
       sed 's/^/  /' "$ERRLOG" >&2
     fi
     rm -f "$ERRLOG"
