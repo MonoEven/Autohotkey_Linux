@@ -168,6 +168,15 @@ jobs:
           grep -E '^  [0-9a-f]{64}  ' dist/CKSUMS.txt | sed -n 's/^  //p' > /tmp/ck.txt
           ( cd dist && sha256sum -c /tmp/ck.txt )
 
+      # check0820: CKSUMS.txt is OpenPGP-signed (dist/CKSUMS.txt.asc +
+      # dist/ahk-release.pub) so the release can be verified end-to-end.
+      - name: Verify release signature
+        run: |
+          test -s dist/CKSUMS.txt.asc || { echo "missing CKSUMS.txt.asc"; exit 1; }
+          test -s dist/ahk-release.pub || { echo "missing ahk-release.pub"; exit 1; }
+          gpg --batch --import dist/ahk-release.pub 2>/dev/null
+          gpg --batch --verify dist/CKSUMS.txt.asc dist/CKSUMS.txt
+
       # check0819 P2-1: actually INSTALL each package, run the interpreter
       # and the launcher commands, then remove it again -- the previous
       # 'Verify packages' step only listed archive contents and read .deb

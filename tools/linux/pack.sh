@@ -166,7 +166,34 @@ CKSUMS=dist/CKSUMS.txt
   echo
   echo "These hashes are computed from the files as packaged.  Verify a"
   echo "downloaded artifact with:  sha256sum -c <(grep '<filename>' CKSUMS.txt)"
-  echo "The tarball signature is the GitHub release's own (transit over"
-  echo "HTTPS); for signed releases the .sig file is published alongside."
+  echo "CKSUMS.txt.sig is an OpenPGP detached signature (ASC) of this file."
+  echo "Verify with:  gpg --verify CKSUMS.txt.sig CKSUMS.txt"
+  echo "The public key is tools/linux/ahk-release.pub (AutoHotkey Linux"
+  echo "Release <release@autohotkey-linux.invalid>)."
 } > "$CKSUMS"
 echo "built: dist/CKSUMS.txt"
+
+# --- OpenPGP signature (check0820): sign CKSUMS.txt so the release can be
+# verified end-to-end.  Uses the maintained release key from GNUPG if
+# present; otherwise generates a throwaway key (CI) and exports the public
+# half so the artifact set is self-contained.
+if command -v gpg >/dev/null 2>&1; then
+  KEYID="release@autohotkey-linux.invalid"
+  if ! gpg --batch --list-secret-keys "$KEYID" >/dev/null 2>&1; then
+    echo "AHK sign: generating a release-signing key (ephemeral) ..."
+    gpg --batch --generate-key <<GPGEOF 2>/dev/null
+%no-protection
+Key-Type: RSA
+Key-Length: 2048
+Name-Real: AutoHotkey Linux Release
+Name-Email: $KEYID
+Expire-Date: 0
+%commit
+GPGEOF
+  fi
+  gpg --batch --yes --detach-sign --armor "$CKSUMS" 2>/dev/null
+  gpg --armor --export "$KEYID" > dist/ahk-release.pub 2>/dev/null
+  # gpg --detach-sign --armor writes "<file>.asc"; keep that convention.
+  [ -s "$CKSUMS.asc" ] && echo "built: dist/CKSUMS.txt.asc" \
+    || echo "AHK sign: warning: gpg signature failed (CKSUMS.txt.asc missing)"
+fi
