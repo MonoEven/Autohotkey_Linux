@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **1093 / 1093 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 43 项(含 Unicode 文本发送 3 项,round-34)、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、**热键透传/解除抓取模块 10 项**(round-29+round-36)、**Unicode 备用键码并发模块 5 项**(round-36)、**剪贴板回归模块 13 项**、**键盘布局切换模块 6 项**与**按键重复/长按模块 4 项**(check0820)、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 44 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 6 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 29 项** 与 **D-Bus COM 18 项**;round-34 增 **热字串 Unicode 触发词 2 项** 与 **InputHook OnChar/OnKeyDown/OnKeyUp 通知 4 项**;27 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 17 项** 与 **XWayland 回退 247 项** 独立套件通过(见第 10 节)
+- **结果**: **1099 / 1099 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 43 项(含 Unicode 文本发送 3 项,round-34)、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、**热键透传/解除抓取模块 10 项**(round-29+round-36)、**Unicode 备用键码并发模块 5 项**(round-36)、**剪贴板回归模块 13 项**、**慢所有者剪贴板超时模块 4 项**、**键盘布局切换模块 6 项**、**按键重复/长按模块 4 项**与**IME 激活状态模块 2 项**(check0820)、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 44 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 6 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 29 项** 与 **D-Bus COM 18 项**;round-34 增 **热字串 Unicode 触发词 2 项** 与 **InputHook OnChar/OnKeyDown/OnKeyUp 通知 4 项**;27 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 17 项** 与 **XWayland 回退 247 项** 独立套件通过(见第 10 节)
 
 ---
 
@@ -61,7 +61,9 @@
 | 剪贴板回归 (check0820:多 MIME TARGETS 广告与图片/HTML 拒绝、慢消费者延迟读取、252KB 大文本往返、外部 slow owner、空剪贴板、ClipWait;经独立 xclip_probe X11 客户端验证,owner 与 consumer 分属不同进程) | `assert_clipboard.ahk` | 13 |
 | 键盘布局动态切换 (check0820:setxkbmap us→de→us 广播 MappingNotify 期间,XGrabKey 键码抓取的热键保持触发、Send 字符解析不受影响;xkeycap 独立客户端验证) | `assert_layout.ahk` | 6 |
 | 按键重复/长按/aaaa (check0820:SendText "aaaa" 四个字符不吞、30ms 连发 5 次每次触发热键、单发 `~` 透传回调+键到达前台;透传 down-copy 被 active passive grab 吸纳的背离与 pt 断言同理,见 check0818 P0-3) | `assert_repeat.ahk` | 4 |
-| **合计 (X11/headless,各 expect 文件行数之和 + assert_display_content 自由格式 4 项;由 verify_report_numbers.sh 机器校验,与 run_check.sh 实际 PASS 一致)** | | **1093** |
+| IME 激活状态 (check0820:ibus/fcitx 框架检测(会话总线 owner)+ X11 XKB 组读,格式断言使无 IME/无显示的 CI 环境也可跑) | `assert_ime.ahk` | 2 |
+| 慢所有者剪贴板超时 (check0820:AHK_CLIPBOARD_TIMEOUT_MS 环境变量;默认 2s 对 2.5s 才应答的慢 owner 干净超时(空读,~1.8s),提升到 5s 后等待应答成功(读得数据);xclip_probe --serve-delay 模拟慢应用) | `assert_clipboard_slow.ahk` | 4 |
+| **合计 (X11/headless,各 expect 文件行数之和 + assert_display_content 自由格式 4 项;由 verify_report_numbers.sh 机器校验,与 run_check.sh 实际 PASS 一致)** | | **1099** |
 | Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端(含修饰键组合与鼠标按钮)、ToolTip xdg 窗口、X11 专属表面报错;round-34 增非 ASCII 剪贴板粘贴回退 2 项:Control_L+v 到达 compositor 与剪贴板还原;round-36 增空剪贴板还原 2 项) | `assert_wayland.ahk` | 17 |
 | **合计 (Wayland)** | | **17** |
 | XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 247 |
@@ -383,11 +385,11 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 
 ```
 普通构建: tests/run_tests.sh        PASS=27 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=1093 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=1099 FAIL=0
           tests/doccheck/wayland_run.sh PASS=17 FAIL=0 (Wayland 模式)
           tests/doccheck/wayland_run.sh --xwayland PASS=247 FAIL=0 (XWayland 回退)
 ASan 构建: tests/run_tests.sh        PASS=27 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=1093 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=1099 FAIL=0
           tests/doccheck/wayland_run.sh PASS=17 FAIL=0
           tests/doccheck/wayland_run.sh --xwayland PASS=247 FAIL=0
 ```
