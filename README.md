@@ -153,7 +153,7 @@ ahk --check           # integrity, install method, latest release check
 ahk your-script.ahk
 ahk --uninstall       # cleanly remove this installation
 ahk --update          # update to the latest GitHub release
-ahk --update 2.0.26-linux.8   # or a specific release (upgrade or downgrade)
+ahk --update 2.0.26-linux.14   # or a specific release (upgrade or downgrade)
 ```
 
 > Note: launcher commands are `--` prefixed (`--update`, `--uninstall`,
@@ -163,6 +163,32 @@ ahk --update 2.0.26-linux.8   # or a specific release (upgrade or downgrade)
 > `ahk --update <VER>` can upgrade **or downgrade** to any published release;
 > fixes and bespoke state can therefore be rolled back to an older known
 > release.  See the release notes for the checksums.
+
+> **What (un)install/update do and do not touch.** The installer
+> (`install.sh`), `ahk --uninstall` and `ahk --update` only manage the files
+> under the chosen install prefix (the `ahk` launcher, the interpreter
+> `ahk_core`, the include files and the bundled documentation).  They do
+> **not** install, activate, deactivate, overwrite or delete the **GNOME
+> Shell extension** (`ahk-global-hotkeys@autohotkey.org`) — that is a
+> separate, user-scoped component living in
+> `~/.local/share/gnome-shell/extensions/` (or `/usr/share/gnome-shell/
+> extensions/`), enabled on the GNOME Shell side with
+> `gnome-extensions enable`.  In particular **`ahk --update` never touches
+> the extension**, so an installed/enabled extension survives every core
+> update (the extension is itself version-loose with a stable D-Bus
+> surface; see `docs-v2/docs/howto/Install.htm`).  `ahk --uninstall` also
+> leaves the extension in place — remove it separately with
+> `gnome-extensions disable ...` and by deleting its directory.  The
+> `ahk --check` command reports whether the extension is installed and
+> enabled.
+
+> **Do not confuse the layers when updating the core**: (re)installing a
+> newer interpreter, or rolling back to an older one, never registers,
+> deregisters or re-registers the GNOME extension.  If a future release
+> ships a newer extension, install/update it as an extension update
+> (replace the directory at the same location), not as part of the core
+> package; the same guarantee applies in the reverse direction (rolling
+> back the core never un-installs the extension).
 
 ## Build from source ##
 
@@ -220,6 +246,13 @@ The docs site is English-only.
   passthrough and full remapping on Wayland are the evdev/ahk-inputd
   roadmap — see `docs-v2/docs/linux-port.htm` for the compatibility
   matrix and the evdev/inputd design notes).
+
+## Contributors ##
+
+- [**MonoEven**](https://github.com/MonoEven) — author and maintainer of
+  the Linux port: source-level port of the interpreter, X11/Wayland/evdev
+  input backends, the GNOME Shell extension, AT-SPI and IME integration,
+  packaging/CI and the documentation in this repository.
 
 ## Related work and credits ##
 

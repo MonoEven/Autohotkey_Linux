@@ -1,7 +1,11 @@
 # AutoHotkey Linux 化迁移目标
 
 > 目标随进展持续更新。基线：AutoHotkey v2.0.26，分支：`linux-port`。
-> **状态：核心目标已完成并发布（最新 v2.0.26-linux.14：check0820 可靠性修复（passthrough 快速重复消费一次、Unicode 跨进程租约、剪贴板粘贴防护、uinput 注入 lane、GNOME 扩展版本范围），doc-check core+ASan 1069/1069，回归 27/27，Wayland 17/17，XWayland 247/247，CI 全绿；项目定位为 technology preview；站点文档为英文单语，中文概览页已移除）。**
+> **状态：核心目标已完成并发布（最新 v2.0.26-linux.15：check0820 方向 B 核心——Hotkey()
+> 后端路由、GNOME unique-name 信号、AT-SPI、ImeGetState、剪贴板慢所有者超时、Portal deny、
+> 权限模型、AppImage/RPM 打包与重签名），doc-check core+ASan 1099/1099，回归 27/27，
+> Wayland 17/17，XWayland 247/247，CI 全绿；项目定位为 technology preview；站点文档为
+> 英文单语，中文概览页已移除）。**
 
 ## 总目标
 

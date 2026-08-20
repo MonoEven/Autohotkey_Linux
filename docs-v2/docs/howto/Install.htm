@@ -48,16 +48,20 @@ cd autohotkey-linux
 (<code>ahk_core</code>) and the bundled manual; <code>ahk</code> is also
 symlinked into <code>~/.local/bin</code> (or <code>/usr/local/bin</code>).</p>
 <p>Once installed, the <code>ahk</code> launcher also provides:
-<code>ahk --version</code> (shows the release, e.g. <code>v2.0.26-linux.12</code>),
+<code>ahk --version</code> (shows the release, e.g. <code>v2.0.26-linux.14</code>),
 <code>ahk --check</code> (integrity / install method / latest release),
 <code>ahk --uninstall</code> (clean removal) and
 <code>ahk --update [VER]</code> (download + reinstall the latest, or a
-specific release for upgrading/downgrading, e.g.
-<code>ahk --update 2.0.26-linux.8</code>).  Launcher commands use the
+specific release for upgrading/downgrading (e.g.
+<code>ahk --update 2.0.26-linux.14</code>).  Launcher commands use the
 <code>--</code> prefix so plain names like <code>update.ahk</code> are always
-run as scripts.  Only the latest release is kept on the
-<a href="https://github.com/MonoEven/Autohotkey_Linux/releases">Releases page</a>;
-older releases with outdated launchers have been removed.</p>
+run as scripts.  Every release since v2.0.26-linux.14 stays published on the
+<a href="https://github.com/MonoEven/Autohotkey_Linux/releases">Releases page</a>
+(with a <code>CKSUMS.txt</code> of SHA-256 hashes and an OpenPGP detached
+signature), so <code>ahk --update &lt;VER&gt;</code> can upgrade <em>or
+downgrade</em> to any published release; fixes and bespoke state can be rolled
+back.  Older releases (linux.13 and before) used a launcher that predates
+these <code>--</code> commands and were archived.</p>
 
 <h2>GNOME 49 Wayland zero-confirmation global hotkeys (optional)</h2>
 <p>On GNOME 49 Wayland, <code>1::</code>-style global hotkeys can grab the
@@ -77,6 +81,39 @@ other Wayland compositors, hotkeys fall back to the standard
 <a href="../linux-port.htm">Global Shortcuts Portal</a> backend
 (<code>AHK_FORCE_GLOBAL_SHORTCUTS=1</code> forces Portal even behind
 XWayland).</p>
+
+<p><b>Extension activation / deactivation / deletion &mdash; and what core
+updates never touch.</b> The GNOME Shell extension is a separate,
+user-scoped component.  <code>install.sh</code>, <code>ahk --uninstall</code>
+and <code>ahk --update</code> only manage the interpreter files under the
+install prefix; they do <em>not</em> install, enable, disable, overwrite or
+delete the extension.  Concretely:</p>
+<ul>
+  <li><b>Installed</b> when the <code>extension/</code> directory exists in
+    <code>~/.local/share/gnome-shell/extensions/</code> (the copy above);
+    installing the <code>.deb</code> or the tarball alone does not install or
+    activate the extension.</li>
+  <li><b>Activated/deactivated</b> only by the GNOME Shell itself:
+    <code>gnome-extensions enable ahk-global-hotkeys@autohotkey.org</code>
+    (or <code>disable</code>).  A disabled extension is not loaded (the
+    interpreter falls back to the Portal/X11 path on the next hotkey sync);
+    re-enabling re-registers live hotkeys automatically (GNOME 49 verified).
+    <code>ahk --check</code> reports whether the extension is installed and
+    enabled.</li>
+  <li><b>Removed/deleted</b> by removing the
+    <code>~/.local/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org</code>
+    directory (optionally after <code>gnome-extensions disable ...</code>) or
+    via any GNOME extension manager.  Neither the core installer nor
+    <code>ahk --update</code> ever performs this removal: updating AutoHotkey
+    to a newer (or older) release does not delete or disable the extension,
+    and rolling the core back never uninstalls it.</li>
+</ul>
+<p>Because the extension talks to the interpreter over the session D-Bus
+bus with a stable interface, the extension <em>does not need to be
+reinstalled when the core is updated</em>; keep the extension version that
+matches your GNOME Shell (the bundled <code>metadata.json</code> declares
+Shell 45&ndash;50, with a warning logged when the Shell major differs from
+the verified 49).</p>
 
 <h2>Build from source</h2>
 <pre>git clone --branch linux-port https://github.com/MonoEven/Autohotkey_Linux.git

@@ -3,7 +3,7 @@
 # packages (check0819 P2-1): actually installs each package, runs the
 # launcher commands and the interpreter, then removes it again.
 #
-# Usage: verify-packages.sh [version]   (default: 2.0.26-linux.13)
+# Usage: verify-packages.sh [version]   (default: 2.0.26-linux.14)
 # Requires: dist/autohotkey-linux-<ver>-amd64.{deb,tar.gz}, sudo, network
 # (the tarball update step downloads the release asset from GitHub).
 #
@@ -14,7 +14,7 @@
 # "echo: I/O error" false failures).
 set -u
 cd "$(dirname "$0")/../.." || exit 1 # repo root
-VER="${1:-2.0.26-linux.13}"
+VER="${1:-2.0.26-linux.14}"
 DEB="$(pwd)/dist/autohotkey-linux-${VER}-amd64.deb"
 TAR="$(pwd)/dist/autohotkey-linux-${VER}-amd64.tar.gz"
 
@@ -68,6 +68,10 @@ tar xzf "$TAR" -C /tmp/ahk_tar
 INST=$(find /tmp/ahk_tar -path '*/tools/linux/install.sh' -print -quit)
 INSTDIR=$(dirname "$INST")
 [ -n "$INST" ] || { echo "tarball: installer not found" >&2; exit 1; }
+# The release tarball must carry the optional GNOME Shell extension so users
+# can install the plugin from the release itself (docs reference it).
+EXT_META=$(find /tmp/ahk_tar -path '*/extension/ahk-global-hotkeys@autohotkey.org/metadata.json' -print -quit)
+chk "tar: ships the GNOME extension" "test -n '$EXT_META' && test -f '$EXT_META'"
 bash "$INST" --prefix /tmp/ahk_prefix --yes > /tmp/ahk_tar_install.log 2>&1
 chk "tar: install (launcher present)" "test -x /tmp/ahk_prefix/bin/ahk"
 chk "tar: ahk --version stamps the release" "/tmp/ahk_prefix/bin/ahk --version > /tmp/ahk_ver2.txt 2>&1 && grep -F 'v$VER' /tmp/ahk_ver2.txt"
@@ -86,6 +90,33 @@ chk "tar: scripts still run after update" "/tmp/ahk_prefix/bin/ahk /tmp/ahk_smok
 chk "tar: --uninstall removes launcher" "test ! -e /tmp/ahk_prefix/bin/ahk"
 chk "tar: --uninstall removes lib" "test ! -e /tmp/ahk_prefix/share/autohotkey"
 chk "tar: --uninstall removes docs" "test ! -e /tmp/ahk_prefix/share/doc/autohotkey"
+
+echo "=== Tarball under a user-like prefix + GNOME extension preservation ==="
+# The GNOME Shell extension is a separate, user-scoped component
+# (~/.local/share/gnome-shell/extensions/...) and must survive install,
+# update and uninstall of the core (feedback follow-up guard).  The default
+# non-root prefix (~/.local) shares the same ~/.local/share tree as the
+# extension directory, so a fake HOME proves the guarantee end-to-end
+# without touching a real desktop's extensions.
+fake_home=/tmp/ahk_fake_home
+ahk_home="$fake_home/.local"
+ext_dir="$ahk_home/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org"
+rm -rf "$fake_home"
+mkdir -p "$ext_dir"
+echo "extension-survives" > "$ext_dir/marker"
+bash "$INST" --prefix "$ahk_home" --yes > /tmp/ahk_home_install.log 2>&1
+chk "home: install (launcher present)" "test -x $ahk_home/bin/ahk"
+chk "home: install leaves extension dir intact" "grep -q 'extension-survives' '$ext_dir/marker'"
+# A core update is exactly a fresh install.sh over the same prefix (the
+# launcher's --update unpacks the new tarball and reruns the installer);
+# test the same operation directly so no extra network download is needed.
+bash "$INST" --prefix "$ahk_home" --yes > /tmp/ahk_home_update.log 2>&1
+chk "user: reinstall (update) leaves extension dir intact" "grep -q 'extension-survives' '$ext_dir/marker'"
+HOME="$fake_home" "$ahk_home/bin/ahk" --uninstall > /tmp/ahk_home_uninstall.log 2>&1
+chk "user: --uninstall removes launcher" "test ! -e $ahk_home/bin/ahk"
+chk "user: --uninstall removes lib" "test ! -e $ahk_home/share/autohotkey"
+chk "user: --uninstall keeps the extension dir" "grep -q 'extension-survives' '$ext_dir/marker'"
+rm -rf "$fake_home"
 
 echo "=============================="
 echo "PACKAGE VERIFY: fails=$fails"

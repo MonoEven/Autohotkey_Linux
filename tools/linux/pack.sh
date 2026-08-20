@@ -21,7 +21,7 @@ if [ -z "$VER" ] && command -v git >/dev/null 2>&1; then
   # project was at linux.13 -- check0819 round-34 catch).
   VER=$(git describe --tags --abbrev=0 --match 'v2.0.26-linux.*' 2>/dev/null | sed 's/^v//')
 fi
-VER="${VER:-2.0.26-linux.13}"
+VER="${VER:-2.0.26-linux.14}"
 ARCH=$(uname -m)
 case "$ARCH" in
   x86_64) ARCH=amd64 ;;
@@ -52,6 +52,12 @@ cp -r docs-v2 "$STAGE/docs-v2"
 install -m 0644 README.md "$STAGE/README.md"
 if [ -f LICENSE ]; then
   install -m 0644 LICENSE "$STAGE/LICENSE"
+fi
+# The GNOME Shell extension ships in the release so users can install the
+# optional plugin from the unpacked tarball itself (it is NOT part of the
+# interpreter install/uninstall/update lifecycle -- see Install.htm).
+if [ -d extension ]; then
+  cp -r extension "$STAGE/extension"
 fi
 
 # --- tarball ----------------------------------------------------------

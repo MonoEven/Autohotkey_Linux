@@ -1,7 +1,7 @@
 #!/bin/sh
 # AutoHotkey v2 Linux port launcher (shared template).
 # Substituted by install.sh and pack.sh: @PREFIX@, @LIB_SUB@, @BIN_SUB@,
-# @DOC_SUB@, @AHK_VERSION@ (e.g. "2.0.26-linux.12").  Installed as
+# @DOC_SUB@, @AHK_VERSION@ (e.g. "2.0.26-linux.14").  Installed as
 # <prefix>/bin/ahk (tarball) or /usr/bin/ahk (deb).
 #
 # Commands are all "--" prefixed so plain names (e.g. `ahk check.ahk`,
@@ -14,7 +14,7 @@
 #   ahk --check               integrity / install method / latest release
 #   ahk --uninstall           cleanly remove this installation
 #   ahk --update [VER]        update (or downgrade) to latest / given release
-#                              (VER like 2.0.26-linux.8; blank = latest)
+#                              (VER like 2.0.26-linux.14; blank = latest)
 AHK_PREFIX="@PREFIX@"
 AHK_VERSION="@AHK_VERSION@"
 AHK_LIB="$AHK_PREFIX/@LIB_SUB@"
@@ -71,6 +71,28 @@ case "$cmd" in
     if [ "$ok" = 1 ]; then echo "  integrity         : OK"; else echo "  integrity         : PROBLEMS FOUND"; fi
     # Docs present? (informational)
     if [ -d "$AHK_DOC" ]; then echo "  docs              : $AHK_DOC"; else echo "  docs              : (none)"; fi
+    # GNOME Shell extension state (informational; the extension is a separate
+    # user-scoped component -- install/update/uninstall never touch it).
+    extid="ahk-global-hotkeys@autohotkey.org"
+    if [ -d "$HOME/.local/share/gnome-shell/extensions/$extid" ]; then
+      echo "  GNOME extension   : installed (~/.local/share/gnome-shell/extensions)"
+    elif [ -d "/usr/share/gnome-shell/extensions/$extid" ]; then
+      echo "  GNOME extension   : installed (system-wide)"
+    else
+      echo "  GNOME extension   : not installed (optional; needed for GNOME Wayland hotkeys)"
+    fi
+    if command -v gnome-extensions >/dev/null 2>&1; then
+      if command -v timeout >/dev/null 2>&1; then
+        en=$(timeout 3 gnome-extensions list --enabled 2>/dev/null)
+      else
+        en=$(gnome-extensions list --enabled 2>/dev/null)
+      fi
+      if printf '%s\n' "$en" | grep -Fqx "$extid"; then
+        echo "  GNOME extension   : enabled"
+      else
+        echo "  GNOME extension   : disabled"
+      fi
+    fi
     # Latest release from GitHub.
     if command -v curl >/dev/null 2>&1; then
       tag=$(curl -fsSL --connect-timeout 15 "https://api.github.com/repos/MonoEven/Autohotkey_Linux/releases/latest" 2>/dev/null)
@@ -122,6 +144,16 @@ case "$cmd" in
       d=$(dirname "$d")
     done
     echo "Done.  AutoHotkey has been uninstalled."
+    # The GNOME Shell extension is user-scoped and intentionally not part of
+    # the core install: uninstall leaves it in place (see Install.htm).
+    extid="ahk-global-hotkeys@autohotkey.org"
+    if [ -d "$HOME/.local/share/gnome-shell/extensions/$extid" ] \
+       || [ -d "/usr/share/gnome-shell/extensions/$extid" ]; then
+      echo "Note: the optional GNOME Shell extension is not managed by this"
+      echo "uninstall and is still installed.  To remove it:"
+      echo "  gnome-extensions disable $extid"
+      echo "  rm -rf ~/.local/share/gnome-shell/extensions/$extid"
+    fi
     exit 0
     ;;
   --update)
