@@ -1,0 +1,2 @@
+ime_fw_known=1
+ime_group_int=1

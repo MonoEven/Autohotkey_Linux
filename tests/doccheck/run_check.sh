@@ -255,6 +255,7 @@ for ahk in assert_*.ahk; do
     assert_clipboard_slow) out_src="/tmp/ahk_dc_clip_slow_out.txt" ;;
     assert_layout) out_src="/tmp/ahk_dc_layout_out.txt" ;;
     assert_repeat) out_src="/tmp/ahk_dc_repeat_out.txt" ;;
+    assert_ime) out_src="/tmp/ahk_dc_ime_out.txt" ;;
   esac
   if [ -n "$out_src" ] && [ -f "$out_src" ]; then
     cp "$out_src" "$tmp" && mv -f "$tmp" "$final"

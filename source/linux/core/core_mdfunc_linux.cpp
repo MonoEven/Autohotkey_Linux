@@ -27,6 +27,7 @@
 #include "core_timer_linux.h"
 #include "core_hotkey_linux.h"
 #include "core_clipboard_linux.h"
+#include "core_ime_linux.h"
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -1526,6 +1527,28 @@ BIF_DECL(BIF_Linux_ClipWait)
 	aResultToken.SetValue(non_empty ? 1 : 0);
 }
 
+// ImeGetState() -> string (check0820 §2: ibus/fcitx active-state detection).
+// Returns a compact "flux|group" string:
+//   flux   "ibus" | "fcitx5" | "none"   (framework with the current owner on
+//          the session bus; the *active* input-method framework, if any)
+//   group  current XKB group index on X11 (-1 with no working display;
+//          IMEs typically engage as group >= 1, 0 = the base layout)
+// Example: ImeGetState() = "ibus|0"  (ibus running, base layout group).
+BIF_DECL(BIF_Linux_ImeGetState)
+{
+	std::string r;
+	switch (LinuxImeFramework())
+	{
+	case LINUX_IME_IBUS:   r = "ibus";   break;
+	case LINUX_IME_FCITX5: r = "fcitx5"; break;
+	default:               r = "none";   break;
+	}
+	char g[16];
+	snprintf(g, sizeof(g), "|%d", LinuxImeXkbGroup());
+	r += g;
+	LinuxSetPersistentStrResult(aResultToken, r.c_str());
+}
+
 // ---------------------------------------------------------------------------
 // INI functions (simple UTF-8 INI parser)
 // ---------------------------------------------------------------------------
@@ -2874,6 +2897,7 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(HotIfWinNotActive, BIF_Linux_HotIfWinNotActive, 0, 2),
 	LMD_IMPL(HotIfWinNotExist, BIF_Linux_HotIfWinNotExist, 0, 2),
 	LMD_IMPL(Hotkey, BIF_Linux_Hotkey, 1, 3),
+	LMD_IMPL(ImeGetState, BIF_Linux_ImeGetState, 0, 0),
 	LMD_IMPL(Hotstring, BIF_Linux_Hotstring, 1, 3),
 	LMD_IMPL(IL_Add, BIF_Linux_IL_Add, 2, 4),
 	LMD_IMPL(IL_Create, BIF_Linux_IL_Create, 0, 3),

@@ -90,16 +90,50 @@ The most valuable, low-risk piece is **Phase 1 + 2 on X11**:
 - Expose a small `A_IME`-like variable (Linux extension) for state
   query, and an `IME`-toggle helper via group switch key injection.
 
-Wayland text-input support (Phase 3) is substantial and depends on
-compositor capabilities; it should be driven by user demand.
+## Implemented: IME active-state detection (check0820)
+
+A minimal, deterministic IME *state query* is now implemented as the
+`ImeGetState()` built-in (backed by `core/core_ime_linux.cpp`).  It
+reports the **active input-method framework** and the **effective XKB
+layout group**, which is the reliable on-X11 signal for "is the IME's
+alternate group engaged right now":
+
+```
+ImeGetState()  ->  "ibus|0"     ibus running, base layout group 0
+                  "ibus|1"      ibus running, group 1 (IME group) engaged
+                  "fcitx5|2"    fcitx5 running, group 2
+                  "none|-1"     no IME on the bus, no working X display
+```
+
+- Framework detection is by session-bus name ownership:
+  `org.freedesktop.IBus` (ibus), `org.fcitx.Fcitx5.Controller1` /
+  `org.fcitx.Fcitx.Controller1` (fcitx5).  This is authoritative and
+  compositor-independent.
+- The XKB group (X11/XWayland) is read via `XkbGetState`; it is the
+  effective layout state the IME drives (0 = base layout, >= 1 = an
+  alternate/IME group).  Without a working X display the group is -1.
+- Verified on the GNOME 49 VM: `ibus|0` with ibus + libpinyin running,
+  and on Xvfb with `setxkbmap` layout switches the group tracks the
+  active layout.  Headless CI runs `assert_ime.ahk` (format checks)
+  so neither an IME nor a display is required to keep the suite green.
+
+**Explicitly out of scope** (recorded honestly, check0820):
+- Reading the *preedit string* of a focused app or *which engine* a
+  foreign window uses depends on the IME's private D-Bus protocol and
+  per-window focus state; not exposed.
+- *Writing* preedit/commit text via `zwp_input_method_v2` on Wayland is
+  a compositor-side capability and remains unimplemented (Phase 3).
+- Toggling the IME (group-switch keysym injection, Phase 2) is also not
+  yet provided; `ImeGetState()` only reads, by design.
 
 ## Tracking
 
+- [x] IME active-state query (`ImeGetState()`: framework + XKB group)
 - [ ] X11: XIM open + event filter in the hotkey/input path
-- [ ] X11: IME state variable (open/closed, preedit text)
+- [ ] X11: IME state variable (open/closed, preedit text) - preedit read
 - [ ] X11: IME toggle via group-switch keysym injection
 - [ ] Wayland: evaluate zwp_text_input_v3 for Send text delivery
-- [ ] Wayland: evaluate zwp_input_method_v2 for IME state
+- [ ] Wayland: evaluate zwp_input_method_v2 for IME state/preedit
 
 See `CHECK_REPORT.md` for the module status; this assessment does not
 change the implemented-function matrix (IME support is a Linux-specific

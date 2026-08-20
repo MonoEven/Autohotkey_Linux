@@ -122,6 +122,7 @@ add_executable(ahk_core
     core_uinput_linux.cpp
     core_evdev_linux.cpp
     core_atspi_linux.cpp
+    core_ime_linux.cpp
     main_linux.cpp
     ../gui/x11_gui.cpp
     ../gui/script_gui_linux.cpp
