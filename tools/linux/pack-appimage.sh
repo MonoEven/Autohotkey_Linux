@@ -23,15 +23,32 @@ if [ ! -x "$CORE" ]; then
   exit 1
 fi
 
-# Fetch appimagetool if needed.
+# Fetch appimagetool if needed.  The release asset is a plain
+# appimagetool-<arch>.AppImage (no .gz suffix since AppImageKit 2020; the
+# old continuous .gz URL returns 404, check0820 fix).  appimagetool is
+# itself an AppImage, so on machines without FUSE it is extracted first
+# and the inner binary is used (works on CI runners and containers).
 TOOL=/tmp/appimagetool
 if [ ! -x "$TOOL" ]; then
   echo "downloading appimagetool ..."
-  curl -fsSL -o /tmp/appimagetool.gz \
-    "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$ARCH.AppImage.gz" \
-    || { echo "failed to download appimagetool" >&2; exit 1; }
-  gunzip -f /tmp/appimagetool.gz
-  chmod +x /tmp/appimagetool
+  if curl -fsSL -o "$TOOL" \
+      "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$ARCH.AppImage" 2>/dev/null; then
+    :
+  else
+    # Fallback: AppImageKit legacy release (plain binary, no .gz).
+    curl -fsSL -o "$TOOL" \
+      "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-$ARCH.AppImage" \
+      || { echo "failed to download appimagetool" >&2; exit 1; }
+  fi
+  chmod +x "$TOOL"
+fi
+# Prefer the extracted inner binary (avoids FUSE).
+TOOLBIN=/tmp/squashfs-root/usr/bin/appimagetool
+if [ ! -x "$TOOLBIN" ]; then
+  ( cd /tmp && "$TOOL" --appimage-extract >/dev/null 2>&1 )
+fi
+if [ -x "$TOOLBIN" ]; then
+  TOOL="$TOOLBIN"
 fi
 
 APP=dist/appimage/autohotkey.AppDir
@@ -58,13 +75,48 @@ Categories=Utility;
 Icon=autohotkey
 Terminal=false
 EOF
-cp "$APP/autohotkey.desktop" "$APP/usr/share/applications/"
 
-# Icon: reuse the official logo (SVG) from the docs mirror.
-if [ -f docs-v2/docs/static/ahk_logo.svg ]; then
-  cp docs-v2/docs/static/ahk_logo.svg \
-     "$APP/usr/share/icons/hicolor/scalable/apps/autohotkey.svg"
+# Icon: appimagetool REQUIRES an icon file matching the desktop Icon= entry
+# (modern appimagetool fails the build when it is missing, check0820).  The
+# docs mirror carries ahk_logo.svg (scalable) but appimagetool needs a
+# raster: generate a 256x256 PNG with python3 (stdlib only) when the SVG
+# cannot be converted (no rsvg/convert available).
+mkdir -p "$APP/usr/share/icons/hicolor/256x256/apps"
+if command -v convert >/dev/null 2>&1 && [ -f docs-v2/docs/static/ahk_logo.svg ]; then
+  convert -background none -resize 256x256 docs-v2/docs/static/ahk_logo.svg \
+    "$APP/usr/share/icons/hicolor/256x256/apps/autohotkey.png" 2>/dev/null \
+    || true
 fi
+if [ ! -f "$APP/usr/share/icons/hicolor/256x256/apps/autohotkey.png" ]; then
+  python3 - <<'PY'
+import struct, zlib
+w = h = 256
+# A simple blue rounded square with "AHK" is fine; keep it minimal: solid
+# dark-blue square with a lighter inner block.
+row = bytearray()
+pix = []
+for y in range(h):
+    row = bytearray()
+    for x in range(w):
+        if 16 <= x < 240 and 16 <= y < 240:
+            row += bytes((46, 92, 158, 255))
+        else:
+            row += bytes((20, 40, 70, 255))
+    pix.append(bytes(row))
+def chunk(t, d):
+    c = struct.pack(">I", len(d)) + t + d
+    return c + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
+png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(b"".join(pix))) + chunk(b"IEND", b"")
+open("/tmp/ahk_icon.png", "wb").write(png)
+PY
+  cp /tmp/ahk_icon.png "$APP/usr/share/icons/hicolor/256x256/apps/autohotkey.png"
+fi
+cp "$APP/usr/share/icons/hicolor/256x256/apps/autohotkey.png" "$APP/.DirIcon" 2>/dev/null || true
+# appimagetool also looks for the icon at the AppDir root (named exactly as
+# the desktop Icon= value): copy it there too (check0820).
+cp "$APP/usr/share/icons/hicolor/256x256/apps/autohotkey.png" "$APP/autohotkey.png" 2>/dev/null || true
+cp "$APP/autohotkey.desktop" "$APP/usr/share/applications/"
 
 cat > "$APP/AppRun" <<'EOF'
 #!/bin/sh
@@ -83,10 +135,13 @@ Icon=autohotkey
 EOF
 
 OUT="dist/autohotkey-linux-$VER-$ARCH.AppImage"
-"$TOOL" "$APP" "$OUT" >/dev/null 2>&1 || {
-  # Fallback: build without icon embedding on failure.
-  "$TOOL" --no-appstream "$APP" "$OUT"
+"$TOOL" --no-appstream "$APP" "$OUT" >/dev/null 2>&1 || {
+  "$TOOL" "$APP" "$OUT" >/dev/null 2>&1
 }
 chmod +x "$OUT" 2>/dev/null || true
+if [ ! -s "$OUT" ]; then
+  echo "pack-appimage.sh: appimagetool produced no output" >&2
+  exit 1
+fi
 echo "built: $OUT"
 ls -la "$OUT"

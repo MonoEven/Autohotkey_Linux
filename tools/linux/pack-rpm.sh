@@ -4,6 +4,9 @@
 # Usage: pack-rpm.sh [version]
 #
 # Produces dist/autohotkey-linux-<version>-<arch>.rpm using rpmbuild.
+# check0820 fix: the source tarball now contains a real ahk-$VER/ top
+# directory (the %setup -n ahk-$VER step requires it; before, the archive
+# had no such dir and rpmbuild failed on %prep).
 set -u
 
 REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
@@ -31,11 +34,16 @@ RPMROOT=$(mktemp -d /tmp/ahk-rpm.XXXXXX)
 mkdir -p "$RPMROOT/BUILD" "$RPMROOT/RPMS" "$RPMROOT/SOURCES" "$RPMROOT/SPECS" \
          "$RPMROOT/BUILDROOT"
 
-# tarball source (rpmbuild needs a source archive).
+# Source tree: a real ahk-$VER/ directory with the binary + docs.
+SRCTREE="$RPMROOT/src/ahk-$VER"
+mkdir -p "$SRCTREE"
+install -m 0755 "$CORE" "$SRCTREE/ahk_core"
+cp -r docs-v2 "$SRCTREE/docs-v2"
+install -m 0644 README.md "$SRCTREE/README.md"
+[ -f LICENSE ] && install -m 0644 LICENSE "$SRCTREE/LICENSE"
+
 SRC="autohotkey-linux-$VER.tar.gz"
-tar czf "$RPMROOT/SOURCES/$SRC" \
-  -C "$(dirname "$CORE")" ahk_core \
-  -C "$REPO_DIR" docs-v2 README.md LICENSE 2>/dev/null || true
+( cd "$RPMROOT/src" && tar czf "$RPMROOT/SOURCES/$SRC" "ahk-$VER" )
 
 cat > "$RPMROOT/SPECS/autohotkey-linux.spec" <<EOF
 Name:           autohotkey-linux
@@ -48,6 +56,10 @@ Source0:        $SRC
 BuildArch:      $RPM_ARCH
 Requires:       libX11, libXext, libXrandr, libXinerama, libXtst, gtk3, dbus-libs, libffi
 
+# No debuginfo: stripping needs eu-strip (elfutils) which CI containers may
+# not have; the shipped binary is intentionally as-is (check0820).
+%define debug_package %{nil}
+
 %description
 AutoHotkey is a free, open source macro-creation and automation utility
 driven by a custom scripting language with special provision for defining
@@ -57,7 +69,7 @@ GTK3-based Gui/GuiControl/Menu support, D-Bus COM support, and a native
 Wayland backend.
 
 %prep
-%setup -q -c -n ahk-$VER
+%setup -q -n ahk-$VER
 
 %build
 # nothing to build: binary is shipped as-is
@@ -67,15 +79,15 @@ rm -rf %{buildroot}
 install -d %{buildroot}%{_bindir}
 install -d %{buildroot}%{_datadir}/autohotkey
 install -d %{buildroot}%{_docdir}/autohotkey
-install -m 0755 $CORE %{buildroot}%{_datadir}/autohotkey/ahk_core
+install -m 0755 %{_builddir}/ahk-$VER/ahk_core %{buildroot}%{_datadir}/autohotkey/ahk_core
 cat > %{buildroot}%{_bindir}/ahk <<EOS
 #!/bin/sh
-exec %{_datadir}/autohotkey/ahk_core \\"\\$@\\"
+exec %{_datadir}/autohotkey/ahk_core "\\$@"
 EOS
 chmod 0755 %{buildroot}%{_bindir}/ahk
-cp -r docs-v2 %{buildroot}%{_docdir}/autohotkey/
-install -m 0644 README.md %{buildroot}%{_docdir}/autohotkey/README.md
-install -m 0644 LICENSE %{buildroot}%{_docdir}/autohotkey/LICENSE
+cp -r %{_builddir}/ahk-$VER/docs-v2 %{buildroot}%{_docdir}/autohotkey/
+install -m 0644 %{_builddir}/ahk-$VER/README.md %{buildroot}%{_docdir}/autohotkey/README.md
+[ -f %{_builddir}/ahk-$VER/LICENSE ] && install -m 0644 %{_builddir}/ahk-$VER/LICENSE %{buildroot}%{_docdir}/autohotkey/LICENSE
 
 %files
 %{_bindir}/ahk
@@ -88,16 +100,22 @@ install -m 0644 LICENSE %{buildroot}%{_docdir}/autohotkey/LICENSE
 - Initial Linux port package.
 EOF
 
-rpmbuild --define "_topdir $RPMROOT" -bb "$RPMROOT/SPECS/autohotkey-linux.spec" >/dev/null 2>&1
+# A private rpmdb in the temp tree avoids touching /var/lib/rpm (which is
+# often unwritable on CI containers / immutable systems; rpm-4.20 open the
+# sqlite db -> "Operation not permitted", check0820).
+mkdir -p "$RPMROOT/db"
+rpmbuild --define "_topdir $RPMROOT" --define "_dbpath $RPMROOT/db" \
+  -bb "$RPMROOT/SPECS/autohotkey-linux.spec" >/tmp/ahk_rpmbuild.log 2>&1
 RC=$?
 if [ $RC -ne 0 ]; then
   echo "pack-rpm.sh: rpmbuild failed" >&2
+  tail -20 /tmp/ahk_rpmbuild.log >&2
   rm -rf "$RPMROOT"
   exit 1
 fi
 
-OUT=dist/autohotkey-linux-$VER-$RPM_ARCH.rpm
 mkdir -p dist
+OUT=dist/autohotkey-linux-$VER-$RPM_ARCH.rpm
 cp "$RPMROOT"/RPMS/*/*.rpm "$OUT"
 rm -rf "$RPMROOT"
 echo "built: $OUT"
