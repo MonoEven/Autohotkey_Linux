@@ -73,6 +73,11 @@ cp -r /path/to/autohotkey-linux/extension/ahk-global-hotkeys@autohotkey.org \
 # ... then log out and back in (GNOME Shell loads extensions at startup),
 # and enable it:
 gnome-extensions enable ahk-global-hotkeys@autohotkey.org</pre>
+<p><code>&hellip;/autohotkey-linux</code> is the unpacked release tarball
+(the <code>extension/</code> directory ships inside it) or the source
+checkout.  The extension is <em>not</em> installed or activated by the
+core installer &mdash; that part is always manual, so it stays fully under
+the user's control.</p>
 <p>The extension is a thin D-Bus broker; the interpreter picks the
 <code>gnome-shell</code> backend automatically on GNOME Wayland
 (<code>AHK_INPUT_BACKEND=auto</code>, default), or explicitly with

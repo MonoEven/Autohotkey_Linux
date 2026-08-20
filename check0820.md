@@ -558,4 +558,4 @@ ahk --update 2.0.26-linux.8
 | 权限模型（input 组/udev/polkit） | tools/linux/permissions/ 三件套 + 安装脚本 | VM 安装实测（udev 规则生效、mono 入 input 组、polkit 文件装入） | 面向未来 ahk-inputd |
 | GNOME 版本耦合（扩展 disable/enable/重启） | disable→enable 已实测；shell 整体重启 re-sync 机制在 Dispatch 重连路径 | 实机 disable→enable 4/4 | 45-50 版本声明 + 未验证 major 警告 |
 | 文档/计数同步 | CHECK_REPORT 1099、README/GOALS/ChangeLog/linux-port.htm 全部更新 | verify_report_numbers.sh 通过（x11=1099, wayland=17, xwayland=247） | 本表即 check0820 状态对照表 |
-| 发布 v2.0.26-linux.15 | 待发布（保留 linux.14 资产 + 新签名） | 待 CI 全绿后执行 | 见发布节 |
+| 发布 v2.0.26-linux.15 | 已发布（保留 linux.14 资产 + 新签名 7 项） | CI run 32405280166 全绿后上传 | 见发布节 |
