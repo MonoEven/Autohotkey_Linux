@@ -31,24 +31,71 @@ fi
 TOOL=/tmp/appimagetool
 if [ ! -x "$TOOL" ]; then
   echo "downloading appimagetool ..."
-  if curl -fsSL -o "$TOOL" \
-      "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$ARCH.AppImage" 2>/dev/null; then
-    :
-  else
-    # Fallback: AppImageKit legacy release (plain binary, no .gz).
-    curl -fsSL -o "$TOOL" \
-      "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-$ARCH.AppImage" \
-      || { echo "failed to download appimagetool" >&2; exit 1; }
+  dl_tool() {
+    curl -fsSL -o "$TOOL.tmp" \
+      "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$ARCH.AppImage" \
+      || curl -fsSL -o "$TOOL.tmp" \
+        "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-$ARCH.AppImage"
+  }
+  # Sanity-check the download (it must be an ELF AppImage, not a 404 page
+  # or an empty body); retry once; GitHub-hosted runners have mainly seen
+  # empty/truncated bodies here (check0820 round).
+  dl_ok=0
+  for attempt in 1 2; do
+    if dl_tool 2>/dev/null && [ -s "$TOOL.tmp" ]; then
+      magic_ok=$(python3 - <<'PY'
+import sys
+with open('/tmp/appimagetool.tmp', 'rb') as f:
+    print('1' if f.read(4) == b'\x7fELF' else '0')
+PY
+)
+      if [ "$magic_ok" = "1" ]; then
+        mv "$TOOL.tmp" "$TOOL"
+        dl_ok=1
+        break
+      fi
+    fi
+    echo "pack-appimage.sh: download attempt $attempt failed sanity check; retrying" >&2
+  done
+  rm -f "$TOOL.tmp"
+  if [ "$dl_ok" -ne 1 ]; then
+    echo "failed to download a valid appimagetool" >&2
+    exit 1
   fi
   chmod +x "$TOOL"
 fi
-# Prefer the extracted inner binary (avoids FUSE).
+# Prefer the extracted inner binary (avoids FUSE; GitHub-hosted runners
+# have no /dev/fuse, so the AppImage itself cannot be executed there).
 TOOLBIN=/tmp/squashfs-root/usr/bin/appimagetool
+OFFSET="-1"
 if [ ! -x "$TOOLBIN" ]; then
-  ( cd /tmp && "$TOOL" --appimage-extract >/dev/null 2>&1 )
+  rm -rf /tmp/squashfs-root
+  if ! ( cd /tmp && "$TOOL" --appimage-extract >/dev/null 2>&1 ); then
+    # Fallback without the AppImage runtime at all: unsquashfs the
+    # embedded squashfs directly.  The filesystem starts at the last
+    # "hsqs" magic in the file (type-2 AppImage); locate it with
+    # python3 (also used for the icon below).
+    OFFSET=$(python3 - <<'PY'
+import sys
+data = open('/tmp/appimagetool', 'rb').read()
+i = data.rfind(b'hsqs')
+print(('%d' % i) if i >= 0 else '-1')
+PY
+)
+    if [ "$OFFSET" -ge 0 ] && command -v unsquashfs >/dev/null 2>&1; then
+      echo "pack-appimage.sh: --appimage-extract failed; using unsquashfs at offset $OFFSET"
+      unsquashfs -q -d /tmp/squashfs-root -o "$OFFSET" /tmp/appimagetool >/dev/null 2>&1
+    elif [ "$OFFSET" -ge 0 ] && ! command -v unsquashfs >/dev/null 2>&1; then
+      echo "pack-appimage.sh: --appimage-extract failed and unsquashfs is not installed" >&2
+    fi
+  fi
 fi
 if [ -x "$TOOLBIN" ]; then
   TOOL="$TOOLBIN"
+  echo "pack-appimage.sh: using $TOOLBIN"
+elif [ "$OFFSET" = "-1" ]; then
+  echo "pack-appimage.sh: downloaded appimagetool is not an AppImage (no hsqs)" >&2
+  exit 1
 fi
 
 APP=dist/appimage/autohotkey.AppDir
