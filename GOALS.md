@@ -235,7 +235,9 @@
     （两次触发 + 前台客户端各收到一次）
   - Unicode 备用键码跨进程竞争：借用改为 X **selection 租约**
     （AHK_UNICODE_BORROW_LEASE），另一个 AHK 进程借用时等待/超时报
-    未送达，不再互相覆盖临时映射；进程崩溃租约自动释放
+    未送达，不再互相覆盖临时映射；进程崩溃租约自动释放；回归：
+    **assert_unicode_lease**（round-36）双独立进程同时向同一 X server 发
+    送不同 CJK 字符，前台 xkeycap 全部收到（4 个 keysym），实测通过
   - 纯 Wayland 剪贴板粘贴回退加固：新增
     `LinuxClipboardPasteSet/WaitConsumed/Restore` 事务——等目标应用
     实际请求 offer 而非固定 sleep；原剪贴板为空时恢复为空（不留残留）；
