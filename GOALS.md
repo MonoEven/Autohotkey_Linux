@@ -253,8 +253,10 @@
     回退；非 ASCII Send 在 uinput 可用时也走粘贴回退
   - GNOME 扩展版本耦合：`metadata.json` shell-version 扩到 45-50（API
     面稳定），未验证 major 启动时打印明确警告（实测仍是 49）
-  - 发布策略：自 linux.14 起**保留所有 release 资产** + 每个 release 附
-    `CKSUMS.txt`（SHA-256），`ahk --update <VER>` 升降级真实可行
+  - 发布策略：自 linux.15 起**保留所有 release 资产** + 每个 release 附
+    `CKSUMS.txt`（SHA-256），`ahk --update <VER>` 升降级真实可行；
+    **（round-37 后续）linux.15 之前的 release 已按新安装方式清空**
+    （删 linux.14/.13 等 release 记录与资产，git tag 保留源码回滚）
   - 陈旧文档修复：source/linux/README.md（"X11 尚未开始"→现状）、
     CMakeLists、GitHub About 1053→1063
 - [x] **check0820 方向 B 核心贯通（round-37）**：

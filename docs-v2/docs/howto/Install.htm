@@ -48,20 +48,21 @@ cd autohotkey-linux
 (<code>ahk_core</code>) and the bundled manual; <code>ahk</code> is also
 symlinked into <code>~/.local/bin</code> (or <code>/usr/local/bin</code>).</p>
 <p>Once installed, the <code>ahk</code> launcher also provides:
-<code>ahk --version</code> (shows the release, e.g. <code>v2.0.26-linux.14</code>),
+<code>ahk --version</code> (shows the release, e.g. <code>v2.0.26-linux.15</code>),
 <code>ahk --check</code> (integrity / install method / latest release),
 <code>ahk --uninstall</code> (clean removal) and
 <code>ahk --update [VER]</code> (download + reinstall the latest, or a
 specific release for upgrading/downgrading (e.g.
-<code>ahk --update 2.0.26-linux.14</code>).  Launcher commands use the
+<code>ahk --update 2.0.26-linux.15</code>).  Launcher commands use the
 <code>--</code> prefix so plain names like <code>update.ahk</code> are always
-run as scripts.  Every release since v2.0.26-linux.14 stays published on the
+run as scripts.  Every release since v2.0.26-linux.15 stays published on the
 <a href="https://github.com/MonoEven/Autohotkey_Linux/releases">Releases page</a>
 (with a <code>CKSUMS.txt</code> of SHA-256 hashes and an OpenPGP detached
 signature), so <code>ahk --update &lt;VER&gt;</code> can upgrade <em>or
 downgrade</em> to any published release; fixes and bespoke state can be rolled
-back.  Older releases (linux.13 and before) used a launcher that predates
-these <code>--</code> commands and were archived.</p>
+back.  Releases before linux.15 (linux.14 and earlier) were removed when the
+new installer line shipped &mdash; their source remains on the
+<code>v2.0.26-linux.*</code> git tags for source-level rollback.</p>
 
 <h2>GNOME 49 Wayland zero-confirmation global hotkeys (optional)</h2>
 <p>On GNOME 49 Wayland, <code>1::</code>-style global hotkeys can grab the

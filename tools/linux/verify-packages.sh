@@ -3,7 +3,7 @@
 # packages (check0819 P2-1): actually installs each package, runs the
 # launcher commands and the interpreter, then removes it again.
 #
-# Usage: verify-packages.sh [version]   (default: 2.0.26-linux.14)
+# Usage: verify-packages.sh [version]   (default: 2.0.26-linux.15)
 # Requires: dist/autohotkey-linux-<ver>-amd64.{deb,tar.gz}, sudo, network
 # (the tarball update step downloads the release asset from GitHub).
 #
@@ -14,7 +14,7 @@
 # "echo: I/O error" false failures).
 set -u
 cd "$(dirname "$0")/../.." || exit 1 # repo root
-VER="${1:-2.0.26-linux.14}"
+VER="${1:-2.0.26-linux.15}"
 DEB="$(pwd)/dist/autohotkey-linux-${VER}-amd64.deb"
 TAR="$(pwd)/dist/autohotkey-linux-${VER}-amd64.tar.gz"
 
