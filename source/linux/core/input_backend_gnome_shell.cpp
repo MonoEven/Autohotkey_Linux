@@ -533,7 +533,8 @@ bool LinuxGnomeShellAvailable()
 void LinuxGnomeShellSync()
 {
 	if (sFailed)
-		return;
+		return; // Sticky failure keeps its previous message visible.
+	sLastErrorBuf[0] = 0; // Fresh: only failures in THIS sync remain visible.
 	if (!EnsureConnection())
 		return;
 

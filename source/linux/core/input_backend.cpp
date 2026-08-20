@@ -247,6 +247,10 @@ const char *LinuxInputBackendName()
 
 void LinuxInputBackendSync()
 {
+	// Fresh view: only failures in THIS sync call remain visible to the
+	// caller (portal/gnome-shell clear their own buffers; x11/evdev do not
+	// set one on success and the evdev branch re-sets on any failure below).
+	sLastErrorBuf[0] = 0;
 	switch (CurrentKind())
 	{
 	case AhkInputBackendKind::PORTAL:
@@ -304,7 +308,20 @@ void LinuxInputBackendShutdown()
 
 const wchar_t *LinuxInputBackendLastError()
 {
-	return sLastErrorBuf;
+	// Route to the active backend's own error state (its buffer is cleared
+	// at the start of every Sync(), so a non-empty result means the most
+	// recent sync failed).  The unified buffer only ever holds backend-
+	// selection errors (unknown AHK_INPUT_BACKEND value) and the evdev
+	// failure text, which LinuxInputBackendSync() refreshes on each call.
+	switch (CurrentKind())
+	{
+	case AhkInputBackendKind::PORTAL:
+		return LinuxGShortcutLastError();
+	case AhkInputBackendKind::GNOME_SHELL:
+		return LinuxGnomeShellLastError();
+	default:
+		return sLastErrorBuf;
+	}
 }
 
 bool LinuxInputBackendActive()

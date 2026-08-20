@@ -420,7 +420,9 @@ void DoBind()
 
 void LinuxGShortcutSync()
 {
-	if (!Applicable() || sFailed) return;
+	if (!Applicable() || sFailed)
+		return; // Sticky failure keeps its previous message visible.
+	sLastErrorBuf[0] = 0; // Fresh: only failures in THIS sync remain visible.
 
 	// Rebuild the desired set.
 	sWanted.clear();

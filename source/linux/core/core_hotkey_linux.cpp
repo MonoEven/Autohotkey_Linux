@@ -963,7 +963,7 @@ void LinuxReconcileHotkeyGrabs()
 		GrabSpec spec;
 	};
 	std::vector<PendingGrab> pending;
-	sLastConflictName[0] = _T(' ');
+	sLastConflictName[0] = _T('\0');
 	{
 		ScopedXErrorTrap trap(d);
 		for (std::set<GrabSpec>::iterator it = desired.begin(); it != desired.end(); ++it)
@@ -1107,15 +1107,27 @@ FResult BIF_Hotkey(StrArg aName, ExprTokenType *aAction, optl<StrArg> aOptions);
 BIF_DECL(BIF_Linux_Hotkey)
 {
 	// (In String KeyName), (In_Opt Variant Action), (In_Opt String Options).
-	// Hotkeys need global key grabbing (XGrabKey); Wayland has no global
-	// hotkey protocol, so they are unavailable there (documented).
-	if (!LinuxHotkeyDisplay())
+	// Global hotkeys are served by the unified input backend (input_backend.h):
+	//   X11       XGrabKey/XRecord (this file) - needs an X11 display.
+	//   portal    XDG Global Shortcuts (core_gshortcut_linux.cpp)
+	//   gnome-shell  GNOME Shell extension broker (input_backend_gnome_shell.cpp)
+	//   evdev     native /dev/input reading lane (core_evdev_linux.cpp)
+	// Only the X11 backend requires a display here: the Wayland backends and
+	// the evdev lane have no X11 dependency, so a Wayland session must NOT
+	// be rejected out of hand (it previously never reached the backend at all).
+	// UNKNOWN kinds (auto not yet resolved) cannot register anything.
+	const AhkInputBackendKind backend_kind = LinuxInputBackendKind();
+	if (backend_kind == AhkInputBackendKind::X11 && !LinuxHotkeyDisplay())
 	{
 		aResultToken.Error(LinuxWaylandActive()
-			? _T("Hotkeys are not available on Wayland (no global hotkey protocol); use XWayland.")
+			? _T("Hotkeys are not available: the active input backend is X11 but there is no working X11 display here; use AHK_INPUT_BACKEND=portal (or gnome-shell/evdev).")
 			: _T("Hotkeys require an X11 display (XOpenDisplay failed)."), _T(""), ErrorPrototype::OS);
 		return;
 	}
+	// The portal / gnome-shell / evdev backends do not create an X11 display
+	// and need no X11 check here: their registrations are pushed through
+	// LinuxInputBackendSync() below, which knows each backend's own
+	// availability and errors.
 	TCHAR name_buf[1024];
 	LPTSTR name = TokenToString(*aParam[0], name_buf, nullptr);
 	TCHAR opt_buf[256];
@@ -1129,12 +1141,34 @@ BIF_DECL(BIF_Linux_Hotkey)
 		return;
 	}
 	// Registration succeeded: make the backend reconcile immediately (no
-	// cold-start wait for an X event) and surface grab conflicts.
-	LinuxReconcileHotkeyGrabs();
-	if (sLastConflictName[0])
+	// cold-start wait for an X event) and surface grab conflicts.  The X11
+	// backend has its own reconcile+conflict-reporting; the Wayland/evdev
+	// backends reconcile through the unified sync and report their own
+	// availability via LinuxInputBackendLastError().
+	if (backend_kind == AhkInputBackendKind::X11)
 	{
-		aResultToken.Error(_T("Hotkey could not be registered: the key combination is already grabbed by another client (X11 BadAccess): ")
-			, sLastConflictName, ErrorPrototype::OS);
-		sLastConflictName[0] = _T('\0');
+		LinuxReconcileHotkeyGrabs();
+		if (sLastConflictName[0])
+		{
+			aResultToken.Error(_T("Hotkey could not be registered: the key combination is already grabbed by another client (X11 BadAccess): ")
+				, sLastConflictName, ErrorPrototype::OS);
+			sLastConflictName[0] = _T('\0');
+		}
+		return;
+	}
+	if (backend_kind != AhkInputBackendKind::AUTO)
+	{
+		// portal / gnome-shell / evdev: push the (possibly changed) set to
+		// the active backend now, not only on the next state-change hook.
+		LinuxInputBackendSync();
+		const wchar_t *backend_err = LinuxInputBackendLastError();
+		if (backend_err && backend_err[0])
+		{
+			// Surface a backend that cannot run (e.g. evdev with no device
+			// permission, unknown value) instead of silently accepting the
+			// hotkey and delivering nothing - honest failure (check0820).
+			aResultToken.Error(backend_err, _T(""), ErrorPrototype::OS);
+			return;
+		}
 	}
 }
