@@ -1,8 +1,8 @@
 {
-  "shell-version": ["49"],
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
   "name": "AutoHotkey Global Hotkeys",
-  "description": "Exclusive-hotkey backend for AutoHotkey Linux on GNOME 49 Wayland. Thin broker only: registers accelerators through Meta.Display.grab_accelerator + Main.wm.allowKeybinding and relays Activations/Deactivations to AHK over the session bus, directed to the registering owner. It never parses AHK, never executes commands and never forks.",
+  "description": "Exclusive-hotkey backend for AutoHotkey Linux Wayland sessions. Thin broker only: registers accelerators through Meta.Display.grab_accelerator + Main.wm.allowKeybinding and relays Activations/Deactivations to AHK over the session bus, directed to the registering owner. It never parses AHK, never executes commands and never forks. Verified on GNOME 49; versions 45-50 are declared from the stable API surface and load with a runtime warning when unverified.",
   "uuid": "ahk-global-hotkeys@autohotkey.org",
-  "version": 2,
+  "version": 3,
   "url": "https://github.com/MonoEven/Autohotkey_Linux"
 }

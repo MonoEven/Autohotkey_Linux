@@ -120,7 +120,7 @@ The installer places the `ahk` launcher, the interpreter and the
 documentation under the chosen prefix:
 
 ```bash
-ahk --version         # AutoHotkey v2.0.26 Linux port v2.0.26-linux.13
+ahk --version         # AutoHotkey v2.0.26 Linux port v2.0.26-linux.14
 ahk --check           # integrity, install method, latest release check
 ahk your-script.ahk
 ahk --uninstall       # cleanly remove this installation
@@ -130,9 +130,11 @@ ahk --update 2.0.26-linux.8   # or a specific release (upgrade or downgrade)
 
 > Note: launcher commands are `--` prefixed (`--update`, `--uninstall`,
 > `--check`, `--version`) so plain names such as `ahk update.ahk` are always
-> treated as scripts.  Old releases were removed from the GitHub Releases
-> page; only the latest release is published, so `ahk --update` always
-> resolves to a version whose launcher matches.
+> treated as scripts.  Every release since v2.0.26-linux.14 stays published
+> on the GitHub Releases page (with a `CKSUMS.txt` of SHA-256 hashes), so
+> `ahk --update <VER>` can upgrade **or downgrade** to any published release;
+> fixes and bespoke state can therefore be rolled back to an older known
+> release.  See the release notes for the checksums.
 
 ## Build from source ##
 

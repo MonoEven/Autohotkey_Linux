@@ -1,7 +1,7 @@
 # AutoHotkey Linux 化迁移目标
 
 > 目标随进展持续更新。基线：AutoHotkey v2.0.26，分支：`linux-port`。
-> **状态：核心目标已完成并发布（最新 v2.0.26-linux.13：Unicode 文本发送 + 输入后端加固，doc-check core+ASan 1063/1063，回归 27/27，Wayland 15/15，XWayland 247/247，CI 全绿；项目定位为 technology preview；站点文档为英文单语，中文概览页已移除）。**
+> **状态：核心目标已完成并发布（最新 v2.0.26-linux.14：check0820 可靠性修复（passthrough 快速重复消费一次、Unicode 跨进程租约、剪贴板粘贴防护、uinput 注入 lane、GNOME 扩展版本范围），doc-check core+ASan 1064/1064，回归 27/27，Wayland 17/17，XWayland 247/247，CI 全绿；项目定位为 technology preview；站点文档为英文单语，中文概览页已移除）。**
 
 ## 总目标
 
@@ -221,9 +221,36 @@
        \--uninstall\ 干净清理（含 dpkg 状态断言）；接入 CI package job
        （此前只列归档/读 metadata）；\pack.sh\ 版本号改从最新
        \2.0.26-linux.*\ git tag 自动推导（原硬编码漂移到 linux.11），
-       CI checkout 相应 \etch-depth: 0- [x] **开放 Issue + bug 模板**（round-34,check0819 P2-5）：仓库 Issues 已开启，
-       \.github/ISSUE_TEMPLATE/\ 提供 bug 报告表单（版本/安装方式/会话/
+       （此前只列归档/读 metadata）；`pack.sh` 版本号改从最新
+       `v2.0.26-linux.*` git tag 自动推导（原硬编码漂移到 linux.11），
+       CI checkout 相应 `fetch-depth: 0`
+- [x] **开放 Issue + bug 模板**（round-34,check0819 P2-5）：仓库 Issues 已开启，
+       `.github/ISSUE_TEMPLATE/` 提供 bug 报告表单（版本/安装方式/会话/
        最小复现/期望/实际/环境）与 config
+- [x] **check0820 可靠性修复（round-36）**：
+  - 注入事件过滤器误吞快速重复：passthrough 拷贝标记改为**单次消费**
+    （used）且短窗口（以前 1s 内同键同相位一律吞掉，`ll`/`oo`/双击/长按
+    会被误过滤）；拷贝被抑制时同步释放 X keyboard grab（消除冻结导致
+    的下一次真实按键被吞）；回归：assert_hotkey_pt 新增 `~F11` 双击
+    （两次触发 + 前台客户端各收到一次）
+  - Unicode 备用键码跨进程竞争：借用改为 X **selection 租约**
+    （AHK_UNICODE_BORROW_LEASE），另一个 AHK 进程借用时等待/超时报
+    未送达，不再互相覆盖临时映射；进程崩溃租约自动释放
+  - 纯 Wayland 剪贴板粘贴回退加固：新增
+    `LinuxClipboardPasteSet/WaitConsumed/Restore` 事务——等目标应用
+    实际请求 offer 而非固定 sleep；原剪贴板为空时恢复为空（不留残留）；
+    `AHK_WAYLAND_PASTE=0` 显式禁用；首次使用打印告警（密码管理器/敏感
+    输入）；`AHK_WAYLAND_PASTE_TIMEOUT_MS` 可调
+  - **uinput 注入 lane**（check0820 方向 B 注入半）：`core_uinput_linux.*`
+    持久 uinput 虚拟键盘/鼠标（GNOME/KWin 等无 virtual-keyboard 协议的
+    合成器可用；`AHK_UINPUT=0` 禁用）；接入 FakeKey/FakeButton/FakeMotion
+    回退；非 ASCII Send 在 uinput 可用时也走粘贴回退
+  - GNOME 扩展版本耦合：`metadata.json` shell-version 扩到 45-50（API
+    面稳定），未验证 major 启动时打印明确警告（实测仍是 49）
+  - 发布策略：自 linux.14 起**保留所有 release 资产** + 每个 release 附
+    `CKSUMS.txt`（SHA-256），`ahk --update <VER>` 升降级真实可行
+  - 陈旧文档修复：source/linux/README.md（"X11 尚未开始"→现状）、
+    CMakeLists、GitHub About 1053→1063
 
 ## 后续候选增强（未实现）
 

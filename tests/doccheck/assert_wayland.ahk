@@ -59,7 +59,16 @@ SendText("你")
 Sleep(1200)
 Log("wl_unicode_paste=" (FileExist("/tmp/wl_key_cv") ? 1 : 0))
 Log("wl_unicode_restore=" (A_Clipboard = "wl-saved-clip" ? 1 : 0))
+; check0820 P1: when the clipboard was EMPTY, the paste fallback must
+; restore empty (never leave the sentinel text behind).
+A_Clipboard := ""
+Sleep(200)
+SendText("好")
+Sleep(1200)
+Log("wl_unicode_empty_paste=" (FileExist("/tmp/wl_key_cv") ? 1 : 0))
+Log("wl_unicode_empty_restore=" (A_Clipboard = "" ? 1 : 0))
 ; GetKeyState cannot query a Wayland seat: reports 0 (documented).
+Log("wl_gks=" (GetKeyState("a") = 0 ? 1 : 0))
 Log("wl_gks=" (GetKeyState("a") = 0 ? 1 : 0))
 
 ; --- ToolTip: xdg toplevel (mapped state verified by the runner) ---

@@ -151,3 +151,22 @@ fi
 echo
 echo "Packages in ./dist/"
 ls -la dist/*.tar.gz dist/*.deb 2>/dev/null
+
+# --- checksums + trust note (check0820: keep every release, allow
+# rollback; a CKSUMS.txt of SHA-256 hashes ships with each release) ----
+CKSUMS=dist/CKSUMS.txt
+{
+  echo "AutoHotkey v2 Linux port release v$VER (built $(date -u +%Y-%m-%dT%H:%MZ))"
+  echo "SHA-256 (one per line: '<hash>  <filename>'):"
+  for f in "$TARBALL" "$DEB"; do
+    [ -f "$f" ] || continue
+    name=$(basename "$f")
+    printf '  %s  %s\n' "$(sha256sum "$f" | awk '{print $1}')" "$name"
+  done
+  echo
+  echo "These hashes are computed from the files as packaged.  Verify a"
+  echo "downloaded artifact with:  sha256sum -c <(grep '<filename>' CKSUMS.txt)"
+  echo "The tarball signature is the GitHub release's own (transit over"
+  echo "HTTPS); for signed releases the .sig file is published alongside."
+} > "$CKSUMS"
+echo "built: dist/CKSUMS.txt"

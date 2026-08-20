@@ -156,6 +156,15 @@ jobs:
           dpkg-deb --info dist/autohotkey-linux-*.deb | head -8
           ls dist/*.AppImage dist/*.rpm 2>/dev/null || true
 
+      # check0820: every release ships a CKSUMS.txt (SHA-256) so
+      # `ahk --update <VER>` can be verified against the published hashes
+      # (and older releases stay available for rollback).  This step checks
+      # that the hashes match the artifacts actually built here.
+      - name: Verify release checksums
+        run: |
+          grep -E '^  [0-9a-f]{64}  ' dist/CKSUMS.txt | sed -n 's/^  //p' > /tmp/ck.txt
+          ( cd dist && sha256sum -c /tmp/ck.txt )
+
       # check0819 P2-1: actually INSTALL each package, run the interpreter
       # and the launcher commands, then remove it again -- the previous
       # 'Verify packages' step only listed archive contents and read .deb

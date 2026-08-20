@@ -27,10 +27,28 @@ import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
+import {Config} from 'resource:///org/gnome/shell/misc/config.js';
 
 const BUS_NAME = 'io.github.autohotkey.GlobalHotkeys1';
 const OBJ_PATH = '/io/github/autohotkey/GlobalHotkeys1';
 const IFACE = 'io.github.autohotkey.GlobalHotkeys1';
+
+// Version coupling (check0820 P1): the extension is written against a
+// stable API surface (Meta.Display.grab_accelerator + Main.wm.allowKeybinding
+// are stable across the GNOME 45-50 series, and the code is ESM so it only
+// loads on 45+), and metadata.json declares that range so GNOME 45-50 will
+// accept it.  But only GNOME 49 was machine-verified; loading on any other
+// major must NOT fail silently.  Log a clear one-time warning.
+const VERIFIED_GNOME_MAJOR = 49;
+function _gnomeMajor() {
+    try {
+        const v = String(Config.PACKAGE_VERSION || '');
+        const m = parseInt(v.split('.')[0], 10);
+        return Number.isNaN(m) ? 0 : m;
+    } catch (e) {
+        return 0; // Version module unavailable: cannot check.
+    }
+}
 
 // Interface (protocol root): string ids, accelerators, booleans.
 // Register(s id, s accelerator, u flags) -> b   (flags reserved; 0 = exclusive)
@@ -87,6 +105,16 @@ const ifaceXml = `
 
 export default class AhkGlobalHotkeysExtension extends Extension {
     enable() {
+        // Version-coupling guard (check0820 P1): unverified GNOME majors
+        // must not fail silently.  The API surface is stable 45-50, but only
+        // 49 was tested in the VM/CI matrix; make the risk visible.
+        const major = _gnomeMajor();
+        if (major !== VERIFIED_GNOME_MAJOR) {
+            log(`[AHK-GS] running on GNOME Shell ${String(Config.PACKAGE_VERSION)} `
+                + `(major ${major}); verified only on ${VERIFIED_GNOME_MAJOR}. `
+                + `If global hotkeys do not respond, report the shell version.`);
+        }
+
         this._grabs = new Map();   // id -> {action, owner}
         this._byAction = new Map(); // action -> id
         this._owners = new Map();  // owner -> Set(id)

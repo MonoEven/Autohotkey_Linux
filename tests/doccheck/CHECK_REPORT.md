@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **1063 / 1063 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 43 项(含 Unicode 文本发送 3 项,round-34)、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、**热键透传/解除抓取模块 8 项**(round-29)、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 44 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 6 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 29 项** 与 **D-Bus COM 18 项**;round-34 增 **热字串 Unicode 触发词 2 项** 与 **InputHook OnChar/OnKeyDown/OnKeyUp 通知 4 项**;27 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 15 项** 与 **XWayland 回退 247 项** 独立套件通过(见第 10 节)
+- **结果**: **1064 / 1064 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 43 项(含 Unicode 文本发送 3 项,round-34)、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 10 项、**热键透传/解除抓取模块 8 项**(round-29)、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 44 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 6 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 29 项** 与 **D-Bus COM 18 项**;round-34 增 **热字串 Unicode 触发词 2 项** 与 **InputHook OnChar/OnKeyDown/OnKeyUp 通知 4 项**;27 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 17 项** 与 **XWayland 回退 247 项** 独立套件通过(见第 10 节)
 
 ---
 
@@ -42,7 +42,7 @@
 | 显示/快捷方式 (FileCreateShortcut/FileGetShortcut + ListVars/ListHotkeys/KeyHistory,.desktop/.url 与 headless 输出) | `assert_display.ahk` | 15 |
 | 定时器/悬浮提示 (SetTimer + ToolTip,主循环 + X11 override-redirect 窗口) | `assert_timer.ahk` | 11 |
 | 热键 (Hotkey + XGrabKey 激活) | `assert_hotkey.ahk` | 10 |
-| 热键透传/解除抓取 (round-29:普通热键抑制、`~` 透传、Off 解除抓取、HotIf-false 透传,经独立 xkeycap 前台客户端验证) | `assert_hotkey_pt.ahk` | 8 |
+| 热键透传/解除抓取 (round-29:普通热键抑制、`~` 透传、Off 解除抓取、HotIf-false 透传,经独立 xkeycap 前台客户端验证;round-36 增快速双击) | `assert_hotkey_pt.ahk` | 9 |
 | 热键按钮 (round-30:XGrabButton 抓取左/右/中/X1/X2 与滚轮 4-7,`~`/HotIf-false/Off 以"暂撤被动抓取+XTEST 反注入"确定性透传,经独立 xkeycap 前台客户端验证) | `assert_hotkey_btn.ahk` | 12 |
 | 热键左右修饰 (round-31:Shift_L/Shift_R 等左右修饰键区分,经 xkeycap 前台客户端验证) | `assert_hotkey_lr.ahk` | 10 |
 | 编辑/列表 (Edit/EditGet*/EditPaste + ListViewGetContent,虚拟编辑/列表状态) | `assert_edit.ahk` | 47 |
@@ -57,9 +57,9 @@
 | 声音/光标/回调/输入钩子 (SoundGet*/SoundSet*/CaretGetPos/CallbackCreate+Free/InputHook,pactl/amixer + X11 + libffi 后端) | `assert_sound_etc.ahk` | 15 |
 | 语句/指令/类别/索引页代码形式 (If/Else/For/While/Switch/Try/Catch/Throw/Loop/Until/Break/Continue/Return/Block + Array/Map/Object/Buffer/Error/Number/String 类别 + `#Requires`/`#Warn` 等) | `assert_statements.ahk` | 19 |
 | 覆盖补全 (round-27:54 个未直引用函数中的 51 个 + String/Class/Menu/ObjBindMethod/Persistent/WinWaitNotActive 名称引用;含 Exit/Reload/Shutdown/InputBox 的"不可自动化"文档块) | `assert_misc_cov.ahk` | 75 |
-| **合计 (X11/headless,各 expect 文件行数之和 + assert_display_content 自由格式 4 项;由 verify_report_numbers.sh 机器校验,与 run_check.sh 实际 PASS 一致)** | | **1063** |
+| **合计 (X11/headless,各 expect 文件行数之和 + assert_display_content 自由格式 4 项;由 verify_report_numbers.sh 机器校验,与 run_check.sh 实际 PASS 一致)** | | **1064** |
 | Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端(含修饰键组合与鼠标按钮)、ToolTip xdg 窗口、X11 专属表面报错;round-34 增非 ASCII 剪贴板粘贴回退 2 项:Control_L+v 到达 compositor 与剪贴板还原) | `assert_wayland.ahk` | 15 |
-| **合计 (Wayland)** | | **15** |
+| **合计 (Wayland)** | | **17** |
 | XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 247 |
 
 复现命令:
@@ -379,12 +379,12 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 
 ```
 普通构建: tests/run_tests.sh        PASS=27 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=1063 FAIL=0
-          tests/doccheck/wayland_run.sh PASS=15 FAIL=0 (Wayland 模式)
+          tests/doccheck/run_check.sh --xvfb PASS=1064 FAIL=0
+          tests/doccheck/wayland_run.sh PASS=17 FAIL=0 (Wayland 模式)
           tests/doccheck/wayland_run.sh --xwayland PASS=247 FAIL=0 (XWayland 回退)
 ASan 构建: tests/run_tests.sh        PASS=27 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=1063 FAIL=0
-          tests/doccheck/wayland_run.sh PASS=15 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=1064 FAIL=0
+          tests/doccheck/wayland_run.sh PASS=17 FAIL=0
           tests/doccheck/wayland_run.sh --xwayland PASS=247 FAIL=0
 ```
 
