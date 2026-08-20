@@ -43,6 +43,26 @@
 
 void ScriptSleep(int aDelay);
 
+// Session-level Wayland detection for the Control* AT-SPI fallback.
+// Unlike LinuxWaylandActive() this does NOT depend on whether an X display
+// (including XWayland, which shares the desktop but never hosts Wayland
+// clients) happens to be reachable: a GNOME-on-Wayland session is always a
+// Wayland session even when XWayland's socket exists (check0820 - the old
+// "no X display" gate silently fell through to the X11 path there).
+static bool LinuxCtrlSessionIsWayland()
+{
+	const char *st = getenv("XDG_SESSION_TYPE");
+	if (st && strcmp(st, "wayland") == 0)
+		return true;
+	const char *dd = getenv("XDG_CURRENT_DESKTOP");
+	if (dd && strstr(dd, "GNOME"))
+		return true; // GNOME sessions are Wayland-first; X11 GNOME is legacy.
+	const char *wl = getenv("WAYLAND_DISPLAY");
+	if (wl && *wl)
+		return true;
+	return false;
+}
+
 // ---------------------------------------------------------------------------
 // Child-window ("control") enumeration and identification
 // ---------------------------------------------------------------------------
@@ -398,12 +418,17 @@ static void LinuxCtrlDelay()
 
 BIF_DECL(BIF_Linux_ControlGetText)
 {
-	// Native-Wayland fallback (check0820): without an X display the
-	// control is an AT-SPI accessible name; read it on the at-spi bus.
-	if (!LinuxX11Display())
+	// Native-Wayland fallback (check0820): in a Wayland session (even when
+	// XWayland exposes an X display that a Wayland app is NOT on) the control
+	// is an AT-SPI accessible name; read it on the at-spi bus.  On a real
+	// X11 session (no Wayland) the X11 path below is used.
+	if (LinuxCtrlSessionIsWayland())
 	{
+		// AT-SPI control lookup: the CONTROL parameter is param 0
+		// (ControlGetText(Control, WinTitle,...)); param 1 is the WinTitle,
+		// which is not an accessible name.
 		TCHAR nb[1024];
-		LPTSTR name = aParamCount > 1 ? TokenToString(*aParam[1], nb, nullptr) : nullptr;
+		LPTSTR name = aParamCount > 0 ? TokenToString(*aParam[0], nb, nullptr) : nullptr;
 		if (!name || !*name)
 			name = (LPTSTR)_T("");
 		if (name && *name && LinuxAtspiAvailable())
@@ -452,15 +477,18 @@ static void LinuxCtrlWriteText(Display *d, Window control, const wchar_t *text)
 
 BIF_DECL(BIF_Linux_ControlSetText)
 {
-	// Native-Wayland fallback (check0820): no X display -> AT-SPI
+	// Native-Wayland fallback (check0820): in a Wayland session (even when
+	// XWayland exposes an X display that a Wayland app is NOT on) use AT-SPI
 	// EditableText.SetTextContents on the accessible named by the Control.
 	// When the at-spi bus is unavailable the call fails soft (no error):
 	// there is no other control path on a pure-Wayland session.
-	if (!LinuxX11Display())
+	if (LinuxCtrlSessionIsWayland())
 	{
+		// ControlSetText(Control, NewText, WinTitle,...) - param 0 is the
+		// CONTROL (the accessible name), param 1 is NewText.
 		TCHAR tb[65536], cb[1024];
-		LPTSTR text = TokenToString(*aParam[0], tb, nullptr);
-		LPTSTR ctrl = aParamCount > 1 ? TokenToString(*aParam[1], cb, nullptr) : nullptr;
+		LPTSTR ctrl = aParamCount > 0 ? TokenToString(*aParam[0], cb, nullptr) : nullptr;
+		LPTSTR text = aParamCount > 1 ? TokenToString(*aParam[1], tb, nullptr) : nullptr;
 		if (ctrl && *ctrl && text && LinuxAtspiAvailable())
 		{
 			char nb[1024], nb2[65536];
@@ -477,7 +505,7 @@ BIF_DECL(BIF_Linux_ControlSetText)
 			}
 		}
 		LinuxCtrlDelay();
-		return; // Fail soft: no X, no AT-SPI match.
+		return; // Fail soft: no at-SPI match (or no bus) on Wayland.
 	}
 	Window target = 0, control = 0;
 	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 1, 2, target, control))
@@ -792,8 +820,48 @@ BIF_DECL(BIF_Linux_ControlClick)
 	// ControlID-or-Pos: omitted -> click the target window itself;
 	// "X55 Y33" -> client-area coordinates; ClassNN/text/HWND -> the control.
 	Display *d = LinuxX11Display();
-	if (!d)
+	if (!d || LinuxCtrlSessionIsWayland())
 	{
+		// Native-Wayland fallback (check0820): in a Wayland session (even
+		// when XWayland exposes an X display that a Wayland app is NOT on)
+		// the control is an AT-SPI accessible name and "click" is its
+		// Action[0] (GTK/Qt/Electron buttons expose "click"/"activate"
+		// actions).  Only the plain name form is supported here (no
+		// position/HWND/coordinate mode): those need a real display and fail
+		// below with the same honest error as before.
+		if (aParamCount > 0 && !ParamIndexIsOmitted(0) && LinuxAtspiAvailable())
+		{
+			bool spec_is_hwnd = false;
+			Window spec_hwnd = 0;
+			std::wstring spec;
+			LinuxCtrlParseSpec(aParam[0], spec_is_hwnd, spec_hwnd, spec);
+			if (!spec_is_hwnd && !spec.empty())
+			{
+				// Skip obvious position mode ("X55 Y33": X + digits, a space,
+				// then Y + digits) - those need a real display just like X11.
+				size_t sp = spec.find_first_of(L" \t");
+				bool pos_like = (spec[0] == L'x' || spec[0] == L'X') && iswdigit(spec[1])
+					&& sp != std::wstring::npos && sp + 2 < spec.size()
+					&& (spec[sp + 1] == L'y' || spec[sp + 1] == L'Y') && iswdigit(spec[sp + 2]);
+				if (!pos_like)
+				{
+					char nb[1024];
+					wcstombs(nb, spec.c_str(), sizeof(nb) - 1);
+					nb[sizeof(nb) - 1] = 0;
+					LinuxAtspiRefresh();
+					std::string path;
+					// Prefer the "click" action by name (robust across role
+					// naming), then fall back to Action[0] ("push button" etc).
+					if (LinuxAtspiFindByName(nb, path)
+						&& (LinuxAtspiDoAction(path.c_str(), -1, "click")
+							|| LinuxAtspiDoAction(path.c_str(), 0, nullptr)))
+					{
+						LinuxCtrlDelay();
+						return;
+					}
+				}
+			}
+		}
 		aResultToken.Error(_T("No X display is available."), _T(""), ErrorPrototype::Target);
 		return;
 	}
