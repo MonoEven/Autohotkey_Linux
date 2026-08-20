@@ -118,6 +118,28 @@ chk "user: --uninstall removes lib" "test ! -e $ahk_home/share/autohotkey"
 chk "user: --uninstall keeps the extension dir" "grep -q 'extension-survives' '$ext_dir/marker'"
 rm -rf "$fake_home"
 
+echo "=== GNOME extension install/remove via --gnome-extension ==="
+# First-install convenience: --gnome-extension copies the extension from
+# the tarball into the GNOME extensions dir and enables it; a later
+# reinstall must not overwrite an existing extension; plain --uninstall
+# keeps it; --uninstall --gnome-extension removes it.
+fake_home2=/tmp/ahk_fake_home2
+ahk_home2="$fake_home2/.local"
+ext_dir2="$ahk_home2/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org"
+rm -rf "$fake_home2"
+mkdir -p "$fake_home2"
+HOME="$fake_home2" bash "$INST" --prefix "$ahk_home2" --gnome-extension --yes > /tmp/ahk_ext_install.log 2>&1
+chk "ext: --gnome-extension installs the extension" "test -f '$ext_dir2/metadata.json'"
+echo "second-run-marker" > "$ext_dir2/user-marker"
+HOME="$fake_home2" bash "$INST" --prefix "$ahk_home2" --gnome-extension --yes > /tmp/ahk_ext_reinstall.log 2>&1
+chk "ext: reinstall keeps an existing extension (no overwrite)" "grep -q 'second-run-marker' '$ext_dir2/user-marker'"
+HOME="$fake_home2" "$ahk_home2/bin/ahk" --uninstall > /tmp/ahk_ext_uni_default.log 2>&1
+chk "ext: plain --uninstall keeps the extension" "test -d '$ext_dir2'"
+HOME="$fake_home2" bash "$INST" --prefix "$ahk_home2" --gnome-extension --yes > /tmp/ahk_ext_restore.log 2>&1
+HOME="$fake_home2" bash "$INST" --prefix "$ahk_home2" --gnome-extension --uninstall --yes > /tmp/ahk_ext_uni_ext.log 2>&1
+chk "ext: --uninstall --gnome-extension removes it" "test ! -e '$ext_dir2'"
+rm -rf "$fake_home2"
+
 echo "=============================="
 echo "PACKAGE VERIFY: fails=$fails"
 [ "$fails" = 0 ]

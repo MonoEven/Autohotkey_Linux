@@ -66,18 +66,27 @@ these <code>--</code> commands and were archived.</p>
 <h2>GNOME 49 Wayland zero-confirmation global hotkeys (optional)</h2>
 <p>On GNOME 49 Wayland, <code>1::</code>-style global hotkeys can grab the
 physical key with <em>no</em> confirmation dialog (and even with no
-modifier) using the bundled GNOME Shell extension:</p>
-<pre>mkdir -p ~/.local/share/gnome-shell/extensions
+modifier) using the bundled GNOME Shell extension.  There are two
+equivalent ways to install it:</p>
+<pre># Option A - one-step, right after installing the core
+# (copies the extension into place AND enables it):
+./tools/linux/install.sh --prefix ~/.local --gnome-extension
+
+# Option B - fully manual (the classic way):
+mkdir -p ~/.local/share/gnome-shell/extensions
 cp -r /path/to/autohotkey-linux/extension/ahk-global-hotkeys@autohotkey.org \
       ~/.local/share/gnome-shell/extensions/
-# ... then log out and back in (GNOME Shell loads extensions at startup),
-# and enable it:
-gnome-extensions enable ahk-global-hotkeys@autohotkey.org</pre>
+gnome-extensions enable ahk-global-hotkeys@autohotkey.org
+
+# ... either way: restart GNOME Shell, because a freshly-placed extension
+# only loads at start.  Log out and back in, or press Alt+F2 and type 'r'.</pre>
 <p><code>&hellip;/autohotkey-linux</code> is the unpacked release tarball
 (the <code>extension/</code> directory ships inside it) or the source
-checkout.  The extension is <em>not</em> installed or activated by the
-core installer &mdash; that part is always manual, so it stays fully under
-the user's control.</p>
+checkout.  The interactive CLI installer also <em>asks</em> on a GNOME
+session; say <code>y</code> to install the extension in the same run.
+Without <code>--gnome-extension</code> (and outside an interactive GNOME
+session) the core install never touches the extension &mdash; that part
+stays fully under the user's control.</p>
 <p>The extension is a thin D-Bus broker; the interpreter picks the
 <code>gnome-shell</code> backend automatically on GNOME Wayland
 (<code>AHK_INPUT_BACKEND=auto</code>, default), or explicitly with

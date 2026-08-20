@@ -55,9 +55,23 @@ if ! confirm "Confirm installation" \
   exit 1
 fi
 
-if "$SELF_DIR/install.sh" --prefix "$PREFIX" --yes; then
-  msg "AutoHotkey v2 Linux port" \
-      "Installation complete.\n\nTry: $PREFIX/bin/ahk --version\n\n(Add $PREFIX/bin to your PATH if needed.)"
+# Optional GNOME Shell extension (zero-confirmation global hotkeys on
+# GNOME Wayland).  It is a separate user/system-scoped component: the core
+# install and --yes path never touch it, so this is the one-time hook.
+EXT_ARGS=
+if confirm "GNOME Shell extension" \
+     "Also install the optional GNOME Shell extension\nzero-confirmation global hotkeys on GNOME Wayland?\n\nIt is placed under ~/.local/share/gnome-shell/extensions\n(or /usr/share/gnome-shell/extensions as root) and enabled.\nLog out and back in (or restart GNOME Shell) afterwards.\n\nInstall the extension?"; then
+  EXT_ARGS="--gnome-extension"
+fi
+
+if "$SELF_DIR/install.sh" --prefix "$PREFIX" --yes $EXT_ARGS; then
+  if [ -n "$EXT_ARGS" ]; then
+    msg "AutoHotkey v2 Linux port" \
+        "Installation complete.\n\nThe GNOME Shell extension was installed and enabled.\nRestart GNOME now (log out/in or press Alt+F2 and type 'r')\nso the new extension loads.\n\nTry: $PREFIX/bin/ahk --version"
+  else
+    msg "AutoHotkey v2 Linux port" \
+        "Installation complete.\n\nTry: $PREFIX/bin/ahk --version\n\n(Add $PREFIX/bin to your PATH if needed.)"
+  fi
 else
   msg "AutoHotkey v2 Linux port" "Installation failed (see the terminal for details)."
   exit 1

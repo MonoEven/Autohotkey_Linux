@@ -164,6 +164,18 @@ ahk --update 2.0.26-linux.14   # or a specific release (upgrade or downgrade)
 > fixes and bespoke state can therefore be rolled back to an older known
 > release.  See the release notes for the checksums.
 
+> **First install on GNOME Wayland?** Run the installer once with
+> `--gnome-extension` (e.g. `./tools/linux/install.sh --prefix ~/.local
+> --gnome-extension`), or answer "y" when the interactive installer asks,
+> to also copy and enable the optional global-hotkeys GNOME Shell
+> extension in one step.  **You must then restart GNOME Shell** (log
+> out/in, or press Alt+F2 and type `r`) — a freshly-placed extension only
+> loads at the next Shell start, and `gnome-extensions enable` alone
+> registers the choice without hot-loading a brand-new extension.  After
+> the restart `ahk --check` shows its state.  Later core updates never
+> touch the extension; the `.deb`/tarball itself still never activates it
+> by default (no GNOME session = nothing happens).
+
 > **What (un)install/update do and do not touch.** The installer
 > (`install.sh`), `ahk --uninstall` and `ahk --update` only manage the files
 > under the chosen install prefix (the `ahk` launcher, the interpreter
