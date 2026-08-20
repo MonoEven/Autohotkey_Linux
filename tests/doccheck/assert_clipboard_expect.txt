@@ -1,0 +1,13 @@
+clip_targets_utf8=1
+clip_targets_string=1
+clip_targets_has_targets=1
+clip_img_refused=1
+clip_html_refused=1
+clip_get_roundtrip=1
+clip_slow_consumer=1
+clip_big_len=1
+clip_big_head=1
+clip_big_tail=1
+clip_external_owner=1
+clip_empty_read=1
+clip_clipwait_ok=1

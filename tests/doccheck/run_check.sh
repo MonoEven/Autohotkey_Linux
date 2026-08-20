@@ -71,6 +71,7 @@ if [ "$XVFB" = 1 ]; then
     gcc -o out/xwin_helper xwin_helper.c -lX11 2>/dev/null
     gcc -o out/xkeycap xkeycap.c -lX11 2>/dev/null
     gcc -o out/xshape_probe xshape_probe.c -lX11 -lXext 2>/dev/null
+    gcc -o out/xclip_probe xclip_probe.c -lX11 2>/dev/null
     # Editor marker for the assert_edit Edit() check: records its arguments.
     printf '#!/bin/sh\necho "$@" > /tmp/ahk_dc_edit_marker.txt\n' > /tmp/ahk_edit_marker.sh
     chmod +x /tmp/ahk_edit_marker.sh
@@ -154,6 +155,10 @@ for ahk in assert_*.ahk; do
     echo "SKIP: assert_shape (run with --xvfb)"
     continue
   fi
+  if [ "$base" = "assert_clipboard" ] && [ "$XVFB" != 1 ]; then
+    echo "SKIP: assert_clipboard (run with --xvfb: independent xclip_probe client)"
+    continue
+  fi
   if [ "$base" = "assert_gui" ] && [ "$XVFB" != 1 ]; then
     echo "SKIP: assert_gui (run with --xvfb)"
     continue
@@ -175,7 +180,7 @@ for ahk in assert_*.ahk; do
   # Display-dependent suites run under Xvfb (MsgBox would open a real
   # dialog with a display present); everything else stays headless.
   case "$base" in
-    assert_win|assert_input|assert_ctrl|assert_monitor|assert_timer|assert_hotkey|assert_hotkey_pt|assert_hotkey_btn|assert_hotkey_lr|assert_hotstring|assert_inputhook|assert_unicode_lease|assert_edit|assert_dialog|assert_msg|assert_image|assert_shape|assert_gui|assert_statements|assert_misc_cov)
+    assert_win|assert_input|assert_ctrl|assert_monitor|assert_timer|assert_hotkey|assert_hotkey_pt|assert_hotkey_btn|assert_hotkey_lr|assert_hotstring|assert_inputhook|assert_unicode_lease|assert_edit|assert_dialog|assert_msg|assert_image|assert_shape|assert_gui|assert_statements|assert_misc_cov|assert_clipboard)
       XDISPLAY=:99 ;;
     *) XDISPLAY="" ;;
   esac
@@ -230,6 +235,7 @@ for ahk in assert_*.ahk; do
     assert_sound_etc) out_src="/tmp/ahk_dc_soundetc_out.txt" ;;
     assert_statements) out_src="/tmp/ahk_dc_statements_out.txt" ;;
     assert_misc_cov) out_src="/tmp/ahk_dc_misc_out.txt" ;;
+    assert_clipboard) out_src="/tmp/ahk_dc_clip_out.txt" ;;
   esac
   if [ -n "$out_src" ] && [ -f "$out_src" ]; then
     cp "$out_src" "$tmp" && mv -f "$tmp" "$final"

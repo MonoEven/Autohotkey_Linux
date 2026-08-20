@@ -182,9 +182,22 @@ Icon=autohotkey
 EOF
 
 OUT="dist/autohotkey-linux-$VER-$ARCH.AppImage"
-"$TOOL" --no-appstream "$APP" "$OUT" >/dev/null 2>&1 || {
-  "$TOOL" "$APP" "$OUT" >/dev/null 2>&1
-}
+# Do NOT swallow the tool's stderr during the build: on GitHub-hosted
+# runners a failure currently produces nothing (and `> /dev/null` hid the
+# cause).  Capture the run so the real error surfaces in the CI log.
+ERRLOG="$OUT.run.log"
+if ! "$TOOL" --no-appstream "$APP" "$OUT" >/dev/null 2>"$ERRLOG"; then
+  if ! "$TOOL" "$APP" "$OUT" >/dev/null 2>>"$ERRLOG"; then
+    echo "pack-appimage.sh: appimagetool failed (rc=$?)" >&2
+    if [ -s "$ERRLOG" ]; then
+      echo "pack-appimage.sh: appimagetool stderr follows:" >&2
+      sed 's/^/  /' "$ERRLOG" | tail -20 >&2
+    fi
+    rm -f "$ERRLOG"
+    exit 1
+  fi
+fi
+rm -f "$ERRLOG"
 chmod +x "$OUT" 2>/dev/null || true
 if [ ! -s "$OUT" ]; then
   echo "pack-appimage.sh: appimagetool produced no output" >&2
