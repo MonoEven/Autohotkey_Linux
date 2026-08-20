@@ -129,8 +129,16 @@ jobs:
             cmake g++ ninja-build \
             libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev libxi-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev \
-            libffi-dev libdbus-1-dev dbus libgtk-3-dev zlib1g-dev libjpeg-dev \
+            libffi-dev libdbus-1-dev dbus libgtk-3-dev libjpeg-dev \
             python3 dpkg-dev rpm libfuse2 squashfs-tools
+          # appimagetool (continuous, v295+) packages the AppDir through
+          # FUSE; GitHub-hosted runners have no /dev/fuse by default, so
+          # the device node must be recreated (the kernel fuse module and
+          # libfuse2 are present, only the node is missing).
+          if [ ! -e /dev/fuse ]; then
+            sudo mknod /dev/fuse c 10 229
+          fi
+          sudo chmod 666 /dev/fuse 2>/dev/null || true
 
       - name: Build
         run: |

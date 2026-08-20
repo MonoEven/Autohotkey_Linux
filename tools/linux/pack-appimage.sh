@@ -182,16 +182,19 @@ Icon=autohotkey
 EOF
 
 OUT="dist/autohotkey-linux-$VER-$ARCH.AppImage"
-# Do NOT swallow the tool's stderr during the build: on GitHub-hosted
-# runners a failure currently produces nothing (and `> /dev/null` hid the
-# cause).  Capture the run so the real error surfaces in the CI log.
+# Do NOT swallow the tool's output during the build: on GitHub-hosted
+# runners a failure currently produces nothing visible (and `> /dev/null`
+# hid the cause).  Capture BOTH stdout and stderr so the real error shows
+# up in the CI log.  appimagetool on the runner fails after printing only
+# its version banner to stderr; whatever diagnostic it emits has so far
+# gone to stdout (check0820 round), so neither stream is discarded.
 ERRLOG="$OUT.run.log"
-if ! "$TOOL" --no-appstream "$APP" "$OUT" >/dev/null 2>"$ERRLOG"; then
-  if ! "$TOOL" "$APP" "$OUT" >/dev/null 2>>"$ERRLOG"; then
+if ! "$TOOL" --no-appstream "$APP" "$OUT" >"$ERRLOG" 2>&1; then
+  if ! "$TOOL" "$APP" "$OUT" >>"$ERRLOG" 2>&1; then
     echo "pack-appimage.sh: appimagetool failed (rc=$?)" >&2
     if [ -s "$ERRLOG" ]; then
-      echo "pack-appimage.sh: appimagetool stderr follows:" >&2
-      sed 's/^/  /' "$ERRLOG" | tail -20 >&2
+      echo "pack-appimage.sh: appimagetool output follows:" >&2
+      sed 's/^/  /' "$ERRLOG" >&2
     fi
     rm -f "$ERRLOG"
     exit 1
