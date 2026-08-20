@@ -27,6 +27,7 @@
 #include "core_ctrl_linux.h"
 #include "core_win_linux.h"
 #include "core_input_linux.h"
+#include "core_atspi_linux.h" // AT-SPI fallback for pure-Wayland Control*
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
@@ -397,6 +398,33 @@ static void LinuxCtrlDelay()
 
 BIF_DECL(BIF_Linux_ControlGetText)
 {
+	// Native-Wayland fallback (check0820): without an X display the
+	// control is an AT-SPI accessible name; read it on the at-spi bus.
+	if (!LinuxX11Display())
+	{
+		TCHAR nb[1024];
+		LPTSTR name = aParamCount > 1 ? TokenToString(*aParam[1], nb, nullptr) : nullptr;
+		if (!name || !*name)
+			name = (LPTSTR)_T("");
+		if (name && *name && LinuxAtspiAvailable())
+		{
+			char nb2[1024];
+			wcstombs(nb2, name, sizeof(nb2) - 1);
+			nb2[sizeof(nb2) - 1] = 0;
+			LinuxAtspiRefresh();
+			std::string path, t;
+			if (LinuxAtspiFindByName(nb2, path) && LinuxAtspiGetText(path.c_str(), t))
+			{
+				std::wstring w;
+				for (size_t i = 0; i < t.size(); ++i)
+					w += (unsigned char)t[i] < 0x80 ? (wchar_t)(unsigned char)t[i] : L'?';
+				LinuxWinSetPersistentEx(aResultToken, w);
+				return;
+			}
+		}
+		LinuxWinSetPersistentEx(aResultToken, std::wstring());
+		return;
+	}
 	Window target = 0, control = 0;
 	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
 		return;
@@ -424,6 +452,33 @@ static void LinuxCtrlWriteText(Display *d, Window control, const wchar_t *text)
 
 BIF_DECL(BIF_Linux_ControlSetText)
 {
+	// Native-Wayland fallback (check0820): no X display -> AT-SPI
+	// EditableText.SetTextContents on the accessible named by the Control.
+	// When the at-spi bus is unavailable the call fails soft (no error):
+	// there is no other control path on a pure-Wayland session.
+	if (!LinuxX11Display())
+	{
+		TCHAR tb[65536], cb[1024];
+		LPTSTR text = TokenToString(*aParam[0], tb, nullptr);
+		LPTSTR ctrl = aParamCount > 1 ? TokenToString(*aParam[1], cb, nullptr) : nullptr;
+		if (ctrl && *ctrl && text && LinuxAtspiAvailable())
+		{
+			char nb[1024], nb2[65536];
+			wcstombs(nb, ctrl, sizeof(nb) - 1);
+			nb[sizeof(nb) - 1] = 0;
+			wcstombs(nb2, text, sizeof(nb2) - 1);
+			nb2[sizeof(nb2) - 1] = 0;
+			LinuxAtspiRefresh();
+			std::string path;
+			if (LinuxAtspiFindByName(nb, path) && LinuxAtspiSetText(path.c_str(), nb2))
+			{
+				LinuxCtrlDelay();
+				return;
+			}
+		}
+		LinuxCtrlDelay();
+		return; // Fail soft: no X, no AT-SPI match.
+	}
 	Window target = 0, control = 0;
 	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 1, 2, target, control))
 		return;
