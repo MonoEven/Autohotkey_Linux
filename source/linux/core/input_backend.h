@@ -6,8 +6,13 @@
 //   AHK_INPUT_BACKEND=x11           force X11 XGrabKey/XRecord path
 //   AHK_INPUT_BACKEND=portal        force XDG Global Shortcuts Portal
 //   AHK_INPUT_BACKEND=gnome-shell   force GNOME Shell extension backend
-//   AHK_INPUT_BACKEND=evdev         force native evdev/uinput (ahk-inputd);
-//                                   reports "backend not installed" for now
+//   AHK_INPUT_BACKEND=evdev         force the native evdev/uinput lane:
+//                                   reads /dev/input/event* (physical keys)
+//                                   and fires hotkeys directly; with
+//                                   EVIOCGRAB (input group / root) matched
+//                                   hotkeys are suppressed and unmatched
+//                                   keys are replayed through /dev/uinput
+//                                   (check0820 direction-B)
 //
 //   AHK_FORCE_GLOBAL_SHORTCUTS=1    keeps its documented meaning: "explicitly
 //                                   require the standard GlobalShortcuts
@@ -49,13 +54,14 @@ enum class AhkInputBackendKind
 	X11,         // XGrabKey / XRecord (existing core_hotkey_linux.cpp).
 	PORTAL,      // XDG Global Shortcuts Portal.
 	GNOME_SHELL, // GNOME Shell extension broker.
-	EVDEV,       // Native evdev/uinput (ahk-inputd) - future.
+	EVDEV,       // Native evdev/uinput lane (core_evdev_linux.cpp).
 };
 
-// What a backend can do.  The GNOME Shell backend is an exclusive-hotkey
-// backend: 1::/^1::/F12:: work zero-confirm with suppression; ~1::, remaps,
-// a & b::, complete wildcards and Send are out of scope for it (that is the
-// evdev/ahk-inputd lane).
+// What a backend can do.  The evdev lane (check0820 direction-B) can
+// register global hotkeys on ANY compositor (it reads the kernel input
+// stream); suppression needs EVIOCGRAB (input group / root) and unmatched
+// keys are replayed through /dev/uinput.  Without grab permission it is a
+// listen-only lane (hotkeys still fire; keys pass through to the app).
 struct AhkInputBackendCaps
 {
 	bool global_hotkeys;   // Can register global hotkeys.

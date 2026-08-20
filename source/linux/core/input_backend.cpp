@@ -5,7 +5,9 @@
 //   - X11:        core_hotkey_linux.cpp (XGrabKey/XRecord) - untouched.
 //   - Portal:     core_gshortcut_linux.cpp - frozen (no GNOME-49 hacks).
 //   - GNOME Shell: input_backend_gnome_shell.cpp - thin D-Bus broker.
-//   - evdev:      future ahk-inputd lane (reports "not installed" today).
+//   - evdev:      core_evdev_linux.cpp - native /dev/input capture lane
+//                 (check0820 direction-B: hotkeys fire on any compositor;
+//                 suppression via EVIOCGRAB + uinput replay).
 //
 // Selection policy (see header): explicit AHK_INPUT_BACKEND wins,
 // AHK_FORCE_GLOBAL_SHORTCUTS=1 means "require the Portal backend" and wins
@@ -14,6 +16,7 @@
 #include "input_backend.h"
 #include "core_gshortcut_linux.h"
 #include "input_backend_gnome_shell.h"
+#include "core_evdev_linux.h"
 #include "../../script.h"
 #include "../../globaldata.h"
 #include "../../script_func_impl.h"
@@ -138,7 +141,7 @@ const AhkInputBackendCaps *KindCaps(AhkInputBackendKind aKind)
 	static const AhkInputBackendCaps sGnomeShell =
 		{ true, true, false, false, false, true, true, true, true };
 	static const AhkInputBackendCaps sEvdev =
-		{ false, false, false, false, false, false, false, false, false };
+		{ true, true, true, true, true, true, true, false, false };
 	switch (aKind)
 	{
 	case AhkInputBackendKind::X11: return &sX11;
@@ -253,7 +256,10 @@ void LinuxInputBackendSync()
 		LinuxGnomeShellSync();
 		break;
 	case AhkInputBackendKind::EVDEV:
-		SetError("AHK_INPUT_BACKEND=evdev: ahk-inputd is not installed yet");
+		// The evdev lane is a standing reader; nothing to sync.  If it
+		// could not open any device (no permission), surface the reason.
+		if (!LinuxEvdevActive())
+			SetError(LinuxEvdevLastError());
 		break;
 	default:
 		break; // X11: handled by the existing XGrabKey machinery.
@@ -270,6 +276,9 @@ void LinuxInputBackendDispatch()
 	case AhkInputBackendKind::GNOME_SHELL:
 		LinuxGnomeShellDispatch();
 		break;
+	case AhkInputBackendKind::EVDEV:
+		LinuxEvdevDispatch();
+		break;
 	default:
 		break;
 	}
@@ -284,6 +293,9 @@ void LinuxInputBackendShutdown()
 		break;
 	case AhkInputBackendKind::GNOME_SHELL:
 		LinuxGnomeShellShutdown();
+		break;
+	case AhkInputBackendKind::EVDEV:
+		LinuxEvdevShutdown();
 		break;
 	default:
 		break;
@@ -303,6 +315,8 @@ bool LinuxInputBackendActive()
 		return LinuxGShortcutActive();
 	case AhkInputBackendKind::GNOME_SHELL:
 		return LinuxGnomeShellActive();
+	case AhkInputBackendKind::EVDEV:
+		return LinuxEvdevActive();
 	default:
 		return false;
 	}

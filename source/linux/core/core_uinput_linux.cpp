@@ -116,6 +116,21 @@ void WriteUinputEvent(int aType, int aCode, int aValue)
 			sFD = -1;
 			sUsable = false;
 		}
+		return;
+	}
+	// The kernel only hands events to libinput/compositors when the frame
+	// is closed with EV_SYN/SYN_REPORT (a uinput device without the SYN
+	// terminator would silently buffer everything - check0820catch).
+	struct input_event syn;
+	memset(&syn, 0, sizeof(syn));
+	syn.type  = EV_SYN;
+	syn.code  = SYN_REPORT;
+	syn.value = 0;
+	if (write(sFD, &syn, sizeof(syn)) != (ssize_t)sizeof(syn))
+	{
+		close(sFD);
+		sFD = -1;
+		sUsable = false;
 	}
 }
 
