@@ -1,7 +1,7 @@
 # AutoHotkey Linux 化迁移目标
 
 > 目标随进展持续更新。基线：AutoHotkey v2.0.26，分支：`linux-port`。
-> **状态：核心目标已完成并发布（最新 v2.0.26-linux.14：check0820 可靠性修复（passthrough 快速重复消费一次、Unicode 跨进程租约、剪贴板粘贴防护、uinput 注入 lane、GNOME 扩展版本范围），doc-check core+ASan 1064/1064，回归 27/27，Wayland 17/17，XWayland 247/247，CI 全绿；项目定位为 technology preview；站点文档为英文单语，中文概览页已移除）。**
+> **状态：核心目标已完成并发布（最新 v2.0.26-linux.14：check0820 可靠性修复（passthrough 快速重复消费一次、Unicode 跨进程租约、剪贴板粘贴防护、uinput 注入 lane、GNOME 扩展版本范围），doc-check core+ASan 1069/1069，回归 27/27，Wayland 17/17，XWayland 247/247，CI 全绿；项目定位为 technology preview；站点文档为英文单语，中文概览页已移除）。**
 
 ## 总目标
 
@@ -30,7 +30,7 @@
       （`source/linux/core/core_*_linux.cpp`），效果等同且更贴合移植版结构
 - [x] 实现 X11 后端（Xlib + XTest + XRandR/Xinerama + XGrabKey 热键 + XGrabButton 鼠标热键）
 - [x] 热键、Send、窗口枚举/操作、剪贴板、像素/显示器、对话框、ToolTip、
-      ImageSearch、WinSetRegion 全部可用（doc-check **1063/1063** 断言通过，
+      ImageSearch、WinSetRegion 全部可用（doc-check **1069/1069** 断言通过，
       含 DllCall 29 项、D-Bus COM 18 项与 GTK3 GUI/Menu 26 项）
 - [x] Unicode 文本发送（round-34，check0819 审查）：`SendText`/`Send`/热字串替换
       非 ASCII 字符 X11/XWayland 经 keysym 传输（借键码临时重映射，xdotool 方案），

@@ -22,7 +22,7 @@ hotkeys.
   interpreter on the `linux-port` branch).
 - **Latest build**: `v2.0.26-linux.13` (see
   [Releases](https://github.com/MonoEven/Autohotkey_Linux/releases)).
-  Doc-check **1063/1063** (regular + ASan), regression 27/27,
+  Doc-check **1069/1069** (regular + ASan), regression 27/27,
   Wayland 15/15, XWayland 247/247.
 
 ## Features ##
@@ -36,13 +36,15 @@ hotkeys.
   `Monitor*`, `ImageSearch`), dialogs (`MsgBox`, `InputBox`,
   `FileSelect`/`DirSelect`), `ToolTip`, window shapes (`WinSetRegion`),
   GTK3 `Gui`/`Menu` and the whole doc-checked v2 API surface —
-  **1063/1063** assertions pass under Xvfb.
+  **1069/1069** assertions pass under Xvfb.
 - **Unicode text input** (linux.13/linux.14): `SendText`/`Send` and hotstring
   replacements deliver non-ASCII characters (Chinese, Japanese, Korean,
   accented Latin, Emoji) on X11/XWayland via keysym transmission (a spare
   keycode is temporarily remapped when the layout has no binding, like
   xdotool; linux.14 serializes the borrow through an X selection lease so
-  concurrent AHK processes never clash); on pure Wayland non-ASCII runs use
+  concurrent AHK processes never clash, with a dual-process doc-check
+  regression (two independent processes send different CJK characters to
+  the same X server simultaneously); on pure Wayland non-ASCII runs use
   the controlled clipboard-paste fallback (which waits for the target to
   consume the offer, restores an empty original to empty, and can be
   disabled with `AHK_WAYLAND_PASTE=0`) whenever a key-injection lane
