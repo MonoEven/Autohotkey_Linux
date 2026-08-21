@@ -91,6 +91,30 @@ extern "C" int LinuxRunDiagnostic()
 		std::printf("gnome-extension-installed : yes (system-wide)\n");
 	else
 		std::printf("gnome-extension-installed : no\n");
+	// GNOME major + GlobalShortcuts portal backend (check_detail0821 §1.2-C):
+	// GNOME 48+ ships the backend, GNOME 45-47 does not.  The functional
+	// version probe is the decisive fact; the major version is context.
+	int gmaj = LinuxGnomeMajorVersion();
+	std::printf("gnome-major  : %d%s\n", gmaj, gmaj ? "" : " (unknown)");
+	unsigned gsver = LinuxPortalGlobalShortcutsVersion();
+	if (gsver)
+		std::printf("portal-global-shortcuts : yes (version %u)\n", gsver);
+	else
+		std::printf("portal-global-shortcuts : no\n");
+	// Portal app-id resolvability: the GNOME 48+ backend requires a valid
+	// app-id, which the portal maps to a .desktop file for non-sandboxed
+	// callers.  We ship org.autohotkey.linux.desktop.
+	bool appid = false;
+	if (home)
+	{
+		char appd[1024];
+		snprintf(appd, sizeof(appd), "%s/.local/share/applications/org.autohotkey.linux.desktop", home);
+		if (access(appd, F_OK) == 0) appid = true;
+	}
+	if (!appid && access("/usr/share/applications/org.autohotkey.linux.desktop", F_OK) == 0)
+		appid = true;
+	std::printf("portal-app-id-resolvable : %s\n"
+		, appid ? "yes" : "no (missing org.autohotkey.linux.desktop)");
 	// /dev/uinput for the evdev/uinput lane.
 	if (access("/dev/uinput", W_OK) == 0)
 		std::printf("uinput-writable : yes\n");

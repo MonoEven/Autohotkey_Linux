@@ -29,8 +29,11 @@
 // auto selection:
 //   X11 session                       -> X11
 //   Wayland session + GNOME Shell ext -> gnome-shell (zero-confirm bare keys)
-//   Wayland session (GNOME w/o ext,
-//     KDE, other)                     -> portal (safe baseline)
+//   GNOME w/o ext + portal GS backend -> portal (GNOME 48+ backend present)
+//   GNOME w/o ext, no portal backend  -> portal + loud error with install
+//                                        guidance (GNOME <48 / no backend;
+//                                        check_detail0821 §1.2-C)
+//   KDE / other Wayland compositors   -> portal (safe baseline)
 //
 // The X11 path is deeply integrated in core_hotkey_linux.cpp (XGrabKey /
 // XRecord / reconcile) and is not re-routed through this interface: when the
@@ -77,6 +80,14 @@ struct AhkInputBackendCaps
 
 // Resolve the effective backend from the environment (see file header).
 AhkInputBackendKind LinuxInputBackendKind();
+
+// Version of the GlobalShortcuts portal backend live on the session bus
+// (0 = absent/unreachable).  Functional probe (check_detail0821 §1.2-C).
+unsigned LinuxPortalGlobalShortcutsVersion();
+bool LinuxPortalGlobalShortcutsAvailable();
+
+// Major GNOME Shell version (49 for "49.0"), 0 when unknown.
+int LinuxGnomeMajorVersion();
 
 // Capabilities of the currently effective backend (kind + caps).
 const AhkInputBackendCaps *LinuxInputBackendCaps();

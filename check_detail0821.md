@@ -1088,7 +1088,22 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
 
 1. **XWayland 23.2+ 的 XTEST→libei 桥接,在 GNOME 48/49 上对本移植版是否
    开箱生效**(涉及 portal 授权弹窗时机、是否需要 app-id、被拒后的降级行为);
+   **已实测(R1-7,GNOME 49 VM / Ubuntu 24.04 / Xwayland 24.1.6):不成立** ——
+   该发行版的 Xwayland 包未编入 libei(ldd 与 strings 均无 libei/EIS 符号),
+   实测 XTEST 只能到达 XWayland 窗口(正向对照:xwin_helper X 窗口收到全部
+   SendText 键事件),无法到达聚焦的原生 Wayland 窗口(ptyxis 读取循环无输入),
+   且全程无 RemoteDesktop/ConnectToEIS portal 流量。零代码路径需要发行版
+   Xwayland 带 libei(如 Fedora 或 `--enable-libei` 自编译),已在
+   linux-port.htm 记为"未验证/不可用的发行版依赖项";原生 libei 后端仍归 R3。
+   验证脚本:`tests/doccheck/gnome_xtest_libei.sh`。
 2. **GNOME 48+ 的 GlobalShortcuts portal 后端与本项目 portal lane 的实际兼容性**
    (`BindShortcuts` 一次性限制与 AHK 运行时 `Hotkey()` 动态注册的冲突程度);
+   **已实测(R1-6,GNOME 49 VM):后端存在且可探测** —— `--diag` 的
+   `portal-global-shortcuts : yes (version 1)` 与 `gnome-major : 49`、
+   `portal-app-id-resolvable : yes` 均为功能探针实测;扩展卸载后 auto 策略正确
+   落到 portal 且不误报错误(GNOME≥48 后端在总线即放行);GNOME<48/无后端场景
+   以死总线仿真,得到带安装指引的明确报错。`BindShortcuts` 一次性限制对
+   `Hotkey()` 动态注册的影响程度仍需 R2 的逐热键路由实测确认(本项目 portal lane
+   当前为"首次全量注册,变更重绑",未做逐键增删)。
 3. **ext-data-control-v1 在 KWin 6.6 上的剪贴板监听行为**是否与 sway 一致
    (尤其 primary selection 与大文本分块读取)。

@@ -23,6 +23,7 @@
 #include "../../hotkey.h"
 #include "../../keyboard_mouse.h"
 #include "../../application.h"
+#include <dbus/dbus.h>
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
@@ -39,6 +40,61 @@ void SetError(const char *aText)
 	mbstowcs(sLastErrorBuf, aText ? aText : "", _countof(sLastErrorBuf) - 1);
 	sLastErrorBuf[_countof(sLastErrorBuf) - 1] = 0;
 }
+
+// --- R1-6 probes (check_detail0821 §1.2-C / A.8-2) ---------------------------
+// A functional session-bus probe beats version sniffing: what we actually
+// need to know is whether a GlobalShortcuts portal backend is live.  Per the
+// portal spec each interface's version is exposed as a `version` property on
+// /org/freedesktop/portal/desktop; xdg-desktop-portal-gnome >= 48 (GNOME 48+)
+// ships that backend, GNOME 45-47 does not.
+
+bool SessionBusGetStringProp(const char *aOwner, const char *aPath,
+	const char *aIface, const char *aProp, char *aOut, size_t aOutSize)
+{
+	aOut[0] = 0;
+	DBusError err; dbus_error_init(&err);
+	DBusConnection *c = dbus_bus_get(DBUS_BUS_SESSION, &err);
+	if (!c) { dbus_error_free(&err); return false; }
+	dbus_error_free(&err);
+	DBusMessage *msg = dbus_message_new_method_call(aOwner, aPath,
+		"org.freedesktop.DBus.Properties", "Get");
+	DBusMessageIter it;
+	dbus_message_iter_init_append(msg, &it);
+	dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &aIface);
+	dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &aProp);
+	DBusMessage *rep = dbus_connection_send_with_reply_and_block(c, msg, 3000, &err);
+	dbus_message_unref(msg);
+	bool ok = false;
+	if (rep)
+	{
+		DBusMessageIter rit, var;
+		dbus_message_iter_init(rep, &rit);
+		if (dbus_message_iter_get_arg_type(&rit) == DBUS_TYPE_VARIANT)
+		{
+			dbus_message_iter_recurse(&rit, &var);
+			if (dbus_message_iter_get_arg_type(&var) == DBUS_TYPE_STRING)
+			{
+				const char *v = nullptr;
+				dbus_message_iter_get_basic(&var, &v);
+				if (v) { snprintf(aOut, aOutSize, "%s", v); ok = true; }
+			}
+		}
+		dbus_message_unref(rep);
+	}
+	dbus_error_free(&err);
+	dbus_connection_unref(c);
+	return ok;
+}
+
+int ParseLeadingInt(const char *aText)
+{
+	int v = 0;
+	for (const char *p = aText; *p >= '0' && *p <= '9'; ++p)
+		v = v * 10 + (*p - '0');
+	return v;
+}
+
+} // namespace
 
 bool SessionIsWayland()
 {
@@ -121,7 +177,35 @@ AhkInputBackendKind ResolveBackend()
 	// available on the session bus (zero-confirm, bare keys).
 	if (DesktopIsGNOME() && LinuxGnomeShellAvailable())
 		return AhkInputBackendKind::GNOME_SHELL;
-	// KDE, GNOME without the extension, other compositors: portal baseline.
+	// GNOME without the extension (check_detail0821 §1.2-C): the
+	// GlobalShortcuts portal backend only exists on GNOME 48+ (it is shipped
+	// by xdg-desktop-portal-gnome >= 48).  Selecting portal on GNOME 45-47
+	// without the extension used to be a silent no-op -- make it a loud,
+	// actionable error.  The functional probe below (is a GlobalShortcuts
+	// backend actually live on the session bus?) is the real test; the GNOME
+	// major version only improves the message.
+	if (DesktopIsGNOME() && !LinuxPortalGlobalShortcutsAvailable())
+	{
+		int major = LinuxGnomeMajorVersion();
+		char msg[512];
+		if (major > 0 && major < 48)
+			snprintf(msg, sizeof(msg),
+				"GNOME %d without the AHK shell extension and without a "
+				"GlobalShortcuts portal backend: no native global-hotkey path. "
+				"Install the extension (see docs-v2/docs/linux-port.htm) or use "
+				"AHK_INPUT_BACKEND=evdev; the portal path cannot register "
+				"hotkeys on GNOME < 48.", major);
+		else
+			snprintf(msg, sizeof(msg),
+				"GNOME without the AHK shell extension and without a "
+				"GlobalShortcuts portal backend on the session bus: no native "
+				"global-hotkey path. Install the extension "
+				"(see docs-v2/docs/linux-port.htm) or use "
+				"AHK_INPUT_BACKEND=evdev.");
+		fprintf(stderr, "AHK warning: %s\n", msg);
+		SetError(msg);
+	}
+	// KDE, GNOME 48+ without the extension, other compositors: portal baseline.
 	return AhkInputBackendKind::PORTAL;
 }
 
@@ -150,8 +234,6 @@ const AhkInputBackendCaps *KindCaps(AhkInputBackendKind aKind)
 	default: return &sEvdev;
 	}
 }
-
-} // namespace
 
 // --- shared hotkey helpers (used by portal + gnome-shell backends) ----------
 
@@ -243,6 +325,81 @@ const char *LinuxInputBackendName()
 	case AhkInputBackendKind::EVDEV: return "evdev";
 	default: return "auto";
 	}
+}
+
+// Version of the GlobalShortcuts portal backend on the session bus (0 when
+// absent/unreachable).  Functional probe used by auto selection and --diag.
+unsigned LinuxPortalGlobalShortcutsVersion()
+{
+	DBusError err; dbus_error_init(&err);
+	DBusConnection *c = dbus_bus_get(DBUS_BUS_SESSION, &err);
+	if (!c) { dbus_error_free(&err); return 0; }
+	dbus_error_free(&err);
+	const char *owner = "org.freedesktop.portal.Desktop";
+	const char *path = "/org/freedesktop/portal/desktop";
+	const char *iface = "org.freedesktop.portal.GlobalShortcuts";
+	unsigned version = 0;
+	DBusMessage *msg = dbus_message_new_method_call(owner, path,
+		"org.freedesktop.DBus.Properties", "Get");
+	if (msg)
+	{
+		DBusMessageIter it;
+		dbus_message_iter_init_append(msg, &it);
+		dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &iface);
+		const char *prop = "version";
+		dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &prop);
+		DBusMessage *rep = dbus_connection_send_with_reply_and_block(c, msg, 3000, &err);
+		dbus_message_unref(msg);
+		if (rep)
+		{
+			DBusMessageIter rit, var;
+			dbus_message_iter_init(rep, &rit);
+			if (dbus_message_iter_get_arg_type(&rit) == DBUS_TYPE_VARIANT)
+			{
+				dbus_message_iter_recurse(&rit, &var);
+				if (dbus_message_iter_get_arg_type(&var) == DBUS_TYPE_UINT32)
+				{
+					dbus_uint32_t v = 0;
+					dbus_message_iter_get_basic(&var, &v);
+					version = (unsigned)v;
+				}
+			}
+			dbus_message_unref(rep);
+		}
+		dbus_error_free(&err);
+	}
+	dbus_connection_unref(c);
+	return version;
+}
+
+bool LinuxPortalGlobalShortcutsAvailable()
+{
+	return LinuxPortalGlobalShortcutsVersion() >= 1;
+}
+
+// Major GNOME Shell version (49 for "49.0"), 0 when unknown.
+int LinuxGnomeMajorVersion()
+{
+	char ver[64] = { 0 };
+	if (SessionBusGetStringProp("org.gnome.Shell", "/org/gnome/Shell",
+			"org.gnome.Shell", "ShellVersion", ver, sizeof(ver)) && ver[0])
+	{
+		int major = ParseLeadingInt(ver);
+		if (major > 0) return major;
+	}
+	// Fallback: the distro may ship a plain version file.
+	FILE *f = fopen("/usr/share/gnome-shell/gnome-shell-version", "r");
+	if (f)
+	{
+		char buf[64] = { 0 };
+		if (fgets(buf, sizeof(buf), f))
+		{
+			int major = ParseLeadingInt(buf);
+			if (major > 0) { fclose(f); return major; }
+		}
+		fclose(f);
+	}
+	return 0;
 }
 
 void LinuxInputBackendSync()

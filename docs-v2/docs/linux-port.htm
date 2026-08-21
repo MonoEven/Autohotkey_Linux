@@ -57,7 +57,7 @@ examples fall into three groups on Linux:</p>
 <h2>What works on Linux</h2>
 <p>All <b>367</b> built-in functions listed in the worklist are implemented
 (3 not-implemented error paths: ComObjArray, TrayTip, TraySetIcon);
-1103 doc-check assertions pass under Xvfb (including 29
+1110 doc-check assertions pass under Xvfb (including 29
 for <code>DllCall</code> against native <b>.so</b> libraries and 18 for the
 D-Bus COM layer). The port has two display backends:</p>
 <ul>
@@ -103,19 +103,49 @@ D-Bus COM layer). The port has two display backends:</p>
         its signal source (accelerator-deactivated is relayed) but is not yet
         consumed by the runtime.</li>
       <li><b>XDG Global Shortcuts Portal backend</b>
-        (org.freedesktop.portal.GlobalShortcuts, GNOME 45+/KDE, the standard
-        safe fallback): Hotkey registrations bind with the compositor and fire
+        (org.freedesktop.portal.GlobalShortcuts, the standard safe fallback;
+        the backend is shipped by xdg-desktop-portal-gnome <b>since GNOME 48</b>,
+        KDE ships its own): Hotkey registrations bind with the compositor and fire
         on the physical key.  Caveat: a few compositor/driver builds (e.g.
         Ubuntu 25.10 &rsquo;s xdg-desktop-portal 1.20.3 + GNOME 49) only accept
         binds when they can resolve a valid app identity for the caller (a
         bare CLI resolves none and is rejected); run from a matching
-        .desktop/app scope on those systems.</li>
+        .desktop/app scope on those systems (the installer drops
+        <code>org.autohotkey.linux.desktop</code>, and <code>ahk --diag</code>
+        reports <code>portal-app-id-resolvable</code>).  <b>Verified on the
+        GNOME 49 VM</b>: the backend is present (interface version 1 with
+        CreateSession/BindShortcuts/ListShortcuts, Activated/Deactivated
+        signals) and auto selection routes to it once the extension is
+        disabled &mdash; with no spurious error, because the functional
+        probe finds the backend.</li>
+      <li><b>GNOME version support</b> (extension vs. portal backend):</li>
+      <table>
+        <tr><th>GNOME version</th><th>Native hotkey backend</th><th>VM-verified</th></tr>
+        <tr><td>45-47</td><td>AHK shell extension only (no Global Shortcuts
+            portal backend exists); auto reports a loud install-the-extension
+            error when neither is present</td><td>declared, not verified</td></tr>
+        <tr><td>48+</td><td>AHK shell extension, or the Global Shortcuts
+            portal backend (auto falls back to it when the extension is
+            absent)</td><td>49 verified (extension E2E + portal backend
+            presence + auto fallback + deny/cancel regression)</td></tr>
+      </table>
     </ul>
   </li>
   <li>Backend selection: <code>AHK_INPUT_BACKEND=auto|x11|portal|gnome-shell|evdev</code>
     (auto: X11 session &rarr; X11; GNOME Wayland with the extension installed
-    &rarr; gnome-shell; other Wayland &rarr; portal; <code>evdev</code> reports
+    &rarr; gnome-shell; GNOME without the extension but with a Global Shortcuts
+    portal backend live on the session bus (shipped since GNOME 48) &rarr;
+    portal; GNOME &lt;48 without the extension &rarr; portal plus a loud,
+    actionable startup error pointing to the extension install (a portal
+    selection there could never bind, so silent auto-selection was a trap);
+    other Wayland &rarr; portal; <code>evdev</code> reports
     &ldquo;backend not installed&rdquo; until ahk-inputd ships).
+    The GNOME/portal decision is made by a <em>functional</em> probe
+    (read the <code>org.freedesktop.portal.GlobalShortcuts</code> version
+    property on the session bus), not by version sniffing, and is reported by
+    <code>ahk --diag</code> as <code>gnome-major</code>,
+    <code>portal-global-shortcuts</code> and
+    <code>portal-app-id-resolvable</code>.
     <code>AHK_FORCE_GLOBAL_SHORTCUTS=1</code> keeps its documented meaning:
     explicitly require the standard Portal backend (it is not reused for the
     GNOME Shell backend); only <code>1/true/yes/on</code> count as true, and
@@ -141,7 +171,21 @@ D-Bus COM layer). The port has two display backends:</p>
     <code>AHK_WAYLAND_PASTE=0</code> and warns before first use (sensitive
     text / password managers).  On a compositor with no injection path at
     all the send raises a clear error naming the character instead of
-    silently dropping it.</li>
+    silently dropping it.
+    <b>XTEST&rarr;libei zero-code bridge (VM-tested, negative on Ubuntu
+    24.04):</b> Xwayland &ge;23.2 can bridge XTEST requests into the desktop
+    via libei (RemoteDesktop portal) with no client changes, but only when
+    the Xwayland <em>package</em> is built with libei.  Tested on the
+    Ubuntu 24.04 GNOME 49 VM (Xwayland 24.1.6): the binary links no libei
+    and contains no EIS symbols; XTEST from this port reaches XWayland
+    windows (verified: <code>SendText</code> &rarr; raw-Xlib X window
+    received all key events) but does <b>not</b> reach a focused
+    Wayland-native window (ptyxis read loop got nothing), and no
+    RemoteDesktop/ConnectToEIS portal traffic is generated.  So on this
+    distro the zero-code path is <b>not</b> available; it would need a
+    distro whose Xwayland ships libei (e.g. Fedora or a
+    <code>--enable-libei</code> build).  The native path (libei sender
+    backend) is the R3 plan.</li>
 </ul>
 
 <h2>Differences from Windows AutoHotkey</h2>
@@ -220,7 +264,7 @@ Highlights of this release:</p>
     <b>evdev/uinput permission artifacts</b>
     (<code>tools/linux/permissions/</code>: udev rule, input group,
     polkit action, install script — VM-verified).</li>
-  <li>Doc-check: 1103/1103 assertions pass on both the normal and the ASan
+  <li>Doc-check: 1110/1110 assertions pass on both the normal and the ASan
     builds; regression 27/27, Wayland 17/17, XWayland 247/247. (The
     authoritative numbers are machine-verified in CI by
     <code>verify_report_numbers.sh</code>.)</li>
