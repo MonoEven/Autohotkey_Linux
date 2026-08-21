@@ -21,6 +21,84 @@
 #include "../gui/script_gui_linux.h"
 #include <X11/Xlib.h>
 #include <csignal>
+#include <unistd.h>
+#include <cstdio>
+
+// ---------------------------------------------------------------------------
+// Environment diagnostic (ahk_core --diag; check_detail0821 §12)
+// ---------------------------------------------------------------------------
+// One-shot snapshot for issue reports: version, session/display kind, the
+// resolved input backend + its capabilities, clipboard-change watch state,
+// GNOME extension / portal reachability signals, /dev/uinput access, and the
+// last backend error.  Pure read-only; never blocks on network/D-Bus.
+extern "C" int LinuxRunDiagnostic()
+{
+	const char *display = getenv("DISPLAY");
+	const char *wayland = getenv("WAYLAND_DISPLAY");
+	const char *desktop = getenv("XDG_CURRENT_DESKTOP");
+	const char *session = getenv("XDG_SESSION_TYPE");
+
+	std::printf("=== AutoHotkey Linux diagnostic ===\n");
+	std::printf("version     : v2.0.26 Linux port (linux-port)\n");
+	std::printf("session     : %s%s%s\n"
+		, session ? session : "-",
+		desktop ? "; desktop=" : "",
+		desktop ? desktop : "");
+	if (wayland)
+		std::printf("wayland     : %s\n", wayland);
+	if (display)
+		std::printf("x11         : %s\n", display);
+	else
+		std::printf("x11         : (none)\n");
+	if (LinuxWaylandActive())
+		std::printf("wayland-backend-active : yes\n");
+	else
+		std::printf("wayland-backend-active : %s\n", display ? "no (X11)" : "no");
+	// Input backend + capability summary.
+	const char *backend = LinuxInputBackendName();
+	std::printf("input-backend: %s\n", backend ? backend : "(unknown)");
+	if (const AhkInputBackendCaps *caps = LinuxInputBackendCaps())
+	{
+		std::printf("  caps global=%d suppress=%d passthrough=%d key_up=%d wildcard=%d"
+			" bare=%d zero_confirm=%d dynamic=%d multi_owner=%d\n"
+			, (int)caps->global_hotkeys, (int)caps->suppress, (int)caps->passthrough
+			, (int)caps->key_up, (int)caps->wildcard, (int)caps->bare_keys
+			, (int)caps->zero_confirm, (int)caps->dynamic, (int)caps->multi_owner);
+	}
+	const wchar_t *err = LinuxInputBackendLastError();
+	if (err && *err)
+	{
+		char buf[512];
+		if (wcstombs(buf, err, sizeof(buf) - 1) != (size_t)-1)
+		{
+			buf[sizeof(buf) - 1] = 0;
+			std::printf("  backend-error: %s\n", buf);
+		}
+	}
+	// Clipboard-change watch (OnClipboardChange support).
+	std::printf("clipboard-change-watch : %s\n"
+		, LinuxClipboardWatchActive() ? "on" : "off");
+	// GNOME extension / portal reachability (best-effort, filesystem only).
+	const char *home = getenv("HOME");
+	char extdir[1024];
+	if (home)
+		snprintf(extdir, sizeof(extdir), "%s/.local/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org", home);
+	else
+		extdir[0] = 0;
+	if (extdir[0] && access(extdir, F_OK) == 0)
+		std::printf("gnome-extension-installed : yes (%s)\n", extdir);
+	else if (access("/usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org", F_OK) == 0)
+		std::printf("gnome-extension-installed : yes (system-wide)\n");
+	else
+		std::printf("gnome-extension-installed : no\n");
+	// /dev/uinput for the evdev/uinput lane.
+	if (access("/dev/uinput", W_OK) == 0)
+		std::printf("uinput-writable : yes\n");
+	else
+		std::printf("uinput-writable : no (use tools/linux/permissions/install_permissions.sh)\n");
+	std::printf("=== end diagnostic ===\n");
+	return 0;
+}
 
 // ---------------------------------------------------------------------------
 // Reload (restart) support: the new interpreter instance signals the old

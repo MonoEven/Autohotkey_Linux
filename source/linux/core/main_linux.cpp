@@ -24,6 +24,9 @@
 // into ExitApp(EXIT_RELOAD) by the wait loops.
 extern "C" void LinuxInstallRestartHandler();
 extern "C" bool LinuxRestartRequested();
+// Environment diagnostic (ahk_core --diag): prints a one-shot snapshot for
+// issue reports (check_detail0821 §12).  Implemented in core_platform_stubs.cpp.
+extern "C" int LinuxRunDiagnostic();
 
 int main(int argc, char** argv)
 {
@@ -72,11 +75,14 @@ int main(int argc, char** argv)
 		std::printf("AutoHotkey Linux (v2 port)\n"
 			"Usage: ahk_core script.ahk [args...]\n"
 			"  --version, -v   print the version and exit\n"
+			"  --diag          print an environment diagnostic and exit\n"
 			"  --help, -h      show this help\n"
 			"Displays: X11 when DISPLAY is set (incl. XWayland), native\n"
 			"Wayland otherwise (xdg-shell + virtual input protocols).\n");
 		return 0;
 	}
+	if (!strcmp(argv[1], "--diag"))
+		return LinuxRunDiagnostic();
 
 	wchar_t wpath[4096];
 	if (mbstowcs(wpath, argv[script_arg], 4095) == (size_t)-1)
