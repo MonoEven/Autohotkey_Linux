@@ -82,6 +82,10 @@ extern "C" bool LinuxRestartRequested();
 // in the public section below; the anonymous-namespace handlers need it).
 bool LinuxIsPassthruCopy(XEvent &ev);
 
+// SendInput self-suppression check (defined below with the SendInput
+// suppression log; the event handler needs it before that definition).
+static bool LinuxIsSendInputSelf(XEvent &ev);
+
 namespace {
 
 static optl<StrArg> LinuxHotkeyOptStr(ExprTokenType *aParam[], int aParamCount, int aIndex, TCHAR *aBuf, size_t aBufSize)
@@ -617,6 +621,16 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 	// target already received the injected one).
 	if (LinuxIsPassthruCopy(ev))
 		return;
+	// SendInput self-suppression: a key this process injected with SendInput
+	// must not fire its own hotkeys/hotstrings (Windows unloads the hook
+	// during SendInput).  The event is consumed (not re-injected): a grabbed
+	// key cannot be delivered to the target on X11 -- the passive grab
+	// intercepts every press of it (the same limitation that makes a `~`
+	// passthrough deliver only best-effort on servers that re-activate the
+	// grab).  This matches how Send/SendEvent of a key that is itself a
+	// hotkey already behaves (the hotkey consumes it).
+	if (LinuxIsSendInputSelf(ev))
+		return;
 
 	bool is_up = ev.type == KeyRelease;
 
@@ -821,6 +835,71 @@ bool LinuxIsPassthruCopy(XEvent &ev)
 			m.id = 0; // Never came back; not this event.
 			continue;
 		}
+		m.consumed = true;
+		return true;
+	}
+	return false;
+}
+
+// ---------------------------------------------------------------------------
+// SendInput self-suppression (check_detail0821 §2-B / R2 S3)
+// ---------------------------------------------------------------------------
+// SendInput must not re-fire the script's own hotkeys/hotstrings, matching
+// Windows "unload the hook during SendInput".  On X11 the injected events
+// come back through the passive grab asynchronously (often after the SendInput
+// call has already returned), so a simple in-flight flag is insufficient: each
+// key the batch injected is recorded with a consume-once mark, and
+// LinuxHandleKeyEvent drops a grabbed event that matches a live mark.  The
+// list is unbounded (a batch can be hundreds of keys) and pruned by the match
+// window like the passthru log.
+struct SendInputMark
+{
+	unsigned int id;   // KeyCode.
+	DWORD when;        // GetTickCount() at injection.
+	bool is_up;
+	bool consumed;
+};
+static std::vector<SendInputMark> sSendInputLog;
+#define SENDINPUT_MARK_MS_WINDOW 1000
+
+void LinuxSendInputTrack(unsigned int aKeycode, bool aIsPress)
+{
+	DWORD now = GetTickCount();
+	// Opportunistic prune of expired marks (keeps the list bounded).
+	for (size_t i = 0; i < sSendInputLog.size(); )
+		if (now - sSendInputLog[i].when >= (DWORD)SENDINPUT_MARK_MS_WINDOW)
+			sSendInputLog.erase(sSendInputLog.begin() + (long)i);
+		else
+			++i;
+	SendInputMark m;
+	m.id = aKeycode;
+	m.when = now;
+	m.is_up = !aIsPress;
+	m.consumed = false;
+	sSendInputLog.push_back(m);
+}
+
+void LinuxSendInputClear()
+{
+	sSendInputLog.clear();
+}
+
+// True when a grabbed event is a copy of a key this process injected with
+// SendInput (consume-once per mark, same expiry discipline as the passthru
+// log).  Only keys that carry a passive grab ever reach this check, so an
+// unconsumed mark can never swallow a non-grabbed key's traffic.
+static bool LinuxIsSendInputSelf(XEvent &ev)
+{
+	unsigned int id = (unsigned int)ev.xkey.keycode;
+	bool is_up = ev.type == KeyRelease;
+	DWORD now = GetTickCount();
+	for (size_t i = 0; i < sSendInputLog.size(); ++i)
+	{
+		SendInputMark &m = sSendInputLog[i];
+		if (m.id != id || m.is_up != is_up || m.consumed)
+			continue;
+		if (now - m.when >= (DWORD)SENDINPUT_MARK_MS_WINDOW)
+			continue; // Expired; pruned on the next Track().
 		m.consumed = true;
 		return true;
 	}

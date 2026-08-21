@@ -110,6 +110,80 @@ SendPlay("z")
 Sleep(60)
 Log("sendplay=" (downs(next_lines()) = "z" ? 1 : 0))
 
+; --- §2-B (check_detail0821): SendEvent pacing via SetKeyDelay/PressDuration.
+; xkeycap records relative arrival timestamps (k:...:t:<rel-ms>), so the
+; inter-key gaps and the down->up gap are measurable. ---
+; Relative ms of every key event (down and up), in arrival order.
+all_key_times(lines) {
+    out := []
+    for l in lines {
+        if l = ""
+            continue
+        p := StrSplit(l, ":")
+        ; k:down:<name>:mods:<state>:t:<rel-ms>
+        if p.Length >= 7 && p[1] = "k" && p[6] = "t"
+            out.Push(Integer(p[7]))
+    }
+    return out
+}
+; SetKeyDelay 50: consecutive key-downs must be >=45ms apart.
+SetKeyDelay(50)
+SendEvent("abc")
+Sleep(400)
+ts := all_key_times(next_lines())
+; ts = [a-down, a-up, b-down, b-up, c-down, c-up]; downs at indices 1,3,5.
+gap_ok := 0
+if ts.Length >= 5
+    gap_ok := (ts[3] - ts[1] >= 45 && ts[5] - ts[3] >= 45 ? 1 : 0)
+Log("sendevent_delay50=" gap_ok)
+; PressDuration 50 (SetKeyDelay 0,50): down->up gap must be >=45ms.
+SetKeyDelay(0, 50)
+SendEvent("q")
+Sleep(400)
+ts := all_key_times(next_lines())
+press_ok := 0
+if ts.Length >= 2
+    press_ok := (ts[2] - ts[1] >= 45 ? 1 : 0)
+Log("sendevent_press50=" press_ok)
+SetKeyDelay(-1)
+
+; --- §2-B: SendInput is a fast batch (<200ms for 100 keys) and delivers
+; every key.  (SendInput ignores SetKeyDelay, so no pacing sleeps.) ---
+s100 := ""
+Loop 100
+    s100 .= "a"
+t0 := A_TickCount
+SendInput(s100)
+dt := A_TickCount - t0
+Sleep(100)
+Log("sendinput_100_fast=" (dt < 200 ? 1 : 0))
+exp100 := ""
+Loop 100
+    exp100 .= (exp100 = "" ? "" : ",") "a"
+Log("sendinput_100_keys=" (downs(next_lines()) = exp100 ? 1 : 0))
+
+; --- §2-B: SendInput must not re-fire the script's own hotkeys (Windows
+; unloads the hook during SendInput).  SendEvent of the same key DOES fire
+; the hotkey (Windows SendEvent can trigger).  Note: a grabbed key that
+; SendInput injects is consumed, not delivered to the target -- on X11 the
+; passive grab intercepts every press of it (same limitation as `~`
+; passthrough on servers that re-activate the grab; documented in
+; core_hotkey_linux.cpp). ---
+self_fired := 0
+HotkeyXCB(ThisHotkey) {   ; named fn: hotkey threads need `global` inside.
+    global self_fired
+    self_fired++
+}
+Hotkey("x", HotkeyXCB)
+Sleep(150)   ; let the grab install + reconcile run
+SendInput("x")
+Sleep(150)
+Log("sendinput_self_no_fire=" (self_fired = 0 ? 1 : 0))
+SendEvent("x")
+Sleep(150)
+Log("sendevent_self_fire=" (self_fired = 1 ? 1 : 0))
+Hotkey("x", "Off")
+
 ; --- MouseMove + MouseGetPos. ---
 MouseMove(300, 200)
 Sleep(50)
@@ -222,3 +296,6 @@ Log("keystate_up=" (GetKeyState("b") = 0 ? 1 : 0))
 
 ; --- Cleanup. ---
 Run("pkill -f xkeycap")
+; A hotkey was registered above, which makes the script persistent; exit
+; explicitly so the runner sees a clean termination.
+ExitApp

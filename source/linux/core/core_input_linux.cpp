@@ -21,6 +21,7 @@
 #include "core_wayland_linux.h"
 #include "core_clipboard_linux.h" // LinuxClipboardGetText/SetText (paste path)
 #include "core_uinput_linux.h" // uinput injection lane (check0820)
+#include "core_hotkey_linux.h" // LinuxSendInputTrack/Clear (SendInput self-suppression)
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
@@ -409,26 +410,124 @@ static void LinuxReleaseAllMods(Display *d, LinuxHeldMods &aHeld)
 	if (aHeld.win) { LinuxFakeKey(d, 0x5B, false); aHeld.win = false; }
 }
 
+// ---------------------------------------------------------------------------
+// Send-mode threading + key-delay pacing (check_detail0821 §2-B / R2 S1+S2)
+// ---------------------------------------------------------------------------
+// The low-level tap functions (LinuxSendVk / LinuxSendChar / ...) read the
+// mode the current Send/SendEvent/SendInput/SendPlay call runs under:
+//   LSE_EVENT: per-key XTestFakeKeyEvent paced by SetKeyDelay (inter-key) and
+//              PressDuration (down-up).  An explicit delay value is honored;
+//              -1 (default = "system speed") keeps the previous fast behavior
+//              because X11 has no OS-paced journal to defer to.
+//   LSE_INPUT: batch semantics -- never sleep (SetKeyDelay does not affect
+//              SendInput, docs) and every key is marked self-injected so the
+//              script's own grab/capture engine drops the returned copy
+//              (Windows unloads the hook during SendInput; the X events come
+//              back asynchronously, so an in-flight flag is not enough -- the
+//              marks are consumed when the events actually arrive).
+//   LSE_PLAY:  LSE_EVENT + the SetKeyDelay ,, Play variants.  X11 has no
+//              journal, so the injection depth is the same as Event; this is
+//              a documented platform adaptation (parity tier "adapted").
+//   LSE_TEXT:  SendText -- raw literal delivery, no pacing, no suppression
+//              (keeps the historical fast behavior).
+enum { LSE_EVENT = 0, LSE_INPUT, LSE_PLAY, LSE_TEXT };
+static int s_send_mode = LSE_EVENT;
+// True only for an explicit SendInput() call: it is the only path that
+// implements the "unload the hook during SendInput" self-suppression
+// (check_detail0821 §2-B).  `Send` resolves by SendMode (default "Input")
+// but keeps the historical XTEST trigger semantics -- its events still
+// activate the script's own grabs (as the doc-check suite and many macro
+// scripts rely on).  Documented deviation: SendMode("Input") + `Send`
+// does not self-suppress on Linux; use SendInput() for that semantic.
+static bool s_send_explicit_input = false;
+
+static void LinuxSetSendMode(int aMode, bool aExplicitSendInput)
+{
+	switch (aMode)
+	{
+	case LSE_INPUT: case LSE_PLAY: case LSE_TEXT: s_send_mode = aMode; break;
+	default: s_send_mode = LSE_EVENT; break;
+	}
+	s_send_explicit_input = aExplicitSendInput;
+}
+
+static int LinuxModeKeyDelayMs()
+{
+	switch (s_send_mode)
+	{
+	case LSE_INPUT: case LSE_TEXT: return 0;
+	case LSE_PLAY: return g->KeyDelayPlay > -1 ? g->KeyDelayPlay : 0;
+	default: return g->KeyDelay > -1 ? g->KeyDelay : 0;
+	}
+}
+
+static int LinuxModePressDurationMs()
+{
+	switch (s_send_mode)
+	{
+	case LSE_INPUT: case LSE_TEXT: return 0;
+	case LSE_PLAY: return g->PressDurationPlay > -1 ? g->PressDurationPlay : 0;
+	default: return g->PressDuration > -1 ? g->PressDuration : 0;
+	}
+}
+
+// True only in an explicit SendInput batch: the batch's events must not
+// re-fire this process's own hotkeys/hotstrings.
+static bool LinuxModeSuppressSelf()
+{
+	return s_send_mode == LSE_INPUT && s_send_explicit_input;
+}
+
+// Send one key phase and (in SendInput mode) mark it self-injected so the
+// script's own grab does not re-fire it.
+static void LinuxTapKey(Display *d, vk_type aVK, KeyCode aTrackKc, bool aDown)
+{
+	LinuxFakeKey(d, aVK, aDown);
+	if (aTrackKc && LinuxModeSuppressSelf())
+		LinuxSendInputTrack((unsigned int)aTrackKc, aDown);
+}
+
 // Send one key press+release; count times (for "{Enter 3}").
 static void LinuxSendVk(Display *d, vk_type aVK, int aCount)
 {
+	int press_ms = LinuxModePressDurationMs();
+	int gap_ms = LinuxModeKeyDelayMs();
+	// Keycode used only for the SendInput self-suppression mark (X11 path).
+	KeyCode track_kc = 0;
+	if (LinuxModeSuppressSelf() && d && !LinuxMouseButtonForVk(aVK)
+		&& aVK != 0x1000 && aVK != 0x1001 && aVK != 0x1002 && aVK != 0x1003)
+		track_kc = LinuxKeycodeForVk(d, aVK);
 	for (int i = 0; i < aCount; ++i)
 	{
+		bool is_key = true;
 		if (unsigned int btn = LinuxMouseButtonForVk(aVK))
-			LinuxFakeButton(d, btn, true), LinuxFakeButton(d, btn, false);
+			LinuxFakeButton(d, btn, true), is_key = false;
 		else if (aVK == 0x1000) // WheelUp (synthetic vk used by the brace parser).
-			LinuxFakeButton(d, 4, true), LinuxFakeButton(d, 4, false);
+			LinuxFakeButton(d, 4, true), is_key = false;
 		else if (aVK == 0x1001) // WheelDown.
-			LinuxFakeButton(d, 5, true), LinuxFakeButton(d, 5, false);
+			LinuxFakeButton(d, 5, true), is_key = false;
 		else if (aVK == 0x1002) // WheelLeft.
-			LinuxFakeButton(d, 6, true), LinuxFakeButton(d, 6, false);
+			LinuxFakeButton(d, 6, true), is_key = false;
 		else if (aVK == 0x1003) // WheelRight.
-			LinuxFakeButton(d, 7, true), LinuxFakeButton(d, 7, false);
+			LinuxFakeButton(d, 7, true), is_key = false;
 		else
-		{
-			LinuxFakeKey(d, aVK, true);
-			LinuxFakeKey(d, aVK, false);
-		}
+			LinuxTapKey(d, aVK, track_kc, true);
+		if (press_ms > 0)
+			usleep((useconds_t)press_ms * 1000);
+		if (is_key)
+			LinuxTapKey(d, aVK, track_kc, false);
+		else if (unsigned int btn = LinuxMouseButtonForVk(aVK))
+			LinuxFakeButton(d, btn, false);
+		else if (aVK == 0x1000)
+			LinuxFakeButton(d, 4, false);
+		else if (aVK == 0x1001)
+			LinuxFakeButton(d, 5, false);
+		else if (aVK == 0x1002)
+			LinuxFakeButton(d, 6, false);
+		else if (aVK == 0x1003)
+			LinuxFakeButton(d, 7, false);
+		if (gap_ms > 0 && i + 1 < aCount)
+			usleep((useconds_t)gap_ms * 1000);
 	}
 }
 
@@ -733,8 +832,19 @@ static bool LinuxSendCharUnicode(Display *d, wchar_t aChar)
 		return false;
 	}
 	XTestFakeKeyEvent(d, kc, True, CurrentTime);
-	XTestFakeKeyEvent(d, kc, False, CurrentTime);
+	if (LinuxModeSuppressSelf())
+		LinuxSendInputTrack((unsigned int)kc, true);
 	XFlush(d);
+	int press_ms = LinuxModePressDurationMs();
+	int gap_ms = LinuxModeKeyDelayMs();
+	if (press_ms > 0)
+		usleep((useconds_t)press_ms * 1000);
+	XTestFakeKeyEvent(d, kc, False, CurrentTime);
+	if (LinuxModeSuppressSelf())
+		LinuxSendInputTrack((unsigned int)kc, false);
+	XFlush(d);
+	if (gap_ms > 0)
+		usleep((useconds_t)gap_ms * 1000);
 	if (remapped)
 	{
 		// Race (round-34, observed in the doc-check): a client that
@@ -881,7 +991,13 @@ static void LinuxSendChar(Display *d, wchar_t aChar, LinuxHeldMods &aHeld)
 		// Wayland virtual keyboard (no X display).
 		vk_type vk = LinuxCharVk(base);
 		LinuxFakeKey(nullptr, vk, true);
+		int press_ms = LinuxModePressDurationMs();
+		int gap_ms = LinuxModeKeyDelayMs();
+		if (press_ms > 0)
+			usleep((useconds_t)press_ms * 1000);
 		LinuxFakeKey(nullptr, vk, false);
+		if (gap_ms > 0)
+			usleep((useconds_t)gap_ms * 1000);
 	}
 	else
 	{
@@ -889,9 +1005,19 @@ static void LinuxSendChar(Display *d, wchar_t aChar, LinuxHeldMods &aHeld)
 		if (kc)
 		{
 			XTestFakeKeyEvent(d, kc, True, CurrentTime);
+			if (LinuxModeSuppressSelf())
+				LinuxSendInputTrack((unsigned int)kc, true);
 			XFlush(d);
+			int press_ms = LinuxModePressDurationMs();
+			int gap_ms = LinuxModeKeyDelayMs();
+			if (press_ms > 0)
+				usleep((useconds_t)press_ms * 1000);
 			XTestFakeKeyEvent(d, kc, False, CurrentTime);
+			if (LinuxModeSuppressSelf())
+				LinuxSendInputTrack((unsigned int)kc, false);
 			XFlush(d);
+			if (gap_ms > 0)
+				usleep((useconds_t)gap_ms * 1000);
 		}
 	}
 	if (added_shift)
@@ -1142,7 +1268,10 @@ static void LinuxMouseCoords(Display *d, int aX, int aY, int &aOutX, int &aOutY)
 // Send / SendEvent / SendInput / SendPlay / SendText
 // ---------------------------------------------------------------------------
 
-static void LinuxSendWrapper(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount, bool aRaw)
+// aMode is one of LSE_*; aExplicitSendInput marks an explicit SendInput()
+// call (the only path with self-suppression).  BIF_Linux_Send resolves the
+// current SendMode itself.
+static void LinuxSendWrapper(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount, bool aRaw, int aMode, bool aExplicitSendInput)
 {
 	Display *d = LinuxInputDisplay();
 	if (!d && !LinuxWaylandActive())
@@ -1154,6 +1283,11 @@ static void LinuxSendWrapper(ResultToken &aResultToken, ExprTokenType *aParam[],
 	LPTSTR keys = aParamCount > 0 ? TokenToString(*aParam[0], keys_buf, nullptr) : nullptr;
 	if (!keys)
 		keys = keys_buf;
+	int saved_mode = s_send_mode;
+	bool saved_explicit = s_send_explicit_input;
+	LinuxSetSendMode(aMode, aExplicitSendInput);
+	if (s_send_mode == LSE_INPUT && aExplicitSendInput)
+		LinuxSendInputClear(); // Fresh suppression marks for this batch.
 	sLastUnsendable = 0;
 	bool ok = true;
 	if (aRaw)
@@ -1164,6 +1298,8 @@ static void LinuxSendWrapper(ResultToken &aResultToken, ExprTokenType *aParam[],
 	}
 	else
 		ok = LinuxSendKeys(d, keys);
+	s_send_mode = saved_mode;
+	s_send_explicit_input = saved_explicit;
 	if (!ok && sLastUnsendable)
 	{
 		TCHAR buf[256];
@@ -1179,11 +1315,24 @@ static void LinuxSendWrapper(ResultToken &aResultToken, ExprTokenType *aParam[],
 	}
 }
 
-BIF_DECL(BIF_Linux_Send)      { LinuxSendWrapper(aResultToken, aParam, aParamCount, false); }
-BIF_DECL(BIF_Linux_SendEvent) { LinuxSendWrapper(aResultToken, aParam, aParamCount, false); }
-BIF_DECL(BIF_Linux_SendInput) { LinuxSendWrapper(aResultToken, aParam, aParamCount, false); }
-BIF_DECL(BIF_Linux_SendPlay)  { LinuxSendWrapper(aResultToken, aParam, aParamCount, false); }
-BIF_DECL(BIF_Linux_SendText)  { LinuxSendWrapper(aResultToken, aParam, aParamCount, true); }
+// Resolve the current SendMode to an LSE_* tap mode.  SM_INPUT_FALLBACK_TO_PLAY
+// and SM_INPUT both map to LSE_INPUT here (there is no X11 journal to fall
+// back to, and SM_PLAY is requested explicitly).
+static int LinuxResolveSendMode()
+{
+	switch (g->SendMode)
+	{
+	case SM_PLAY: return LSE_PLAY;
+	case SM_EVENT: return LSE_EVENT;
+	default: return LSE_INPUT;
+	}
+}
+
+BIF_DECL(BIF_Linux_Send)      { LinuxSendWrapper(aResultToken, aParam, aParamCount, false, LinuxResolveSendMode(), false); }
+BIF_DECL(BIF_Linux_SendEvent) { LinuxSendWrapper(aResultToken, aParam, aParamCount, false, LSE_EVENT, false); }
+BIF_DECL(BIF_Linux_SendInput) { LinuxSendWrapper(aResultToken, aParam, aParamCount, false, LSE_INPUT, true); }
+BIF_DECL(BIF_Linux_SendPlay)  { LinuxSendWrapper(aResultToken, aParam, aParamCount, false, LSE_PLAY, false); }
+BIF_DECL(BIF_Linux_SendText)  { LinuxSendWrapper(aResultToken, aParam, aParamCount, true, LSE_TEXT, false); }
 
 // ---------------------------------------------------------------------------
 // Accessors for the control module (core_ctrl_linux.cpp): ControlClick and

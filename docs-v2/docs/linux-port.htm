@@ -57,7 +57,7 @@ examples fall into three groups on Linux:</p>
 <h2>What works on Linux</h2>
 <p>All <b>367</b> built-in functions listed in the worklist are implemented
 (3 not-implemented error paths: ComObjArray, TrayTip, TraySetIcon);
-1110 doc-check assertions pass under Xvfb (including 29
+1116 doc-check assertions pass under Xvfb (including 29
 for <code>DllCall</code> against native <b>.so</b> libraries and 18 for the
 D-Bus COM layer). The port has two display backends:</p>
 <ul>
@@ -217,6 +217,26 @@ D-Bus COM layer). The port has two display backends:</p>
     and through the GNOME Shell extension or the Global Shortcuts Portal on
     Wayland (see the "Native Wayland backend" section above).
     LoadPicture decodes BMP/ICO/PNG/GIF/CUR/JPEG/PPM.</li>
+  <li><b>Send / SendEvent / SendInput / SendPlay modes (check_detail0821
+    §2-B)</b>: the four calls now differ on Linux.  <code>SendEvent</code>
+    paces each key by <code>SetKeyDelay</code> (inter-key) and
+    <code>PressDuration</code> (down&rarr;up); explicit delay values are
+    honored, the default (<code>-1</code> = "system speed") keeps the fast
+    XTEST behavior.  <code>SendInput</code> is a fast batch (no sleeps;
+    <code>SetKeyDelay</code> does not affect it, per the docs) and its keys
+    are marked self-injected so the script&rsquo;s own hotkeys/hotstrings do
+    not re-fire ("unload the hook during SendInput").  A grabbed key that
+    SendInput injects is consumed rather than delivered to the target &mdash;
+    on X11 the passive grab intercepts every press of it (the same
+    limitation as <code>~</code> passthrough on servers that re-activate the
+    grab).  <code>SendPlay</code> is SendEvent with the
+    <code>SetKeyDelay ,, Play</code> variants (no X11 journal exists, so the
+    injection depth equals Event; documented platform adaptation).
+    <code>Send</code> resolves by <code>SendMode</code> for pacing but keeps
+    the historical trigger semantics: its events still activate the
+    script&rsquo;s own grabs.  Documented deviation: on Windows, SendMode
+    "Input" + <code>Send</code> also unloads the hook; on Linux use
+    <code>SendInput()</code> for that semantic.</li>
 </ul>
 <p>See <a href="https://github.com/MonoEven/Autohotkey_Linux/blob/linux-port/tests/doccheck/CHECK_REPORT.md">CHECK_REPORT.md</a>
 for the complete per-module report.</p>
@@ -264,7 +284,7 @@ Highlights of this release:</p>
     <b>evdev/uinput permission artifacts</b>
     (<code>tools/linux/permissions/</code>: udev rule, input group,
     polkit action, install script — VM-verified).</li>
-  <li>Doc-check: 1110/1110 assertions pass on both the normal and the ASan
+  <li>Doc-check: 1116/1116 assertions pass on both the normal and the ASan
     builds; regression 27/27, Wayland 17/17, XWayland 247/247. (The
     authoritative numbers are machine-verified in CI by
     <code>verify_report_numbers.sh</code>.)</li>

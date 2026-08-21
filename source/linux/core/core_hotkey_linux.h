@@ -56,3 +56,11 @@ void LinuxInjectMarked(Display *d, unsigned int aKeycode, bool aIsPress);
 // Add the all-keys capture grab set (typed-text capture; see
 // core_capture_linux.cpp) to aDesired.  No-op when capture is inactive.
 void LinuxCaptureAddSpecs(std::set<GrabSpec> &aDesired);
+
+// SendInput self-suppression (check_detail0821 §2-B): record a key the
+// current SendInput batch injected; LinuxHandleKeyEvent drops the grabbed
+// copy so a script's SendInput never re-fires its own hotkeys/hotstrings
+// (Windows unloads the hook during SendInput; the X events return
+// asynchronously, so the marks are consumed when they actually arrive).
+void LinuxSendInputTrack(unsigned int aKeycode, bool aIsPress);
+void LinuxSendInputClear();
