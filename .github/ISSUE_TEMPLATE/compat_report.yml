@@ -1,0 +1,68 @@
+name: Compatibility report (Linux port)
+description: Report which environment/scenarios you tried and what worked or broke (check_detail0821 §12.2.1)
+labels: [compat]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for contributing a compatibility report! Every row you fill in
+        becomes part of the verified matrix and helps close the CI blind spots
+        (KDE / Fedora / Arch / older GNOME).
+  - type: input
+    id: distro
+    attributes:
+      label: Distribution
+      description: e.g. Fedora 42, Arch, Ubuntu 22.04, Debian 12
+      placeholder: Ubuntu 24.04
+    validations:
+      required: true
+  - type: input
+    id: desktop
+    attributes:
+      label: Desktop / compositor
+      description: e.g. GNOME 49, KDE Plasma 6, sway, Hyprland
+      placeholder: GNOME 49 Wayland
+    validations:
+      required: true
+  - type: input
+    id: session
+    attributes:
+      label: Session type
+      description: X11 (Xorg) / XWayland / native Wayland
+      placeholder: XWayland
+    validations:
+      required: true
+  - type: input
+    id: backend
+    attributes:
+      label: Active input backend
+      description: Output of `ahk --diag` → `input-backend:` (x11 / gnome-shell / portal / evdev)
+      placeholder: x11
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Scenario checklist
+      description: Tick each scenario you tried and mark ✅ worked / ⚠️ partial / ❌ broke.
+        Add your own rows as needed.
+      value: |
+        - [ ] Hotkey (e.g. `F12::`, `^1::`) fires and is suppressed
+        - [ ] `~` passthrough hotkey observes without consuming
+        - [ ] `SendText`/`Send` into a focused app (incl. non-ASCII)
+        - [ ] Mouse simulation (Click / MouseMove)
+        - [ ] Clipboard read/write (A_Clipboard, ClipWait)
+        - [ ] OnClipboardChange
+        - [ ] Gui window creation
+        - [ ] ControlGetText/ControlSend into another app's window
+        - [ ] SoundGet*/SoundSet*
+        - [ ] InputHook
+        - [ ] Run / RunWait / RunAs
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes / failures
+      description: For any ❌ row, describe the error message (and paste the relevant
+        part of `ahk --diag`).
