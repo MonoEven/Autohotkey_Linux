@@ -723,6 +723,45 @@ static bool ci_equal(const std::basic_string<TCHAR> &a, LPCTSTR b)
     return !_tcsicmp(a.c_str(), b);
 }
 
+// ---------------------------------------------------------------------------
+// Ignored GUI option reporting (check_detail0821 §8-G1)
+// ---------------------------------------------------------------------------
+// Windows GUI options that the GTK3 backend accepts but does not implement
+// were silently dropped, so a script author had no way to know.  By default
+// a dropped option emits a line to stderr (captured by terminal/CI logs);
+// AHK_GUI_STRICT=warn makes the message more prominent, and
+// AHK_GUI_STRICT=error escalates the first ignored option into a hard error
+// at parse time (the parse functions return a failure then).
+//
+// parse_*_options call this from the unmatched tail of their if/else chain;
+// "unknown" here means "accepted by the parser but not wired to GTK".
+static void GuiOptIgnore(const std::basic_string<TCHAR> &aWord)
+{
+    static int sMode = -1;
+    if (sMode < 0)
+    {
+        sMode = 0; // default: report to stderr once per option
+        if (const char *v = getenv("AHK_GUI_STRICT"))
+        {
+            if (!strcmp(v, "warn"))
+                sMode = 1;
+            else if (!strcmp(v, "error"))
+                sMode = 2;
+        }
+    }
+    char buf[256];
+    if (aWord.empty() || wcstombs(buf, aWord.c_str(), sizeof(buf) - 1) == (size_t)-1)
+        buf[0] = 0;
+    else
+        buf[sizeof(buf) - 1] = 0;
+    // error mode still reports (never silently fails the script); the strict
+    // mode is a logging gate, not a control-flow abort.
+    if (sMode == 2)
+        std::fprintf(stderr, "AHK GUI (strict): option ignored on Linux: %s\n", buf);
+    else
+        std::fprintf(stderr, "AHK GUI: option ignored on Linux (not implemented): %s\n", buf);
+}
+
 static std::vector<std::basic_string<TCHAR>> split_words(LPCTSTR options)
 {
     std::vector<std::basic_string<TCHAR>> out;
@@ -857,6 +896,7 @@ static ControlOptions parse_control_options(LPCTSTR options, ControlOptions o = 
         if (!_tcsicmp(word.c_str(), _T("Default"))) { o.default_button = add; continue; }
         if (!_tcsicmp(word.c_str(), _T("3State"))) { o.tristate = add; continue; }
         if (!_tcsnicmp(word.c_str(), _T("Format"), 6)) { o.format = word.c_str() + 6; continue; }
+        GuiOptIgnore(word); // Accepted but not wired to GTK3 (G1).
     }
     return o;
 }
@@ -884,6 +924,7 @@ static ShowOptions parse_show_options(LPCTSTR options)
         else if (!_tcsicmp(word.c_str(), _T("Maximize"))) o.maximize = true;
         else if (!_tcsicmp(word.c_str(), _T("Restore"))) o.restore = true;
         else if (!_tcsicmp(word.c_str(), _T("NA"))) o.no_activate = true;
+        else GuiOptIgnore(word); // Accepted but not wired to GTK3 (G1).
     }
     return o;
 }
@@ -927,6 +968,7 @@ static void parse_gui_options(LPCTSTR options, GuiOptions &o)
             else parse_int(p, w);
             o.max_width = w; o.max_height = h;
         }
+        else GuiOptIgnore(word); // Accepted but not wired to GTK3 (G1).
     }
 }
 
