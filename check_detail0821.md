@@ -1096,6 +1096,12 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
    Xwayland 带 libei(如 Fedora 或 `--enable-libei` 自编译),已在
    linux-port.htm 记为"未验证/不可用的发行版依赖项";原生 libei 后端仍归 R3。
    验证脚本:`tests/doccheck/gnome_xtest_libei.sh`。
+   **附带观察(非本项验收,已作 R2 跟进项登记)**:R1-7 测试中发现,经 SSH 起动、
+   以 XWayland 连接的进程创建 GTK3 Gui 会挂起(GDK_BACKEND 默认与强制 x11 均复现;
+   xwininfo 显示 mutter 已为窗口建 frame,进程阻塞在 X socket 的 poll 上,且
+   SIGTERM 处理器在 GTK init 卡住时不生效,需 SIGKILL)。此现象是否需要"从
+   GNOME 会话内正常终端运行"复现、是否波及真实用户,尚未实机确认 —— 需 R2 跟进
+   (区分 SSH 环境伪象与真实 GUI-under-XWayland 缺陷),不得直接写入用户文档。
 2. **GNOME 48+ 的 GlobalShortcuts portal 后端与本项目 portal lane 的实际兼容性**
    (`BindShortcuts` 一次性限制与 AHK 运行时 `Hotkey()` 动态注册的冲突程度);
    **已实测(R1-6,GNOME 49 VM):后端存在且可探测** —— `--diag` 的
