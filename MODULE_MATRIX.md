@@ -1,7 +1,7 @@
 # AutoHotkey v2.0.26 Linux 移植 —— 模块验证矩阵
 
 > 对照 AutoHotkey v2 官方文档逐模块确认可用性。完整逐模块校验报告见
-> `tests/doccheck/CHECK_REPORT.md`（1069/1069 断言，普通 + ASan 双构建）。
+> `tests/doccheck/CHECK_REPORT.md`（1099/1099 断言，普通 + ASan 双构建）。
 > 状态图例：✅ 已实现并有 .ahk 验证；⚠️ 部分实现/依赖外部工具；❌ 未实现（明确报错）。
 > GUI 类功能区分「有画面」(DISPLAY 可用，X11/WSLg/XFCE/XWayland) 与「无画面」(headless)。
 
@@ -109,7 +109,7 @@
 
 ## 汇总
 
-- **1069/1069** doc-check 断言通过（普通 + ASan 双构建，含 Xvfb 窗口/输入/控件/像素/定时器/热键/热字串/InputHook/图像/形状/GUI/菜单实测；输入模块含 Unicode 发送 3 项、round-36 增快速双击回归）
+- **1099/1099** doc-check 断言通过（普通 + ASan 双构建，含 Xvfb 窗口/输入/控件/像素/定时器/热键/热字串/InputHook/图像/形状/GUI/菜单实测；输入模块含 Unicode 发送 3 项、round-36 增快速双击回归）
 - **367/370** 内置函数已实现（3 个有意未实现:ComObjArray、TrayTip、TraySetIcon，见 `tests/doccheck/worklist.tsv`）
 - **27/27** headless 回归测试；Wayland 17 项 + XWayland 247 项独立套件
 - Unicode 文本发送（round-34 + round-36）:X11/XWayland 非 ASCII 经 keysym 传输（借键码重映射 + 跨进程 X Selection 租约），纯 Wayland 走剪贴板粘贴回退（等待目标实际消费、恢复空原剪贴板、`AHK_WAYLAND_PASTE=0` 可禁、uinput 通道），无注入路径明确报错
