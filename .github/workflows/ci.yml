@@ -47,6 +47,7 @@ jobs:
           retry sudo apt-get install -y --no-install-recommends \
             cmake g++ ninja-build \
             libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev libxi-dev \
+            libxfixes-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev \
             libffi-dev libdbus-1-dev dbus libgtk-3-dev zlib1g-dev libjpeg-dev \
             xvfb xdotool sway xwayland weston
@@ -128,6 +129,7 @@ jobs:
           retry sudo apt-get install -y --no-install-recommends \
             cmake g++ ninja-build \
             libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev libxi-dev \
+            libxfixes-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev \
             libffi-dev libdbus-1-dev dbus libgtk-3-dev libjpeg-dev \
             python3 dpkg-dev rpm libfuse2 squashfs-tools

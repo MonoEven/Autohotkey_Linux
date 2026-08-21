@@ -154,8 +154,11 @@ find_library(ZLIB_LIBRARY z REQUIRED)
 find_library(JPEG_LIBRARY jpeg REQUIRED)
 # XI2 raw events for the hotkey modifier-side observer (core_hotkey_linux.cpp).
 find_library(XI_LIBRARY Xi REQUIRED)
+# XFixes selection tracking: clipboard-change notifications for
+# OnClipboardChange (check_detail0821 §4).
+find_library(XFIXES_LIBRARY Xfixes REQUIRED)
 pkg_check_modules(LIBFFI REQUIRED IMPORTED_TARGET libffi)
 pkg_check_modules(DBUS REQUIRED IMPORTED_TARGET dbus-1)
 # GTK3 GUI backend (GuiType/GuiControlType/UserMenu).
 pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
-target_link_libraries(ahk_core PRIVATE X11::X11 ahk_pcre16 ${XTST_LIBRARY} ${XRANDR_LIBRARY} ${XINERAMA_LIBRARY} ${XEXT_LIBRARY} PkgConfig::WAYLAND_CLIENT PkgConfig::XKBCOMMON ${DL_LIBRARY} PkgConfig::LIBFFI PkgConfig::DBUS PkgConfig::GTK3 ${ZLIB_LIBRARY} ${JPEG_LIBRARY} ${XI_LIBRARY})
+target_link_libraries(ahk_core PRIVATE X11::X11 ahk_pcre16 ${XTST_LIBRARY} ${XRANDR_LIBRARY} ${XINERAMA_LIBRARY} ${XEXT_LIBRARY} ${XFIXES_LIBRARY} PkgConfig::WAYLAND_CLIENT PkgConfig::XKBCOMMON ${DL_LIBRARY} PkgConfig::LIBFFI PkgConfig::DBUS PkgConfig::GTK3 ${ZLIB_LIBRARY} ${JPEG_LIBRARY} ${XI_LIBRARY})

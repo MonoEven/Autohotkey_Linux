@@ -2416,13 +2416,19 @@ inline HACCEL LoadAccelerators(HINSTANCE, LPCTSTR)
 {
 	return nullptr;
 }
+// Clipboard-change listener (OnClipboardChange): forwarded to the real
+// Linux implementation (XFixes selection tracking on X11/XWayland;
+// check_detail0821 §4).  Inline functions must not silently no-op here --
+// this was the root cause of OnClipboardChange never firing.
+bool LinuxClipboardWatchStart();
+bool LinuxClipboardWatchStop();
 inline BOOL AddClipboardFormatListener(HWND)
 {
-	return FALSE;
+	return LinuxClipboardWatchStart() ? TRUE : FALSE;
 }
 inline BOOL RemoveClipboardFormatListener(HWND)
 {
-	return FALSE;
+	return LinuxClipboardWatchStop() ? TRUE : FALSE;
 }
 #define LR_SHARED 0x8000
 #define SM_CYSMICON 50

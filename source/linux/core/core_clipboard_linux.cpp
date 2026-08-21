@@ -25,6 +25,7 @@
 #include "core_wayland_linux.h"
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
+#include <X11/extensions/Xfixes.h>
 #include <wayland-client.h>
 #include <sys/poll.h>
 #include <unistd.h>
@@ -156,6 +157,14 @@ Atom gClipX11Targets = 0;         // TARGETS atom.
 std::wstring gClipX11Data;        // Our owned data.
 bool gClipX11Owned = false;
 
+// Clipboard-change watch (check_detail0821 §4): when an OnClipboardChange
+// handler is registered, XFixes selection tracking on the CLIPBOARD
+// selection reports ownership changes; LinuxClipboardDispatchX11 then
+// delivers the callback with the Windows Type argument.
+bool gClipX11Watch = false;
+int gClipXfixesEventBase = -1;   // XFixes event base (cached at start).
+Atom gClipX11TextAtom = 0;       // UTF8_STRING (text => Type 1).
+
 // True while a synchronous read is waiting for SelectionNotify.
 bool gClipX11Reading = false;
 bool gClipX11ReadDone = false;
@@ -182,6 +191,7 @@ void LinuxClipX11Ensure(Display *d)
 	gClipX11Prop = XInternAtom(d, "AHK_CLIPBOARD", False);
 	gClipX11Clipboard = XInternAtom(d, "CLIPBOARD", False);
 	gClipX11Targets = XInternAtom(d, "TARGETS", False);
+	gClipX11TextAtom = gClipX11Utf8;
 }
 
 } // namespace
@@ -316,12 +326,18 @@ static void LinuxClipX11ServeRequest(Display *d, XSelectionRequestEvent *req)
 
 void LinuxClipboardDispatchX11(Display *d)
 {
-	if (!d || d != gClipX11Display || !gClipX11Owned)
+	if (!d || d != gClipX11Display)
+		return;
+	// Without ownership AND without an active watch there is nothing to do
+	// (the read path handles its own events synchronously in its own loop).
+	if (!gClipX11Owned && !gClipX11Watch)
 		return;
 	// A clipboard owner that does not process events loses the selection;
 	// serve requests and clear ownership on SelectionClear.  Events that
 	// are not clipboard-related are put back so callers waiting for a
-	// SelectionNotify still see it.
+	// SelectionNotify still see it.  A clipboard-change watch additionally
+	// consumes XFixes SelectionNotify (SetSelectionOwner / ClientClose /
+	// WindowDestroy) events and fires the OnClipboardChange callback.
 	while (XPending(d) > 0)
 	{
 		XEvent ev;
@@ -331,13 +347,99 @@ void LinuxClipboardDispatchX11(Display *d)
 			gClipX11Owned = false;
 			continue;
 		}
-		if (ev.type != SelectionRequest)
+		if (ev.type == SelectionRequest)
 		{
+			LinuxClipX11ServeRequest(d, &ev.xselectionrequest);
+			continue;
+		}
+		if (ev.type == SelectionNotify && ev.xselection.requestor == gClipX11Window)
+		{
+			// A clipboard READ on this connection handles its SelectionNotify
+			// in its own poll loop, so this should not normally be seen here;
+			// put it back to be safe.
 			XPutBackEvent(d, &ev);
 			break;
 		}
-		LinuxClipX11ServeRequest(d, &ev.xselectionrequest);
+		if (gClipX11Watch && gClipXfixesEventBase >= 0
+			&& ev.type == gClipXfixesEventBase + XFixesSelectionNotify)
+		{
+			// XFixes selection-tracking events are delivered on the client
+			// connection that selected them (libXfixes extends XEvent; the
+			// canonical access is a cast, as in clipnotify).
+			XFixesSelectionNotifyEvent *xev = (XFixesSelectionNotifyEvent *)&ev;
+			if (xev->selection != gClipX11Clipboard)
+				continue;
+			// XFixes reports every owner change (including ours).  Fire only
+			// when the watch is armed and the script still has a handler.
+			if (!g_script.mOnClipboardChange.Count())
+				continue;
+			// Determine Type non-blockingly (no TARGETS round-trip here: that
+			// probe blocked the main loop and could live-lock when the owner
+			// is a window of this very connection).  Type = 0 only when the
+			// selection has no owner (ClientClose/WindowDestroy followed by
+			// no new owner); any living owner is reported as non-empty.
+			// Text-vs-nontext (Windows Type 1 vs 2) is approximated as "has
+			// an owner" -> 1; exact TARGETS probing is deferred to the
+			// read path (A_Clipboard) which already distinguishes.
+			int type = 1;
+			Window owner = XGetSelectionOwner(d, gClipX11Clipboard);
+			if (!owner)
+				type = 0;
+			// Fire the callback (Windows delivers it via the message pump,
+			// which is exactly where we are now: the main dispatch hook).
+			if (!g_script.mOnClipboardChangeIsRunning)
+			{
+				ExprTokenType param((__int64)type);
+				g_script.mOnClipboardChangeIsRunning = true;
+				g_script.mOnClipboardChange.Call(&param, 1, 1);
+				g_script.mOnClipboardChangeIsRunning = false;
+			}
+			continue;
+		}
+		// Not ours: put it back so waiters (hotkey/clipboard read) see it.
+		XPutBackEvent(d, &ev);
+		break;
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Clipboard-change watch (OnClipboardChange)
+// ---------------------------------------------------------------------------
+
+bool LinuxClipboardWatchActive()
+{
+	return gClipX11Watch;
+}
+
+bool LinuxClipboardWatchStart()
+{
+	Display *d = LinuxX11Display();
+	if (!d)
+		return false; // No X11/XWayland: Wayland watch is a later milestone.
+	LinuxClipX11Ensure(d);
+	if (gClipX11Watch)
+		return true;
+	int xfixes_event_base = 0, xfixes_error_base = 0;
+	if (!XFixesQueryExtension(d, &xfixes_event_base, &xfixes_error_base))
+		return false;
+	Window root = DefaultRootWindow(d);
+	XFixesSelectSelectionInput(d, root, gClipX11Clipboard
+		, XFixesSetSelectionOwnerNotifyMask
+		| XFixesSelectionClientCloseNotifyMask
+		| XFixesSelectionWindowDestroyNotifyMask);
+	XFlush(d);
+	gClipXfixesEventBase = xfixes_event_base;
+	gClipX11Watch = true;
+	return true;
+}
+
+bool LinuxClipboardWatchStop()
+{
+	gClipX11Watch = false;
+	// Selection tracking is root-scoped and harmless to leave installed;
+	// resetting it here would require root-window re-selection.  The flag
+	// alone stops all firing.
+	return true;
 }
 
 // ---------------------------------------------------------------------------

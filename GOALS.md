@@ -3,7 +3,7 @@
 > 目标随进展持续更新。基线：AutoHotkey v2.0.26，分支：`linux-port`。
 > **状态：核心目标已完成并发布（最新 v2.0.26-linux.15：check0820 方向 B 核心——Hotkey()
 > 后端路由、GNOME unique-name 信号、AT-SPI、ImeGetState、剪贴板慢所有者超时、Portal deny、
-> 权限模型、AppImage/RPM 打包与重签名），doc-check core+ASan 1099/1099，回归 27/27，
+> 权限模型、AppImage/RPM 打包与重签名），doc-check core+ASan 1103/1103，回归 27/27，
 > Wayland 17/17，XWayland 247/247，CI 全绿；项目定位为 technology preview；站点文档为
 > 英文单语，中文概览页已移除）。**
 

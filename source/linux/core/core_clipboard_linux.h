@@ -34,10 +34,31 @@ bool LinuxClipboardPasteSet(const std::wstring &aText, const std::wstring &aSave
 bool LinuxClipboardPasteWaitConsumed(int aTimeoutMs);
 void LinuxClipboardPasteRestore(bool aHadText);
 
-// Dispatch X11 clipboard events (SelectionRequest/SelectionClear) while
-// the script waits.  Called from the main loop and MsgSleep; a no-op
-// unless this process owns the CLIPBOARD selection.
+// Dispatch X11 clipboard events (SelectionRequest/SelectionClear /
+// XFixes selection changes) while the script waits.  Called from the main
+// loop and MsgSleep; a no-op unless this process owns the CLIPBOARD
+// selection or a clipboard-change watch is active.
 void LinuxClipboardDispatchX11(Display *d);
+
+// --- Clipboard-change notification (OnClipboardChange, check_detail0821
+// --- §4) ---------------------------------------------------------------
+//
+// Windows semantics: a script registering an OnClipboardChange callback is
+// notified whenever the clipboard content changes, with a Type argument
+// (0 = empty, 1 = text, 2 = non-text).  On X11/XWayland this is backed by
+// XFixes selection tracking (XFixesSetSelectionOwnerNotifyMask on the
+// CLIPBOARD selection); the event is detected in
+// LinuxClipboardDispatchX11() and the callback is invoked synchronously
+// from the main dispatch hook (matching where Windows delivers it: while
+// the script is at a message-pump point, not preempting a running thread).
+//
+// AddClipboardFormatListener/RemoveClipboardFormatListener in the Win32
+// shim header forward to these, so upstream Script::EnableClipboardListener
+// wires the whole chain with no upstream change.
+bool LinuxClipboardWatchStart();
+bool LinuxClipboardWatchStop();
+// True while a clipboard-change watch is active (any backend).
+bool LinuxClipboardWatchActive();
 
 // Dispatch Wayland data-device events (data_source send requests, data
 // offer announcements).  Called from the Wayland dispatch hook.

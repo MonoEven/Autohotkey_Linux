@@ -1,0 +1,4 @@
+ready=1
+change_text_ok=1
+change_clear_ok=1
+change_total_ge2=1

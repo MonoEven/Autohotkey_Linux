@@ -57,7 +57,7 @@ examples fall into three groups on Linux:</p>
 <h2>What works on Linux</h2>
 <p>All <b>367</b> built-in functions listed in the worklist are implemented
 (3 not-implemented error paths: ComObjArray, TrayTip, TraySetIcon);
-1099 doc-check assertions pass under Xvfb (including 29
+1103 doc-check assertions pass under Xvfb (including 29
 for <code>DllCall</code> against native <b>.so</b> libraries and 18 for the
 D-Bus COM layer). The port has two display backends:</p>
 <ul>
@@ -220,7 +220,7 @@ Highlights of this release:</p>
     <b>evdev/uinput permission artifacts</b>
     (<code>tools/linux/permissions/</code>: udev rule, input group,
     polkit action, install script — VM-verified).</li>
-  <li>Doc-check: 1099/1099 assertions pass on both the normal and the ASan
+  <li>Doc-check: 1103/1103 assertions pass on both the normal and the ASan
     builds; regression 27/27, Wayland 17/17, XWayland 247/247. (The
     authoritative numbers are machine-verified in CI by
     <code>verify_report_numbers.sh</code>.)</li>
