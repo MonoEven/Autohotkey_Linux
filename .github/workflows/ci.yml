@@ -50,7 +50,8 @@ jobs:
             libxfixes-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev \
             libffi-dev libdbus-1-dev dbus libgtk-3-dev zlib1g-dev libjpeg-dev \
-            xvfb xdotool sway xwayland weston
+            xvfb xdotool sway xwayland weston \
+            xclip
           sudo apt-get install -y --no-install-recommends python3 dpkg-dev
 
       - name: Configure
