@@ -479,15 +479,24 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
   **VM 端到端实证**:脚本注册 OnClipboardChange → `wl-copy` → 回调以 Type=1 触发
   (clean 代码 2 次触发);X11/XFixes 路径不变,全量 doc-check 无回归。
   **ext-data-control(sway/KDE)未交付(诚实登记)**:已实现 ext-data-control-v1
-  与 zwlr_data_control_manager_v1 两个监听器(经 wayland-scanner 生成协议代码、
+  与 zwlr_data_control_manager_v1 两个监听器(wayland-scanner 生成协议代码、
   data_control_device 的 selection 事件→OnClipboardChange)并能编译,但 sway
-  1.10 headless 实测**收不到任何 data-device selection 事件**——连既有的
-  wl_data_device(核心协议,A_Clipboard 读外部剪贴板)也收不到,而参考实现
-  `wl-paste --watch`(wl-clipboard 2.2,用 wlr 协议)能收到。结论:这是**端口
-  既有问题**(本端口的 Wayland 连接不接收 data-device selection 事件,
-  A_Clipboard 读外部剪贴板在 sway 下同样 Broken pipe),阻塞 ext-data-control
-  验证;已回退该部分代码,留待后续专项(排查 Wayland 派发
-  `prepare_read/read_events` 与 `wl_display_dispatch` 的交互、fd 轮询)。
+  1.10 headless 实测**收不到任何 data-device selection 事件**。exa 检索佐证
+  (wayland 协议规范/emersion 博客/wlroots 源码+issue):
+  ① 核心 `wl_data_device.selection` **只在客户端有键盘焦点时发送**("sent to
+  a client immediately before receiving keyboard focus and when a new selection
+  is set while the client has keyboard focus")——解释本端口 A_Clipboard 在
+  sway 下读外部剪贴板失败的根因(无焦点表面);
+  ② `zwlr_data_control_device` 是**正确的剪贴板监听协议**(绑定即发首个
+  selection、新 selection 都发,无需焦点),wl-paste --watch 用同样 v2 绑定+
+  get_data_device 能收到,而本端口连接**连首个 selection(nil) 都收不到**;
+  ③ 派发诊断:主循环每次 `wl_display_read_events` 返回 0 且
+  `wl_display_dispatch_pending` 派发 0——**fd 从未有 selection 数据**,即 sway
+  没向本端口连接发送(或连接未正确建立订阅);全库无自定义 event queue(排除
+  事件排到非默认队列导致 dispatch_pending 漏派发)。结论:端口 Wayland 集成
+  深层问题(连接/订阅/派发),需专项排查(如按 exa 建议的
+  `wl_display_dispatch_pending()+flush() 再轮询` 正确集成、或排查连接建立
+  是否有线程/queue 交互)。已回退该部分代码。
   **未做(诚实登记)**:无扩展的 GNOME 会话降级轮询。
   **陷阱记录**:GNOME 扩展模块跨 disable/enable 有缓存,改 JS 需整 shell 重启
   (SIGQUIT 会弄崩 Wayland 会话,只能整机 reboot);`owner-changed` 在
