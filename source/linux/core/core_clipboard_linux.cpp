@@ -27,6 +27,7 @@
 #include <X11/Xatom.h>
 #include <X11/extensions/Xfixes.h>
 #include <wayland-client.h>
+#include <dbus/dbus.h>
 #include <sys/poll.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -406,39 +407,115 @@ void LinuxClipboardDispatchX11(Display *d)
 // Clipboard-change watch (OnClipboardChange)
 // ---------------------------------------------------------------------------
 
+// GNOME-extension listener (check_detail0821 §4 / R2): Mutter does not
+// implement the Wayland ext-data-control protocol, so the GNOME Shell
+// extension broadcasts ClipboardChanged(u type) on the session bus (bus name
+// io.github.autohotkey.GlobalHotkeys1).  When a script registers
+// OnClipboardChange on a session without X11/XFixes (pure Wayland), this
+// listener arms a session-bus filter and LinuxClipboardDispatchWayland pumps
+// it from the main loop.  The signal carries only the Type (1 = new owner,
+// 0 = cleared); the runtime reads the clipboard itself when the callback
+// asks for A_Clipboard.
+static DBusConnection *gClipExtConn = nullptr;
+
+static DBusHandlerResult LinuxClipExtFilter(DBusConnection *aConn, DBusMessage *aMsg, void *aData)
+{
+	if (dbus_message_is_signal(aMsg, "io.github.autohotkey.GlobalHotkeys1", "ClipboardChanged"))
+	{
+		dbus_uint32_t type = 1;
+		if (!dbus_message_get_args(aMsg, nullptr, DBUS_TYPE_UINT32, &type, DBUS_TYPE_INVALID))
+			type = 1;
+		// Fire the callback (same contract as the XFixes path: delivered on
+		// the main dispatch hook, guarded against re-entry).
+		if (g_script.mOnClipboardChange.Count())
+		{
+			if (!g_script.mOnClipboardChangeIsRunning)
+			{
+				ExprTokenType param((__int64)(int)type);
+				g_script.mOnClipboardChangeIsRunning = true;
+				g_script.mOnClipboardChange.Call(&param, 1, 1);
+				g_script.mOnClipboardChangeIsRunning = false;
+			}
+		}
+		return DBUS_HANDLER_RESULT_HANDLED;
+	}
+	return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+}
+
+// Arm the extension listener; returns true only when the extension's bus
+// name is present (so a bare session fails closed without the extension).
+static bool LinuxClipExtStart()
+{
+	if (gClipExtConn)
+		return true;
+	DBusError err;
+	dbus_error_init(&err);
+	DBusConnection *bus = dbus_bus_get(DBUS_BUS_SESSION, &err);
+	if (!bus)
+	{
+		dbus_error_free(&err);
+		return false;
+	}
+	dbus_bool_t owned = dbus_bus_name_has_owner(bus, "io.github.autohotkey.GlobalHotkeys1", &err);
+	dbus_error_free(&err);
+	if (!owned)
+	{
+		dbus_connection_unref(bus);
+		return false;
+	}
+	gClipExtConn = bus; // Reuse the shared session connection (refcounted).
+	dbus_connection_set_exit_on_disconnect(gClipExtConn, FALSE);
+	dbus_connection_add_filter(gClipExtConn, LinuxClipExtFilter, nullptr, nullptr);
+	// The shared session connection accumulates match rules from other
+	// components (the portal backend etc.); once any rule exists, broadcast
+	// signals not matching one are filtered out.  Add ours explicitly.
+	dbus_bus_add_match(gClipExtConn
+		, "type='signal',interface='io.github.autohotkey.GlobalHotkeys1',member='ClipboardChanged'"
+		, &err);
+	if (dbus_error_is_set(&err))
+		dbus_error_free(&err);
+	return true;
+}
+
 bool LinuxClipboardWatchActive()
 {
-	return gClipX11Watch;
+	return gClipX11Watch || (gClipExtConn != nullptr);
 }
 
 bool LinuxClipboardWatchStart()
 {
 	Display *d = LinuxX11Display();
-	if (!d)
-		return false; // No X11/XWayland: Wayland watch is a later milestone.
-	LinuxClipX11Ensure(d);
-	if (gClipX11Watch)
+	if (d)
+	{
+		LinuxClipX11Ensure(d);
+		if (gClipX11Watch)
+			return true;
+		int xfixes_event_base = 0, xfixes_error_base = 0;
+		if (!XFixesQueryExtension(d, &xfixes_event_base, &xfixes_error_base))
+			return false;
+		Window root = DefaultRootWindow(d);
+		XFixesSelectSelectionInput(d, root, gClipX11Clipboard
+			, XFixesSetSelectionOwnerNotifyMask
+			| XFixesSelectionClientCloseNotifyMask
+			| XFixesSelectionWindowDestroyNotifyMask);
+		XFlush(d);
+		gClipXfixesEventBase = xfixes_event_base;
+		gClipX11Watch = true;
 		return true;
-	int xfixes_event_base = 0, xfixes_error_base = 0;
-	if (!XFixesQueryExtension(d, &xfixes_event_base, &xfixes_error_base))
-		return false;
-	Window root = DefaultRootWindow(d);
-	XFixesSelectSelectionInput(d, root, gClipX11Clipboard
-		, XFixesSetSelectionOwnerNotifyMask
-		| XFixesSelectionClientCloseNotifyMask
-		| XFixesSelectionWindowDestroyNotifyMask);
-	XFlush(d);
-	gClipXfixesEventBase = xfixes_event_base;
-	gClipX11Watch = true;
-	return true;
+	}
+	// Pure Wayland (no X11): the GNOME-extension signal path.
+	return LinuxClipExtStart();
 }
 
 bool LinuxClipboardWatchStop()
 {
 	gClipX11Watch = false;
-	// Selection tracking is root-scoped and harmless to leave installed;
-	// resetting it here would require root-window re-selection.  The flag
-	// alone stops all firing.
+	if (gClipExtConn)
+	{
+		dbus_connection_remove_filter(gClipExtConn, LinuxClipExtFilter, nullptr);
+		dbus_connection_unref(gClipExtConn);
+		gClipExtConn = nullptr;
+	}
 	return true;
 }
 
@@ -586,11 +663,20 @@ void LinuxClipboardWaylandSeat(wl_seat *aSeat)
 	}
 }
 
-void LinuxClipboardWaylandDispatch()
+// Pump the GNOME-extension clipboard listener (D-Bus, display-independent).
+// Called from LinuxInputBackendDispatch on every main-loop pass.
+void LinuxClipboardDispatchWayland()
 {
-	// Send requests are served synchronously in the listener; offer data
-	// is received in LinuxClipboardGetText with its own dispatch loop.
-	(void)0;
+	if (!gClipExtConn)
+		return;
+	if (dbus_connection_read_write_dispatch(gClipExtConn, 0) == FALSE)
+	{
+		// Session bus dropped (session end / bus restart): tear down so the
+		// next watch start re-arms cleanly.
+		dbus_connection_remove_filter(gClipExtConn, LinuxClipExtFilter, nullptr);
+		dbus_connection_unref(gClipExtConn);
+		gClipExtConn = nullptr;
+	}
 }
 
 // Dispatch Wayland events until aCond or aTimeoutMs; returns true when

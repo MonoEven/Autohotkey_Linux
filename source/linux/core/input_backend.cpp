@@ -17,6 +17,7 @@
 #include "core_gshortcut_linux.h"
 #include "input_backend_gnome_shell.h"
 #include "core_evdev_linux.h"
+#include "core_clipboard_linux.h"
 #include "../../script.h"
 #include "../../globaldata.h"
 #include "../../script_func_impl.h"
@@ -443,6 +444,10 @@ void LinuxInputBackendDispatch()
 	default:
 		break;
 	}
+	// §4: the GNOME-extension clipboard listener is display-independent (it
+	// rides the session bus), so pump it on every main-loop pass -- the
+	// XFixes path above handles X11 and this covers pure Wayland.
+	LinuxClipboardDispatchWayland();
 }
 
 void LinuxInputBackendShutdown()

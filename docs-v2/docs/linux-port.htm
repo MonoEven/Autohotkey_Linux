@@ -335,6 +335,16 @@ Highlights of this release:</p>
   <li><b>Clipboard slow-owner timeout</b>:
     <code>AHK_CLIPBOARD_TIMEOUT_MS</code> (default 2000) bounds reads;
     regression with a slow-owner probe.</li>
+  <li><b>OnClipboardChange on pure Wayland (check_detail0821 §4 / R2)</b>:
+    Mutter implements no ext-data-control protocol, so on a GNOME session the
+    bundled shell extension listens to <code>Meta.Selection</code>'s
+    <code>owner-changed</code> signal and broadcasts
+    <code>ClipboardChanged(type)</code> on the session bus; the runtime's
+    <code>OnClipboardChange</code> watch (which already uses XFixes on
+    X11/XWayland) arms a session-bus filter on Wayland and fires the callback
+    when the compositor's clipboard owner changes.  VM-verified end to end:
+    <code>wl-copy</code> triggers the callback (Type 1).  The sway/KDE
+    <code>ext-data-control-v1</code> listener is the R2 follow-up.</li>
   <li><b>Portal deny/cancel regression</b> and
     <b>evdev/uinput permission artifacts</b>
     (<code>tools/linux/permissions/</code>: udev rule, input group,

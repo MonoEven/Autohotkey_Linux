@@ -21,6 +21,16 @@
 // / F12:: etc. with zero confirmation.  Deactivated is relayed so future
 // 1 up:: support can be evaluated, but v1 does not claim it.  ~1:: passthrough,
 // remaps, a & b:: and full wildcards are NOT in scope (evdev/ahk-inputd lane).
+//
+// §4 (check_detail0821 §4): clipboard-change notifications.  Mutter does NOT
+// implement the Wayland ext-data-control protocol, so the extension listens
+// to Meta.Selection's `owner-changed` signal (the same mechanism Clipman
+// uses) and broadcasts a ClipboardChanged(type) signal on the session bus.
+// The AHK runtime subscribes and fires its OnClipboardChange callback; the
+// runtime reads the clipboard text itself (it already has the Wayland data
+// device path), so the extension never marshals clipboard contents -- a thin
+// broker here too.  type: 1 = new owner (non-empty), 0 = cleared (owner
+// null / selection without content).
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
@@ -100,6 +110,9 @@ const ifaceXml = `
       <arg type="s" name="id"/>
       <arg type="u" name="timestamp"/>
     </signal>
+    <signal name="ClipboardChanged">
+      <arg type="u" name="type"/>
+    </signal>
   </interface>
 </node>`;
 
@@ -139,11 +152,30 @@ export default class AhkGlobalHotkeysExtension extends Extension {
         this._deactivatedSig = global.display.connect('accelerator-deactivated',
             this._onDeactivated.bind(this));
 
+        // §4: clipboard-change notifications (Meta.Selection owner-changed).
+        // The API exists on GNOME 42+ (our declared 45-50 range); guard so an
+        // older/newer shell fails open (no notifications) instead of breaking
+        // the extension.
+        this._selectionSig = null;
+        try {
+            this._selection = global.display.get_selection();
+            this._selectionSig = this._selection.connect('owner-changed',
+                this._onSelectionChanged.bind(this));
+            log('[AHK-GS] clipboard watch armed');
+        } catch (e) {
+            log(`[AHK-GS] clipboard watch unavailable: ${e}`);
+        }
+
         // auto-reload-safe: if the shell reloaded while we were enabled the
         // runtime will re-sync anyway (state truth lives in the AHK runtime).
     }
 
     disable() {
+        if (this._selectionSig !== null && this._selection) {
+            this._selection.disconnect(this._selectionSig);
+            this._selectionSig = null;
+            this._selection = null;
+        }
         if (this._activatedSig) {
             global.display.disconnect(this._activatedSig);
             this._activatedSig = null;
@@ -293,6 +325,22 @@ export default class AhkGlobalHotkeysExtension extends Extension {
             return;
         Gio.DBus.session.emit_signal(g.owner, OBJ_PATH, IFACE, 'Deactivated',
             new GLib.Variant('(su)', [id, timestamp]));
+    }
+
+    // §4: broadcast a clipboard-owner change.  The AHK runtime subscribes and
+    // reads the clipboard itself; this signal is only a trigger.
+    _onSelectionChanged(selection, selectionType, owner) {
+        // Meta.SelectionType.CLIPBOARD reads undefined on GNOME 49 (verified
+        // on the VM: owner-changed type=1 for wl-copy), so pin the Mutter
+        // enum order value (PRIMARY=0, CLIPBOARD=1, SECONDARY=2).
+        const CLIPBOARD = 1;
+        if (selectionType !== CLIPBOARD)
+            return;
+        // owner == null => the selection was cleared (Type 0).
+        const type = owner ? 1 : 0;
+        if (!Gio.DBus.session.emit_signal(null, OBJ_PATH, IFACE, 'ClipboardChanged',
+                new GLib.Variant('(u)', [type])))
+            log('[AHK-GS] ClipboardChanged broadcast failed');
     }
 
     // --- helpers -------------------------------------------------------------

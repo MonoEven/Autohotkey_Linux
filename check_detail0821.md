@@ -467,6 +467,23 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
   ext-data-control 因有 wl-clipboard 可对照,约 2-3 天;GNOME 扩展信号复用现有
   扩展骨架,约 1-2 天。
 
+  **已实施(R2 §4,GNOME 部分)**:X11 侧已由 R1-1 XFixes 完成。GNOME 侧:
+  扩展(`extension/ahk-global-hotkeys@autohotkey.org/extension.js`)监听
+  `Meta.Selection` 的 `owner-changed` 信号(实证 GNOME 49 上
+  `Meta.SelectionType.CLIPBOARD` 为 `undefined`,按 Mutter 枚举序固定为 1),
+  wl-copy 改剪贴板时经会话总线广播 `ClipboardChanged(type)`;运行时侧
+  `core_clipboard_linux.cpp` 在纯 Wayland(无 X11)下 `LinuxClipboardWatchStart`
+  检测扩展总线名并挂会话总线 filter+match rule(共享连接已有 portal 的 match
+  rules,广播信号必须显式 add_match 才会送达——实证),`LinuxInputBackendDispatch`
+  每轮泵 `LinuxClipboardDispatchWayland`,收到信号即触发 OnClipboardChange(Type 1/0)。
+  **VM 端到端实证**:脚本注册 OnClipboardChange → `wl-copy` → 回调以 Type=1 触发
+  (clean 代码 2 次触发);X11/XFixes 路径不变,全量 doc-check 无回归。
+  **未做(诚实登记)**:sway/KDE 的 `ext-data-control-v1`/`wlr-data-control` 监听
+  (需 sway/KDE 合成器,VM 为 GNOME 无法实测);无扩展的 GNOME 会话降级轮询。
+  **陷阱记录**:GNOME 扩展模块跨 disable/enable 有缓存,改 JS 需整 shell 重启
+  (SIGQUIT 会弄崩 Wayland 会话,只能整机 reboot);`owner-changed` 在
+  X11→Wayland 桥接路径不触发,需 Wayland 原生写入(wl-copy)。
+
 ---
 
 ## 5. P0:Windows 脚本迁移断层(COM/注册表/消息/DLL/托盘/编译)
