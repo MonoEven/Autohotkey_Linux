@@ -668,21 +668,7 @@ void LinuxClipboardWaylandSeat(wl_seat *aSeat)
 void LinuxClipboardDispatchWayland()
 {
 	if (!gClipExtConn)
-	{
-		static bool sNullLogged = false;
-		if (!sNullLogged)
-		{
-			sNullLogged = true;
-			fprintf(stderr, "AHK clip-ext: pump no-op (no conn)\n");
-		}
 		return;
-	}
-	static bool sLogged = false;
-	if (!sLogged)
-	{
-		sLogged = true;
-		fprintf(stderr, "AHK clip-ext: pump ACTIVE (conn=%p)\n", (void *)gClipExtConn);
-	}
 	if (dbus_connection_read_write_dispatch(gClipExtConn, 0) == FALSE)
 	{
 		// Session bus dropped (session end / bus restart): tear down so the

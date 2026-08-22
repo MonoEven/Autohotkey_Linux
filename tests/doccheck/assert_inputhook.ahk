@@ -109,5 +109,8 @@ Sleep(200)
 kc := FileRead(KCFILE)
 Log("ih_sup=" ((InStr(kc, "k:down:a:", true) or InStr(kc, "k:down:b:", true) or InStr(kc, "k:down:x:", true) or InStr(kc, "k:down:z:", true)) ? 0 : 1))
 
-RunWait("pkill -x xkeycap")
+; Robust teardown: SIGKILL xkeycap (a stuck client can ignore SIGTERM and a
+; blocking RunWait then wedges the runner; a bounded non-waiting kill plus an
+; explicit ExitApp never does).
+Run('pkill -9 -x xkeycap')
 ExitApp 0
