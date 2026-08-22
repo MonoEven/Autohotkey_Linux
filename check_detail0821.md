@@ -508,9 +508,12 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
   立即返回 1(无 roundtrip),无 popup surface——与复刻完全一致。
   **最终结论(诚实)**:问题既不在端口、也不在可复现的协议用法——wl-paste
   与复刻客户端的协议序列完全一致,但 sway 1.10 headless 只对 wl-paste 二进制
-  响应 selection。疑点收敛到 **wl-clipboard 2.2 的构建/库细节**(如链接的
-  libwayland 版本、其 seat 绑定版本 >=2 的 `wl_seat.name` 事件处理),或 sway
-  headless 的 seat 状态机怪癖(需在**有输入设备的真实 sway 会话**复核)。
+  响应 selection。并排复核:headless sway 的 seat 状态机不可靠——有时
+  capabilities 0→2→3 缓慢演进(约 10s),有时始终停在 0;等 seat 就绪再建
+  data_control device 亦无效。疑点收敛到 **wl-clipboard 2.2 的构建/库细节**
+  (两个都链 libwayland-client.so.0.24.0,排除库版本;疑其 seat 绑定版本 >=2
+  的 `wl_seat.name` 事件处理或初始化顺序),或 sway headless seat 状态机怪癖
+  (需在**有输入设备的真实 sway 会话**复核,VM 无此条件)。
   已回退 ext-data-control。此问题同时阻塞"A_Clipboard 在 sway 下读外部剪贴板"。
   **未做(诚实登记)**:无扩展的 GNOME 会话降级轮询。
   **陷阱记录**:GNOME 扩展模块跨 disable/enable 有缓存,改 JS 需整 shell 重启
