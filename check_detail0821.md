@@ -478,8 +478,17 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
   每轮泵 `LinuxClipboardDispatchWayland`,收到信号即触发 OnClipboardChange(Type 1/0)。
   **VM 端到端实证**:脚本注册 OnClipboardChange → `wl-copy` → 回调以 Type=1 触发
   (clean 代码 2 次触发);X11/XFixes 路径不变,全量 doc-check 无回归。
-  **未做(诚实登记)**:sway/KDE 的 `ext-data-control-v1`/`wlr-data-control` 监听
-  (需 sway/KDE 合成器,VM 为 GNOME 无法实测);无扩展的 GNOME 会话降级轮询。
+  **ext-data-control(sway/KDE)未交付(诚实登记)**:已实现 ext-data-control-v1
+  与 zwlr_data_control_manager_v1 两个监听器(经 wayland-scanner 生成协议代码、
+  data_control_device 的 selection 事件→OnClipboardChange)并能编译,但 sway
+  1.10 headless 实测**收不到任何 data-device selection 事件**——连既有的
+  wl_data_device(核心协议,A_Clipboard 读外部剪贴板)也收不到,而参考实现
+  `wl-paste --watch`(wl-clipboard 2.2,用 wlr 协议)能收到。结论:这是**端口
+  既有问题**(本端口的 Wayland 连接不接收 data-device selection 事件,
+  A_Clipboard 读外部剪贴板在 sway 下同样 Broken pipe),阻塞 ext-data-control
+  验证;已回退该部分代码,留待后续专项(排查 Wayland 派发
+  `prepare_read/read_events` 与 `wl_display_dispatch` 的交互、fd 轮询)。
+  **未做(诚实登记)**:无扩展的 GNOME 会话降级轮询。
   **陷阱记录**:GNOME 扩展模块跨 disable/enable 有缓存,改 JS 需整 shell 重启
   (SIGQUIT 会弄崩 Wayland 会话,只能整机 reboot);`owner-changed` 在
   X11→Wayland 桥接路径不触发,需 Wayland 原生写入(wl-copy)。
