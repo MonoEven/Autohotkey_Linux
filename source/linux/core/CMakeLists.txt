@@ -119,6 +119,7 @@ add_executable(ahk_core
     core_md_func_linux.cpp
     core_platform_stubs.cpp
     core_parity_linux.cpp
+    core_tray_linux.cpp
     core_wayland_linux.cpp
     core_uinput_linux.cpp
     core_evdev_linux.cpp

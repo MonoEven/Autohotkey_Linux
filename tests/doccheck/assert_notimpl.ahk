@@ -26,8 +26,8 @@ Check("comobjarray", () => ComObjArray(0x0003, 2))
 Check("comobjquery", () => ComObjQuery(ComValue(0x0003, 5), "{00000000-0000-0000-C000-000000000046}"))
 Check("comobjconnect", () => ComObjConnect(ComObject("org.freedesktop.DBus")))
 
-; --- Tray functions: no tray icon on Linux -> clear not-ported error --------
-Check("traytip", () => TrayTip("t", "m"))
+; --- TraySetIcon: no SNI tray host implemented yet -> clear not-ported error
+; (TrayTip is implemented as a desktop notification; see assert_general.)
 Check("trayseticon", () => TraySetIcon("D:/noicon.ico"))
 
 ; --- Crash-regression: Send with no usable X display must NOT segfault ------

@@ -109,3 +109,13 @@ MsgBox "GetKeyName=" GetKeyName("Enter")
 MsgBox "IsLabel_yes=" IsLabel("dc_label")
 MsgBox "IsLabel_no=" IsLabel("nope")
 dc_label:
+
+; TrayTip -> desktop notification (check_detail0821 §5-M5): must NOT raise,
+; even headless with no notification daemon (documented "never a critical
+; error").  With a daemon the Notify call is sent (VM-verified separately).
+tt_ok := 1
+try
+    TrayTip("tray title", "tray body")
+catch
+    tt_ok := 0
+MsgBox "traytip_noerr=" tt_ok

@@ -78,5 +78,5 @@ OnMessage	P4	No Win32 message system on X11: monitors are stored but nothing is 
 SendMessage	P4	No Win32 message system on X11: raises the documented error / returns 0
 PostMessage	P4	No Win32 message system on X11: raises the documented error / returns 0
 RunAs	P4	No logon API: Run/RunWait raise "Launch Error (possibly related to RunAs)"
-TrayTip	P4	No tray on Linux: raises an explicit not-ported error
-TraySetIcon	P4	No tray on Linux: raises an explicit not-ported error
+TrayTip	P2	Delivered as an org.freedesktop.Notifications notification (per-desktop daemon); empty TrayTip is a no-op
+TraySetIcon	P4	No tray icon host implemented (SNI StatusNotifierItem + dbusmenu is the R2 follow-up): raises an explicit not-ported error

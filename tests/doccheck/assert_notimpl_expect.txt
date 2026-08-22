@@ -1,6 +1,5 @@
 comobjarray=com_err
 comobjquery=com_err
 comobjconnect=com_err
-traytip=notimpl
 trayseticon=notimpl
 send_nocrash=NO_ERROR:String

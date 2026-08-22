@@ -153,6 +153,28 @@ BIF_DECL(BIF_Linux_NotImplemented)
 	aResultToken.Error(_T("This built-in function has not been ported to Linux yet."));
 }
 
+// TrayTip -> org.freedesktop.Notifications.Notify (check_detail0821 §5-M5).
+// The notification daemon is per-desktop (GNOME Shell, KDE, XFCE, ...); with
+// no daemon the call is a silent no-op (TrayTip is documented as never a
+// critical error).
+extern bool LinuxTrayNotify(const wchar_t *aTitle, const wchar_t *aText);
+
+BIF_DECL(BIF_Linux_TrayTip)
+{
+	TCHAR text_buf[8192], title_buf[512];
+	LPTSTR text = aParamCount > 0 ? TokenToString(*aParam[0], text_buf, nullptr) : nullptr;
+	LPTSTR title = aParamCount > 1 ? TokenToString(*aParam[1], title_buf, nullptr) : nullptr;
+	if (text && !*text)
+		text = nullptr;
+	if (title && !*title)
+		title = nullptr;
+	// Both empty => "remove the notification": a no-op on Linux (the daemon
+	// owns the notification lifetime).  Empty title => omit the title line.
+	if (!text && !title)
+		return;
+	LinuxTrayNotify(title ? title : L"AutoHotkey", text ? text : L"");
+}
+
 // CallbackCreate/CallbackFree (libffi closure backend, core_callback_linux.cpp).
 extern FResult CallbackCreate(IObject *func, optl<StrArg> aOptions, optl<int> aParamCount, UINT_PTR &aRetVal);
 extern FResult CallbackFree(UINT_PTR aCallback);
@@ -3009,8 +3031,8 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(SysGetIPAddresses, BIF_Linux_SysGetIPAddresses, 0, 0),
 	LMD_IMPL(Thread, BIF_Linux_Thread, 1, 3),
 	LMD_IMPL(ToolTip, BIF_Linux_ToolTip, 0, 4),
+	LMD_IMPL(TrayTip, BIF_Linux_TrayTip, 0, 3),
 	LMD_NI(TraySetIcon, 0, 3),
-	LMD_NI(TrayTip, 0, 3),
 	LMD_IMPL(WinActivate, BIF_Linux_WinActivate, 0, 4),
 	LMD_IMPL(WinActivateBottom, BIF_Linux_WinActivateBottom, 0, 4),
 	LMD_IMPL(WinClose, BIF_Linux_WinClose, 0, 5),

@@ -56,7 +56,8 @@ examples fall into three groups on Linux:</p>
 
 <h2>What works on Linux</h2>
 <p>All <b>367</b> built-in functions listed in the worklist are implemented
-(3 not-implemented error paths: ComObjArray, TrayTip, TraySetIcon);
+(2 not-implemented error paths: ComObjArray and TraySetIcon; TrayTip is now
+a real desktop notification);
 1131 doc-check assertions pass under Xvfb (including 29
 for <code>DllCall</code> against native <b>.so</b> libraries and 18 for the
 D-Bus COM layer). The port has two display backends:</p>
@@ -210,8 +211,13 @@ D-Bus COM layer). The port has two display backends:</p>
   <li>The <code>SoundGet*/SoundSet*</code> mixer functions are available via
     <code>pactl</code> (PipeWire/PulseAudio) with an ALSA <code>amixer</code>
     fallback; <code>SoundPlay</code> (paplay/aplay) and <code>SoundBeep</code>
-    (terminal/X11 bell) work too. The tray icon (<code>TrayTip</code>) and
-    compiled-script packaging are not available.</li>
+    (terminal/X11 bell) work too. <code>TrayTip</code> is delivered as a
+    standard desktop notification through <code>org.freedesktop.Notifications</code>
+    (GNOME Shell / KDE / XFCE all host it); with no notification daemon it is
+    a silent no-op (documented "never a critical error"). The tray <em>icon</em>
+    (<code>TraySetIcon</code>, SNI StatusNotifierItem + dbusmenu) is the R2
+    follow-up and still raises a clear not-ported error.  Compiled-script
+    packaging is not available.</li>
   <li>CoordMode/SendMode semantics are honored; hotkeys work through
     XGrabKey (keys) and XGrabButton (mouse buttons/wheels) on X11/XWayland,
     and through the GNOME Shell extension or the Global Shortcuts Portal on
@@ -254,7 +260,7 @@ D-Bus COM layer). The port has two display backends:</p>
     <b>P3 simulated</b> (process-internal state / approximation: the
     single-user registry file, control/window shadow styles, XQueryKeymap
     KeyWait), <b>P4 unavailable</b> (raises an explicit error: ComObjArray,
-    TrayTip, SendMessage, RunAs, ...).  Query it at runtime:
+    TraySetIcon, SendMessage, RunAs, ...).  Query it at runtime:
     <code>ahk --parity FuncName</code> prints the level and a one-line note;
     <code>A_ParityLevel("FuncName")</code> returns the level (1..4) for
     defensive scripts (e.g. skip a P4 feature before calling it).  The
