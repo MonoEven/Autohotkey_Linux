@@ -374,3 +374,33 @@ padding-left: 0;
 ul.indent ul {
 list-style-type: disc;
 }
+
+/* Linux parity badge (check_detail0821 §13): P2 adapted / P3 simulated /
+   P4 unavailable, injected by tools/gen_parity_badges.py. */
+
+p.parity-badge {
+display: inline-block;
+margin: .3em 0 .6em 0;
+padding: .15em .6em;
+border: 1px solid #c9c9c9;
+border-radius: 4px;
+font-size: .85em;
+color: #555;
+background: #f4f4f4;
+cursor: help;
+}
+
+.parity-p2 {
+border-color: #b8d0b8;
+background: #eaf4ea;
+}
+
+.parity-p3 {
+border-color: #d0c9a0;
+background: #f6f1e0;
+}
+
+.parity-p4 {
+border-color: #d0a8a8;
+background: #f7e7e7;
+}

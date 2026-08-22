@@ -104,6 +104,10 @@ jobs:
       - name: Verify parity classification is in sync
         run: python3 tools/gen_parity.py --check
 
+      # §13: every function doc page with a parity entry must carry the badge.
+      - name: Verify parity doc badges are in sync
+        run: python3 tools/gen_parity_badges.py --check
+
   package:
     runs-on: ubuntu-24.04
     needs: build-and-test

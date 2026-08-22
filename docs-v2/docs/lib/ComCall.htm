@@ -14,6 +14,7 @@
 
 <h1>ComCall</h1>
 
+<p class="parity-badge parity-p4" id="linux-parity" title="No COM vtable on Linux: raises &quot;Invalid arg type.&quot; / &quot;Invalid parameter #1&quot; (no runnable implementation)">Linux parity: P4 unavailable</p>
 <div class="note" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> COM is implemented over the D-Bus desktop bus: <code>ComObject("org.freedesktop.DBus")</code> creates a proxy for a bus service, method calls and property access map to D-Bus calls, and <code>ComValue</code> wraps typed values. Windows COM interfaces (IUnknown/IDispatch pointers, SafeArrays) do not exist on Linux.</div>
 
 

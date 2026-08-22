@@ -273,9 +273,10 @@ D-Bus COM layer). The port has two display backends:</p>
     fake-compatible function surfaces explicitly.  It covers both the
     upstream <code>g_BIF</code> table (RegRead, ...) and the Linux table;
     class-based P4 functions (ComObjArray, ...) already raise their own
-    clear errors.  The strict-mode
-    (<code>AHK_STRICT_PARITY</code>) and per-function doc badges are the R2
-    follow-ups.</li>
+    clear errors.  Each function's own documentation page
+    (<code>docs/lib/*.htm</code>) carries a color-coded parity badge
+    (green P2 adapted / amber P3 simulated / red P4 unavailable), injected
+    by <code>tools/gen_parity_badges.py</code> and kept in sync by CI.</li>
   <li><b>Injected-vs-physical key detection (check_detail0821 §2.2-A / R2 §3,
     S5)</b>: the port negotiates XI 2.1 (mandatory for a valid
     <code>XIRawEvent.sourceid</code>) and detects the XTEST devices via their

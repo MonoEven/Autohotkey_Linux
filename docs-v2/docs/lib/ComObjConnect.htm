@@ -13,6 +13,7 @@
 
 <h1>ComObjConnect</h1>
 
+<p class="parity-badge parity-p4" id="linux-parity" title="COM event sink has no Linux counterpart: raises an explicit not-ported error">Linux parity: P4 unavailable</p>
 <div class="note" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> <code>ComObjConnect</code> raises an error (no COM events on Linux; subscribe to D-Bus signals with the D-Bus COM tools instead). The rest of the COM layer is implemented over the D-Bus desktop bus: <code>ComObject("org.freedesktop.DBus")</code> creates a proxy for a bus service, method calls and property access map to D-Bus calls, and <code>ComValue</code> wraps typed values.</div>
 
 
