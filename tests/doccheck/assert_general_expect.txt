@@ -49,3 +49,4 @@ A_ScriptHwnd=1
 A_EventInfo=1
 A_ThisFunc=1
 traytip_noerr=1
+trayseticon_noerr=1

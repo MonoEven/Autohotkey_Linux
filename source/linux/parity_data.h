@@ -72,7 +72,7 @@ static const LinuxParityEntry kLinuxParity[] =
 	{ "SoundPlay", 2, "Uses paplay/aplay; requires the external tool and a sound server" },
 	{ "SoundSetMute", 2, "Uses pactl/amixer; requires the external tool; limited to master devices" },
 	{ "SoundSetVolume", 2, "Uses pactl/amixer; requires the external tool; limited to master devices" },
-	{ "TraySetIcon", 4, "No tray icon host implemented (SNI StatusNotifierItem + dbusmenu is the R2 follow-up): raises an explicit not-ported error" },
+	{ "TraySetIcon", 2, "Delivered as a StatusNotifierItem (org.kde.StatusNotifierItem + com.canonical.dbusmenu) with a default Pause/Suspend/Reload/Exit menu; no watcher is a silent no-op; A_TrayMenu customization is a follow-up" },
 	{ "TrayTip", 2, "Delivered as an org.freedesktop.Notifications notification (per-desktop daemon); empty TrayTip is a no-op" },
 	{ "WinGetExStyle", 3, "Window style is a virtual shadow + EWMH; exact for self-set windows only" },
 	{ "WinGetStyle", 3, "Window style is a virtual shadow + EWMH; exact for self-set windows only" },

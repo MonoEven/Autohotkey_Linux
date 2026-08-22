@@ -26,9 +26,8 @@ Check("comobjarray", () => ComObjArray(0x0003, 2))
 Check("comobjquery", () => ComObjQuery(ComValue(0x0003, 5), "{00000000-0000-0000-C000-000000000046}"))
 Check("comobjconnect", () => ComObjConnect(ComObject("org.freedesktop.DBus")))
 
-; --- TraySetIcon: no SNI tray host implemented yet -> clear not-ported error
-; (TrayTip is implemented as a desktop notification; see assert_general.)
-Check("trayseticon", () => TraySetIcon("D:/noicon.ico"))
+; (TrayTip/TraySetIcon are implemented as a notification / StatusNotifierItem;
+; see assert_general.)
 
 ; --- Crash-regression: Send with no usable X display must NOT segfault ------
 ; (An X display may be absent while Wayland is "active" but its virtual

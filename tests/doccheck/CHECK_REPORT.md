@@ -28,7 +28,7 @@
 | 对象/数组/Map/类 | `assert_object.ahk` | 35 |
 | 文件/目录 | `assert_file.ahk` | 31 |
 | 日期时间 | `assert_datetime.ahk` | 34 |
-| 通用/环境/进程/驱动器/INI/剪贴板/A_Args/TrayTip (TrayTip 经 org.freedesktop.Notifications 通知,headless 无守护进程也不报错) | `assert_general.ahk` | 51 |
+| 通用/环境/进程/驱动器/INI/剪贴板/A_Args/TrayTip/TraySetIcon (TrayTip 经 org.freedesktop.Notifications 通知、TraySetIcon 经 StatusNotifierItem,headless 均不报错) | `assert_general.ahk` | 52 |
 | 二进制互操作 (NumGet/NumPut/StrGet/StrPut/Buffer) | `assert_interop.ahk` | 20 |
 | 正则 (RegExMatch/RegExReplace/~= 运算符/命名子组) | `assert_regex.ahk` | 22 |
 | 注册表 (RegRead/RegWrite/RegDelete/RegDeleteKey/RegCreateKey,Linux 按文档报错路径) | `assert_registry.ahk` | 19 |
@@ -54,7 +54,7 @@
 | 图像 (LoadPicture/IL_*/ImageSearch,BMP/ICO/PNG/GIF/CUR/JPEG/PPM 解码 + XGetImage 屏幕匹配) | `assert_image.ahk` | 44 |
 | 窗口形状 (WinSetRegion,X11 SHAPE 扩展;xshape_probe 端到端验证) | `assert_shape.ahk` | 19 |
 | GUI/控件/菜单 (Gui/GuiControl/Menu/MenuBar,GTK3 窗口;Edit/DDL/List/ListView/TreeView/StatusBar/Submit/OnEvent/菜单属性/HWND 反查等) | `assert_gui.ahk` | 32 |
-| 未移植函数错误行为 (ComObjArray/ComObjQuery/ComObjConnect D-Bus COM 边界 + TraySetIcon 无 SNI 宿主 + Send 无显示不得崩溃的回归;TrayTip 已实现为桌面通知,移出本模块) | `assert_notimpl.ahk` | 5 |
+| 未移植函数错误行为 (ComObjArray/ComObjQuery/ComObjConnect D-Bus COM 边界 + Send 无显示不得崩溃的回归;TrayTip/TraySetIcon 已实现为通知/StatusNotifierItem,移出本模块) | `assert_notimpl.ahk` | 4 |
 | 声音/光标/回调/输入钩子 (SoundGet*/SoundSet*/CaretGetPos/CallbackCreate+Free/InputHook,pactl/amixer + X11 + libffi 后端) | `assert_sound_etc.ahk` | 15 |
 | 语句/指令/类别/索引页代码形式 (If/Else/For/While/Switch/Try/Catch/Throw/Loop/Until/Break/Continue/Return/Block + Array/Map/Object/Buffer/Error/Number/String 类别 + `#Requires`/`#Warn` 等) | `assert_statements.ahk` | 19 |
 | 覆盖补全 (round-27:54 个未直引用函数中的 51 个 + String/Class/Menu/ObjBindMethod/Persistent/WinWaitNotActive 名称引用;含 Exit/Reload/Shutdown/InputBox 的"不可自动化"文档块) | `assert_misc_cov.ahk` | 75 |

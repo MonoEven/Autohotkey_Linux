@@ -160,6 +160,9 @@ BIF_DECL(BIF_Linux_NotImplemented)
 // no daemon the call is a silent no-op (TrayTip is documented as never a
 // critical error).
 extern bool LinuxTrayNotify(const wchar_t *aTitle, const wchar_t *aText);
+// TraySetIcon -> StatusNotifierItem (check_detail0821 §5-M5).  Best effort:
+// no watcher / no session bus is a silent no-op.
+extern bool LinuxTraySetIcon(const wchar_t *aIconFile);
 
 BIF_DECL(BIF_Linux_TrayTip)
 {
@@ -175,6 +178,13 @@ BIF_DECL(BIF_Linux_TrayTip)
 	if (!text && !title)
 		return;
 	LinuxTrayNotify(title ? title : L"AutoHotkey", text ? text : L"");
+}
+
+BIF_DECL(BIF_Linux_TraySetIcon)
+{
+	TCHAR icon_buf[1024];
+	LPTSTR icon = aParamCount > 0 ? TokenToString(*aParam[0], icon_buf, nullptr) : nullptr;
+	LinuxTraySetIcon(icon && *icon ? icon : L"application-x-executable");
 }
 
 // CallbackCreate/CallbackFree (libffi closure backend, core_callback_linux.cpp).
@@ -3034,7 +3044,7 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(Thread, BIF_Linux_Thread, 1, 3),
 	LMD_IMPL(ToolTip, BIF_Linux_ToolTip, 0, 4),
 	LMD_IMPL(TrayTip, BIF_Linux_TrayTip, 0, 3),
-	LMD_NI(TraySetIcon, 0, 3),
+	LMD_IMPL(TraySetIcon, BIF_Linux_TraySetIcon, 0, 3),
 	LMD_IMPL(WinActivate, BIF_Linux_WinActivate, 0, 4),
 	LMD_IMPL(WinActivateBottom, BIF_Linux_WinActivateBottom, 0, 4),
 	LMD_IMPL(WinClose, BIF_Linux_WinClose, 0, 5),

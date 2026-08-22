@@ -14,8 +14,8 @@
 
 <h1>TraySetIcon</h1>
 
-<p class="parity-badge parity-p4" id="linux-parity" title="No tray icon host implemented (SNI StatusNotifierItem + dbusmenu is the R2 follow-up): raises an explicit not-ported error">Linux parity: P4 unavailable</p>
-<div class="warning" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> <code>TraySetIcon</code> is not implemented on this port (no tray icon); it raises an error.</div>
+<p class="parity-badge parity-p2" id="linux-parity" title="Delivered as a StatusNotifierItem (org.kde.StatusNotifierItem + com.canonical.dbusmenu) with a default Pause/Suspend/Reload/Exit menu; no watcher is a silent no-op; A_TrayMenu customization is a follow-up">Linux parity: P2 adapted</p>
+<div class="warning" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> <code>TraySetIcon</code> registers a StatusNotifierItem with the desktop's tray (org.kde.StatusNotifierItem + com.canonical.dbusmenu).  The icon name is derived from the file path (basename without extension); with no tray watcher the call is a silent no-op.  The script-customizable <code>A_TrayMenu</code> is a follow-up; the default menu offers Pause / Suspend / Reload / Exit.</div>
 
 <p>Changes the script's <a href="../Program.htm#tray-icon">tray icon</a> (which is also used by <a href="Gui.htm">GUI</a> and dialog windows).</p>
 

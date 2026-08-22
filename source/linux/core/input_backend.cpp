@@ -18,6 +18,7 @@
 #include "input_backend_gnome_shell.h"
 #include "core_evdev_linux.h"
 #include "core_clipboard_linux.h"
+#include "core_tray_linux.h"
 #include "../../script.h"
 #include "../../globaldata.h"
 #include "../../script_func_impl.h"
@@ -448,6 +449,8 @@ void LinuxInputBackendDispatch()
 	// rides the session bus), so pump it on every main-loop pass -- the
 	// XFixes path above handles X11 and this covers pure Wayland.
 	LinuxClipboardDispatchWayland();
+	// §5-M5: the StatusNotifierItem tray service rides the session bus too.
+	LinuxTrayDispatch();
 }
 
 void LinuxInputBackendShutdown()

@@ -56,8 +56,8 @@ examples fall into three groups on Linux:</p>
 
 <h2>What works on Linux</h2>
 <p>All <b>367</b> built-in functions listed in the worklist are implemented
-(2 not-implemented error paths: ComObjArray and TraySetIcon; TrayTip is now
-a real desktop notification);
+(1 not-implemented error path: ComObjArray; TrayTip is now a real
+desktop notification and TraySetIcon a StatusNotifierItem tray icon);
 1134 doc-check assertions pass under Xvfb (including 29
 for <code>DllCall</code> against native <b>.so</b> libraries and 18 for the
 D-Bus COM layer). The port has two display backends:</p>
@@ -214,9 +214,16 @@ D-Bus COM layer). The port has two display backends:</p>
     (terminal/X11 bell) work too. <code>TrayTip</code> is delivered as a
     standard desktop notification through <code>org.freedesktop.Notifications</code>
     (GNOME Shell / KDE / XFCE all host it); with no notification daemon it is
-    a silent no-op (documented "never a critical error"). The tray <em>icon</em>
-    (<code>TraySetIcon</code>, SNI StatusNotifierItem + dbusmenu) is the R2
-    follow-up and still raises a clear not-ported error.  Compiled-script
+    a silent no-op (documented "never a critical error"). <code>TraySetIcon</code>
+    registers a <b>StatusNotifierItem</b> with the desktop's tray
+    (<code>org.kde.StatusNotifierItem</code> + <code>com.canonical.dbusmenu</code>):
+    the icon name is derived from the file path (basename without extension) and
+    a default menu offers Pause / Suspend / Reload / Exit.  No tray watcher is a
+    silent no-op.  The item registers under the well-known
+    <code>org.kde.StatusNotifierItem-&lt;pid&gt;-1</code> name so the watcher
+    removes it on exit (a unique-name registration leaks on ayatana/AppIndicator
+    hosts -- the icon never disappears).  The script-customizable
+    <code>A_TrayMenu</code> is a follow-up.  Compiled-script
     packaging is not available.</li>
   <li>CoordMode/SendMode semantics are honored; hotkeys work through
     XGrabKey (keys) and XGrabButton (mouse buttons/wheels) on X11/XWayland,
@@ -260,7 +267,7 @@ D-Bus COM layer). The port has two display backends:</p>
     <b>P3 simulated</b> (process-internal state / approximation: the
     single-user registry file, control/window shadow styles, XQueryKeymap
     KeyWait), <b>P4 unavailable</b> (raises an explicit error: ComObjArray,
-    TraySetIcon, SendMessage, RunAs, ...).  Query it at runtime:
+    SendMessage, RunAs, ...).  Query it at runtime:
     <code>ahk --parity FuncName</code> prints the level and a one-line note;
     <code>A_ParityLevel("FuncName")</code> returns the level (1..4) for
     defensive scripts (e.g. skip a P4 feature before calling it).  The

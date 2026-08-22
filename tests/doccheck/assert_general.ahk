@@ -119,3 +119,13 @@ try
 catch
     tt_ok := 0
 MsgBox "traytip_noerr=" tt_ok
+
+; TraySetIcon -> StatusNotifierItem (check_detail0821 §5-M5): must NOT raise,
+; even headless with no session bus / watcher (best-effort silent no-op; the
+; full item is VM-verified separately).
+ts_ok := 1
+try
+    TraySetIcon("application-x-executable")
+catch
+    ts_ok := 0
+MsgBox "trayseticon_noerr=" ts_ok

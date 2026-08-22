@@ -528,6 +528,30 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
   图标出现 → `A_TrayMenu` 项可点 → 点击回调进脚本 → `TrayTip` 弹通知;
   无宿主环境断言"报可读的能力错误且不崩溃"。
 
+  **已实施(R2 §5-M5,GNOME/AppIndicator 验证)**:`core_tray_linux.cpp`
+  自实现 SNI(org.kde.StatusNotifierItem + com.canonical.dbusmenu,不链
+  libayatana-appindicator):
+  - `TraySetIcon` 注册 StatusNotifierItem(well-known 名
+    `org.kde.StatusNotifierItem-<pid>-1`,私有 D-Bus 连接 + 对象路径
+    /StatusNotifierItem 与 /MenuBar),图标名从文件路径取 basename 去扩展名;
+  - 默认菜单(com.canonical.dbusmenu)含 Pause/Suspend/Reload/Exit,点击经
+    `Event` → 调 `PauseCurrentThread`/`ToggleSuspendState`/`ExitApp`;
+  - 无 watcher/无会话总线 → 静默 no-op(与 TrayTip 一致,能力降级而非报错);
+  - `A_TrayMenu`(脚本自定义菜单)仍为后续。
+  **VM 协议级实证**:watcher 注册、GetAll/Get 属性(IconName='custom')、
+  GetLayout(4 项)、点击 Exit → 进程退出,全部通过。
+  **泄漏修复(重要)**:必须用 **well-known 名**注册——ayatana watcher 的
+  清理依赖 item 的 NameWatcher(仅当 uniqueId===service,即 well-known 形式
+  才建立);用 unique-name+path 形式注册时 Gio.DBusProxy 检测不到名字消失,
+  **进程退出后图标永远残留**(实测 GNOME VM 上堆积 34+ 个)。well-known 注册
+  在进程退出 ~2s 内被 watcher 清理,已实测确认。
+  **dbusmenu 两个实证坑**:① 子项必须是 `av`(每个子项用 VARIANT 包裹
+  (ia{sv}av)),直接用 (ia{sv}av) 会让 libdbus 在 GetLayout 时 abort(核心转储);
+  ② `Properties.Get` 返回单个 variant `v` 而非 dict entry,否则 watcher
+  探测属性时连接被 daemon 断开。
+  **未做(诚实登记)**:KDE Plasma / sway(swaybar) 宿主未实测(VM 为 GNOME);
+  `A_TrayMenu` 脚本自定义菜单;图标 pixmap(仅名字);多实例/Attention 等扩展。
+
 ### 5.3 M6 补注:打包格式对齐 Ahk2Exe 的实际做法
 
 - Ahk2Exe 的真实机制是:复制 `AutoHotkeySC.bin`(裁剪版解释器),把预处理并
