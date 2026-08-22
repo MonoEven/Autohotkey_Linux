@@ -593,7 +593,12 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
   (ia{sv}av)),直接用 (ia{sv}av) 会让 libdbus 在 GetLayout 时 abort(核心转储);
   ② `Properties.Get` 返回单个 variant `v` 而非 dict entry,否则 watcher
   探测属性时连接被 daemon 断开。
-  **未做(诚实登记)**:KDE Plasma / sway(swaybar) 宿主未实测(VM 为 GNOME);
+  **swaybar 宿主实证(已补)**:headless sway 1.10 带 bar 配置起 swaybar →
+  swaybar 注册 `org.kde.StatusNotifierWatcher` + `StatusNotifierHost-<pid>`;
+  TraySetIcon 脚本的 SNI 名注册成功,IconName='applications-system',
+  GetLayout 显示 A_TrayMenu 自定义项("Sway Item"),退出后 well-known 名被
+  watcher 清理(false)。**SNI 现已在 GNOME/AppIndicator + swaybar 双宿主验证**。
+  **未做(诚实登记)**:KDE Plasma 宿主未实测(VM 无 KDE);
   图标 pixmap(仅名字);多实例/Attention 等扩展。
 
 ### 5.3 M6 补注:打包格式对齐 Ahk2Exe 的实际做法
