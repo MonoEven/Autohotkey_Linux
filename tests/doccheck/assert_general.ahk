@@ -39,7 +39,7 @@ ProcessClose(pid)
 ; A loaded CI runner can take a while to reap the terminated process; poll
 ; (bounded) instead of a fixed short sleep so the assertion never flakes.
 reaped := 0
-Loop 50 {   ; up to ~5s
+Loop 100 {   ; up to ~10s (loaded CI/VM runners can reap slowly)
     if ProcessExist(pid) = 0 {
         reaped := 1
         break

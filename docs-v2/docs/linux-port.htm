@@ -58,7 +58,7 @@ examples fall into three groups on Linux:</p>
 <p>All <b>367</b> built-in functions listed in the worklist are implemented
 (2 not-implemented error paths: ComObjArray and TraySetIcon; TrayTip is now
 a real desktop notification);
-1131 doc-check assertions pass under Xvfb (including 29
+1134 doc-check assertions pass under Xvfb (including 29
 for <code>DllCall</code> against native <b>.so</b> libraries and 18 for the
 D-Bus COM layer). The port has two display backends:</p>
 <ul>
@@ -266,7 +266,14 @@ D-Bus COM layer). The port has two display backends:</p>
     defensive scripts (e.g. skip a P4 feature before calling it).  The
     classification lives in <code>tests/doccheck/parity.tsv</code> and is
     compiled into the binary by <code>tools/gen_parity.py</code> (CI checks
-    the generated header stays in sync).  The strict-mode
+    the generated header stays in sync).  <code>AHK_STRICT_PARITY=warn|error</code>
+    turns the classification into a migration aid: the first call of any
+    P3/P4 function prints a warning (<code>warn</code>) or raises
+    (<code>error</code>), so a Windows script silently running on a
+    fake-compatible function surfaces explicitly.  It covers both the
+    upstream <code>g_BIF</code> table (RegRead, ...) and the Linux table;
+    class-based P4 functions (ComObjArray, ...) already raise their own
+    clear errors.  The strict-mode
     (<code>AHK_STRICT_PARITY</code>) and per-function doc badges are the R2
     follow-ups.</li>
   <li><b>Injected-vs-physical key detection (check_detail0821 §2.2-A / R2 §3,
@@ -332,7 +339,7 @@ Highlights of this release:</p>
     <b>evdev/uinput permission artifacts</b>
     (<code>tools/linux/permissions/</code>: udev rule, input group,
     polkit action, install script — VM-verified).</li>
-  <li>Doc-check: 1131/1131 assertions pass on both the normal and the ASan
+  <li>Doc-check: 1134/1134 assertions pass on both the normal and the ASan
     builds; regression 27/27, Wayland 17/17, XWayland 247/247. (The
     authoritative numbers are machine-verified in CI by
     <code>verify_report_numbers.sh</code>.)</li>

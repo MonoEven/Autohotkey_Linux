@@ -18,6 +18,8 @@
 #include "../../abi.h"
 #include "../../script_func_impl.h"
 #include "../gui/x11_gui.h"
+#include <strings.h> // strcasecmp (AHK_STRICT_PARITY).
+#include <cstdio>
 
 // Parity lookup (core_parity_linux.cpp; classification table generated from
 // tests/doccheck/parity.tsv).  Used by BIF_Linux_ParityLevel.
@@ -3084,6 +3086,87 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 #undef LMD_IMPL
 #undef LMD_NI
 
+// ---------------------------------------------------------------------------
+// Strict parity (check_detail0821 §13): AHK_STRICT_PARITY=warn|error
+// ---------------------------------------------------------------------------
+// Migrating a Windows script can silently run on "fake-compatible" functions
+// (P3 simulated / P4 unavailable).  With AHK_STRICT_PARITY=warn the first call
+// of any P3/P4 function prints a one-line warning (level + note); with =error
+// the first call raises instead.  Implemented by subclassing BuiltInFunc so
+// the interpreter's normal call path is untouched.
+
+// Returns 0 (off) / 1 (warn) / 2 (error), read once.
+static int LinuxStrictParityMode()
+{
+	static int s_mode = -1;
+	if (s_mode < 0)
+	{
+		s_mode = 0;
+		const char *v = getenv("AHK_STRICT_PARITY");
+		if (v && *v)
+		{
+			if (!strcasecmp(v, "warn") || !strcasecmp(v, "1")
+				|| !strcasecmp(v, "true") || !strcasecmp(v, "yes") || !strcasecmp(v, "on"))
+				s_mode = 1;
+			else if (!strcasecmp(v, "error") || !strcasecmp(v, "2") || !strcasecmp(v, "strict"))
+				s_mode = 2;
+			else
+				std::fprintf(stderr,
+					"AHK warning: AHK_STRICT_PARITY=\"%s\" is not warn|error; "
+					"strict parity disabled\n", v);
+		}
+	}
+	return s_mode;
+}
+
+class LinuxBuiltInFunc : public BuiltInFunc
+{
+public:
+	bool mStrictChecked = false; // First call already saw the strict check.
+	LinuxBuiltInFunc(FuncEntry &aFe) : BuiltInFunc(aFe) {}
+	bool Call(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount) override;
+};
+
+bool LinuxBuiltInFunc::Call(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount)
+{
+	if (!mStrictChecked)
+	{
+		mStrictChecked = true;
+		// Consult the parity table first; the env cache is only primed when a
+		// P3/P4 function is actually called (calling LinuxStrictParityMode()
+		// on an unrelated P1 first call -- e.g. EnvSet setting the variable
+		// itself -- would cache the pre-set value).
+		char narrow[256];
+		size_t n = wcstombs(narrow, mName, sizeof(narrow) - 1);
+		if (n == (size_t)-1)
+			n = 0;
+		narrow[n] = 0;
+		int level = 1;
+		const char *note = LinuxParityLookup(narrow, level);
+		if (level >= 3)
+		{
+			int mode = LinuxStrictParityMode();
+			if (mode)
+			{
+				const char *label = level == 3 ? "simulated" : "unavailable";
+				if (mode == 1)
+					std::fprintf(stderr, "AHK strict-parity: %s is P%d %s%s%s\n"
+						, narrow, level, label, note ? " -- " : "", note ? note : "");
+				else
+				{
+					wchar_t buf[768];
+					sntprintf(buf, _countof(buf)
+						, _T("AHK_STRICT_PARITY=error: %hs is P%d %hs (%hs). See 'ahk --parity %hs'.")
+						, narrow, level, label, note ? note : "", narrow);
+					aResultToken.Error(buf, _T(""), ErrorPrototype::OS);
+					return false;
+				}
+			}
+		}
+	}
+	return BuiltInFunc::Call(aResultToken, aParam, aParamCount);
+}
+
 static BuiltInFunc *LinuxMakeBuiltInFunc(const LinuxMdFuncEntry &aEntry)
 {
 	// BuiltInFunc stores mOutputVars BY POINTER, so the FuncEntry must live in
@@ -3099,7 +3182,14 @@ static BuiltInFunc *LinuxMakeBuiltInFunc(const LinuxMdFuncEntry &aEntry)
 	fe.mID = 0;
 	for (int i = 0; i < MAX_FUNC_OUTPUT_VAR; ++i)
 		fe.mOutputVars[i] = aEntry.output_vars[i];
-	return new BuiltInFunc(fe);
+	return new LinuxBuiltInFunc(fe);
+}
+
+// Public factory used by Script::GetBuiltInFunc (g_BIF) and by
+// Script::GetBuiltInMdFunc below, so strict parity covers both tables.
+Func *LinuxNewBuiltInFunc(FuncEntry &aFe)
+{
+	return new LinuxBuiltInFunc(aFe);
 }
 
 Func *Script::GetBuiltInMdFunc(LPTSTR aFuncName)

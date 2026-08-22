@@ -1,4 +1,4 @@
-# AutoHotkey (Linux Port) #
+﻿# AutoHotkey (Linux Port) #
 
 **AutoHotkey v2.0.26 Linux port** — a free, open-source macro-creation and
 automation utility for Linux. It is driven by a custom scripting language
@@ -6,7 +6,7 @@ with special provision for defining keyboard shortcuts, otherwise known as
 hotkeys.
 
 > **Status: technology preview (not "official release").** The v2 language
-> coverage is broad (367 built-ins, 1131 doc-check assertions) and the
+> coverage is broad (367 built-ins, 1134 doc-check assertions) and the
 > X11/XWayland backend is usable for real automation; native-Wayland
 > global hotkeys (GNOME Shell extension / Portal / evdev lanes), Unicode
 > input on compositors without a virtual keyboard, AT-SPI control
@@ -24,7 +24,7 @@ hotkeys.
   interpreter on the `linux-port` branch).
 - **Latest build**: `v2.0.26-linux.15` (see
   [Releases](https://github.com/MonoEven/Autohotkey_Linux/releases)).
-  Doc-check **1131/1131** (regular + ASan), regression 27/27,
+  Doc-check **1134/1134** (regular + ASan), regression 27/27,
   Wayland 17/17, XWayland 247/247.
 
 ## Features ##
@@ -38,7 +38,7 @@ hotkeys.
   `Monitor*`, `ImageSearch`), dialogs (`MsgBox`, `InputBox`,
   `FileSelect`/`DirSelect`), `ToolTip`, window shapes (`WinSetRegion`),
   GTK3 `Gui`/`Menu` and the whole doc-checked v2 API surface —
-  **1131/1131** assertions pass under Xvfb.
+  **1134/1134** assertions pass under Xvfb.
 - **Unicode text input** (linux.13/linux.14): `SendText`/`Send` and hotstring
   replacements deliver non-ASCII characters (Chinese, Japanese, Korean,
   accented Latin, Emoji) on X11/XWayland via keysym transmission (a spare

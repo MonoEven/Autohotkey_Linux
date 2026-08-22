@@ -1,0 +1,3 @@
+strict_err_ok=1
+strict_p1_ok=1
+strict_p2_ok=1

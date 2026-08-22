@@ -17,6 +17,9 @@ GNU General Public License for more details.
 #include "stdafx.h" // pre-compiled headers
 #include "script.h"
 #include "globaldata.h" // for a lot of things
+#ifndef _WIN32
+#include "linux/core/core_mdfunc_linux.h" // LinuxNewBuiltInFunc (strict parity)
+#endif
 #include "util.h" // for strlcpy() etc.
 #include "window.h" // for a lot of things
 #include "application.h" // for MsgSleep()
@@ -6796,7 +6799,14 @@ Func *Script::GetBuiltInFunc(LPTSTR aFuncName)
 		else if (result < 0)
 			right = mid - 1;
 		else // Match found.
+			// Linux: route through the strict-parity wrapper (AHK_STRICT_PARITY)
+			// so the upstream g_BIF table (RegRead, ComObjArray, ...) is covered
+			// alongside the Linux table (check_detail0821 §13).
+#ifndef _WIN32
+			return LinuxNewBuiltInFunc(g_BIF[mid]);
+#else
 			return new BuiltInFunc(g_BIF[mid]);
+#endif
 	}
 	return GetBuiltInMdFunc(aFuncName);
 }
