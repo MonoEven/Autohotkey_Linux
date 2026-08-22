@@ -598,6 +598,10 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
   TraySetIcon 脚本的 SNI 名注册成功,IconName='applications-system',
   GetLayout 显示 A_TrayMenu 自定义项("Sway Item"),退出后 well-known 名被
   watcher 清理(false)。**SNI 现已在 GNOME/AppIndicator + swaybar 双宿主验证**。
+  **A_IconFile/A_IconNumber(已实现)**:BIF_Linux_TraySetIcon 记录
+  `g_script.mCustomIconFile`/`mCustomIconNumber`,BIV_IconFile/BIV_IconNumber
+  去桩返回(与上游一致)。实证:TraySetIcon(path,2) 后 A_IconFile=path、
+  A_IconNumber=2;doc-check 增 4 断言(1134→1138)。
   **图标 pixmap(已实现)**:TraySetIcon 给图片文件路径时,用 gdk_pixbuf 读入并
   转 ARGB32(宿主原生字节序),经 `IconPixmap`(a(iiay))在 GetAll/Get 暴露;
   主题名(非文件)保持仅 IconName,宿主回退。实证:16x16 PNG → Get 返回

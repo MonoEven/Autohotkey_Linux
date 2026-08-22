@@ -184,6 +184,15 @@ BIF_DECL(BIF_Linux_TraySetIcon)
 {
 	TCHAR icon_buf[1024];
 	LPTSTR icon = aParamCount > 0 ? TokenToString(*aParam[0], icon_buf, nullptr) : nullptr;
+	// Track the file/number for A_IconFile / A_IconNumber (check_detail0821 §5-M5).
+	int icon_number = (aParamCount > 1 && aParam[1]->symbol == SYM_INTEGER)
+		? (int)aParam[1]->value_int64 : 1;
+	if (icon && *icon)
+	{
+		free(g_script.mCustomIconFile);
+		g_script.mCustomIconFile = _tcsdup(icon);
+		g_script.mCustomIconNumber = (UINT)icon_number;
+	}
 	LinuxTraySetIcon(icon && *icon ? icon : L"application-x-executable");
 }
 

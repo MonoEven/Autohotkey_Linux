@@ -129,3 +129,10 @@ try
 catch
     ts_ok := 0
 MsgBox "trayseticon_noerr=" ts_ok
+
+; A_IconFile / A_IconNumber track the TraySetIcon file + number (§5-M5).
+MsgBox "iconfile_before=" A_IconFile
+MsgBox "iconnum_before=" A_IconNumber
+TraySetIcon("/tmp/dc-fake-icon.png", 3)
+MsgBox "iconfile_after=" A_IconFile
+MsgBox "iconnum_after=" A_IconNumber

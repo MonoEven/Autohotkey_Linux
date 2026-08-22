@@ -39,9 +39,20 @@ LINUX_BIV_STUB_RW(BIV_AllowMainWindow)
 LINUX_BIV_STUB(BIV_Cursor)
 LINUX_BIV_STUB(BIV_EndChar)
 LINUX_BIV_STUB_RW(BIV_Hotkey)
-LINUX_BIV_STUB(BIV_IconFile)
+
+// A_IconFile / A_IconNumber: the file + number passed to TraySetIcon
+// (check_detail0821 §5-M5).  Set by BIF_Linux_TraySetIcon; mirrors upstream.
+BIV_DECL_R(BIV_IconFile)
+{
+	_f_return_p(g_script.mCustomIconFile ? g_script.mCustomIconFile : _T(""));
+}
+
+BIV_DECL_R(BIV_IconNumber)
+{
+	_f_return_i((int)g_script.mCustomIconNumber);
+}
+
 LINUX_BIV_STUB_RW(BIV_IconHidden)
-LINUX_BIV_STUB(BIV_IconNumber)
 LINUX_BIV_STUB_RW(BIV_IconTip)
 
 // --- Built-in variables with real doc semantics on Linux ---
