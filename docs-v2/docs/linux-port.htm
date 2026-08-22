@@ -57,7 +57,7 @@ examples fall into three groups on Linux:</p>
 <h2>What works on Linux</h2>
 <p>All <b>367</b> built-in functions listed in the worklist are implemented
 (3 not-implemented error paths: ComObjArray, TrayTip, TraySetIcon);
-1116 doc-check assertions pass under Xvfb (including 29
+1129 doc-check assertions pass under Xvfb (including 29
 for <code>DllCall</code> against native <b>.so</b> libraries and 18 for the
 D-Bus COM layer). The port has two display backends:</p>
 <ul>
@@ -247,6 +247,22 @@ D-Bus COM layer). The port has two display backends:</p>
     unaffected.  Tested: <code>SendLevel 1</code> + a default (#InputLevel 0)
     hotkey is not triggered by <code>Send</code>; <code>SendLevel 2</code> +
     <code>InputHook("I1")</code> receives the input.</li>
+  <li><b>Parity classification (check_detail0821 §13 / R2)</b>: every function
+    carries a four-level parity grade &mdash; <b>P1 compatible</b> (default),
+    <b>P2 adapted</b> (same goal, different mechanism: D-Bus COM, .desktop
+    shortcuts, pactl/amixer sound, SendPlay without a journal),
+    <b>P3 simulated</b> (process-internal state / approximation: the
+    single-user registry file, control/window shadow styles, XQueryKeymap
+    KeyWait), <b>P4 unavailable</b> (raises an explicit error: ComObjArray,
+    TrayTip, SendMessage, RunAs, ...).  Query it at runtime:
+    <code>ahk --parity FuncName</code> prints the level and a one-line note;
+    <code>A_ParityLevel("FuncName")</code> returns the level (1..4) for
+    defensive scripts (e.g. skip a P4 feature before calling it).  The
+    classification lives in <code>tests/doccheck/parity.tsv</code> and is
+    compiled into the binary by <code>tools/gen_parity.py</code> (CI checks
+    the generated header stays in sync).  The strict-mode
+    (<code>AHK_STRICT_PARITY</code>) and per-function doc badges are the R2
+    follow-ups.</li>
 </ul>
 <p>See <a href="https://github.com/MonoEven/Autohotkey_Linux/blob/linux-port/tests/doccheck/CHECK_REPORT.md">CHECK_REPORT.md</a>
 for the complete per-module report.</p>
@@ -294,7 +310,7 @@ Highlights of this release:</p>
     <b>evdev/uinput permission artifacts</b>
     (<code>tools/linux/permissions/</code>: udev rule, input group,
     polkit action, install script — VM-verified).</li>
-  <li>Doc-check: 1116/1116 assertions pass on both the normal and the ASan
+  <li>Doc-check: 1129/1129 assertions pass on both the normal and the ASan
     builds; regression 27/27, Wayland 17/17, XWayland 247/247. (The
     authoritative numbers are machine-verified in CI by
     <code>verify_report_numbers.sh</code>.)</li>

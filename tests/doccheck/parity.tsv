@@ -1,0 +1,82 @@
+# parity.tsv -- four-level parity classification for the Linux port
+# (check_detail0821 §13.2).  Columns: name<TAB>level<TAB>note
+#
+# Levels:
+#   P1 compatible  -- behavior matches the Windows docs closely (the DEFAULT
+#                     for any function not listed here)
+#   P2 adapted     -- same goal, different mechanism/behavior (documented)
+#   P3 simulated   -- process-internal state / approximation only
+#   P4 unavailable -- raises an explicit "not ported / not supported" error
+#
+# Initial values map AUDIT_2026_WEAKENED.md §2 (the audit already prepared
+# the per-function evidence); keep this list in sync with that audit and with
+# tools/gen_parity.py (which regenerates source/linux/parity_data.h).
+#
+ComObject	P2	COM is a D-Bus adaptation: no IUnknown/IDispatch pointers; ComObject maps to a D-Bus service proxy
+ComObjGet	P2	COM is a D-Bus adaptation: ComObjGet creates a proxy for a D-Bus service
+ComObjActive	P2	COM is a D-Bus adaptation: ComObjActive is approximated by ComObjGet
+ComObjFromPtr	P2	COM is a D-Bus adaptation: the pointer is treated as an opaque D-Bus handle
+ComObjType	P2	COM is a D-Bus adaptation: 'IID' returns a "(D-Bus)" placeholder
+ComObjFlags	P2	COM is a D-Bus adaptation: flags operate on the D-Bus wrapper, not a COM object
+ComObjValue	P2	COM is a D-Bus adaptation: returns the opaque D-Bus handle value
+ComValue	P2	COM is a D-Bus adaptation: wraps typed values for the D-Bus layer
+ComCall	P4	No COM vtable on Linux: raises "Invalid arg type." / "Invalid parameter #1" (no runnable implementation)
+ComObjArray	P4	SafeArray has no Linux counterpart: raises an explicit not-ported error
+ComObjQuery	P4	IUnknown/IID query has no Linux counterpart: raises an explicit not-ported error
+ComObjConnect	P4	COM event sink has no Linux counterpart: raises an explicit not-ported error
+FileCreateShortcut	P2	Uses .desktop/.url instead of .lnk (icon index / run state fields defaulted)
+FileGetShortcut	P2	Reads .desktop/.url instead of .lnk (documented field semantics)
+SoundBeep	P2	Terminal/X11 bell; Frequency is ignored (no pitch control)
+SoundPlay	P2	Uses paplay/aplay; requires the external tool and a sound server
+SoundGetMute	P2	Uses pactl/amixer; requires the external tool; limited to master devices
+SoundGetName	P2	Uses pactl/amixer; requires the external tool; limited to master devices
+SoundGetType	P2	Uses pactl/amixer; requires the external tool; limited to master devices
+SoundGetVolume	P2	Uses pactl/amixer; requires the external tool; limited to master devices
+SoundSetMute	P2	Uses pactl/amixer; requires the external tool; limited to master devices
+SoundSetVolume	P2	Uses pactl/amixer; requires the external tool; limited to master devices
+SendInput	P2	XTEST batch without a journal; hook-unload self-suppression implemented, target delivery limited by the passive grab
+SendPlay	P2	No X11 journal: SendEvent pacing + the SetKeyDelay ,, Play variants (injection depth equals Event)
+Download	P2	Uses curl/wget; requires the external tool
+DriveGetType	P2	Uses lsblk; requires the external tool
+DriveGetList	P2	Uses lsblk; requires the external tool
+DriveGetSpaceFree	P2	Uses lsblk/df; requires the external tool
+DriveGetCapacity	P2	Uses lsblk/df; requires the external tool
+DriveGetFilesystem	P2	Uses lsblk; requires the external tool
+DriveGetStatus	P2	Uses lsblk/udisksctl; requires the external tool
+DriveSetLabel	P2	Uses lsblk/e2label; requires the external tool
+DriveEject	P2	Uses eject/udisksctl; requires the external tool
+DriveRetract	P2	Uses eject/udisksctl; requires the external tool
+DriveLock	P2	Uses udisksctl; requires the external tool
+DriveUnlock	P2	Uses udisksctl; requires the external tool
+RegRead	P3	Registry is a single-user INI file (~/.config/autohotkey-registry.txt); all hives normalized into it
+RegWrite	P3	Registry is a single-user INI file; no system-wide/permission/32-64 view semantics
+RegDelete	P3	Registry is a single-user INI file; no system-wide/permission/32-64 view semantics
+RegDeleteKey	P3	Registry is a single-user INI file; no system-wide/permission/32-64 view semantics
+RegCreateKey	P3	Registry is a single-user INI file; no system-wide/permission/32-64 view semantics
+ControlGetEnabled	P3	Control enabled state is a local shadow; external X changes are not read back
+ControlSetEnabled	P3	Control enabled state is a local shadow; external X changes are not read back
+ControlGetChecked	P3	Control checked state is a local shadow; external X changes are not read back
+ControlSetChecked	P3	Control checked state is a local shadow; external X changes are not read back
+ControlGetStyle	P3	Control style is a local shadow; external X changes are not read back
+ControlSetStyle	P3	Control style is a local shadow; external X changes are not read back
+ControlGetExStyle	P3	Control style is a local shadow; external X changes are not read back
+ControlSetExStyle	P3	Control style is a local shadow; external X changes are not read back
+WinGetStyle	P3	Window style is a virtual shadow + EWMH; exact for self-set windows only
+WinSetStyle	P3	Window style is a virtual shadow + EWMH; exact for self-set windows only
+WinGetExStyle	P3	Window style is a virtual shadow + EWMH; exact for self-set windows only
+WinSetExStyle	P3	Window style is a virtual shadow + EWMH; exact for self-set windows only
+WinGetTransparent	P3	Window transparency is a virtual shadow + _NET_WM_WINDOW_OPACITY; external windows not guaranteed
+WinSetTransparent	P3	Window transparency is a virtual shadow + _NET_WM_WINDOW_OPACITY; external windows not guaranteed
+WinSetTransColor	P3	The TransColor color-key concept has no X11 equivalent (approximated)
+WinSetAlwaysOnTop	P3	Virtual shadow + _NET_WM_STATE_ABOVE sent to the WM
+InstallKeybdHook	P3	Records a boolean only; no low-level hook is installed
+InstallMouseHook	P3	Records a boolean only; no low-level hook is installed
+KeyWait	P3	XQueryKeymap polling; logical/physical state and debounce are approximate
+MonitorGetWorkArea	P3	Approximate via XRandR/Xinerama (single-screen fallback)
+MenuSelect	P4	Targets a Win32 menu that does not exist: raises an explicit error
+OnMessage	P4	No Win32 message system on X11: monitors are stored but nothing is delivered
+SendMessage	P4	No Win32 message system on X11: raises the documented error / returns 0
+PostMessage	P4	No Win32 message system on X11: raises the documented error / returns 0
+RunAs	P4	No logon API: Run/RunWait raise "Launch Error (possibly related to RunAs)"
+TrayTip	P4	No tray on Linux: raises an explicit not-ported error
+TraySetIcon	P4	No tray on Linux: raises an explicit not-ported error

@@ -27,6 +27,9 @@ extern "C" bool LinuxRestartRequested();
 // Environment diagnostic (ahk_core --diag): prints a one-shot snapshot for
 // issue reports (check_detail0821 §12).  Implemented in core_platform_stubs.cpp.
 extern "C" int LinuxRunDiagnostic();
+// Parity query (ahk_core --parity <FuncName>): prints the parity level + note
+// (check_detail0821 §13).  Implemented in core_parity_linux.cpp.
+extern "C" int LinuxRunParity(const char *aName);
 
 int main(int argc, char** argv)
 {
@@ -74,15 +77,23 @@ int main(int argc, char** argv)
 	{
 		std::printf("AutoHotkey Linux (v2 port)\n"
 			"Usage: ahk_core script.ahk [args...]\n"
-			"  --version, -v   print the version and exit\n"
-			"  --diag          print an environment diagnostic and exit\n"
-			"  --help, -h      show this help\n"
+			"  --version, -v      print the version and exit\n"
+			"  --diag             print an environment diagnostic and exit\n"
+			"  --parity FuncName  print a function's parity level (P1-P4) + note and exit\n"
+			"  --help, -h         show this help\n"
 			"Displays: X11 when DISPLAY is set (incl. XWayland), native\n"
 			"Wayland otherwise (xdg-shell + virtual input protocols).\n");
 		return 0;
 	}
 	if (!strcmp(argv[1], "--diag"))
 		return LinuxRunDiagnostic();
+	if (!strcmp(argv[1], "--parity") && argc >= 3)
+		return LinuxRunParity(argv[2]);
+	if (!strcmp(argv[1], "--parity"))
+	{
+		std::fprintf(stderr, "AutoHotkey Linux: --parity needs a function name.\n");
+		return 1;
+	}
 
 	wchar_t wpath[4096];
 	if (mbstowcs(wpath, argv[script_arg], 4095) == (size_t)-1)

@@ -1,0 +1,9 @@
+parity_cli_p4=1
+parity_cli_p2=1
+parity_cli_p3=1
+parity_cli_p1=1
+parity_level_p4=1
+parity_level_p2=1
+parity_level_p3=1
+parity_level_p1=1
+parity_level_default=1

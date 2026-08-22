@@ -18,6 +18,10 @@
 #include "../../abi.h"
 #include "../../script_func_impl.h"
 #include "../gui/x11_gui.h"
+
+// Parity lookup (core_parity_linux.cpp; classification table generated from
+// tests/doccheck/parity.tsv).  Used by BIF_Linux_ParityLevel.
+extern "C" const char *LinuxParityLookup(const char *aName, int &aLevel);
 #include "core_win_linux.h"
 #include "core_input_linux.h"
 #include "core_ctrl_linux.h"
@@ -2066,6 +2070,29 @@ BIF_DECL(BIF_Linux_SendLevel)
 	g->SendLevel = (SendLevelType)level;
 }
 
+// A_ParityLevel(FuncName) -> parity level 1..4 (P1 compatible .. P4
+// unavailable; check_detail0821 §13).  A function not in the classification
+// table is P1.  Used by defensive scripts to detect "fake compatibility"
+// (e.g. skip a P4 feature before calling it).
+BIF_DECL(BIF_Linux_ParityLevel)
+{
+	TCHAR name_buf[256];
+	LPTSTR name = aParamCount > 0 ? TokenToString(*aParam[0], name_buf, nullptr) : nullptr;
+	if (!name)
+	{
+		aResultToken.Error(_T("A_ParityLevel requires a function name."), _T(""), ErrorPrototype::Type);
+		return;
+	}
+	char narrow[256];
+	size_t n = wcstombs(narrow, name, sizeof(narrow) - 1);
+	if (n == (size_t)-1)
+		n = 0;
+	narrow[n] = 0;
+	int level = 1;
+	LinuxParityLookup(narrow, level);
+	aResultToken.SetValue((__int64)level);
+}
+
 BIF_DECL(BIF_Linux_SetRegView)
 {
 	TCHAR view_buf[32];
@@ -2794,6 +2821,7 @@ struct LinuxMdFuncEntry
 // mirror lib/functions.h so that call validation behaves like upstream.
 static LinuxMdFuncEntry sLinuxMdFuncs[] =
 {
+	LMD_IMPL(A_ParityLevel, BIF_Linux_ParityLevel, 1, 1),
 	// CallbackCreate/CallbackFree: libffi closure backend (core_callback_linux.cpp).
 	LMD_IMPL(CallbackCreate, BIF_Linux_CallbackCreate, 1, 3),
 	LMD_IMPL(CallbackFree, BIF_Linux_CallbackFree, 1, 1),
