@@ -237,6 +237,16 @@ D-Bus COM layer). The port has two display backends:</p>
     script&rsquo;s own grabs.  Documented deviation: on Windows, SendMode
     "Input" + <code>Send</code> also unloads the hook; on Linux use
     <code>SendInput()</code> for that semantic.</li>
+  <li><b>SendLevel / #InputLevel / InputHook MinSendLevel (check_detail0821
+    §2-C / S4)</b>: every key this process injects is recorded with its
+    <code>SendLevel</code> (the self-injection tracker).  A self-sent event
+    only fires a hotkey whose <code>#InputLevel</code> is &ge; the event's
+    SendLevel (input at level L cannot trigger a lower-level hotkey), and an
+    <code>InputHook</code> only receives self-sent input whose SendLevel is
+    &ge; its <code>I</code> (MinSendLevel) option.  Physical input is
+    unaffected.  Tested: <code>SendLevel 1</code> + a default (#InputLevel 0)
+    hotkey is not triggered by <code>Send</code>; <code>SendLevel 2</code> +
+    <code>InputHook("I1")</code> receives the input.</li>
 </ul>
 <p>See <a href="https://github.com/MonoEven/Autohotkey_Linux/blob/linux-port/tests/doccheck/CHECK_REPORT.md">CHECK_REPORT.md</a>
 for the complete per-module report.</p>

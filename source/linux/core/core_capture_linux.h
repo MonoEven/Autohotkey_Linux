@@ -14,10 +14,12 @@ bool LinuxCaptureActive();
 // core_hotkey_linux.cpp, which owns the modifier masks).
 void LinuxCaptureAddSpecs(std::set<GrabSpec> &aDesired);
 
-// Feed one grabbed key event.  Returns true when the event was consumed
-// (held toward a match, matched, or forwarded by the engine); false when
-// the normal hotkey flow should handle it.
-bool LinuxCaptureKeyEvent(Display *d, XEvent &ev);
+// Feed one grabbed key event.  aSelfLevel is the SendLevel of a self-injected
+// event (>= 0) or -1 for physical/other-client input; the InputHook MinSendLevel
+// (I option) filters self-injected events by it (check_detail0821 §2-C).
+// Returns true when the event was consumed (held toward a match, matched, or
+// forwarded by the engine); false when the normal hotkey flow should handle it.
+bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel = -1);
 
 // Hotstring state changed: recompute the active flag.
 void LinuxCaptureStateChanged();

@@ -528,7 +528,7 @@ bool LinuxCaptureFeedInput(Display *d, XEvent &ev)
 	return true;
 }
 
-bool LinuxCaptureKeyEvent(Display *d, XEvent &ev)
+bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel)
 {
 	if (!LinuxCaptureActive())
 		return false;
@@ -538,6 +538,13 @@ bool LinuxCaptureKeyEvent(Display *d, XEvent &ev)
 	// hotstrings while in progress, like Windows.
 	if (g_input && g_input->InProgress())
 	{
+		// MinSendLevel (InputHook "I" option, check_detail0821 §2-C): input
+		// this process generated at a SendLevel below the hook's MinSendLevel
+		// is ignored (consumed by the capture grab but not fed); physical
+		// input (aSelfLevel < 0) always feeds.
+		if (aSelfLevel >= 0 && g_input->MinSendLevel > 0
+			&& aSelfLevel < (int)g_input->MinSendLevel)
+			return true;
 		LinuxCaptureFeedInput(d, ev);
 		return true;
 	}

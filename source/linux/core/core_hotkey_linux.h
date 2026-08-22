@@ -57,10 +57,10 @@ void LinuxInjectMarked(Display *d, unsigned int aKeycode, bool aIsPress);
 // core_capture_linux.cpp) to aDesired.  No-op when capture is inactive.
 void LinuxCaptureAddSpecs(std::set<GrabSpec> &aDesired);
 
-// SendInput self-suppression (check_detail0821 §2-B): record a key the
-// current SendInput batch injected; LinuxHandleKeyEvent drops the grabbed
-// copy so a script's SendInput never re-fires its own hotkeys/hotstrings
-// (Windows unloads the hook during SendInput; the X events return
-// asynchronously, so the marks are consumed when they actually arrive).
-void LinuxSendInputTrack(unsigned int aKeycode, bool aIsPress);
-void LinuxSendInputClear();
+// Self-injection tracking (check_detail0821 §2-B + §2-C): record a key this
+// process injected (Send/SendEvent/SendInput/SendPlay/SendText) with its
+// SendLevel and whether it came from an explicit SendInput.  LinuxHandleKeyEvent
+// drops SendInput copies entirely (Windows "unload the hook during SendInput",
+// §2-B) and level-gates the rest by #InputLevel / InputHook MinSendLevel (§2-C).
+void LinuxSelfTrack(unsigned int aKeycode, bool aIsPress, int aLevel, bool aIsSendInput);
+void LinuxSelfClear();

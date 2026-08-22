@@ -184,6 +184,51 @@ Sleep(150)
 Log("sendevent_self_fire=" (self_fired = 1 ? 1 : 0))
 Hotkey("x", "Off")
 
+; --- §2-C (check_detail0821 §2-C / S4): SendLevel gating. ---
+; A self-sent event at SendLevel L only fires hotkeys whose #InputLevel is
+; >= L (the default #InputLevel is 0).  SendLevel 1 + Send "y" must NOT fire
+; the (InputLevel 0) "y" hotkey; SendLevel 0 + Send "y" must fire it.
+level_fired := 0
+HotkeyLevelCB(ThisHotkey) {
+    global level_fired
+    level_fired++
+}
+Hotkey("y", HotkeyLevelCB)
+Sleep(150)   ; let the grab install + reconcile run
+SendLevel(1)
+Send("y")
+Sleep(150)
+Log("sendlevel_gate=" (level_fired = 0 ? 1 : 0))
+SendLevel(0)
+Send("y")
+Sleep(150)
+Log("sendlevel_nogate=" (level_fired = 1 ? 1 : 0))
+Hotkey("y", "Off")
+
+; --- §2-C: InputHook MinSendLevel (I option). ---
+; Self-generated input at a SendLevel >= MinSendLevel is received; below it
+; is ignored.  Physical input always feeds (not exercised here).
+SendLevel(2)
+ih_hi := InputHook("I1", "z")   ; I1 = MinSendLevel 1; end key z.
+ih_hi.Start()
+Sleep(100)
+Send("a")        ; level 2 >= 1 -> collected.
+Sleep(100)
+Send("z")        ; end key.
+Sleep(150)
+ih_hi.Stop()
+Log("sendlevel_ih_receive=" (InStr(ih_hi.Input, "a") ? 1 : 0))
+SendLevel(0)
+ih_lo := InputHook("I1", "z")
+ih_lo.Start()
+Sleep(100)
+Send("b")        ; level 0 < 1 -> ignored.
+Sleep(100)
+Send("z")        ; also ignored (level 0 < 1); hook still running.
+Sleep(100)
+ih_lo.Stop()
+Log("sendlevel_ih_ignore=" (ih_lo.Input = "" ? 1 : 0))
+
 ; --- MouseMove + MouseGetPos. ---
 MouseMove(300, 200)
 Sleep(50)

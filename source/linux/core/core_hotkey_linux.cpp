@@ -82,9 +82,8 @@ extern "C" bool LinuxRestartRequested();
 // in the public section below; the anonymous-namespace handlers need it).
 bool LinuxIsPassthruCopy(XEvent &ev);
 
-// SendInput self-suppression check (defined below with the SendInput
-// suppression log; the event handler needs it before that definition).
-static bool LinuxIsSendInputSelf(XEvent &ev);
+// Self-injection lookup (defined below; the event handler needs it before).
+static bool LinuxSelfLookup(XEvent &ev, int &aLevel, bool &aIsSendInput);
 
 namespace {
 
@@ -621,15 +620,14 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 	// target already received the injected one).
 	if (LinuxIsPassthruCopy(ev))
 		return;
-	// SendInput self-suppression: a key this process injected with SendInput
-	// must not fire its own hotkeys/hotstrings (Windows unloads the hook
-	// during SendInput).  The event is consumed (not re-injected): a grabbed
-	// key cannot be delivered to the target on X11 -- the passive grab
-	// intercepts every press of it (the same limitation that makes a `~`
-	// passthrough deliver only best-effort on servers that re-activate the
-	// grab).  This matches how Send/SendEvent of a key that is itself a
-	// hotkey already behaves (the hotkey consumes it).
-	if (LinuxIsSendInputSelf(ev))
+	// Self-injection (Send/SendEvent/SendInput/SendPlay/SendText)?  An
+	// explicit SendInput copy is dropped entirely (Windows unloads the hook
+	// during SendInput: no own hotkey/hotstring may fire); other self-sent
+	// copies are level-gated by #InputLevel / InputHook MinSendLevel below.
+	int self_level = -1;
+	bool self_sendinput = false;
+	bool self_injected = LinuxSelfLookup(ev, self_level, self_sendinput);
+	if (self_injected && self_sendinput)
 		return;
 
 	bool is_up = ev.type == KeyRelease;
@@ -645,6 +643,10 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 	// Key-up hotkeys without XKB repeat suppression: a synthetic repeat
 	// release is a repeat artifact, not a physical release.
 	if (hk_fire && is_up && !sDetectableAutoRepeat && LinuxIsSyntheticRelease(ev))
+		hk_fire = nullptr, vp_fire = nullptr;
+	// #InputLevel gate (check_detail0821 §2-C / S4): input generated at a
+	// given SendLevel can only trigger hotkeys whose InputLevel is >= it.
+	if (hk_fire && self_injected && (int)vp_fire->mInputLevel < self_level)
 		hk_fire = nullptr, vp_fire = nullptr;
 
 	if (hk_fire)
@@ -666,14 +668,18 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 	}
 	else
 	{
-		// No variant may fire (HotIf false, Suspend, thread limits) or this
-		// event belongs to a pass-through/key-up hotkey's non-firing phase:
+		// No variant may fire (HotIf false, Suspend, thread limits, or this
+		// event belongs to a pass-through/key-up hotkey's non-firing phase):
 		// give the typed-text capture engine a chance to hold/consume it
-		// (hotstrings), then re-inject so the normal target window receives it.
-		// (X11 passive grabs hand the event to us; passthrough is done by
-		// releasing the active keyboard grab and re-injecting with XTEST --
-		// check0818 P0-3, documented deviation from ReplayKeyboard.)
-		if (LinuxCaptureKeyEvent(d, ev))
+		// (hotstrings / InputHook, level-gated by MinSendLevel), then re-inject
+		// so the normal target window receives it.  Self-injected (Send/
+		// SendEvent/etc.) events that did not fire are handled the same way --
+		// the event passes through to the target; only the InputHook's
+		// MinSendLevel filters it.  (X11 passive grabs hand the event to us;
+		// passthrough is done by releasing the active keyboard grab and
+		// re-injecting with XTEST -- check0818 P0-3, documented deviation
+		// from ReplayKeyboard.)
+		if (LinuxCaptureKeyEvent(d, ev, self_level))
 			return;
 		LinuxInjectKey(d, ev);
 	}
@@ -842,65 +848,78 @@ bool LinuxIsPassthruCopy(XEvent &ev)
 }
 
 // ---------------------------------------------------------------------------
-// SendInput self-suppression (check_detail0821 §2-B / R2 S3)
+// Self-injection tracking (check_detail0821 §2-B + §2-C / R2 S3+S4)
 // ---------------------------------------------------------------------------
-// SendInput must not re-fire the script's own hotkeys/hotstrings, matching
-// Windows "unload the hook during SendInput".  On X11 the injected events
-// come back through the passive grab asynchronously (often after the SendInput
-// call has already returned), so a simple in-flight flag is insufficient: each
-// key the batch injected is recorded with a consume-once mark, and
-// LinuxHandleKeyEvent drops a grabbed event that matches a live mark.  The
-// list is unbounded (a batch can be hundreds of keys) and pruned by the match
-// window like the passthru log.
-struct SendInputMark
+// Every key this process injects (Send/SendEvent/SendInput/SendPlay/SendText)
+// is recorded with a consume-once mark carrying its SendLevel and whether it
+// came from an explicit SendInput.  On X11 the injected events come back
+// through the passive grab asynchronously (often after the send call has
+// already returned), so an in-flight flag is insufficient.  LinuxHandleKeyEvent
+// then:
+//   - drops the event entirely if it was SendInput ("unload the hook during
+//     SendInput": no own hotkey/hotstring may fire, §2-B);
+//   - otherwise level-gates hotkeys by #InputLevel and the InputHook by
+//     MinSendLevel (SendLevel semantics, §2-C).
+// The list is unbounded (a batch can be hundreds of keys) and pruned by the
+// match window like the passthru log.  Consume-once means a genuine repeat or
+// a later physical press of the same key is never swallowed by a stale record.
+struct SelfMark
 {
 	unsigned int id;   // KeyCode.
 	DWORD when;        // GetTickCount() at injection.
 	bool is_up;
+	bool is_sendinput; // explicit SendInput() (hook-unloaded semantic).
+	int  level;        // g->SendLevel at injection.
 	bool consumed;
 };
-static std::vector<SendInputMark> sSendInputLog;
-#define SENDINPUT_MARK_MS_WINDOW 1000
+static std::vector<SelfMark> sSelfLog;
+#define SELF_MARK_MS_WINDOW 1000
 
-void LinuxSendInputTrack(unsigned int aKeycode, bool aIsPress)
+void LinuxSelfTrack(unsigned int aKeycode, bool aIsPress, int aLevel, bool aIsSendInput)
 {
 	DWORD now = GetTickCount();
 	// Opportunistic prune of expired marks (keeps the list bounded).
-	for (size_t i = 0; i < sSendInputLog.size(); )
-		if (now - sSendInputLog[i].when >= (DWORD)SENDINPUT_MARK_MS_WINDOW)
-			sSendInputLog.erase(sSendInputLog.begin() + (long)i);
+	for (size_t i = 0; i < sSelfLog.size(); )
+		if (now - sSelfLog[i].when >= (DWORD)SELF_MARK_MS_WINDOW)
+			sSelfLog.erase(sSelfLog.begin() + (long)i);
 		else
 			++i;
-	SendInputMark m;
+	SelfMark m;
 	m.id = aKeycode;
 	m.when = now;
 	m.is_up = !aIsPress;
+	m.is_sendinput = aIsSendInput;
+	m.level = aLevel;
 	m.consumed = false;
-	sSendInputLog.push_back(m);
+	sSelfLog.push_back(m);
 }
 
-void LinuxSendInputClear()
+void LinuxSelfClear()
 {
-	sSendInputLog.clear();
+	sSelfLog.clear();
 }
 
-// True when a grabbed event is a copy of a key this process injected with
-// SendInput (consume-once per mark, same expiry discipline as the passthru
-// log).  Only keys that carry a passive grab ever reach this check, so an
-// unconsumed mark can never swallow a non-grabbed key's traffic.
-static bool LinuxIsSendInputSelf(XEvent &ev)
+// True when a grabbed event is a copy of a key this process injected
+// (consume-once per mark, same expiry discipline as the passthru log); fills
+// aLevel/aIsSendInput from the matched mark.  Scans most-recent-first so a
+// stale mark from an earlier send of the same key+phase can never shadow the
+// current injection.  Only keys that carry a passive grab ever reach this
+// check, so an unconsumed mark can never swallow a non-grabbed key's traffic.
+static bool LinuxSelfLookup(XEvent &ev, int &aLevel, bool &aIsSendInput)
 {
 	unsigned int id = (unsigned int)ev.xkey.keycode;
 	bool is_up = ev.type == KeyRelease;
 	DWORD now = GetTickCount();
-	for (size_t i = 0; i < sSendInputLog.size(); ++i)
+	for (size_t i = sSelfLog.size(); i-- > 0; )
 	{
-		SendInputMark &m = sSendInputLog[i];
+		SelfMark &m = sSelfLog[i];
 		if (m.id != id || m.is_up != is_up || m.consumed)
 			continue;
-		if (now - m.when >= (DWORD)SENDINPUT_MARK_MS_WINDOW)
+		if (now - m.when >= (DWORD)SELF_MARK_MS_WINDOW)
 			continue; // Expired; pruned on the next Track().
 		m.consumed = true;
+		aLevel = m.level;
+		aIsSendInput = m.is_sendinput;
 		return true;
 	}
 	return false;

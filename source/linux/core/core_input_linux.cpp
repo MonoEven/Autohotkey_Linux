@@ -478,13 +478,14 @@ static bool LinuxModeSuppressSelf()
 	return s_send_mode == LSE_INPUT && s_send_explicit_input;
 }
 
-// Send one key phase and (in SendInput mode) mark it self-injected so the
-// script's own grab does not re-fire it.
+// Send one key phase and record it as self-injected (SendLevel + explicit
+// SendInput flag) so the hotkey/capture machinery can suppress or level-gate
+// its own copy (check_detail0821 §2-B / §2-C).
 static void LinuxTapKey(Display *d, vk_type aVK, KeyCode aTrackKc, bool aDown)
 {
 	LinuxFakeKey(d, aVK, aDown);
-	if (aTrackKc && LinuxModeSuppressSelf())
-		LinuxSendInputTrack((unsigned int)aTrackKc, aDown);
+	if (aTrackKc)
+		LinuxSelfTrack((unsigned int)aTrackKc, aDown, g->SendLevel, LinuxModeSuppressSelf());
 }
 
 // Send one key press+release; count times (for "{Enter 3}").
@@ -492,9 +493,9 @@ static void LinuxSendVk(Display *d, vk_type aVK, int aCount)
 {
 	int press_ms = LinuxModePressDurationMs();
 	int gap_ms = LinuxModeKeyDelayMs();
-	// Keycode used only for the SendInput self-suppression mark (X11 path).
+	// Keycode used for the self-injection record (X11 path only).
 	KeyCode track_kc = 0;
-	if (LinuxModeSuppressSelf() && d && !LinuxMouseButtonForVk(aVK)
+	if (d && !LinuxMouseButtonForVk(aVK)
 		&& aVK != 0x1000 && aVK != 0x1001 && aVK != 0x1002 && aVK != 0x1003)
 		track_kc = LinuxKeycodeForVk(d, aVK);
 	for (int i = 0; i < aCount; ++i)
@@ -832,16 +833,14 @@ static bool LinuxSendCharUnicode(Display *d, wchar_t aChar)
 		return false;
 	}
 	XTestFakeKeyEvent(d, kc, True, CurrentTime);
-	if (LinuxModeSuppressSelf())
-		LinuxSendInputTrack((unsigned int)kc, true);
+	LinuxSelfTrack((unsigned int)kc, true, g->SendLevel, LinuxModeSuppressSelf());
 	XFlush(d);
 	int press_ms = LinuxModePressDurationMs();
 	int gap_ms = LinuxModeKeyDelayMs();
 	if (press_ms > 0)
 		usleep((useconds_t)press_ms * 1000);
 	XTestFakeKeyEvent(d, kc, False, CurrentTime);
-	if (LinuxModeSuppressSelf())
-		LinuxSendInputTrack((unsigned int)kc, false);
+	LinuxSelfTrack((unsigned int)kc, false, g->SendLevel, LinuxModeSuppressSelf());
 	XFlush(d);
 	if (gap_ms > 0)
 		usleep((useconds_t)gap_ms * 1000);
@@ -1005,16 +1004,14 @@ static void LinuxSendChar(Display *d, wchar_t aChar, LinuxHeldMods &aHeld)
 		if (kc)
 		{
 			XTestFakeKeyEvent(d, kc, True, CurrentTime);
-			if (LinuxModeSuppressSelf())
-				LinuxSendInputTrack((unsigned int)kc, true);
+			LinuxSelfTrack((unsigned int)kc, true, g->SendLevel, LinuxModeSuppressSelf());
 			XFlush(d);
 			int press_ms = LinuxModePressDurationMs();
 			int gap_ms = LinuxModeKeyDelayMs();
 			if (press_ms > 0)
 				usleep((useconds_t)press_ms * 1000);
 			XTestFakeKeyEvent(d, kc, False, CurrentTime);
-			if (LinuxModeSuppressSelf())
-				LinuxSendInputTrack((unsigned int)kc, false);
+			LinuxSelfTrack((unsigned int)kc, false, g->SendLevel, LinuxModeSuppressSelf());
 			XFlush(d);
 			if (gap_ms > 0)
 				usleep((useconds_t)gap_ms * 1000);
@@ -1286,8 +1283,6 @@ static void LinuxSendWrapper(ResultToken &aResultToken, ExprTokenType *aParam[],
 	int saved_mode = s_send_mode;
 	bool saved_explicit = s_send_explicit_input;
 	LinuxSetSendMode(aMode, aExplicitSendInput);
-	if (s_send_mode == LSE_INPUT && aExplicitSendInput)
-		LinuxSendInputClear(); // Fresh suppression marks for this batch.
 	sLastUnsendable = 0;
 	bool ok = true;
 	if (aRaw)
