@@ -493,11 +493,18 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
   非默认队列漏派发")。
   **决定性实验(2026-08 第三轮)**:把端口派发临时改成与 wl-paste 完全一致的
   简单 `wl_display_dispatch`(阻塞)、并把 wl_data_device_manager 绑定从 v3
-  改成 v1(对齐 wl-paste)——**仍收不到 selection**。结论:问题**不在派发模式、
-  不在绑定版本**,而在**端口 Wayland 连接本身**(sway 就是不给本端口连接发
-  data-control 事件),属深层既有集成问题(连接建立/seat 关联等),需专项排查;
-  ext-data-control 代码已再次回退。此问题同时阻塞"A_Clipboard 在 sway 下读
-  外部剪贴板"。
+  改成 v1(对齐 wl-paste)——**仍收不到 selection**。为此写了独立最小 C 客户端
+  (wayland-scanner 生成 zwlr 头,忠实复刻 wl-paste 的绑定:seat v2 + zwlr
+  manager v2 + core ddm + shm + compositor + get_data_device + roundtrip +
+  简单派发)——**同样收不到 selection**(sway 1.10 只广告 zwlr,无 ext)。
+  **修正结论(诚实)**:问题**不在端口派发模式、不在绑定版本、甚至不在端口
+  连接本身**(最小参考复刻客户端也收不到)——是 **sway 1.10 特定行为**,
+  wl-paste --watch 通过我们尚未识别的机制(疑 xdg_activation / primary_selection
+  绑定或其 dispatch 集成 / wlroots 0.18 quirk)触发 selection 事件。遗留一个
+  可操作的排查点:wl-paste 的 seat 绑定为 **v2**(非 v1/非广告的 v9),需后续
+  专项(并排跑 wl-paste --watch 与复刻客户端,WAYLAND_DEBUG 逐请求对比)。
+  ext-data-control 代码已回退。此问题同时阻塞"A_Clipboard 在 sway 下读外部
+  剪贴板"。
   **未做(诚实登记)**:无扩展的 GNOME 会话降级轮询。
   **陷阱记录**:GNOME 扩展模块跨 disable/enable 有缓存,改 JS 需整 shell 重启
   (SIGQUIT 会弄崩 Wayland 会话,只能整机 reboot);`owner-changed` 在
