@@ -447,8 +447,7 @@ void LinuxInputBackendDispatch()
 	// §4: the GNOME-extension clipboard listener is display-independent (it
 	// rides the session bus), so pump it on every main-loop pass -- the
 	// XFixes path above handles X11 and this covers pure Wayland.
-	// BISECT: temporarily disabled to isolate a CI assert_inputhook hang.
-	//LinuxClipboardDispatchWayland();
+	LinuxClipboardDispatchWayland();
 }
 
 void LinuxInputBackendShutdown()
