@@ -36,9 +36,17 @@ Run "sleep 5", , , &pid
 MsgBox "Run_pid=" (pid > 0)
 MsgBox "ProcessExist_pid=" (ProcessExist(pid) = pid)
 ProcessClose(pid)
-; A loaded CI runner can take a moment to reap the terminated process.
-Sleep 800
-MsgBox "ProcessClose_gone=" (ProcessExist(pid) = 0)
+; A loaded CI runner can take a while to reap the terminated process; poll
+; (bounded) instead of a fixed short sleep so the assertion never flakes.
+reaped := 0
+Loop 50 {   ; up to ~5s
+    if ProcessExist(pid) = 0 {
+        reaped := 1
+        break
+    }
+    Sleep 100
+}
+MsgBox "ProcessClose_gone=" reaped
 
 ; RunWait exit code
 MsgBox "RunWait_code=" RunWait("/bin/sh -c `"exit 3`"")
