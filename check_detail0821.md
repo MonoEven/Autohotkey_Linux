@@ -604,8 +604,12 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
   [(16,16,[ARGB32 字节])],首像素 A=0x0a 半透明黑、次像素灰——字节序正确。
   两个 libdbus 封送坑:dict 键的 `append_basic` 必须传 `&key`(char**);固定数组
   `append_fixed_array` 必须传 `&数组指针`(指针的指针),否则 memcpy/strlen 崩。
+  **多实例(已实证)**:两个 TraySetIcon 脚本各自注册独立的
+  `org.kde.StatusNotifierItem-<pid>-1` 服务 + 各自图标(IconName 不同)+ 各自
+  A_TrayMenu,点击各自菜单 id=1 分别触发各自回调(one/two 独立)——互不干扰
+  (宿主按服务名识别,Id 相同 'autohotkey' 不影响)。KDE 宿主未实测。
   **未做(诚实登记)**:KDE Plasma 宿主未实测(VM 无 KDE);
-  多实例/Attention 等扩展。
+  Attention/AttentionIcon 等扩展(AHK 无对应触发 API)。
 
 ### 5.3 M6 补注:打包格式对齐 Ahk2Exe 的实际做法
 
