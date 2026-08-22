@@ -18,10 +18,12 @@
 #include "../../globaldata.h"
 #include "core_tray_linux.h"
 #include <dbus/dbus.h>
+#include <gtk/gtk.h>
 #include <unistd.h>
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // TrayTip -> org.freedesktop.Notifications
@@ -97,6 +99,10 @@ static char sSniBusName[128];        // org.kde.StatusNotifierItem-<pid>-<id>
 static char sSniIcon[256] = "application-x-executable";
 static char sSniTitle[256] = "AutoHotkey";
 static dbus_uint32_t sSniRevision = 1;
+// IconPixmap (ARGB32 pixels, host native endianness) when the TraySetIcon path
+// is an image file; empty when it is a themed icon name.
+static std::vector<unsigned char> sSniPixmap;
+static int sSniPixW = 0, sSniPixH = 0;
 
 // Default tray menu (id 0 = root, 1..N = items).
 struct SniMenuItem { const char *label; void (*action)(); };
@@ -160,6 +166,34 @@ static void SniDictUint32(DBusMessageIter *aDict, const char *aKey, dbus_uint32_
 
 // --- StatusNotifierItem properties -----------------------------------------
 
+// IconPixmap: a(iiay) -- array of (int width, int height, ARGB32 byte array).
+static void SniAppendPixmap(DBusMessageIter *aDict)
+{
+	const char *key = "IconPixmap";
+	DBusMessageIter entry, var, arr;
+	dbus_message_iter_open_container(aDict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry);
+	dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key);
+	dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "a(iiay)", &var);
+	dbus_message_iter_open_container(&var, DBUS_TYPE_ARRAY, "(iiay)", &arr);
+	if (sSniPixW > 0 && sSniPixH > 0 && !sSniPixmap.empty())
+	{
+		DBusMessageIter is, v;
+		dbus_message_iter_open_container(&arr, DBUS_TYPE_STRUCT, nullptr, &is);
+		dbus_int32_t w = sSniPixW, h = sSniPixH;
+		dbus_message_iter_append_basic(&is, DBUS_TYPE_INT32, &w);
+		dbus_message_iter_append_basic(&is, DBUS_TYPE_INT32, &h);
+		dbus_message_iter_open_container(&is, DBUS_TYPE_ARRAY, "y", &v);
+		// append_fixed_array takes a POINTER TO the array (char** style).
+		const void *ptr = sSniPixmap.data();
+		dbus_message_iter_append_fixed_array(&v, DBUS_TYPE_BYTE, &ptr, (int)sSniPixmap.size());
+		dbus_message_iter_close_container(&is, &v);
+		dbus_message_iter_close_container(&arr, &is);
+	}
+	dbus_message_iter_close_container(&var, &arr);
+	dbus_message_iter_close_container(&entry, &var);
+	dbus_message_iter_close_container(aDict, &entry);
+}
+
 static void SniAppendItemProps(DBusMessageIter *aDict)
 {
 	SniDictString(aDict, "Category", "ApplicationStatus");
@@ -167,6 +201,7 @@ static void SniAppendItemProps(DBusMessageIter *aDict)
 	SniDictString(aDict, "Title", sSniTitle);
 	SniDictString(aDict, "Status", "Active");
 	SniDictString(aDict, "IconName", sSniIcon);
+	SniAppendPixmap(aDict);
 	SniDictString(aDict, "Menu", "/MenuBar");
 	SniDictBool(aDict, "ItemIsMenu", FALSE);
 	SniDictUint32(aDict, "WindowId", 0);
@@ -218,6 +253,27 @@ static DBusMessage *SniReplyGet(DBusMessage *aMsg)
 	{
 		dbus_message_iter_open_container(&it, DBUS_TYPE_VARIANT, "u", &var);
 		dbus_message_iter_append_basic(&var, DBUS_TYPE_UINT32, &uval);
+		dbus_message_iter_close_container(&it, &var);
+	}
+	else if (!strcmp(prop, "IconPixmap"))
+	{
+		DBusMessageIter arr;
+		dbus_message_iter_open_container(&it, DBUS_TYPE_VARIANT, "a(iiay)", &var);
+		dbus_message_iter_open_container(&var, DBUS_TYPE_ARRAY, "(iiay)", &arr);
+		if (sSniPixW > 0 && sSniPixH > 0 && !sSniPixmap.empty())
+		{
+			DBusMessageIter is, v;
+			dbus_message_iter_open_container(&arr, DBUS_TYPE_STRUCT, nullptr, &is);
+			dbus_int32_t w = sSniPixW, h = sSniPixH;
+			dbus_message_iter_append_basic(&is, DBUS_TYPE_INT32, &w);
+			dbus_message_iter_append_basic(&is, DBUS_TYPE_INT32, &h);
+			dbus_message_iter_open_container(&is, DBUS_TYPE_ARRAY, "y", &v);
+			const void *ptr = sSniPixmap.data();
+			dbus_message_iter_append_fixed_array(&v, DBUS_TYPE_BYTE, &ptr, (int)sSniPixmap.size());
+			dbus_message_iter_close_container(&is, &v);
+			dbus_message_iter_close_container(&arr, &is);
+		}
+		dbus_message_iter_close_container(&var, &arr);
 		dbus_message_iter_close_container(&it, &var);
 	}
 	else
@@ -511,19 +567,66 @@ static bool SniEnsure()
 
 // --- public API -------------------------------------------------------------
 
+// Load an image file into ARGB32 (host native endianness) for IconPixmap.
+// Themed icon names (not files) leave the pixmap empty; the host then falls
+// back to IconName.
+static void SniLoadPixmap(const char *aPath)
+{
+	sSniPixmap.clear();
+	sSniPixW = sSniPixH = 0;
+	if (!aPath || !*aPath)
+		return;
+	GError *err = nullptr;
+	GdkPixbuf *pb = gdk_pixbuf_new_from_file(aPath, &err);
+	if (err)
+	{
+		g_error_free(err);
+		return;
+	}
+	int w = gdk_pixbuf_get_width(pb), h = gdk_pixbuf_get_height(pb);
+	const guchar *px = gdk_pixbuf_get_pixels(pb);
+	int rs = gdk_pixbuf_get_rowstride(pb);
+	int nch = gdk_pixbuf_get_n_channels(pb);
+	if (w <= 0 || h <= 0 || w > 512 || h > 512 || !px)
+	{
+		g_object_unref(pb);
+		return;
+	}
+	sSniPixmap.resize((size_t)w * h * 4);
+	unsigned char *out = sSniPixmap.data();
+	for (int y = 0; y < h; ++y)
+	{
+		const guchar *row = px + (size_t)y * rs;
+		for (int x = 0; x < w; ++x)
+		{
+			const guchar *p = row + (size_t)x * nch;
+			unsigned a = nch >= 4 ? p[3] : 255, r = p[0], g = p[1], b = p[2];
+			// ARGB32 in the host's native byte order.
+			unsigned char *q = out + ((size_t)y * w + x) * 4;
+			q[0] = (unsigned char)(b);
+			q[1] = (unsigned char)(g);
+			q[2] = (unsigned char)(r);
+			q[3] = (unsigned char)(a);
+		}
+	}
+	g_object_unref(pb);
+	sSniPixW = w;
+	sSniPixH = h;
+}
+
 bool LinuxTraySetIcon(const wchar_t *aIconFile)
 {
-	// Reduce a path to a themed icon name (basename without extension); a
-	// bare name is used as-is.  Best effort; the host renders it.
+	char full[1024] = "";
 	if (aIconFile && *aIconFile)
 	{
-		char narrow[256];
-		size_t n = wcstombs(narrow, aIconFile, sizeof(narrow) - 1);
+		size_t n = wcstombs(full, aIconFile, sizeof(full) - 1);
 		if (n == (size_t)-1)
 			n = 0;
-		narrow[n] = 0;
-		const char *base = strrchr(narrow, '/');
-		base = base ? base + 1 : narrow;
+		full[n] = 0;
+		// Reduce the path to a themed icon name (basename without extension);
+		// a bare name is used as-is.  Best effort; the host renders it.
+		const char *base = strrchr(full, '/');
+		base = base ? base + 1 : full;
 		char name[256];
 		snprintf(name, sizeof(name), "%s", base);
 		char *dot = strrchr(name, '.');
@@ -531,9 +634,15 @@ bool LinuxTraySetIcon(const wchar_t *aIconFile)
 			*dot = 0; // strip extension for a themed name
 		if (name[0])
 			strncpy(sSniIcon, name, sizeof(sSniIcon) - 1);
+		// Also try to load the actual image for IconPixmap (a themed name is
+		// not a file and leaves the pixmap empty).
+		SniLoadPixmap(full);
 	}
 	else
+	{
 		strncpy(sSniIcon, "application-x-executable", sizeof(sSniIcon) - 1);
+		SniLoadPixmap(nullptr);
+	}
 	if (!SniEnsure())
 		return false;
 	// Notify hosts that the icon changed.

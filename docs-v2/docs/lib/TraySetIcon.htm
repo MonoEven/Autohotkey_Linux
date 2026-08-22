@@ -14,8 +14,8 @@
 
 <h1>TraySetIcon</h1>
 
-<p class="parity-badge parity-p2" id="linux-parity" title="Delivered as a StatusNotifierItem (org.kde.StatusNotifierItem + com.canonical.dbusmenu); the menu is the script's A_TrayMenu (customizable) with default Pause/Suspend/Reload/Exit when empty; no watcher is a silent no-op">Linux parity: P2 adapted</p>
-<div class="warning" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> <code>TraySetIcon</code> registers a StatusNotifierItem with the desktop's tray (org.kde.StatusNotifierItem + com.canonical.dbusmenu).  The icon name is derived from the file path (basename without extension); with no tray watcher the call is a silent no-op.  The tray menu is the script's <code>A_TrayMenu</code> (customizable via <code>A_TrayMenu.Add</code>); when it has no items the default menu offers Pause / Suspend / Reload / Exit.</div>
+<p class="parity-badge parity-p2" id="linux-parity" title="Delivered as a StatusNotifierItem (org.kde.StatusNotifierItem + com.canonical.dbusmenu); the menu is the script's A_TrayMenu (customizable) with default Pause/Suspend/Reload/Exit when empty; an image-file path is exposed as both IconName and IconPixmap; no watcher is a silent no-op">Linux parity: P2 adapted</p>
+<div class="warning" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> <code>TraySetIcon</code> registers a StatusNotifierItem with the desktop's tray (org.kde.StatusNotifierItem + com.canonical.dbusmenu).  The icon name is derived from the file path (basename without extension); an image-file path is additionally exposed as an <code>IconPixmap</code> (ARGB32), while a bare themed name keeps just <code>IconName</code>.  With no tray watcher the call is a silent no-op.  The tray menu is the script's <code>A_TrayMenu</code> (customizable via <code>A_TrayMenu.Add</code>); when it has no items the default menu offers Pause / Suspend / Reload / Exit.</div>
 
 <p>Changes the script's <a href="../Program.htm#tray-icon">tray icon</a> (which is also used by <a href="Gui.htm">GUI</a> and dialog windows).</p>
 

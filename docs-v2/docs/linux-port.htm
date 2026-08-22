@@ -218,7 +218,9 @@ D-Bus COM layer). The port has two display backends:</p>
     registers a <b>StatusNotifierItem</b> with the desktop's tray
     (<code>org.kde.StatusNotifierItem</code> + <code>com.canonical.dbusmenu</code>):
     the icon name is derived from the file path (basename without extension) and
-    a default menu offers Pause / Suspend / Reload / Exit.  No tray watcher is a
+    an image-file path is additionally exposed as an <code>IconPixmap</code>
+    (ARGB32); a default menu offers Pause / Suspend / Reload / Exit.  No tray
+    watcher is a
     silent no-op.  The menu is the script's <code>A_TrayMenu</code> (customizable
     via <code>A_TrayMenu.Add</code>); the SNI dbusmenu renders its items and
     clicks invoke the callbacks.  The item registers under the well-known

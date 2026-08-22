@@ -598,8 +598,14 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
   TraySetIcon 脚本的 SNI 名注册成功,IconName='applications-system',
   GetLayout 显示 A_TrayMenu 自定义项("Sway Item"),退出后 well-known 名被
   watcher 清理(false)。**SNI 现已在 GNOME/AppIndicator + swaybar 双宿主验证**。
+  **图标 pixmap(已实现)**:TraySetIcon 给图片文件路径时,用 gdk_pixbuf 读入并
+  转 ARGB32(宿主原生字节序),经 `IconPixmap`(a(iiay))在 GetAll/Get 暴露;
+  主题名(非文件)保持仅 IconName,宿主回退。实证:16x16 PNG → Get 返回
+  [(16,16,[ARGB32 字节])],首像素 A=0x0a 半透明黑、次像素灰——字节序正确。
+  两个 libdbus 封送坑:dict 键的 `append_basic` 必须传 `&key`(char**);固定数组
+  `append_fixed_array` 必须传 `&数组指针`(指针的指针),否则 memcpy/strlen 崩。
   **未做(诚实登记)**:KDE Plasma 宿主未实测(VM 无 KDE);
-  图标 pixmap(仅名字);多实例/Attention 等扩展。
+  多实例/Attention 等扩展。
 
 ### 5.3 M6 补注:打包格式对齐 Ahk2Exe 的实际做法
 

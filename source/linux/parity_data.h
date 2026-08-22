@@ -72,7 +72,7 @@ static const LinuxParityEntry kLinuxParity[] =
 	{ "SoundPlay", 2, "Uses paplay/aplay; requires the external tool and a sound server" },
 	{ "SoundSetMute", 2, "Uses pactl/amixer; requires the external tool; limited to master devices" },
 	{ "SoundSetVolume", 2, "Uses pactl/amixer; requires the external tool; limited to master devices" },
-	{ "TraySetIcon", 2, "Delivered as a StatusNotifierItem (org.kde.StatusNotifierItem + com.canonical.dbusmenu); the menu is the script's A_TrayMenu (customizable) with default Pause/Suspend/Reload/Exit when empty; no watcher is a silent no-op" },
+	{ "TraySetIcon", 2, "Delivered as a StatusNotifierItem (org.kde.StatusNotifierItem + com.canonical.dbusmenu); the menu is the script's A_TrayMenu (customizable) with default Pause/Suspend/Reload/Exit when empty; an image-file path is exposed as both IconName and IconPixmap; no watcher is a silent no-op" },
 	{ "TrayTip", 2, "Delivered as an org.freedesktop.Notifications notification (per-desktop daemon); empty TrayTip is a no-op" },
 	{ "WinGetExStyle", 3, "Window style is a virtual shadow + EWMH; exact for self-set windows only" },
 	{ "WinGetStyle", 3, "Window style is a virtual shadow + EWMH; exact for self-set windows only" },
