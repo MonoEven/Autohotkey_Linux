@@ -497,14 +497,21 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
   (wayland-scanner 生成 zwlr 头,忠实复刻 wl-paste 的绑定:seat v2 + zwlr
   manager v2 + core ddm + shm + compositor + get_data_device + roundtrip +
   简单派发)——**同样收不到 selection**(sway 1.10 只广告 zwlr,无 ext)。
-  **修正结论(诚实)**:问题**不在端口派发模式、不在绑定版本、甚至不在端口
-  连接本身**(最小参考复刻客户端也收不到)——是 **sway 1.10 特定行为**,
-  wl-paste --watch 通过我们尚未识别的机制(疑 xdg_activation / primary_selection
-  绑定或其 dispatch 集成 / wlroots 0.18 quirk)触发 selection 事件。遗留一个
-  可操作的排查点:wl-paste 的 seat 绑定为 **v2**(非 v1/非广告的 v9),需后续
-  专项(并排跑 wl-paste --watch 与复刻客户端,WAYLAND_DEBUG 逐请求对比)。
-  ext-data-control 代码已回退。此问题同时阻塞"A_Clipboard 在 sway 下读外部
-  剪贴板"。
+  **终局实验(2026-08 第四轮)**:并排跑 wl-paste --watch 与复刻客户端于同一
+  sway 会话、双向 WAYLAND_DEBUG——wl-paste 的 device 收到 selection(nil)+
+  offer,复刻客户端 get_data_device 发出后 **sway 零响应**。随后把复刻补成
+  wl-paste 的**完整全局绑定**(补 shm/compositor/xdg_wm_base/xdg_activation/
+  zwp_primary_selection,seat v2,core ddm v1)+ roundtrip + 简单派发——
+  **仍收不到 selection**。wl-clipboard 2.2 源码(wayland.c/device.c/device-
+  manager.c/registry.c)确认:watch 用 zwlr data_control device + 简单
+  `while (wl_display_dispatch)` 循环,非 primary 时 `device_supports_selection`
+  立即返回 1(无 roundtrip),无 popup surface——与复刻完全一致。
+  **最终结论(诚实)**:问题既不在端口、也不在可复现的协议用法——wl-paste
+  与复刻客户端的协议序列完全一致,但 sway 1.10 headless 只对 wl-paste 二进制
+  响应 selection。疑点收敛到 **wl-clipboard 2.2 的构建/库细节**(如链接的
+  libwayland 版本、其 seat 绑定版本 >=2 的 `wl_seat.name` 事件处理),或 sway
+  headless 的 seat 状态机怪癖(需在**有输入设备的真实 sway 会话**复核)。
+  已回退 ext-data-control。此问题同时阻塞"A_Clipboard 在 sway 下读外部剪贴板"。
   **未做(诚实登记)**:无扩展的 GNOME 会话降级轮询。
   **陷阱记录**:GNOME 扩展模块跨 disable/enable 有缓存,改 JS 需整 shell 重启
   (SIGQUIT 会弄崩 Wayland 会话,只能整机 reboot);`owner-changed` 在
