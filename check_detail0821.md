@@ -304,7 +304,21 @@ check0821 与前一版方案都把 uinput 当作 GNOME 下唯一注入通路 —
   2. **稳健的身份判定**:不要按设备名字符串匹配(本地化/驱动差异),优先读
      XTEST 设备属性 `XI_PROP_XTEST_DEVICE`(server 会给这两个设备打该属性),
      启动时枚举一次并缓存 deviceid,遇 `XI_HierarchyChanged` 重新枚举。
-  此路径落地后 S4 的 X11 侧也有了可靠地基。
+   **已实施(R2 §3)**:`core_hotkey_linux.cpp` 协商 XI 2.1(请求 2.1 并检查
+   返回值,<2.1 时禁用 tap 回退时间窗)、经 `XI_PROP_XTEST_DEVICE`(注意
+   实际是 8-bit 单字节属性,需兼容 fmt==8)枚举 XTEST 设备并缓存,raw 事件
+   处理器读 `re->sourceid` 记录 {keycode, phase, is_xtest} 环形 tap,抓取事件
+   在 passthru/self 匹配前先分类:**仅当明确 PHYSICAL(非 XTEST 源)时才跳过
+   抑制匹配**——物理真实按键永不落入过期注入标记(修 S5);tap 未命中(未知)
+   或 XI<2.1 时保持原时间窗启发式(安全回退)。`--diag` 报 xi2-sourceid /
+   xi2-xtest-dev。`XI_HierarchyChanged` 必须用 `XIAllDevices`(0) 选择,
+   `XIAllMasterDevices` 会触发 BadValue(minor 46,已在 Xvfb 实证)。
+   **验证边界(诚实登记)**:XTEST 设备检测与 sourceid 前提在 Xvfb 与
+   GNOME Xwayland 会话均实证(XTEST 注入事件 sourceid==XTEST 设备);
+   Xvfb 下所有事件都是 XTEST(无物理设备),故门控在此恒为"注入",行为与
+   改动前一致(全量 doc-check 无回归);"物理按键不被过期标记吞掉"的端到端
+   路径需要真实键盘,当前仅"原理级"(门控只在明确 PHYSICAL 时拦截)+
+   sourceid 语义实证,未做真机 E2E。此路径落地后 S4 的 X11 侧也有了可靠地基。
 
 #### B. 拆分发送模式(S1、S2)
 

@@ -5,3 +5,5 @@ diag_gnome_major_line=1
 diag_gnome_major_unknown=1
 diag_portal_gs_no=1
 diag_appid_line=1
+diag_xi2_line=1
+diag_xtest_line=1

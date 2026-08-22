@@ -23,3 +23,8 @@ MsgBox "diag_gnome_major_unknown=" (InStr(txt, "gnome-major  : 0") ? 1 : 0)
 ; Fail-closed: the CI doc-check bus is a bare dbus-daemon, no portal.
 MsgBox "diag_portal_gs_no=" (InStr(txt, "portal-global-shortcuts : no") ? 1 : 0)
 MsgBox "diag_appid_line=" (InStr(txt, "portal-app-id-resolvable :") ? 1 : 0)
+; §3 (check_detail0821 §2.2-A): the XI2 sourceid / XTEST device diagnostic
+; lines must be present.  Headless (no display) the probe fails closed
+; (no sourceid tap, no XTEST device) -- the lines still print.
+MsgBox "diag_xi2_line=" (InStr(txt, "xi2-sourceid    :") ? 1 : 0)
+MsgBox "diag_xtest_line=" (InStr(txt, "xi2-xtest-dev   :") ? 1 : 0)

@@ -10,7 +10,7 @@ OUT := "/tmp/ahk_dc_dialog_out.txt"
 FileDelete(OUT)
 Log(line) => FileAppend(line "`n", OUT)
 
-EnvSet("AHK_FILESELECT_AUTOCLOSE_MS", "300")
+EnvSet("AHK_FILESELECT_AUTOCLOSE_MS", "800")
 
 ; --- FileSelect: returns the chosen path (pre-filled from RootDir\Filename) ---
 Log("fs_path=" (FileSelect("", "/tmp/ahk_dc_pick.txt") = "/tmp/ahk_dc_pick.txt" ? 1 : 0))

@@ -57,7 +57,7 @@ examples fall into three groups on Linux:</p>
 <h2>What works on Linux</h2>
 <p>All <b>367</b> built-in functions listed in the worklist are implemented
 (3 not-implemented error paths: ComObjArray, TrayTip, TraySetIcon);
-1129 doc-check assertions pass under Xvfb (including 29
+1131 doc-check assertions pass under Xvfb (including 29
 for <code>DllCall</code> against native <b>.so</b> libraries and 18 for the
 D-Bus COM layer). The port has two display backends:</p>
 <ul>
@@ -263,6 +263,22 @@ D-Bus COM layer). The port has two display backends:</p>
     the generated header stays in sync).  The strict-mode
     (<code>AHK_STRICT_PARITY</code>) and per-function doc badges are the R2
     follow-ups.</li>
+  <li><b>Injected-vs-physical key detection (check_detail0821 §2.2-A / R2 §3,
+    S5)</b>: the port negotiates XI 2.1 (mandatory for a valid
+    <code>XIRawEvent.sourceid</code>) and detects the XTEST devices via their
+    <code>XTEST Device</code> property.  The XI2 raw-event stream then
+    classifies every key event as XTEST-injected or physical, which makes the
+    passthrough/self suppression marks definitive: a physical press is never
+    swallowed by a stale injection mark (a real repeat within the old 1&nbsp;s
+    window can no longer be mis-consumed).  When XI 2.1 is unavailable the
+    tap is disabled and the time-window heuristic stays in charge.
+    <code>ahk --diag</code> reports <code>xi2-sourceid</code> and
+    <code>xi2-xtest-dev</code>.  Verified: XTEST device detected on Xvfb and
+    the GNOME Xwayland session; the sourceid premise (XTEST events carry the
+    XTEST device as sourceid) confirmed on both; the full "physical press not
+    swallowed" end-to-end path needs a real keyboard and is verified only in
+    principle (the gate blocks solely on a definitive PHYSICAL
+    classification, and everything is XTEST under Xvfb).</li>
 </ul>
 <p>See <a href="https://github.com/MonoEven/Autohotkey_Linux/blob/linux-port/tests/doccheck/CHECK_REPORT.md">CHECK_REPORT.md</a>
 for the complete per-module report.</p>
@@ -310,7 +326,7 @@ Highlights of this release:</p>
     <b>evdev/uinput permission artifacts</b>
     (<code>tools/linux/permissions/</code>: udev rule, input group,
     polkit action, install script — VM-verified).</li>
-  <li>Doc-check: 1129/1129 assertions pass on both the normal and the ASan
+  <li>Doc-check: 1131/1131 assertions pass on both the normal and the ASan
     builds; regression 27/27, Wayland 17/17, XWayland 247/247. (The
     authoritative numbers are machine-verified in CI by
     <code>verify_report_numbers.sh</code>.)</li>

@@ -64,3 +64,17 @@ void LinuxCaptureAddSpecs(std::set<GrabSpec> &aDesired);
 // §2-B) and level-gates the rest by #InputLevel / InputHook MinSendLevel (§2-C).
 void LinuxSelfTrack(unsigned int aKeycode, bool aIsPress, int aLevel, bool aIsSendInput);
 void LinuxSelfClear();
+
+// XTEST device detection + raw-event source tap (check_detail0821 §2.2-A / §3).
+// The XTEST devices carry the "XTEST Device" property; raw events they produce
+// have sourceid == their device id (valid from XI 2.1).  LinuxXTestTapClassify
+// consumes the most recent raw record for {keycode, phase} and returns
+// 1 = XTEST (injected), 0 = PHYSICAL (real press), -1 = unknown (no record).
+void LinuxXI2EnumXTest(Display *d);
+bool LinuxIsXTestDevice(int aSourceId);
+void LinuxXTestTapRecord(unsigned int aKeycode, bool aIsPress, bool aIsXTest);
+int LinuxXTestTapClassify(unsigned int aKeycode, bool aIsPress);
+int LinuxXTestPrimaryDeviceId();
+bool LinuxXI2SourceIdActive();
+// One-shot XI 2.1 + XTEST-device probe for --diag (no raw-event subscription).
+bool LinuxXI2Probe(Display *d);

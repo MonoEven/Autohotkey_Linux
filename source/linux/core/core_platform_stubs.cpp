@@ -75,6 +75,15 @@ extern "C" int LinuxRunDiagnostic()
 			std::printf("  backend-error: %s\n", buf);
 		}
 	}
+	// XI2 sourceid tap (check_detail0821 §2.2-A / §3): when active, the
+	// raw-event stream can definitively separate XTEST-injected from physical
+	// key events (fixes S5's time-window swallow on real Xorg).  The
+	// diagnostic probes the server directly (the observer starts with a
+	// script); `xi2-sourceid` reflects the LIVE observer state.
+	LinuxXI2Probe(LinuxX11Display());
+	std::printf("xi2-sourceid    : %s\n", LinuxXI2SourceIdActive() ? "yes" : "no");
+	std::printf("xi2-xtest-dev   : %d%s\n", LinuxXTestPrimaryDeviceId()
+		, LinuxXTestPrimaryDeviceId() ? " (XTEST device)" : "");
 	// Clipboard-change watch (OnClipboardChange support).
 	std::printf("clipboard-change-watch : %s\n"
 		, LinuxClipboardWatchActive() ? "on" : "off");

@@ -64,6 +64,7 @@
 #include "core_gshortcut_linux.h"
 #include "input_backend.h"
 #include <X11/Xlib.h>
+#include <X11/Xatom.h>
 #include <X11/keysym.h>
 #include <X11/XKBlib.h>
 #include <X11/extensions/XTest.h>
@@ -230,6 +231,9 @@ unsigned int LinuxModsToXLR(modLR_type aModifiersLR)
 
 bool sXI2Observer = false;
 int sXI2Opcode = 0;
+// True when XI 2.1 was negotiated (XIRawEvent.sourceid is only valid from
+// 2.1; see check_detail0821 §2.2-A).
+bool sXI2HasSourceId = false;
 KeyCode sModKc[8];          // L/R ctrl, shift, alt, win keycodes.
 modLR_type sHeldLR = 0;
 
@@ -269,11 +273,16 @@ void LinuxUpdateModifierKeycodes(Display *d)
 
 void LinuxXI2Init(Display *d)
 {
-	int major = 2, minor = 0;
+	// Request XI 2.1: XIRawEvent.sourceid is a historical bug and reads 0 on
+	// XI 2.0 servers (check_detail0821 §2.2-A).  The server echoes back the
+	// highest version it supports; sourceid-based detection needs >= 2.1 and
+	// falls back to the time-window heuristics otherwise.
+	int major = 2, minor = 1;
 	int ev = 0, err = 0;
 	if (d && XQueryExtension(d, "XInputExtension", &sXI2Opcode, &ev, &err)
 		&& XIQueryVersion(d, &major, &minor) == Success)
 	{
+		sXI2HasSourceId = (major > 2 || (major == 2 && minor >= 1));
 		unsigned char mask_data[XIMaskLen(XI_RawKeyRelease)];
 		memset(mask_data, 0, sizeof(mask_data));
 		XISetMask(mask_data, XI_RawKeyPress);
@@ -283,9 +292,24 @@ void LinuxXI2Init(Display *d)
 		mask.mask_len = sizeof(mask_data);
 		mask.mask = mask_data;
 		XISelectEvents(d, DefaultRootWindow(d), &mask, 1);
+		// XI_HierarchyChanged must be selected on XIAllDevices: selecting it
+		// on the master set raises BadValue (minor 46) on Xorg/Xvfb.
+		unsigned char hier_mask[XIMaskLen(XI_HierarchyChanged)];
+		memset(hier_mask, 0, sizeof(hier_mask));
+		XISetMask(hier_mask, XI_HierarchyChanged);
+		XIEventMask hier;
+		hier.deviceid = XIAllDevices;
+		hier.mask_len = sizeof(hier_mask);
+		hier.mask = hier_mask;
+		XISelectEvents(d, DefaultRootWindow(d), &hier, 1);
 		sXI2Observer = true;
+		LinuxXI2EnumXTest(d);
 	}
 }
+
+// (The XTEST device detection + raw-event source tap live at file scope,
+// after the anonymous namespace below, so core_platform_stubs.cpp's --diag
+// can query them through core_hotkey_linux.h.)
 
 // Left/right state of the modifiers held when the event was generated.
 // With the XI2 observer this is the tracked physical state (raw events
@@ -618,17 +642,33 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 
 	// Suppress the re-grabbed copy of a passthrough-injected event (the
 	// target already received the injected one).
-	if (LinuxIsPassthruCopy(ev))
-		return;
-	// Self-injection (Send/SendEvent/SendInput/SendPlay/SendText)?  An
-	// explicit SendInput copy is dropped entirely (Windows unloads the hook
-	// during SendInput: no own hotkey/hotstring may fire); other self-sent
-	// copies are level-gated by #InputLevel / InputHook MinSendLevel below.
+	// §3 (check_detail0821 §2.2-A / S5): the raw-event tap classifies a
+	// grabbed event's source.  A PHYSICAL event is a real press and can never
+	// be the stale copy of an injection, so its passthru/self marks must not
+	// be consulted (a stale mark must not swallow a real repeat).  Under
+	// Xvfb every event is XTEST, so this never fires there; a tap miss
+	// (unknown) falls back to the time-window heuristics below.
+	bool is_physical = LinuxXTestTapClassify((unsigned int)ev.xkey.keycode, ev.type == KeyPress) == 0;
 	int self_level = -1;
 	bool self_sendinput = false;
-	bool self_injected = LinuxSelfLookup(ev, self_level, self_sendinput);
-	if (self_injected && self_sendinput)
-		return;
+	bool self_injected = false;
+	if (is_physical)
+	{
+		// Physical real press: normal handling, no suppression checks.
+	}
+	else
+	{
+		if (LinuxIsPassthruCopy(ev))
+			return;
+		// Self-injection (Send/SendEvent/SendInput/SendPlay/SendText)?  An
+		// explicit SendInput copy is dropped entirely (Windows unloads the
+		// hook during SendInput: no own hotkey/hotstring may fire); other
+		// self-sent copies are level-gated by #InputLevel / InputHook
+		// MinSendLevel below.
+		self_injected = LinuxSelfLookup(ev, self_level, self_sendinput);
+		if (self_injected && self_sendinput)
+			return;
+	}
 
 	bool is_up = ev.type == KeyRelease;
 
@@ -761,6 +801,122 @@ void LinuxHandleButtonEvent(Display *d, XEvent &ev)
 }
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// XTEST device detection + raw-event source tap (check_detail0821 §2.2-A / §3)
+// ---------------------------------------------------------------------------
+// The X server gives the two XTEST devices ("Virtual core XTEST keyboard" /
+// "pointer") the "XTEST Device" property (XI_PROP_XTEST_DEVICE = 1), and every
+// XTestFakeKeyEvent-produced event carries them as its XIRawEvent.sourceid.
+// The raw-event stream is therefore a definitive "injected vs physical"
+// classifier: a grabbed event whose raw tap says PHYSICAL is a real press and
+// can never be a stale copy of an injection (fixes S5's time-window swallow).
+// Requires XI 2.1 for a valid sourceid; otherwise the tap is disabled and the
+// time-window heuristics stay in charge.
+#ifndef XI_PROP_XTEST_DEVICE
+#define XI_PROP_XTEST_DEVICE "XTEST Device"
+#endif
+
+static int sXTestDevices[8];
+static int sXTestDeviceCount = 0;
+
+void LinuxXI2EnumXTest(Display *d)
+{
+	sXTestDeviceCount = 0;
+	if (!d || !sXI2HasSourceId)
+		return;
+	Atom prop = XInternAtom(d, XI_PROP_XTEST_DEVICE, True);
+	if (prop == None)
+		return;
+	int ndevs = 0;
+	XIDeviceInfo *devs = XIQueryDevice(d, XIAllDevices, &ndevs);
+	for (int i = 0; i < ndevs && sXTestDeviceCount < (int)_countof(sXTestDevices); ++i)
+	{
+		Atom type; int fmt; unsigned long nitems = 0, bytes_after = 0;
+		unsigned char *data = nullptr;
+		if (XIGetProperty(d, devs[i].deviceid, prop, 0, 1, False, XA_INTEGER
+			, &type, &fmt, &nitems, &bytes_after, &data) == Success
+			&& data && nitems >= 1
+			&& ((fmt == 8 && data[0] == 1) || (fmt == 32 && *(long *)data == 1)))
+			sXTestDevices[sXTestDeviceCount++] = devs[i].deviceid;
+		if (data)
+			XFree(data);
+	}
+	XIFreeDeviceInfo(devs);
+}
+
+// True when the raw event's source device is one of the XTEST devices.
+bool LinuxIsXTestDevice(int aSourceId)
+{
+	for (int i = 0; i < sXTestDeviceCount; ++i)
+		if (sXTestDevices[i] == aSourceId)
+			return true;
+	return false;
+}
+
+// Ring of the most recent raw key events: {keycode, phase, is_xtest}.  The
+// raw event for a key arrives on the same connection BEFORE its processed
+// (grabbed) counterpart, so a grabbed event can be classified by the most
+// recent matching raw record.  A miss (ring overflow / no XI 2.1) is UNKNOWN
+// and falls back to the time-window heuristics.
+struct RawTap { unsigned int kc; bool up; bool is_xtest; };
+static RawTap sRawTap[1024];
+static int sRawTapHead = 0;
+
+void LinuxXTestTapRecord(unsigned int aKeycode, bool aIsPress, bool aIsXTest)
+{
+	RawTap &t = sRawTap[sRawTapHead++ % _countof(sRawTap)];
+	t.kc = aKeycode;
+	t.up = !aIsPress;
+	t.is_xtest = aIsXTest;
+}
+
+// Consume the most recent raw tap for {keycode, phase}.  Returns 1 = XTEST
+// (injected), 0 = PHYSICAL (real), -1 = unknown (no record).
+int LinuxXTestTapClassify(unsigned int aKeycode, bool aIsPress)
+{
+	bool up = !aIsPress;
+	for (int i = 0; i < (int)_countof(sRawTap); ++i)
+	{
+		RawTap &t = sRawTap[(sRawTapHead - 1 - i + _countof(sRawTap)) % _countof(sRawTap)];
+		if (t.kc == aKeycode && t.up == up)
+		{
+			t.kc = 0; // Consume: only the first matching grabbed event matches.
+			return t.is_xtest ? 1 : 0;
+		}
+	}
+	return -1;
+}
+
+// For --diag: the first XTEST device id (0 when none), and whether the
+// sourceid tap is active.
+int LinuxXTestPrimaryDeviceId()
+{
+	return sXTestDeviceCount > 0 ? sXTestDevices[0] : 0;
+}
+bool LinuxXI2SourceIdActive()
+{
+	return sXI2Observer && sXI2HasSourceId && sXTestDeviceCount > 0;
+}
+
+// One-shot probe for --diag: negotiate XI 2.1 and enumerate the XTEST
+// devices WITHOUT subscribing to the raw-event stream (the diagnostic runs
+// before the hotkey observer is initialized).  Returns true when at least
+// one XTEST device was found under a >= 2.1 server.
+bool LinuxXI2Probe(Display *d)
+{
+	if (!d)
+		return false;
+	int major = 2, minor = 1, ev = 0, err = 0;
+	if (XQueryExtension(d, "XInputExtension", &sXI2Opcode, &ev, &err)
+		&& XIQueryVersion(d, &major, &minor) == Success)
+	{
+		sXI2HasSourceId = (major > 2 || (major == 2 && minor >= 1));
+		LinuxXI2EnumXTest(d);
+		return sXTestDeviceCount > 0;
+	}
+	return false;
+}
 
 // ---------------------------------------------------------------------------
 // Passthrough re-injection (file scope: used by the capture engine)
@@ -1152,7 +1308,17 @@ void LinuxDispatchHotkeys()
 					|| cookie->extension == sXI2Opcode && cookie->evtype == XI_RawKeyRelease)
 				{
 					XIRawEvent *re = (XIRawEvent *)cookie->data;
-					LinuxTrackModifierKeycode((KeyCode)re->detail, cookie->evtype == XI_RawKeyPress);
+					bool is_press = cookie->evtype == XI_RawKeyPress;
+					LinuxTrackModifierKeycode((KeyCode)re->detail, is_press);
+					// §3: record the source classification (sourceid is only
+					// valid from XI 2.1; the tap is disabled otherwise).
+					LinuxXTestTapRecord((unsigned int)re->detail, is_press
+						, LinuxIsXTestDevice((int)re->sourceid));
+				}
+				else if (cookie->extension == sXI2Opcode && cookie->evtype == XI_HierarchyChanged)
+				{
+					// A device was added/removed: re-enumerate the XTEST ids.
+					LinuxXI2EnumXTest(d);
 				}
 				XFreeEventData(d, cookie);
 			}
