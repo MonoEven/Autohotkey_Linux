@@ -219,11 +219,12 @@ D-Bus COM layer). The port has two display backends:</p>
     (<code>org.kde.StatusNotifierItem</code> + <code>com.canonical.dbusmenu</code>):
     the icon name is derived from the file path (basename without extension) and
     a default menu offers Pause / Suspend / Reload / Exit.  No tray watcher is a
-    silent no-op.  The item registers under the well-known
+    silent no-op.  The menu is the script's <code>A_TrayMenu</code> (customizable
+    via <code>A_TrayMenu.Add</code>); the SNI dbusmenu renders its items and
+    clicks invoke the callbacks.  The item registers under the well-known
     <code>org.kde.StatusNotifierItem-&lt;pid&gt;-1</code> name so the watcher
     removes it on exit (a unique-name registration leaks on ayatana/AppIndicator
-    hosts -- the icon never disappears).  The script-customizable
-    <code>A_TrayMenu</code> is a follow-up.  Compiled-script
+    hosts -- the icon never disappears).  Compiled-script
     packaging is not available.</li>
   <li>CoordMode/SendMode semantics are honored; hotkeys work through
     XGrabKey (keys) and XGrabButton (mouse buttons/wheels) on X11/XWayland,

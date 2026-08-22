@@ -267,7 +267,41 @@ static DBusHandlerResult SniItemHandler(DBusConnection *aConn, DBusMessage *aMsg
 
 // --- com.canonical.dbusmenu -------------------------------------------------
 
-static void SniAppendMenuNode(DBusMessageIter *aParent, int aId, const SniMenuItem *aItem)
+#ifndef MFS_GRAYED
+#define MFS_GRAYED 0x1
+#endif
+#ifndef MFS_DISABLED
+#define MFS_DISABLED 0x2
+#endif
+#ifndef MFS_CHECKED
+#define MFS_CHECKED 0x8
+#endif
+
+// The tray menu shown by the SNI host: the script's A_TrayMenu when it has
+// items (check_detail0821 §5-M5 / R2), otherwise the built-in defaults.
+static UserMenu *SniTrayMenu()
+{
+	UserMenu *tm = g_script.mTrayMenu;
+	return (tm && tm->mFirstMenuItem) ? tm : nullptr;
+}
+
+// Invoke a script menu item's callback with A_ThisMenuItem / A_ThisMenuItemPos
+// / A_ThisMenu (matches script_menu_linux.cpp's FireMenuItem).
+static void SniFireUserItem(UserMenuItem *aItem)
+{
+	if (!aItem || !aItem->mCallback)
+		return;
+	UserMenu *menu = aItem->mMenu;
+	menu->AddRef();
+	ExprTokenType param[] = { aItem->mName, (__int64)(aItem->Pos() + 1), menu };
+	aItem->mCallback->ExecuteInNewThread(_T("Menu"), param, _countof(param));
+	menu->Release();
+}
+
+// Append one menu node.  aId==0 is the root (children-display submenu).
+// aUserItem (script A_TrayMenu item) and aDefaultItem (built-in) are
+// mutually exclusive.
+static void SniAppendMenuNode(DBusMessageIter *aParent, int aId, UserMenuItem *aUserItem, const SniMenuItem *aDefaultItem)
 {
 	DBusMessageIter node, props, kids;
 	dbus_message_iter_open_container(aParent, DBUS_TYPE_STRUCT, nullptr, &node);
@@ -278,9 +312,30 @@ static void SniAppendMenuNode(DBusMessageIter *aParent, int aId, const SniMenuIt
 	{
 		SniDictString(&props, "children-display", "submenu");
 	}
-	else
+	else if (aUserItem)
 	{
-		SniDictString(&props, "label", aItem->label);
+		if (!aUserItem->mName || !*aUserItem->mName)
+		{
+			SniDictString(&props, "type", "separator");
+		}
+		else
+		{
+			char narrow[1024];
+			size_t n = wcstombs(narrow, aUserItem->mName, sizeof(narrow) - 1);
+			if (n == (size_t)-1)
+				n = 0;
+			narrow[n] = 0;
+			bool enabled = !(aUserItem->mMenuState & (MFS_DISABLED | MFS_GRAYED));
+			bool checked = (aUserItem->mMenuState & MFS_CHECKED) != 0;
+			SniDictString(&props, "label", narrow);
+			SniDictBool(&props, "enabled", enabled ? TRUE : FALSE);
+			SniDictBool(&props, "visible", TRUE);
+			SniDictString(&props, "type", checked ? "checkmark" : "normal");
+		}
+	}
+	else if (aDefaultItem)
+	{
+		SniDictString(&props, "label", aDefaultItem->label);
 		SniDictBool(&props, "enabled", TRUE);
 		SniDictBool(&props, "visible", TRUE);
 		SniDictString(&props, "type", "normal");
@@ -292,12 +347,26 @@ static void SniAppendMenuNode(DBusMessageIter *aParent, int aId, const SniMenuIt
 	dbus_message_iter_open_container(&node, DBUS_TYPE_ARRAY, "v", &kids);
 	if (aId == 0)
 	{
-		for (int i = 0; i < sSniMenuCount; ++i)
+		if (UserMenu *tm = SniTrayMenu())
 		{
-			DBusMessageIter kid_var;
-			dbus_message_iter_open_container(&kids, DBUS_TYPE_VARIANT, "(ia{sv}av)", &kid_var);
-			SniAppendMenuNode(&kid_var, i + 1, &sSniMenu[i]);
-			dbus_message_iter_close_container(&kids, &kid_var);
+			int nid = 1;
+			for (UserMenuItem *item = tm->mFirstMenuItem; item; item = item->mNextMenuItem)
+			{
+				DBusMessageIter kid_var;
+				dbus_message_iter_open_container(&kids, DBUS_TYPE_VARIANT, "(ia{sv}av)", &kid_var);
+				SniAppendMenuNode(&kid_var, nid++, item, nullptr);
+				dbus_message_iter_close_container(&kids, &kid_var);
+			}
+		}
+		else
+		{
+			for (int i = 0; i < sSniMenuCount; ++i)
+			{
+				DBusMessageIter kid_var;
+				dbus_message_iter_open_container(&kids, DBUS_TYPE_VARIANT, "(ia{sv}av)", &kid_var);
+				SniAppendMenuNode(&kid_var, i + 1, nullptr, &sSniMenu[i]);
+				dbus_message_iter_close_container(&kids, &kid_var);
+			}
 		}
 	}
 	dbus_message_iter_close_container(&node, &kids);
@@ -313,7 +382,7 @@ static DBusMessage *SniReplyGetLayout(DBusMessage *aMsg)
 	dbus_message_iter_init_append(rep, &it);
 	dbus_message_iter_append_basic(&it, DBUS_TYPE_UINT32, &sSniRevision);
 	dbus_message_iter_open_container(&it, DBUS_TYPE_ARRAY, "(ia{sv}av)", &arr);
-	SniAppendMenuNode(&arr, 0, nullptr); // root with the items as children
+	SniAppendMenuNode(&arr, 0, nullptr, nullptr); // root with the items as children
 	dbus_message_iter_close_container(&it, &arr);
 	return rep;
 }
@@ -345,7 +414,21 @@ static void SniHandleEvent(DBusMessage *aMsg)
 	const char *event_id = nullptr;
 	dbus_message_iter_get_basic(&it, &event_id);
 	dbus_message_iter_next(&it); // skip the data variant
-	if (event_id && !strcmp(event_id, "clicked") && id >= 1 && id <= sSniMenuCount)
+	if (!event_id || strcmp(event_id, "clicked") || id < 1)
+		return;
+	if (UserMenu *tm = SniTrayMenu())
+	{
+		int idx = 1;
+		for (UserMenuItem *item = tm->mFirstMenuItem; item; item = item->mNextMenuItem, ++idx)
+		{
+			if (idx == id)
+			{
+				SniFireUserItem(item); // Runs on the main dispatch thread.
+				break;
+			}
+		}
+	}
+	else if (id <= sSniMenuCount)
 		sSniMenu[id - 1].action(); // Runs on the main dispatch thread.
 }
 

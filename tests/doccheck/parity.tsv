@@ -79,4 +79,4 @@ SendMessage	P4	No Win32 message system on X11: raises the documented error / ret
 PostMessage	P4	No Win32 message system on X11: raises the documented error / returns 0
 RunAs	P4	No logon API: Run/RunWait raise "Launch Error (possibly related to RunAs)"
 TrayTip	P2	Delivered as an org.freedesktop.Notifications notification (per-desktop daemon); empty TrayTip is a no-op
-TraySetIcon	P2	Delivered as a StatusNotifierItem (org.kde.StatusNotifierItem + com.canonical.dbusmenu) with a default Pause/Suspend/Reload/Exit menu; no watcher is a silent no-op; A_TrayMenu customization is a follow-up
+TraySetIcon	P2	Delivered as a StatusNotifierItem (org.kde.StatusNotifierItem + com.canonical.dbusmenu); the menu is the script's A_TrayMenu (customizable) with default Pause/Suspend/Reload/Exit when empty; no watcher is a silent no-op

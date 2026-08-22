@@ -580,7 +580,20 @@ LINUX_BIV_STUB(BIV_ThisHotkey)
 LINUX_BIV_STUB(BIV_TimeIdle)
 LINUX_BIV_STUB(BIV_TimeSincePriorHotkey)
 LINUX_BIV_STUB(BIV_TimeSinceThisHotkey)
-LINUX_BIV_STUB(BIV_TrayMenu)
+
+// A_TrayMenu (check_detail0821 §5-M5): the script-customizable tray menu.
+// The Linux UserMenu (script_menu_linux.cpp) stores the items; the SNI tray
+// (core_tray_linux.cpp) renders them and invokes the callbacks on click.
+// The script retains the object, so no AddRef here (matches upstream).
+BIV_DECL_R(BIV_TrayMenu)
+{
+	// The upstream Script::Init creates mTrayMenu after CreateWindowEx, which
+	// is not reached on this port (no main Win32 window), so create it lazily
+	// on first access.
+	if (!g_script.mTrayMenu)
+		g_script.mTrayMenu = new UserMenu(MENU_TYPE_POPUP);
+	_f_return(g_script.mTrayMenu);
+}
 
 // MsgBox built-in.  Uses the real MsgBox machinery from window.cpp/script2.cpp
 // (options/title/timeout parsing, button result strings); the compat

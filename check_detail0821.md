@@ -556,9 +556,17 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
   - 默认菜单(com.canonical.dbusmenu)含 Pause/Suspend/Reload/Exit,点击经
     `Event` → 调 `PauseCurrentThread`/`ToggleSuspendState`/`ExitApp`;
   - 无 watcher/无会话总线 → 静默 no-op(与 TrayTip 一致,能力降级而非报错);
-  - `A_TrayMenu`(脚本自定义菜单)仍为后续。
+  - **A_TrayMenu(脚本自定义菜单)已交付**:`BIV_TrayMenu` 去桩+惰性创建(上游
+    Script::Init 的 CreateWindowEx 在 Linux 不达,需在首次访问时
+    `new UserMenu(MENU_TYPE_POPUP)`——实证 mTrayMenu 为 NULL 时 `Type(A_TrayMenu)`
+    段错误),SNI dbusmenu 改渲染 `g_script.mTrayMenu` 的项(A_TrayMenu.Add 的
+    自定义项,含 enabled/checked/separator),点击经 `SniFireUserItem` 调用项回调
+    (A_ThisMenuItem/Pos/Menu 参数,对齐 script_menu_linux.cpp 的 FireMenuItem);
+    A_TrayMenu 为空时回退默认 Pause/Suspend/Reload/Exit。
   **VM 协议级实证**:watcher 注册、GetAll/Get 属性(IconName='custom')、
-  GetLayout(4 项)、点击 Exit → 进程退出,全部通过。
+  GetLayout(4 项)、点击 Exit → 进程退出,全部通过;A_TrayMenu 实证:
+  `A_TrayMenu.Add("Hello AHK",Cb)` + `Add("Quit",Cb)` → GetLayout 显示两项 →
+  点击 id=1 → 回调 `hello:Hello AHK:1` → 点击 id=2 → 退出。
   **泄漏修复(重要)**:必须用 **well-known 名**注册——ayatana watcher 的
   清理依赖 item 的 NameWatcher(仅当 uniqueId===service,即 well-known 形式
   才建立);用 unique-name+path 形式注册时 Gio.DBusProxy 检测不到名字消失,
@@ -569,7 +577,7 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
   ② `Properties.Get` 返回单个 variant `v` 而非 dict entry,否则 watcher
   探测属性时连接被 daemon 断开。
   **未做(诚实登记)**:KDE Plasma / sway(swaybar) 宿主未实测(VM 为 GNOME);
-  `A_TrayMenu` 脚本自定义菜单;图标 pixmap(仅名字);多实例/Attention 等扩展。
+  图标 pixmap(仅名字);多实例/Attention 等扩展。
 
 ### 5.3 M6 补注:打包格式对齐 Ahk2Exe 的实际做法
 
