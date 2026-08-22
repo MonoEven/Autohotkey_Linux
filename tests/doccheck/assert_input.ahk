@@ -126,25 +126,28 @@ all_key_times(lines) {
     }
     return out
 }
-; SetKeyDelay 50: consecutive key-downs must be >=45ms apart.
-SetKeyDelay(50)
+; SetKeyDelay 150: consecutive key-downs must be >=120ms apart.  A large
+; delay is used on purpose: xkeycap batches events per ~20ms poll, so a small
+; (50ms) delay could collapse into one wake-up and flake; 150ms is measured
+; robustly as >=120ms.
+SetKeyDelay(150)
 SendEvent("abc")
-Sleep(400)
+Sleep(600)
 ts := all_key_times(next_lines())
 ; ts = [a-down, a-up, b-down, b-up, c-down, c-up]; downs at indices 1,3,5.
 gap_ok := 0
 if ts.Length >= 5
-    gap_ok := (ts[3] - ts[1] >= 45 && ts[5] - ts[3] >= 45 ? 1 : 0)
-Log("sendevent_delay50=" gap_ok)
-; PressDuration 50 (SetKeyDelay 0,50): down->up gap must be >=45ms.
-SetKeyDelay(0, 50)
+    gap_ok := (ts[3] - ts[1] >= 120 && ts[5] - ts[3] >= 120 ? 1 : 0)
+Log("sendevent_delay150=" gap_ok)
+; PressDuration 150 (SetKeyDelay 0,150): down->up gap must be >=120ms.
+SetKeyDelay(0, 150)
 SendEvent("q")
-Sleep(400)
+Sleep(600)
 ts := all_key_times(next_lines())
 press_ok := 0
 if ts.Length >= 2
-    press_ok := (ts[2] - ts[1] >= 45 ? 1 : 0)
-Log("sendevent_press50=" press_ok)
+    press_ok := (ts[2] - ts[1] >= 120 ? 1 : 0)
+Log("sendevent_press150=" press_ok)
 SetKeyDelay(-1)
 
 ; --- §2-B: SendInput is a fast batch (<200ms for 100 keys) and delivers
