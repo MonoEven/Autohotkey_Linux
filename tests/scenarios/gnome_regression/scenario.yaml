@@ -1,0 +1,8 @@
+id: gnome_regression
+title: "GNOME Wayland regression: caps API routing + AT-SPI controls in the real session"
+script: run_gnome.sh
+script_type: sh
+check: marker:/tmp/scn_gnome_regression
+envs: any
+expect: pass
+needs: gnome
