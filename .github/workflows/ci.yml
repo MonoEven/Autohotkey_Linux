@@ -180,12 +180,15 @@ jobs:
           ExitApp
           EOF
           "$AHK" --pack /tmp/packwork/packed /tmp/packwork/pkg.ahk
-          # debian:12 container has no AHK installed; the packed binary must
-          # run there.  It still needs its runtime shared libraries (libX11,
-          # GTK, Wayland, ...), which the container installs -- this proves the
-          # packed binary needs no AHK installation, only system libs.
-          docker run --rm -v /tmp/packwork:/work -w /work debian:12 \
-            bash -c 'apt-get update -y -qq >/dev/null 2>&1 && apt-get install -y -qq --no-install-recommends libx11-6 libxext6 libxrandr2 libxinerama1 libxtst6 libxi6 libxfixes3 libxkbcommon0 libwayland-client0 libffi8 libgtk-3-0 zlib1g libjpeg62-turbo >/dev/null 2>&1; rm -f out.txt pk.txt; ./packed; grep -q "compiled=1 res=1" pk.txt && echo pack-acceptance-pass'
+          # A clean ubuntu:24.04 container (no AHK installed; its runtime
+          # shared libs match the build host) must run the packed binary and
+          # have it extract the FileInstall resource -- proving the packed
+          # binary needs no AHK installation, only the standard system libs.
+          # (debian:12 would work too but its libjpeg ABI differs from the
+          # build host's libjpeg8; the wcslcpy/strlcpy self-containment that
+          # debian's older glibc exposed is covered by the symbol check.)
+          docker run --rm -v /tmp/packwork:/work -w /work ubuntu:24.04 \
+            bash -c 'apt-get update -y -qq >/dev/null 2>&1 && apt-get install -y -qq --no-install-recommends libx11-6 libxext6 libxrandr2 libxinerama1 libxtst6 libxi6 libxfixes3 libxkbcommon0 libwayland-client0 libffi8 libgtk-3-0 zlib1g libjpeg8 >/dev/null 2>&1; rm -f out.txt pk.txt; ./packed; grep -q "compiled=1 res=1" pk.txt && echo pack-acceptance-pass'
 
   # check_detail0821 §16-3 / R4: a no-XWayland job -- sway with xwayland
   # disabled runs the Wayland suite, proving the pure-Wayland downgrade path
