@@ -123,5 +123,13 @@ Log("caps_backend_nn=" (bk != "" ? 1 : 0))
 bo := HotkeyBackendGet()
 Log("caps_obj_ok=" (IsObject(bo) && bo.backend != "" && (bo.global_hotkeys = 1 || bo.global_hotkeys = 0) ? 1 : 0))
 
+; --- per-key routing: HotkeyBackendGet(KeyName) (check_detail0821 §1-A / R3). ---
+Hotkey("~F12", CB6)
+Sleep(200)
+r1 := HotkeyBackendGet("F11")   ; F11 registered bare above
+Log("route_f11=" (IsObject(r1) && r1.backend != "" ? 1 : 0))
+r2 := HotkeyBackendGet("~F12")  ; tilde -> passthrough routing
+Log("route_tilde=" (IsObject(r2) && r2.backend != "" && r2.passthrough = 1 ? 1 : 0))
+
 ; --- Cleanup. ---
 ExitApp(0)

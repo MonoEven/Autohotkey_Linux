@@ -317,6 +317,11 @@ const AhkInputBackendCaps *LinuxInputBackendCaps()
 	return KindCaps(CurrentKind());
 }
 
+const AhkInputBackendCaps *LinuxInputBackendCapsFor(AhkInputBackendKind aKind)
+{
+	return KindCaps(aKind);
+}
+
 const char *LinuxInputBackendName()
 {
 	switch (CurrentKind())
@@ -328,6 +333,41 @@ const char *LinuxInputBackendName()
 	default: return "auto";
 	}
 }
+
+static bool CapsSatisfy(const AhkInputBackendCaps *c, bool aPassthrough, bool aKeyUp, bool aBare, bool aWildcard)
+{
+	if (!c || !c->global_hotkeys) return false;
+	if (aPassthrough && !c->passthrough) return false;
+	if (aKeyUp && !c->key_up) return false;
+	if (aBare && !c->bare_keys) return false;
+	if (aWildcard && !c->wildcard) return false;
+	return true;
+}
+
+// Per-hotkey backend routing (check_detail0821 §1-A / R3): pick the best
+// backend whose caps satisfy the hotkey's needs.  The effective backend wins
+// when it qualifies; otherwise walk the other lanes in priority order.
+AhkInputBackendKind LinuxInputBackendRoute(bool aPassthrough, bool aKeyUp, bool aBare, bool aWildcard)
+{
+	const AhkInputBackendKind eff = CurrentKind();
+	if (CapsSatisfy(KindCaps(eff), aPassthrough, aKeyUp, aBare, aWildcard))
+		return eff;
+	// Priority: prefer non-root, integration-light lanes first.
+	static const AhkInputBackendKind kCandidates[] = {
+		AhkInputBackendKind::X11,
+		AhkInputBackendKind::GNOME_SHELL,
+		AhkInputBackendKind::PORTAL,
+		AhkInputBackendKind::EVDEV,
+	};
+	for (AhkInputBackendKind k : kCandidates)
+	{
+		if (k == eff) continue;
+		if (CapsSatisfy(KindCaps(k), aPassthrough, aKeyUp, aBare, aWildcard))
+			return k;
+	}
+	return eff; // keep current behavior when nothing qualifies
+}
+
 
 // Version of the GlobalShortcuts portal backend on the session bus (0 when
 // absent/unreachable).  Functional probe used by auto selection and --diag.

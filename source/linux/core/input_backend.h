@@ -93,6 +93,16 @@ int LinuxGnomeMajorVersion();
 const AhkInputBackendCaps *LinuxInputBackendCaps();
 const char *LinuxInputBackendName();
 
+// Capabilities of a specific backend kind (for per-hotkey routing queries).
+const AhkInputBackendCaps *LinuxInputBackendCapsFor(AhkInputBackendKind aKind);
+
+// Per-hotkey backend routing (check_detail0821 §1-A / R3): pick the best
+// backend whose capabilities satisfy the hotkey's needs (tilde passthrough,
+// key-up, bare key, wildcard).  Starts from the effective backend; falls back
+// through the other lanes in priority order when the effective one cannot
+// satisfy the flags.
+AhkInputBackendKind LinuxInputBackendRoute(bool aPassthrough, bool aKeyUp, bool aBare, bool aWildcard);
+
 // Hotkey set changed (called from LinuxHotkeyStateChanged): let the active
 // backend reconcile its registrations.  No-op for X11/EVDEV.
 void LinuxInputBackendSync();

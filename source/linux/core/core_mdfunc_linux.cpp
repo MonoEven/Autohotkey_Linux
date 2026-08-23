@@ -2163,14 +2163,44 @@ BIV_DECL_R(BIV_HotkeyBackend)
 
 // HotkeyBackendGet([KeyName]) -> {backend, global_hotkeys, suppress,
 // passthrough, key_up, wildcard, bare_keys, zero_confirm, dynamic,
-// multi_owner} for the currently effective input backend (R3 §1-B/D).  The
-// optional key-name argument is accepted for forward compatibility with
-// per-hotkey routing; the returned object currently describes the effective
-// backend lane.
+// multi_owner}.  With a key name it reports the backend that per-hotkey
+// routing (§1-A / R3) would assign to that registered hotkey (tilde ~ /
+// "up" / bare-key flags); without one it reports the effective backend lane.
 BIF_DECL(BIF_Linux_HotkeyBackendGet)
 {
-	const char *name = LinuxInputBackendName();
-	const AhkInputBackendCaps *caps = LinuxInputBackendCaps();
+	AhkInputBackendKind kind = LinuxInputBackendKind();
+	if (aParamCount > 0)
+	{
+		TCHAR name_buf[256];
+		LPTSTR keyname = TokenToString(*aParam[0], name_buf, nullptr);
+		if (keyname && *keyname)
+		{
+			UCHAR no_suppress = 0;
+			bool hook_mandatory = false;
+			Hotkey *hk = Hotkey::FindHotkeyByTrueNature(keyname, no_suppress, hook_mandatory);
+			if (hk)
+			{
+				bool passthrough = (no_suppress & NO_SUPPRESS_PREFIX) != 0;
+				bool key_up = hk->mKeyUp;
+				bool bare = (hk->mModifiers == 0 && hk->mVK != 0);
+				// Wildcard has no dedicated field on Hotkey; a name starting
+				// with '*' is the wildcard form.
+				bool wildcard = keyname[0] == _T('*');
+				kind = LinuxInputBackendRoute(passthrough, key_up, bare, wildcard);
+			}
+		}
+	}
+	const char *name = nullptr;
+	const AhkInputBackendCaps *caps = nullptr;
+	switch (kind)
+	{
+	case AhkInputBackendKind::X11: name = "x11"; break;
+	case AhkInputBackendKind::PORTAL: name = "portal"; break;
+	case AhkInputBackendKind::GNOME_SHELL: name = "gnome-shell"; break;
+	case AhkInputBackendKind::EVDEV: name = "evdev"; break;
+	default: name = "auto"; break;
+	}
+	caps = LinuxInputBackendCapsFor(kind);
 	Object *obj = Object::Create();
 	if (!obj)
 	{
