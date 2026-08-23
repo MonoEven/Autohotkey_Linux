@@ -1,0 +1,32 @@
+# Flatpak manifest for the AutoHotkey v2 Linux port.
+# check_detail0821 §12 / R4.  Builds ahk_core from the tagged source into a
+# sandbox; the launcher wraps it.  Note: flatpak needs its sandbox + portals
+# for the host sessions; SendText inside the sandbox goes through the XDG
+# desktop portal / uinput paths (recorded as a follow-up verification on a
+# Flatpak host).
+app-id: org.autohotkey.AHK
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+command: ahk_core
+finish-args:
+  - --share=ipc
+  - --socket=x11
+  - --socket=wayland
+  - --share=network
+  - --talk-name=org.a11y.Bus
+  - --talk-name=org.freedesktop.portal.*
+  - --device=dri
+modules:
+  - name: autohotkey
+    buildsystem: simple
+    build-commands:
+      - cmake -S . -B build-core -DCMAKE_BUILD_TYPE=Release
+      - cmake --build build-core -j4
+      - install -Dm755 build-core/source/linux/core/ahk_core /app/bin/ahk_core
+      - install -Dm644 docs-v2/docs/linux-port.htm /app/share/doc/autohotkey/linux-port.htm
+      - mkdir -p /app/share/autohotkey
+    sources:
+      - type: git
+        url: https://github.com/MonoEven/Autohotkey_Linux.git
+        tag: v2.0.26-linux.15
