@@ -137,7 +137,9 @@ jobs:
         run: cmake -S . -B build-container
 
       - name: Build
-        run: cmake --build build-container -j$(nproc)
+        # -j2: the container memory quota is small; -j$(nproc) over-commits
+        # and the C++ compile stalls/hangs (observed in the container matrix).
+        run: cmake --build build-container -j2
 
       - name: Headless regression
         run: bash tests/run_tests.sh build-container/source/linux/core/ahk_core
