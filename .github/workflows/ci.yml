@@ -114,6 +114,93 @@ jobs:
       - name: Verify parity doc badges are in sync
         run: python3 tools/gen_parity_badges.py --check
 
+  # check_detail0821 §16-1 / R4: container matrix over four distros -- builds
+  # the port + runs the headless regression + a display smoke inside each
+  # container, so glibc/GTK version differences cannot regress portability.
+  container-matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [fedora:41, archlinux:latest, debian:12, ubuntu:22.04]
+    runs-on: ubuntu-24.04
+    container:
+      image: ${{ matrix.image }}
+      options: --user root
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: bash tools/linux/ci-container-deps.sh
+
+      - name: Configure
+        run: cmake -S . -B build-container
+
+      - name: Build
+        run: cmake --build build-container -j$(nproc)
+
+      - name: Headless regression
+        run: bash tests/run_tests.sh build-container/source/linux/core/ahk_core
+
+      # A display smoke under Xvfb: the built binary must start + run a script
+      # that touches the X11/GTK paths (MsgBox fallback would otherwise cover
+      # only the console path).
+      - name: Xvfb smoke
+        run: |
+          printf 'MsgBox("container-smoke-ok")\nExitApp\n' > /tmp/smoke.ahk
+          xvfb-run -a bash -c 'build-container/source/linux/core/ahk_core /tmp/smoke.ahk' && echo smoke-pass
+
+  # check_detail0821 §5-M6 / R4: the packed binary must run in a container
+  # WITHOUT the port installed -- it embeds both the interpreter and the
+  # script (A_IsCompiled=1), and a FileInstall resource must land on disk.
+  pack-container-acceptance:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Install deps + build
+        run: |
+          bash tools/linux/ci-container-deps.sh
+          cmake -S . -B build-pc
+          cmake --build build-pc -j$(nproc)
+      - name: Pack + verify in a bare container
+        run: |
+          AHK="$PWD/build-pc/source/linux/core/ahk_core"
+          mkdir -p /tmp/packwork && cd /tmp/packwork
+          printf 'PACKED-FILEINSTALL-OK' > res.txt
+          cat > pkg.ahk <<'EOF'
+#Requires AutoHotkey v2.0
+FileInstall("/tmp/packwork/res.txt", "/tmp/packwork/out.txt")
+c := FileExist("/tmp/packwork/out.txt") ? FileRead("/tmp/packwork/out.txt") : ""
+FileAppend("compiled=" A_IsCompiled " res=" (c = "PACKED-FILEINSTALL-OK" ? 1 : 0) "`n", "/tmp/packwork/pk.txt")
+ExitApp
+EOF
+          "$AHK" --pack /tmp/packwork/packed /tmp/packwork/pkg.ahk
+          # debian:12 container has no AHK installed; the packed binary must run.
+          docker run --rm -v /tmp/packwork:/work -w /work debian:12 \
+            bash -c 'rm -f out.txt pk.txt; ./packed; grep -q "compiled=1 res=1" pk.txt && echo pack-acceptance-pass'
+
+  # check_detail0821 §16-3 / R4: a no-XWayland job -- sway with xwayland
+  # disabled runs the Wayland suite, proving the pure-Wayland downgrade path
+  # does not crash and reports clearly.
+  no-xwayland:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Install deps + build
+        run: |
+          bash tools/linux/ci-container-deps.sh
+          cmake -S . -B build-nox
+          cmake --build build-nox -j$(nproc)
+      # The default wayland_run.sh mode already disables xwayland in the sway
+      # config (line 49: `xwayland disable`), which is exactly the §16-3
+      # pure-Wayland downgrade path; --xwayland is the opt-in enabled mode.
+      - name: Wayland suite with xwayland disabled
+        run: bash tests/doccheck/wayland_run.sh build-nox/source/linux/core/ahk_core
+        env:
+          XDG_RUNTIME_DIR: /tmp
+
   package:
     runs-on: ubuntu-24.04
     needs: build-and-test
