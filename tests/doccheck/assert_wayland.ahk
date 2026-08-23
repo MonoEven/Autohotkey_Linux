@@ -50,23 +50,25 @@ Log("wl_send_ctrl_enter=" (FileExist(KCR) ? 1 : 0))
 Send("Hello World") ; Text send: must not raise.
 Sleep(500)
 Log("wl_send_text=1")
-; Non-ASCII SendText on pure Wayland: the clipboard-paste fallback (set
-; clipboard -> Ctrl+V -> restore).  sway's Control_L+v bindsym marker
-; proves the paste key sequence reached the compositor; the restore is
-; verified through A_Clipboard.
-A_Clipboard := "wl-saved-clip"
-SendText("你")
-Sleep(1200)
-Log("wl_unicode_paste=" (FileExist("/tmp/wl_key_cv") ? 1 : 0))
-Log("wl_unicode_restore=" (A_Clipboard = "wl-saved-clip" ? 1 : 0))
-; check0820 P1: when the clipboard was EMPTY, the paste fallback must
-; restore empty (never leave the sentinel text behind).
-A_Clipboard := ""
-Sleep(200)
-SendText("好")
-Sleep(1200)
-Log("wl_unicode_empty_paste=" (FileExist("/tmp/wl_key_cv") ? 1 : 0))
-Log("wl_unicode_empty_restore=" (A_Clipboard = "" ? 1 : 0))
+; Non-ASCII SendText on pure Wayland: the custom-xkb-keymap injection (wtype
+; model, check_detail0821 §6-U3 / R3).  The virtual keyboard uploads a keymap
+; whose keysym is the exact glyph (UXXXX form) and presses its keycode, so
+; sway's U03B1/U4F60/U0416/U00E9 bindsym hooks fire.  BMP characters (Greek,
+; CJK, Cyrillic, Latin-ext) are supported; supplementary-plane chars (emoji, a
+; UTF-16 surrogate pair) are a follow-up.  The clipboard-paste fallback remains
+; for compositors without the virtual-keyboard protocol (GNOME/KWin).
+SendText("α")   ; Greek U+03B1
+Sleep(500)
+SendText("你")   ; CJK U+4F60
+Sleep(500)
+SendText("Ж")   ; Cyrillic U+0416
+Sleep(500)
+SendText("é")   ; Latin-ext U+00E9
+Sleep(500)
+Log("wl_unicode_alpha=" (FileExist("/tmp/wl_key_u03b1") ? 1 : 0))
+Log("wl_unicode_cjk=" (FileExist("/tmp/wl_key_u4f60") ? 1 : 0))
+Log("wl_unicode_cyr=" (FileExist("/tmp/wl_key_u0416") ? 1 : 0))
+Log("wl_unicode_latin=" (FileExist("/tmp/wl_key_u00e9") ? 1 : 0))
 ; GetKeyState cannot query a Wayland seat: reports 0 (documented).
 Log("wl_gks=" (GetKeyState("a") = 0 ? 1 : 0))
 Log("wl_gks=" (GetKeyState("a") = 0 ? 1 : 0))
@@ -119,6 +121,19 @@ try {
 } catch TargetError {
     Log("wl_wsr=1")
 }
+
+; --- Unicode injection via a custom xkb keymap (check_detail0821 §6-U3 / R3).
+; SendText with non-ASCII on a pure-Wayland session uploads a keymap whose
+; keysym is the exact glyph (UXXXX form) and presses its keycode; sway's
+; bindsym U03B1 / U4F60 hooks create the markers.  BMP characters (Greek,
+; CJK, Cyrillic, Latin-ext) are supported; supplementary-plane chars (emoji,
+; a UTF-16 surrogate pair) are a follow-up. ---
+SendText("α")
+Sleep(500)
+SendText("你")
+Sleep(500)
+Log("wl_unicode_alpha=" (FileExist("/tmp/wl_key_u03b1") ? 1 : 0))
+Log("wl_unicode_cjk=" (FileExist("/tmp/wl_key_u4f60") ? 1 : 0))
 
 ; --- Cleanup. ---
 ExitApp(0)

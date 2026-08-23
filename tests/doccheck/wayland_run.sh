@@ -55,6 +55,13 @@ for_window [title="ImgMain"] move position 50 60
 bindsym a exec touch /tmp/wl_key_a
 bindsym Shift+Return exec touch /tmp/wl_key_sr
 bindsym Control+Return exec touch /tmp/wl_key_cr
+# Unicode injection (check_detail0821 §6-U3 / R3): the virtual keyboard uploads
+# a custom xkb keymap whose keysyms are the exact glyphs (UXXXX form), so
+# sway's shortcut matching fires for the injected Greek/CJK/Cyrillic/Latin-ext.
+bindsym U03B1 exec touch /tmp/wl_key_u03b1
+bindsym U4F60 exec touch /tmp/wl_key_u4f60
+bindsym U0416 exec touch /tmp/wl_key_u0416
+bindsym U00E9 exec touch /tmp/wl_key_u00e9
 # Generic 'Control' (not 'Control_L'): sway matches the modifier STATE, and
 # the virtual keyboard pushes the xkb Control bit before the key event.
 bindsym Control+v exec touch /tmp/wl_key_cv

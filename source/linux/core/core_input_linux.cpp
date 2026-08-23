@@ -929,7 +929,11 @@ static bool LinuxSendLiteralRun(Display *d, const wchar_t *aStart, const wchar_t
 	bool has_non_ascii = false;
 	for (const wchar_t *q = aStart; q < aEnd; ++q)
 		if (*q > 0x7E) { has_non_ascii = true; break; }
-	if (!has_non_ascii || d || aHeld.Any())
+	// Per-char delivery: ASCII (pure Wayland or X11), X11 Unicode via the
+	// borrowed-keycode keysym path, and -- with a virtual keyboard -- pure
+	// Wayland Unicode via the custom-keymap injection (wtype model, R3 §6-U3).
+	if (!has_non_ascii || d || aHeld.Any()
+		|| (LinuxWaylandActive() && LinuxWaylandCanInjectKeys()))
 	{
 		for (const wchar_t *q = aStart; q < aEnd; ++q)
 		{
@@ -939,11 +943,10 @@ static bool LinuxSendLiteralRun(Display *d, const wchar_t *aStart, const wchar_t
 		}
 		return true;
 	}
-	// Pure Wayland with non-ASCII text and no modifiers held.  The paste
-	// fallback needs a key-injection lane for its Ctrl+V pair: the virtual
-	// keyboard, or the uinput lane (GNOME/KWin lack the protocol).
-	if (LinuxWaylandActive()
-		&& (LinuxWaylandCanInjectKeys() || LinuxUinputInjectionAvailable()))
+	// Pure Wayland with non-ASCII text, no virtual keyboard, and no modifiers
+	// held.  The paste fallback needs a key-injection lane for its Ctrl+V
+	// pair: the uinput lane (GNOME/KWin lack the virtual-keyboard protocol).
+	if (LinuxWaylandActive() && LinuxUinputInjectionAvailable())
 		return LinuxSendRunPaste(aStart, aEnd);
 	for (const wchar_t *q = aStart; q < aEnd; ++q)
 		if (*q > 0x7E) { sLastUnsendable = *q; break; }
@@ -967,10 +970,12 @@ static void LinuxSendChar(Display *d, wchar_t aChar, LinuxHeldMods &aHeld)
 	if (ks > 0x7E)
 	{
 		// Non-ASCII: Unicode keysym transmission on X11; on a pure-Wayland
-		// session the run-level clipboard-paste fallback handles it (a bare
-		// call with no run context reports failure instead of dropping).
+		// session, inject via a custom xkb keymap (wtype model, R3 §6-U3);
+		// only if that fails fall back to the run-level clipboard-paste.
 		if (d)
 			LinuxSendCharUnicode(d, aChar);
+		else if (LinuxWaylandSendCharW(aChar))
+			return;
 		else
 			sLastUnsendable = aChar;
 		return;

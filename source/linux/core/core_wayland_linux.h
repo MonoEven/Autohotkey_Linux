@@ -23,6 +23,9 @@ void LinuxWaylandSetWindowTitle(LinuxWaylandWindow *aWin, const wchar_t *aTitle)
 // 4-7 wheel).  Returns false when the device is unavailable (no manager
 // global on the compositor).
 bool LinuxWaylandKeyEvent(unsigned int aVK, bool aDown);
+// Send one arbitrary Unicode char via a custom xkb keymap (wtype model,
+// check_detail0821 §6-U3 / R3); restores the default keymap afterwards.
+bool LinuxWaylandSendCharW(wchar_t aChar);
 bool LinuxWaylandButtonEvent(unsigned int aButton, bool aDown);
 bool LinuxWaylandWheelEvent(unsigned int aButton, bool aDown);
 bool LinuxWaylandMotionEvent(int aDX, int aDY); // Relative motion.

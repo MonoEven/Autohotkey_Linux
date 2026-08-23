@@ -675,6 +675,21 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
     都不提供 virtual-keyboard 协议**(mutter 明确推荐改用 libei,见 §1.2-D),
     因此 U3 落地后仍需保留剪贴板回退给这两家,除非走 §1.2-D 的 libei/IME 路径。
     sway CI 可直接断言 `SendText "你好"` 端到端。
+  **U3 已交付(R3 §6-U3)**:`core_wayland_linux.cpp` 新增
+  `LinuxWaylandSendCharW`——按 wtype 模型动态构造私有 xkb keymap(单字符放
+  xkb 键码 9,`xkb_types`/`xkb_compatibility` include "complete"),经 shm fd
+  由 `zwp_virtual_keyboard_v1.keymap()` 上传,再发 **evdev 键码 1**(sway 的
+  evdev→xkb 转换是 +8,evdev 1 → xkb 9 → 自定义 keymap 的 <K1>),随后恢复默认
+  keymap(否则常驻进程后续 ASCII 全乱)。`core_input_linux.cpp` 的纯 Wayland
+  非 ASCII SendText 改为优先走此注入,剪贴板回退保留给无 virtual-keyboard 的
+  GNOME/KWin。
+  两个实证坑:① **xkb keymap 文本里 keysym 用 `UXXXX`(无加号)**——`U+03B1`
+  是语法错误(libxkbcommon 拒绝),`U03B1`/`U4F60`/`U1F600` 均可编译,与
+  `xkb_keysym_get_name` 返回值一致;② **key 事件带 evdev 键码**,sway 转 xkb
+  加 8,须发 evdev 1 命中自定义 xkb 键码 9。BMP 全支持(希腊 α/CJK 你/西里尔
+  Ж/拉丁扩展 é,sway bindsym U03B1/U4F60/U0416/U00E9 端到端全触发,wayland
+  doc-check 15/17 含 4 条新断言);**补充平面(emoji,UTF-16 代理对)为后续**
+  (Send 引擎按 wchar 逐字,需代理对合并)。
 - **U1**:剪贴板回退保留(GNOME/KDE 仍需要),保存/还原改为**全 MIME 往返**:
   枚举 offer 的全部 mime,逐一读出暂存(上限如 8MB,超限则只存文本并警告),
   还原时重建多 mime data_source;X11 侧 `assert_clipboard` 已有多 MIME 设施

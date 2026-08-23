@@ -153,7 +153,7 @@ D-Bus COM layer). The port has two display backends:</p>
     an unknown <code>AHK_INPUT_BACKEND</code> value prints a clear startup
     warning instead of silently running a different backend.  An
     XWayland/Xorg session remains the stable fallback on all systems.</li>
-  <li><b>Unicode text input</b> (round-34 + check0820): <code>SendText</code>/
+  <li><b>Unicode text input</b> (round-34 + check0820 + R3 §6-U3): <code>SendText</code>/
     <code>Send</code> and hotstring replacements now deliver non-ASCII
     characters instead of dropping them.  On X11/XWayland every Unicode
     character is sent as a key event mapped to its keysym (a spare keycode
@@ -162,7 +162,13 @@ D-Bus COM layer). The port has two display backends:</p>
     Latin, Emoji and combining marks all work, and the spare-keycode borrow
     is now serialized through an X selection lease so two concurrent AHK
     processes can never overwrite each other&rsquo;s temporary mapping
-    (check0820).  On a pure Wayland session non-ASCII runs use the
+    (check0820).  On a pure Wayland session non-ASCII runs now use a custom
+    xkb keymap uploaded to the virtual keyboard (the wtype model, R3 §6-U3):
+    the character sits on its own keycode with the exact glyph as the
+    keysym, so Greek/CJK/Cyrillic/Latin-ext inject layout-independently on
+    wlroots compositors (sway/Hyprland); the default keymap is restored
+    afterwards.  Compositors without the virtual-keyboard protocol
+    (GNOME/KWin) keep the
     controlled clipboard-paste fallback (set clipboard &rarr;
     <code>Ctrl+V</code> &rarr; restore) on compositors with either the
     virtual-keyboard protocol (wlroots/sway) or an accessible

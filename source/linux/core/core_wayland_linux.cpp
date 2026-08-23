@@ -86,6 +86,10 @@ static LinuxWaylandState &LinuxWl()
 	return s;
 }
 
+// The default virtual-keyboard keymap (generated at setup, kept for restoring
+// after a custom Unicode keymap upload).
+static char sDefaultKeymap[65536];
+
 // ---------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------
@@ -329,7 +333,8 @@ static bool LinuxWlConnect()
 		LinuxClipboardWaylandSeat(s.seat);
 	}
 	(void)0;
-	// Push a keymap so compositors accept key events (xkbcommon).
+	// Push a keymap so compositors accept key events (xkbcommon).  The default
+	// keymap string is kept for restoring after a custom (Unicode) keymap.
 	if (s.vkbd)
 	{
 		xkb_context *ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
@@ -342,6 +347,11 @@ static bool LinuxWlConnect()
 				if (str)
 				{
 					size_t len = strlen(str);
+					if (len < sizeof(sDefaultKeymap))
+					{
+						memcpy(sDefaultKeymap, str, len);
+						sDefaultKeymap[len] = 0;
+					}
 					if (s.shm && len > 0)
 					{
 						char name[64];
@@ -495,6 +505,85 @@ unsigned int LinuxWaylandKeycodeForVk(unsigned int aVK)
 // ---------------------------------------------------------------------------
 // Input injection
 // ---------------------------------------------------------------------------
+
+// Upload a keymap string to the virtual keyboard via a shm fd.
+static bool LinuxWlUploadKeymapStr(const char *aStr)
+{
+	LinuxWaylandState &s = LinuxWl();
+	if (!s.active || !s.vkbd || !s.shm || !aStr || !*aStr)
+		return false;
+	size_t len = strlen(aStr);
+	char name[64];
+	snprintf(name, sizeof(name), "/ahk-km-%d-%ld", getpid(), (long)(aStr[0] * 7919u + len));
+	int fd = shm_open(name, O_CREAT | O_RDWR, 0600);
+	shm_unlink(name);
+	if (fd < 0 || ftruncate(fd, (off_t)len) != 0)
+	{
+		if (fd >= 0)
+			close(fd);
+		return false;
+	}
+	void *map = mmap(nullptr, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	if (map == MAP_FAILED)
+	{
+		close(fd);
+		return false;
+	}
+	memcpy(map, aStr, len);
+	munmap(map, len);
+	zwp_virtual_keyboard_v1_keymap(s.vkbd, XKB_KEYMAP_FORMAT_TEXT_V1, fd, (uint32_t)len);
+	close(fd);
+	wl_display_roundtrip(s.display); // let the compositor process the keymap
+	return true;
+}
+
+// Send a single arbitrary Unicode character on a pure-Wayland session using a
+// custom xkb keymap (the wtype model, check_detail0821 §6-U3 / R3): the
+// character sits on its own keycode with the exact glyph as the keysym, so
+// the injected keycode resolves to the character regardless of the active
+// layout.  The default keymap is restored afterwards so later key events are
+// not interpreted against the sparse custom keymap.
+bool LinuxWaylandSendCharW(wchar_t aChar)
+{
+	LinuxWaylandState &s = LinuxWl();
+	if (!s.active || !s.vkbd)
+		return false;
+	char km[512];
+	// Keysym names use the UXXXX form (no '+'; "U+XXXX" is a syntax error in
+	// xkbcommon's text format).  This is exactly what xkb_keysym_get_name
+	// returns for Unicode keysyms and compiles for arbitrary code points
+	// (Latin/Greek/Cyrillic/CJK/emoji).
+	int n = snprintf(km, sizeof(km),
+		"xkb_keymap {\n"
+		"xkb_keycodes \"(unnamed)\" {\n"
+		"  minimum = 8;\n"
+		"  maximum = 9;\n"
+		"  <K1> = 9;\n"
+		"};\n"
+		"xkb_types \"(unnamed)\" { include \"complete\" };\n"
+		"xkb_compatibility \"(unnamed)\" { include \"complete\" };\n"
+		"xkb_symbols \"(unnamed)\" {\n"
+		"  key <K1> { [ U%04X ] };\n"
+		"};\n"
+		"};\n", (unsigned)aChar);
+	if (n <= 0 || n >= (int)sizeof(km))
+		return false;
+	if (!LinuxWlUploadKeymapStr(km))
+		return false;
+	zwp_virtual_keyboard_v1_modifiers(s.vkbd, 0, 0, 0, 0);
+	// The virtual-keyboard key event carries an evdev keycode; sway maps it to
+	// an xkb keycode with the standard +8 offset, so our custom keymap's xkb
+	// keycode 9 (<K1>) is reached with evdev keycode 1 (the wtype model).
+	zwp_virtual_keyboard_v1_key(s.vkbd, 0, 1, WL_KEYBOARD_KEY_STATE_PRESSED);
+	zwp_virtual_keyboard_v1_key(s.vkbd, 0, 1, WL_KEYBOARD_KEY_STATE_RELEASED);
+	wl_display_flush(s.display);
+	// Restore the default keymap (the custom one is minimal; leaving it in
+	// place would garble subsequent ASCII key events).
+	LinuxWlUploadKeymapStr(sDefaultKeymap);
+	zwp_virtual_keyboard_v1_modifiers(s.vkbd, 0, 0, 0, 0);
+	wl_display_flush(s.display);
+	return true;
+}
 
 bool LinuxWaylandKeyEvent(unsigned int aVK, bool aDown)
 {
