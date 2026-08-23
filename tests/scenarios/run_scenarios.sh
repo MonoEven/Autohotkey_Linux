@@ -21,6 +21,7 @@ if [ -z "$AHK" ]; then
 fi
 if [ -z "$AHK" ] || [ ! -x "$AHK" ]; then
   echo "usage: run_scenarios.sh <ahk_binary> [--env x11|wayland]" >&2
+  echo "diag: AHK='$AHK' cwd=$(pwd) exists=$([ -e "$AHK" ] && echo yes || echo no)" >&2
   exit 2
 fi
 export AHK
