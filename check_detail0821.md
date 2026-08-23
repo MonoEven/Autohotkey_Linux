@@ -172,6 +172,13 @@ Level 3  内核输入层     evdev 捕获 + uinput 注入(ahk-inputd,需权限)
   被 evtest 在 AHK 虚拟设备上捕获**(全链闭环)。capslock_remap 场景的
   CapsLock/Esc 双角色即此机制 + hold/tap 判定,inputd 守护进程化是后续
   (场景 runner 的 needs 门禁已支持 uinput 未授权时 skip);
+  **R4 配置形式已交付**:`tools/linux/remap-template.ahk` —— 用 AHK 热键表达
+  remap(物理键 `FromKey::` → Send 目标键),含 CapsLock 双角色参考实现
+  (tap<200ms=CapsLock/hold≥200ms=Esc) + 简单 remap 示例;`AHK_INPUT_BACKEND
+  =evdev` + input/uinput 权限即运行。capslock_dual/evdev_remap 场景实测
+  该链(判定 + uinput 回放 KEY_ESC/KEY_B 被 evtest 捕获)。inputd 守护进程化
+  的剩余工作是:常驻进程管理(systemd service)、多客户端仲裁、panic 逃生键;
+  核心 remap 机制已闭环;
   2. n-key rollover/组合媒体键设备兼容性需要设备白名单(`EVIOCGBIT` 检查
      EV_KEY 且有字母区);
   3. keyd 实证的两个副作用要写进文档:虚拟键盘设备会让 libinput 的
