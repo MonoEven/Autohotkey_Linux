@@ -1,0 +1,8 @@
+id: ibus_compat
+title: "IBus session compatibility: the port runs + SendText Chinese does not crash (uinput clipboard fallback)"
+script: run_ibus.sh
+script_type: sh
+check: marker:/tmp/scn_ibus_compat
+envs: any
+expect: pass
+needs: ibus

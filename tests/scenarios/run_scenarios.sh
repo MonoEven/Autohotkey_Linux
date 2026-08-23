@@ -70,6 +70,7 @@ for yaml in "$DIR"/*/scenario.yaml; do
       *,flatpak,*) needs_missing="no Flatpak host" ;;
       *,inputd,*) needs_missing="no inputd daemon" ;;
       *,gnome,*) [ -n "${WAYLAND_DISPLAY:-}" ] && [ -S "/run/user/$(id -u)/at-spi/bus_0" ] || needs_missing="no GNOME session with a11y" ;;
+      *,ibus,*) pgrep -f ibus-daemon >/dev/null 2>&1 || needs_missing="no ibus-daemon" ;;
     esac
   fi
   # Env gate: scenario declares which envs it can run in.
