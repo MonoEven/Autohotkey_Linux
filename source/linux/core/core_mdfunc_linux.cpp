@@ -2150,8 +2150,12 @@ BIV_DECL_R(BIV_HotkeyBackend)
 		if (n != (size_t)-1)
 		{
 			wbuf[n] = 0;
-			aResultToken.SetValue(wbuf);
-			return;
+			// BIV results are read after this frame returns (ExpandExpression
+			// wcslens the value), so the string must be persistent -- returning
+			// a stack buffer is a stack-use-after-return under ASan.
+			LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((n + 1) * sizeof(TCHAR));
+			tmemcpy(persistent, wbuf, n + 1);
+			_f_return_p(persistent);
 		}
 	}
 	aResultToken.SetValue(_T(""));
