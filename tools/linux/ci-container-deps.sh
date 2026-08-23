@@ -14,12 +14,13 @@ case "$ID" in
       wayland-devel wayland-protocols-devel libxkbcommon-devel \
       libffi-devel dbus-devel gtk3-devel zlib-devel libjpeg-turbo-devel \
       glibc-devel
+    $SUDO dnf install -y pkgconf-pkg-config 2>/dev/null || true
     $SUDO dnf install -y xorg-x11-server-Xvfb xdotool 2>/dev/null || \
       echo "xvfb unavailable (smoke will skip)"
     ;;
   arch)
     $SUDO pacman -Sy --noconfirm --needed \
-      git cmake gcc make ninja \
+      git cmake gcc make ninja pkgconf \
       libx11 libxext libxrandr libxinerama libxtst libxi libxfixes \
       wayland wayland-protocols libxkbcommon \
       libffi dbus gtk3 zlib libjpeg-turbo
@@ -33,12 +34,16 @@ case "$ID" in
     export DEBIAN_FRONTEND=noninteractive
     $SUDO apt-get update -y
     $SUDO apt-get install -y --no-install-recommends \
-      git cmake g++ make ninja-build \
+      git cmake g++ make ninja-build pkg-config \
       libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev libxi-dev libxfixes-dev \
       libwayland-dev wayland-protocols libxkbcommon-dev \
       libffi-dev libdbus-1-dev libgtk-3-dev zlib1g-dev libjpeg-dev
     $SUDO apt-get install -y --no-install-recommends xvfb xdotool 2>/dev/null || \
       echo "xvfb unavailable (smoke will skip)"
+    # sway/weston are needed by the Wayland doc-check suite (the no-xwayland
+    # host job); best-effort -- the container jobs only run headless + smoke.
+    $SUDO apt-get install -y --no-install-recommends sway xwayland weston 2>/dev/null || \
+      echo "sway unavailable (Wayland suite will fail)"
     ;;
   *)
     echo "unsupported distro: $ID" >&2

@@ -704,19 +704,28 @@ __int64 FileTimeSecondsUntil(FILETIME *pftStart, FILETIME *pftEnd);
 SymbolType IsNumeric(LPCTSTR aBuf, BOOL aAllowNegative = false // BOOL vs. bool might squeeze a little more performance out of this frequently-called function.
 	, BOOL aAllowAllWhitespace = true, BOOL aAllowFloat = false, BOOL aAllowImpure = false);
 
-// The port ships its own strlcpy/wcslcpy for systems without them.  On Linux,
-// glibc provides both from 2.38 onward (ubuntu:22.04's 2.35 does not), so
-// declare (and define, in util.cpp) ours only when the libc lacks them -- the
-// container matrix caught this.  The port's signatures use the TCHAR typedefs,
-// so they cannot coexist with the libc's on glibc >= 2.38.
-#if !defined(__linux__) || !defined(__GLIBC__) || !__GLIBC_PREREQ(2, 38)
+// The port ships its own strlcpy/wcslcpy for systems without them.  On Linux
+// the port ALWAYS uses its own TCHAR-typed implementations under dedicated
+// names: glibc only provides strlcpy/wcslcpy from 2.38, and a binary built on
+// 2.39 would crash on 2.36 if it linked the libc's symbols (the container
+// matrix + the packed-binary acceptance caught this), so the runtime must be
+// self-contained.
+#ifndef __linux__
 void strlcpy(LPSTR aDst, LPCSTR aSrc, size_t aDstSize);
 void wcslcpy(LPWSTR aDst, LPCWSTR aSrc, size_t aDstSize);
-#endif
 #ifdef UNICODE
 #define tcslcpy wcslcpy
 #else
 #define tcslcpy strlcpy
+#endif
+#else
+void LinuxStrlcpy(LPSTR aDst, LPCSTR aSrc, size_t aDstSize);
+void LinuxWcslcpy(LPWSTR aDst, LPCWSTR aSrc, size_t aDstSize);
+#ifdef UNICODE
+#define tcslcpy LinuxWcslcpy
+#else
+#define tcslcpy LinuxStrlcpy
+#endif
 #endif
 int sntprintf(LPTSTR aBuf, int aBufSize, LPCTSTR aFormat, ...);
 int sntprintfcat(LPTSTR aBuf, int aBufSize, LPCTSTR aFormat, ...);
