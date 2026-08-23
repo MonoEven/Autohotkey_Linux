@@ -98,6 +98,27 @@ jobs:
       - name: Scenario runner (Xvfb)
         run: xvfb-run -a bash tests/scenarios/run_scenarios.sh "$BUILD_DIR/source/linux/core/ahk_core" --env x11
 
+      # check_detail0821 §16-6 / R4: a short soak -- high-frequency-ish Send
+      # under Xvfb with RSS stability (no unbounded growth) and no event loss.
+      - name: Soak (RSS stability + event count)
+        run: |
+          printf 'cnt := 0\nF6::{\n    global cnt\n    cnt++\n}\nSleep 300\nLoop 100 {\n    Send("{F6}")\n    Sleep 200\n}\nSleep 1000\nFileAppend("count=" cnt "\\n", "/tmp/soak_out.txt")\nExitApp\n' > /tmp/soak.ahk
+          xvfb-run -a bash -c '"$1" /tmp/soak.ahk' _ "$BUILD_DIR/source/linux/core/ahk_core" > /tmp/soak_run.log 2>&1 &
+          SPID=$!
+          RSS0=""; RSSN=""
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            kill -0 $SPID 2>/dev/null || break
+            rss=$(grep VmRSS /proc/$SPID/status 2>/dev/null | awk '{print $2}')
+            [ -n "$rss" ] && { [ -z "$RSS0" ] && RSS0=$rss; RSSN=$rss; }
+            sleep 2
+          done
+          wait $SPID
+          grep -q 'count=100' /tmp/soak_out.txt || { echo "FAIL: event loss"; exit 1; }
+          GROWTH=$(( ${RSSN:-0} - ${RSS0:-0} ))
+          echo "soak RSS growth_kb=$GROWTH (start=${RSS0:-?} end=${RSSN:-?})"
+          [ "$GROWTH" -lt 20000 ] || { echo "FAIL: RSS grew > 20MB"; exit 1; }
+          echo soak-pass
+
       # check0819: the published numbers in CHECK_REPORT.md used to drift by
       # hand (Wayland "847", XWayland 235 vs 247).  This recomputes every
       # count from the expect files and fails the pipeline on any mismatch,
