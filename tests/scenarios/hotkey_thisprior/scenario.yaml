@@ -1,0 +1,7 @@
+id: hotkey_thisprior
+title: A_ThisHotkey / A_PriorHotkey track the fired hotkeys
+script: run.ahk
+check: marker:/tmp/scn_hotkey_thisprior
+envs: x11
+expect: pass
+needs: ""

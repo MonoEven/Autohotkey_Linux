@@ -1,0 +1,7 @@
+id: flatpak_app
+title: SendText to a Flatpak-sandboxed app (needs a Flatpak host with AT-SPI portal)
+script: ""
+check: ""
+envs: any
+expect: unsupported
+needs: flatpak

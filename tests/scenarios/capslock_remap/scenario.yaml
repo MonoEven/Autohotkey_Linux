@@ -1,0 +1,7 @@
+id: capslock_remap
+title: CapsLock/Esc dual-role remap (needs the evdev inputd lane)
+script: ""
+check: ""
+envs: any
+expect: unsupported
+needs: inputd

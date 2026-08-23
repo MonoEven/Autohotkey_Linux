@@ -1,0 +1,7 @@
+id: a_and_b
+title: "a & b" custom-combo registration (X11: documented unsupported error)
+script: run.ahk
+check: script:grep -q '^err:' /tmp/scn_a_and_b
+envs: x11
+expect: unsupported
+needs: ""

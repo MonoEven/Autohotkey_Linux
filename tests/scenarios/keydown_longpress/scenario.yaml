@@ -1,0 +1,7 @@
+id: keydown_longpress
+title: Key-down hotkey fires repeatedly while held (bounded count)
+script: run.ahk
+check: marker:/tmp/scn_keydown_longpress
+envs: x11
+expect: pass
+needs: ""

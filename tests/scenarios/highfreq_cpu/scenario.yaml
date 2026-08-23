@@ -1,0 +1,7 @@
+id: highfreq_cpu
+title: High-frequency Send delivers all events without loss
+script: run.ahk
+check: marker:/tmp/scn_highfreq_cpu
+envs: x11
+expect: pass
+needs: ""

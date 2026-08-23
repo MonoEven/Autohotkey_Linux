@@ -1,0 +1,7 @@
+id: clipboard_roundtrip
+title: A_Clipboard round-trips large text (X11 XFixes)
+script: run.ahk
+check: marker:/tmp/scn_clipboard_roundtrip
+envs: x11
+expect: pass
+needs: ""

@@ -1,0 +1,7 @@
+id: hotkey_basic
+title: Basic hotkey fires via the X grab
+script: run.ahk
+check: marker:/tmp/scn_hotkey_basic
+envs: x11
+expect: pass
+needs: ""

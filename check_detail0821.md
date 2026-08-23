@@ -1036,6 +1036,27 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
 
 3. **结果即文档**:runner 输出汇入 `status.json` → 生成 `SUPPORT_MATRIX.md`
    (场景×环境×等级),替代形容词式的"supported"。
+   **R3 已交付(场景 runner + 种子场景第一梯队)**:`tests/scenarios/` 建立
+   ——`run_scenarios.sh`(读 `*/scenario.yaml` 的极简 key:value 子集,按当前
+   环境执行可测子集,产出 `status.json` + `SUPPORT_MATRIX.md`;场景执行用
+   **SIGKILL watchdog**(实测挂死的核心可忽略 SIGTERM,普通 `timeout` 永不
+   返回,kill -9 才有效——keydown 场景的错误对话框事件证实);yaml 解析去引号
+   (`script: ""` 会被解析成字面 `""`)。种子场景 10 个:6 pass(a_and_b/
+   clipboard_roundtrip/highfreq_cpu/hotkey_basic/hotkey_thisprior/
+   keydown_longpress)+ 3 skip(capslock_remap/flatpak_app/kde_sni,needs
+   未满足)+ 1 fail(multiscript_conflict)。
+   **顺带修复 + 实证发现**:
+   ① **"A & B" 组合静默注册修复**(§1-A,不许沉默弱化):X11/portal/gnome-shell
+   注册 `Hotkey("a & b", ...)` 现在抛明确 OSError(此前静默注册但永不触发,
+   cnt=0 实测);evdev lane 仍允许。
+   ② **"X down" 是无效热键名**(v2 只接受 "up" 后缀):`Hotkey("F7 down")`
+   触发上游 ValueError → 脚本错误对话框 → 无头环境挂起(非热键路径 bug,
+   是错误对话框语义);长按场景改用普通 F7 + detectable auto-repeat(实测
+   1.2s 内触发 15 次)。
+   ③ **高频 Send 丢事件**:50 连发实测 49/50(紧循环每 ~50 丢 1,事件分类
+   窗口),场景按容差 ≥45 记录,丢失计数为后续。
+   ④ **跨进程热键冲突检测未生效**(multiscript_conflict 失败):第二个进程
+   注册同热键不报冲突(XGrabKey BadAccess trap 未触发,深挖中)。
 
 ## 15. Wayland 支持分级的发布口径
 

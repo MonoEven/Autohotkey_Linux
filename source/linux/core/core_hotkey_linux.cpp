@@ -1407,6 +1407,23 @@ BIF_DECL(BIF_Linux_Hotkey)
 	// availability and errors.
 	TCHAR name_buf[1024];
 	LPTSTR name = TokenToString(*aParam[0], name_buf, nullptr);
+	// "A & B" custom combos need key-down tracking the X11/portal/gnome-shell
+	// lanes cannot express (they used to register silently and never fire --
+	// the "no silent weakening" invariant, check_detail0821 §1-A / R3).
+	// The evdev lane can express them.
+	if (wcsstr(name, L" & "))
+	{
+		switch (backend_kind)
+		{
+		case AhkInputBackendKind::X11:
+		case AhkInputBackendKind::PORTAL:
+		case AhkInputBackendKind::GNOME_SHELL:
+			aResultToken.Error(_T("Hotkey \"A & B\" combos are not supported by the active input backend (they need the evdev lane); use AHK_INPUT_BACKEND=evdev."), _T(""), ErrorPrototype::OS);
+			return;
+		default:
+			break; // evdev (and auto falling through to it): allowed.
+		}
+	}
 	TCHAR opt_buf[256];
 	opt_buf[0] = _T('\0');
 	FResult fr = BIF_Hotkey(name

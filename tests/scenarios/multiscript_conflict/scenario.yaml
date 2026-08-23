@@ -1,0 +1,7 @@
+id: multiscript_conflict
+title: Second process registering the same hotkey raises a conflict error
+script: run.ahk
+check: script:grep -q '^conflict:' /tmp/scn_multiscript_conflict
+envs: x11
+expect: pass
+needs: ""

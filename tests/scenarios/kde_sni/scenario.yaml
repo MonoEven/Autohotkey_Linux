@@ -1,0 +1,7 @@
+id: kde_sni
+title: Tray StatusNotifierItem on KDE Plasma (needs a KDE host)
+script: ""
+check: ""
+envs: any
+expect: unsupported
+needs: kde
