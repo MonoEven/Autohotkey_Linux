@@ -588,18 +588,28 @@
 3. **P1-5 联动**：`core_com_dbus_linux.cpp:475` 的 `-1` 超时改默认 25s
    （D-Bus 惯例）+ `ComDBusTimeout()` 可配，并给出 async 变体；
 4. `Str` ABI 差异、参数上限写入 parity.tsv 与 linux-port.htm。
+- **M0-C 实施状态**：Windows DLL/ProgID 的诚实错误与 Str/AStr/WStr、64
+  参数上限的 parity/doc 口径已落地并有 4 条断言；不再存在 `.dll` 静默改写，
+  因而未新增只为旧改写存在的 `A_DllCallRewrite`。第 3 项（25s 可配超时 +
+  async 变体）未冒充完成，留在 M5 AT-SPI/D-Bus 异步预算批次。
 - **修复复杂度：低-中。**
 
 ## 13. P2-4 发布信任链
 
-1. **主路径**：CI 增加 `actions/attest-build-provenance` 步骤对全部 dist
-   产物出证（公共仓库免费，Sigstore 公共实例 + 透明日志，SLSA Build L2；
-   [GitHub Artifact Attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations)）；
+1. **主路径**：CI 对全部 dist 产物出证（公共仓库免费，Sigstore 公共实例 +
+   透明日志，SLSA Build L2；[GitHub Artifact Attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations)）。
+   **M0-C 已实施**：按当前上游接口使用 `actions/attest@v4`（旧
+   `attest-build-provenance` 自 v4 起只是 wrapper，新实现官方建议直接用
+   `actions/attest`）；仅 release tag 或显式 workflow_dispatch 产生证明，随后
+   用 `gh attestation verify` 对每个包和 CKSUMS 反向验收；
    README 提供 `gh attestation verify <file> --repo MonoEven/Autohotkey_Linux`
    验证命令；
-2. **GPG 修正**：`pack-finalize.sh:50-61` 删除"无密钥则现场生成"分支——无
-   `AHK_RELEASE_SIGNING_KEY` secret 时**跳过签名并显式输出 UNSIGNED 标记**，
-   绝不再发布随包公钥；长期密钥指纹进 README 与 `SECURITY.md`；
+2. **GPG 修正（M0-C 已实施）**：`pack.sh`/`pack-finalize.sh` 已删除
+   “无密钥则现场生成”分支；无 `AHK_RELEASE_SIGNING_KEY` 时输出
+   `UNSIGNED.txt`，不生成签名或随包公钥。有密钥时还必须提供
+   `AHK_RELEASE_SIGNING_FINGERPRINT` 且导入结果精确匹配，否则构建失败；
+   `SECURITY.md` 明示尚未配置长期 key/fingerprint，不能把历史随包公钥视为
+   独立信任锚；
 3. 包验收脚本增加"验证 attestation 存在"的 gate。
 - **修复复杂度：低。**
 

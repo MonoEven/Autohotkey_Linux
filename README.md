@@ -87,7 +87,7 @@ ahk_core --pack my-script script.ahk
 | Desktop | GTK3 GUI/Menu, notifications, AutoHotkey StatusNotifierItem tray icon and `A_TrayMenu` |
 | Distribution | deb, RPM, tarball, AppImage, AUR PKGBUILD, Flatpak manifest and `--pack` |
 
-The authoritative test totals are **1148/1148** X11/headless assertions,
+The authoritative test totals are **1152/1152** X11/headless assertions,
 **17/17** native-Wayland assertions and **255/255** XWayland assertions. CI
 also runs regular and ASan builds, four distro containers, no-XWayland,
 packed-binary acceptance, scenario gates and an RSS/event-count soak.
@@ -129,12 +129,23 @@ bash tools/linux/pack-rpm.sh 2.0.26-linux.16
 bash tools/linux/pack-appimage.sh 2.0.26-linux.16
 ```
 
+Release-tag packages carry Sigstore/GitHub build provenance. After downloading
+an asset, verify it against this repository:
+
+```bash
+gh attestation verify <downloaded-package> --repo MonoEven/Autohotkey_Linux
+```
+
+See [SECURITY.md](SECURITY.md) for the checksum, attestation and OpenPGP trust
+policy.
+
 ## Project links
 
 - [Linux documentation](https://monoeven.github.io/Autohotkey_Linux/)
 - [Capabilities and design](docs-v2/docs/linux-port.htm)
 - [Scenario support matrix](tests/scenarios/SUPPORT_MATRIX.md)
 - [Engineering audit history](audits/README.md)
+- [Security and release provenance](SECURITY.md)
 - [Issues](https://github.com/MonoEven/Autohotkey_Linux/issues)
 - [Windows upstream](https://www.autohotkey.com/)
 

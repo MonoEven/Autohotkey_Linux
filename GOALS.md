@@ -45,7 +45,7 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - `ahk_core --pack`, `A_IsCompiled` and embedded FileInstall resources.
 - CI: regular + ASan, scenario gate, no-XWayland, packed-binary acceptance,
   RSS/event-count soak and fedora/arch/debian/ubuntu container builds.
-- Machine totals: 1148/1148 X11/headless, 17/17 Wayland and 255/255
+- Machine totals: 1152/1152 X11/headless, 17/17 Wayland and 255/255
   XWayland assertions; 27/27 headless regression tests.
 
 ## Active constraints / remaining work

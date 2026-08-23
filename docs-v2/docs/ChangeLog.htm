@@ -29,6 +29,13 @@
     out of the installed set and automatically recover after their former
     owner exits. Current branch totals are 1148/1148 X11/headless, 17/17
     Wayland and 255/255 XWayland assertions.</li>
+  <li><b>M0-C honesty and provenance:</b> Windows DLL specifications and known
+    Windows COM ProgIDs now raise migration-specific errors instead of being
+    reinterpreted as Linux libraries/D-Bus names. Release-tag packages use
+    GitHub Artifact Attestations (Sigstore/SLSA Build L2); packaging no longer
+    generates ephemeral OpenPGP identities and emits an explicit unsigned
+    marker when no pinned long-term key is configured. Current X11/headless
+    total: 1152/1152.</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>

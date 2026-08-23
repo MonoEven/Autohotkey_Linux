@@ -4,9 +4,9 @@
 Reads tests/doccheck/parity.tsv and inserts a small badge line under each
 matching function's <h1> in docs-v2/docs/lib/<name>.htm, so the four-level
 classification (P2 adapted / P3 simulated / P4 unavailable) is visible on the
-function's own documentation page.  Idempotent: a page already carrying the
-badge marker is left untouched.  --check fails when a table entry with a doc
-page has no badge (CI gate against drift).
+function's own documentation page. Existing badges are replaced when their
+level/note drifts. --check requires an exact generated match, not merely the
+presence of an id marker.
 """
 import os
 import re
@@ -16,6 +16,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TSV = os.path.join(ROOT, "tests", "doccheck", "parity.tsv")
 LIB = os.path.join(ROOT, "docs-v2", "docs", "lib")
 MARKER = 'id="linux-parity"'
+BADGE_RE = re.compile(r'<p\b(?=[^>]*\bid="linux-parity")[^>]*>.*?</p>', re.S)
 
 LABELS = {2: "adapted", 3: "simulated", 4: "unavailable"}
 
@@ -48,33 +49,40 @@ def _badge(name, level, note):
 
 def main():
     check = "--check" in sys.argv
-    missing = []
-    injected = 0
+    stale = []
+    updated = 0
     for name, level, note in _entries():
         path = os.path.join(LIB, name + ".htm")
         if not os.path.exists(path):
             continue
         html = open(path, encoding="utf-8").read()
-        if MARKER in html:
-            continue
-        if check:
-            missing.append(name)
-            continue
-        m = re.search(r"(<h1>.*?</h1>\s*)", html, re.S)
-        if not m:
-            print("warning: no <h1> in %s" % path)
-            continue
         badge = _badge(name, level, note)
-        html = html[:m.end()] + badge + "\n" + html[m.end():]
+        existing = BADGE_RE.search(html)
+        if existing:
+            if existing.group(0) == badge:
+                continue
+            if check:
+                stale.append(name)
+                continue
+            html = html[:existing.start()] + badge + html[existing.end():]
+        else:
+            if check:
+                stale.append(name)
+                continue
+            m = re.search(r"(<h1>.*?</h1>\s*)", html, re.S)
+            if not m:
+                print("warning: no <h1> in %s" % path)
+                continue
+            html = html[:m.end()] + badge + "\n" + html[m.end():]
         open(path, "w", encoding="utf-8").write(html)
-        injected += 1
+        updated += 1
     if check:
-        if missing:
-            print("parity badges MISSING for: %s" % ", ".join(missing))
+        if stale:
+            print("parity badges MISSING/STALE for: %s" % ", ".join(stale))
             sys.exit(1)
         print("parity badges: up to date")
     else:
-        print("parity badges injected: %d" % injected)
+        print("parity badges updated: %d" % updated)
 
 
 if __name__ == "__main__":

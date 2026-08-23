@@ -19,6 +19,28 @@ void DefineComPrototypeMembers()
 	Object::DefineMetadataMembers(Object::sComArrayPrototype, _T("ComObjArray"), ComObject::sArrayMembers, 6);
 }
 
+static bool LinuxComRejectWindowsProgId(ResultToken &aResultToken, const wchar_t *aSpec)
+{
+	if (!aSpec || !*aSpec || wcschr(aSpec, L'/'))
+		return false;
+	static const wchar_t *known[] = {
+		L"Excel.", L"Word.", L"PowerPoint.", L"Outlook.", L"Access.",
+		L"WScript.", L"Scripting.", L"Shell.Application", L"InternetExplorer.",
+		nullptr
+	};
+	for (int i = 0; known[i]; ++i)
+	{
+		size_t n = wcslen(known[i]);
+		if (!_tcsnicmp(aSpec, known[i], n))
+		{
+			aResultToken.Error(_T("Windows COM automation is not available on Linux; ComObject/ComObjGet accept D-Bus service specifications (for example org.freedesktop.DBus): ")
+				, aSpec, ErrorPrototype::OS);
+			return true;
+		}
+	}
+	return false;
+}
+
 // ---------------------------------------------------------------------------
 // ComValue.Call / ComObject.Call / ComObjFromPtr
 // ---------------------------------------------------------------------------
@@ -39,6 +61,8 @@ static void LinuxComCallImpl(ResultToken &aResultToken, ExprTokenType *aParam[],
 	{
 		// ComObject(spec [, iid]): spec is a service name / path / interface.
 		LPTSTR spec = TokenToString(first);
+		if (LinuxComRejectWindowsProgId(aResultToken, spec))
+			return;
 		ComObject *obj = LinuxComNewProxy(spec);
 		if (!obj)
 			_f_throw_value(ERR_PARAM1_INVALID);
@@ -66,6 +90,8 @@ static void LinuxComCallImpl(ResultToken &aResultToken, ExprTokenType *aParam[],
 	if (vtype == 9 || vtype == 13) // VT_DISPATCH / VT_UNKNOWN: wrap a string spec as a proxy.
 	{
 		LPTSTR spec = TokenToString(val);
+		if (LinuxComRejectWindowsProgId(aResultToken, spec))
+			return;
 		ComObject *obj = LinuxComNewProxy(spec);
 		if (obj)
 			_f_return(obj);
@@ -139,6 +165,8 @@ BIF_DECL(BIF_ComObjGet)
 {
 	// ComObjGet(name): connect to a named service (D-Bus).
 	LPTSTR spec = TokenToString(*aParam[0]);
+	if (LinuxComRejectWindowsProgId(aResultToken, spec))
+		return;
 	ComObject *obj = LinuxComNewProxy(spec);
 	if (!obj)
 	{
@@ -153,6 +181,8 @@ BIF_DECL(BIF_ComObjActive)
 {
 	// No "active object" concept on Linux; treat like ComObjGet.
 	LPTSTR spec = TokenToString(*aParam[0]);
+	if (LinuxComRejectWindowsProgId(aResultToken, spec))
+		return;
 	ComObject *obj = LinuxComNewProxy(spec);
 	if (!obj)
 	{

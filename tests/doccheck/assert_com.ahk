@@ -61,6 +61,16 @@ try {
 bus2 := ComObjGet("org.freedesktop.DBus")
 MsgBox "get_alias=" (ComObjType(bus2) = 9)
 
+; Windows ProgIDs must not be silently reinterpreted as D-Bus names.
+try
+    ComObject("Excel.Application")
+catch as e
+    MsgBox "windows_progid_err=" (InStr(e.Message, "Windows COM automation is not available") ? 1 : 0)
+try
+    ComObjGet("WScript.Shell")
+catch as e
+    MsgBox "windows_get_err=" (InStr(e.Message, "Windows COM automation is not available") ? 1 : 0)
+
 ; --- ComObjFlags ---
 vf2 := ComValue(3, 1)
 MsgBox "flags0=" (ComObjFlags(vf2) = 0)

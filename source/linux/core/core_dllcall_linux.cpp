@@ -19,8 +19,9 @@
 // Differences from Windows (documented):
 //   - stdcall/cdecl are the same ABI on Linux; "CDecl" is accepted.
 //   - HRESULT semantics are honored (negative -> OSError).
-//   - AStr = UTF-8, WStr = UTF-16LE, Str = native wide (UTF-32 on this
-//     port, matching upstream's "native string" concept).
+//   - Str/AStr = UTF-8 char*, WStr = UTF-16LE.  A Windows .dll/user32-style
+//     specification is rejected with migration guidance instead of being
+//     heuristically rewritten to a similarly named .so.
 //   - A trailing "*" in the type (e.g. "Int*") passes the address and
 //     writes the result back to the variable.
 
@@ -33,6 +34,8 @@
 #include <ffi.h>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
+#include <cwctype>
 #include <cwchar>
 #include <string>
 #include <vector>
@@ -109,10 +112,6 @@ void *LinuxDlLoad(const wchar_t *aName, bool aRequired)
 	narrow[sizeof(narrow) - 1] = '\0';
 
 	std::string name = narrow;
-	// Strip a Windows-style .dll suffix.
-	if (name.size() >= 4 && !strcasecmp(name.c_str() + name.size() - 4, ".dll"))
-		name.resize(name.size() - 4);
-
 	std::vector<std::string> candidates;
 	size_t slash = name.find_last_of('/');
 	std::string base = (slash == std::string::npos) ? name : name.substr(slash + 1);
@@ -143,6 +142,29 @@ void *LinuxDlSym(void *aHandle, const char *aSymbol)
 const char *LinuxDlError()
 {
 	return dlerror();
+}
+
+static bool LinuxLooksLikeWindowsDll(const wchar_t *aName)
+{
+	if (!aName || !*aName)
+		return false;
+	const wchar_t *base = aName;
+	for (const wchar_t *p = aName; *p; ++p)
+		if (*p == L'/' || *p == L'\\')
+			base = p + 1;
+	std::wstring name(base);
+	std::transform(name.begin(), name.end(), name.begin(), towlower);
+	if (name.size() >= 4 && name.compare(name.size() - 4, 4, L".dll") == 0)
+		return true;
+	static const wchar_t *known[] = {
+		L"advapi32", L"comctl32", L"comdlg32", L"gdi32", L"kernel32",
+		L"ntdll", L"ole32", L"oleaut32", L"shell32", L"user32",
+		L"winmm", L"ws2_32", nullptr
+	};
+	for (int i = 0; known[i]; ++i)
+		if (name == known[i])
+			return true;
+	return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -359,6 +381,12 @@ static void LinuxDllCallImpl(ResultToken &aResultToken, ExprTokenType *aParam[],
 			{
 				*func_part = L'\0';
 				++func_part;
+				if (LinuxLooksLikeWindowsDll(spec_str))
+				{
+					aResultToken.Error(_T("Windows DLL is not available on Linux; DllCall here is Linux-native FFI for .so libraries: ")
+						, spec_str, ErrorPrototype::OS);
+					return;
+				}
 				void *hmodule = LinuxDlLoad(spec_str, false);
 				if (!hmodule)
 				{

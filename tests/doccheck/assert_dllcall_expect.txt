@@ -25,5 +25,7 @@ in_only_unchanged=1
 out_buf=1
 missing_fn_err=1
 missing_dll_err=1
+windows_dll_err=1
+windows_lib_err=1
 bad_type_err=1
 bad_ret_err=1

@@ -72,8 +72,11 @@ specific release for upgrading/downgrading (e.g.
 <code>--</code> prefix so plain names like <code>update.ahk</code> are always
 run as scripts.  Every release since v2.0.26-linux.15 stays published on the
 <a href="https://github.com/MonoEven/Autohotkey_Linux/releases">Releases page</a>
-(with a <code>CKSUMS.txt</code> of SHA-256 hashes and an OpenPGP detached
-signature), so <code>ahk --update &lt;VER&gt;</code> can upgrade <em>or
+with a <code>CKSUMS.txt</code> SHA-256 manifest. New release-tag builds also
+publish Sigstore/GitHub Artifact Attestations; verify a package with
+<code>gh attestation verify &lt;file&gt; --repo MonoEven/Autohotkey_Linux</code>.
+OpenPGP is emitted only when a pinned long-term key is configured; otherwise
+<code>UNSIGNED.txt</code> says so explicitly. Thus <code>ahk --update &lt;VER&gt;</code> can upgrade <em>or
 downgrade</em> to any published release; fixes and bespoke state can be rolled
 back.  Releases before linux.15 (linux.14 and earlier) were removed when the
 new installer line shipped &mdash; their source remains on the

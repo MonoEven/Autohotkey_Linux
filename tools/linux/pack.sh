@@ -188,48 +188,7 @@ echo
 echo "Packages in ./dist/"
 ls -la dist/*.tar.gz dist/*.deb 2>/dev/null
 
-# --- checksums + trust note (check0820: keep every release, allow
-# rollback; a CKSUMS.txt of SHA-256 hashes ships with each release) ----
-CKSUMS=dist/CKSUMS.txt
-{
-  echo "AutoHotkey v2 Linux port release v$VER (built $(date -u +%Y-%m-%dT%H:%MZ))"
-  echo "SHA-256 (one per line: '<hash>  <filename>'):"
-  for f in "$TARBALL" "$DEB"; do
-    [ -f "$f" ] || continue
-    name=$(basename "$f")
-    printf '  %s  %s\n' "$(sha256sum "$f" | awk '{print $1}')" "$name"
-  done
-  echo
-  echo "These hashes are computed from the files as packaged.  Verify a"
-  echo "downloaded artifact with:  sha256sum -c <(grep '<filename>' CKSUMS.txt)"
-  echo "CKSUMS.txt.sig is an OpenPGP detached signature (ASC) of this file."
-  echo "Verify with:  gpg --verify CKSUMS.txt.sig CKSUMS.txt"
-  echo "The public key is tools/linux/ahk-release.pub (AutoHotkey Linux"
-  echo "Release <release@autohotkey-linux.invalid>)."
-} > "$CKSUMS"
-echo "built: dist/CKSUMS.txt"
-
-# --- OpenPGP signature (check0820): sign CKSUMS.txt so the release can be
-# verified end-to-end.  Uses the maintained release key from GNUPG if
-# present; otherwise generates a throwaway key (CI) and exports the public
-# half so the artifact set is self-contained.
-if command -v gpg >/dev/null 2>&1; then
-  KEYID="release@autohotkey-linux.invalid"
-  if ! gpg --batch --list-secret-keys "$KEYID" >/dev/null 2>&1; then
-    echo "AHK sign: generating a release-signing key (ephemeral) ..."
-    gpg --batch --generate-key <<GPGEOF 2>/dev/null
-%no-protection
-Key-Type: RSA
-Key-Length: 2048
-Name-Real: AutoHotkey Linux Release
-Name-Email: $KEYID
-Expire-Date: 0
-%commit
-GPGEOF
-  fi
-  gpg --batch --yes --detach-sign --armor "$CKSUMS" 2>/dev/null
-  gpg --armor --export "$KEYID" > dist/ahk-release.pub 2>/dev/null
-  # gpg --detach-sign --armor writes "<file>.asc"; keep that convention.
-  [ -s "$CKSUMS.asc" ] && echo "built: dist/CKSUMS.txt.asc" \
-    || echo "AHK sign: warning: gpg signature failed (CKSUMS.txt.asc missing)"
-fi
+# Generate checksums and the explicit trust status. pack-finalize.sh is run
+# again after AppImage/RPM creation by CI so the final manifest covers all
+# release artifacts. It never creates an ephemeral signing identity.
+bash tools/linux/pack-finalize.sh "$VER"

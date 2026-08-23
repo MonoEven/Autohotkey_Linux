@@ -13,7 +13,8 @@
 
 <h1>DllCall</h1>
 
-<div class="note" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> DllCall calls functions in native Linux shared objects (<b>.so</b> files, resolved via dlopen/dlsym and called through libffi). Windows DLLs are not loadable. "Str" means a UTF-8 <code>char*</code> (same as AStr); "WStr" is UTF-16LE. Output parameters require a variable reference (<code>&amp;Var</code>), as in upstream v2.</div>
+<p class="parity-badge parity-p2" id="linux-parity" title="Linux-native FFI uses .so/dlopen/libffi (maximum 64 ABI arguments); Windows .dll/user32-style specifications raise a migration error; Str/AStr are UTF-8 and WStr is UTF-16LE">Linux parity: P2 adapted</p>
+<div class="note" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> DllCall calls functions in native Linux shared objects (<b>.so</b> files, resolved via dlopen/dlsym and called through libffi). A <code>.dll</code> or known Windows library specification such as <code>user32\MessageBoxW</code> raises an explicit migration error; it is never silently rewritten to a similarly named <code>.so</code>. <code>Str</code> means a UTF-8 <code>char*</code> (same as AStr); <code>WStr</code> is UTF-16LE, and the libffi backend accepts at most 64 ABI arguments. Output parameters require a variable reference (<code>&amp;Var</code>), as in upstream v2.</div>
 
 <p>Calls a function inside a DLL, such as a standard Windows API function.</p>
 

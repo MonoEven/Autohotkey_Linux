@@ -67,6 +67,14 @@ try
 catch
     MsgBox "missing_dll_err=1"
 try
+    DllCall("user32.dll\MessageBoxW")
+catch as e
+    MsgBox "windows_dll_err=" (InStr(e.Message, "Windows DLL is not available") ? 1 : 0)
+try
+    DllCall("user32\MessageBoxW")
+catch as e
+    MsgBox "windows_lib_err=" (InStr(e.Message, "Windows DLL is not available") ? 1 : 0)
+try
     DllCall("abs", "BogusType", 1)
 catch
     MsgBox "bad_type_err=1"

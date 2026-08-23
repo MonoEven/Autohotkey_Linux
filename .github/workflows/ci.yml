@@ -3,9 +3,16 @@ name: CI
 on:
   push:
     branches: [linux-port]
+    tags: ['v*']
   pull_request:
     branches: [linux-port]
   workflow_dispatch:
+    inputs:
+      attest_release:
+        description: "Generate and verify release artifact attestations"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -244,6 +251,16 @@ jobs:
   package:
     runs-on: ubuntu-24.04
     needs: build-and-test
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      # Empty secrets produce an explicit UNSIGNED marker; they never trigger
+      # key generation. When configured, both values are mandatory.
+      AHK_RELEASE_SIGNING_KEY: ${{ secrets.AHK_RELEASE_SIGNING_KEY }}
+      AHK_RELEASE_SIGNING_FINGERPRINT: ${{ secrets.AHK_RELEASE_SIGNING_FINGERPRINT }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -336,14 +353,19 @@ jobs:
           grep -E '^  [0-9a-f]{64}  ' dist/CKSUMS.txt | sed -n 's/^  //p' > /tmp/ck.txt
           ( cd dist && sha256sum -c /tmp/ck.txt )
 
-      # check0820: CKSUMS.txt is OpenPGP-signed (dist/CKSUMS.txt.asc +
-      # dist/ahk-release.pub) so the release can be verified end-to-end.
-      - name: Verify release signature
+      # M0-C: no self-generated OpenPGP identities. A build is either signed
+      # by a configured, fingerprint-pinned long-term key or explicitly marked
+      # UNSIGNED; release provenance is provided by the attestation steps below.
+      - name: Verify explicit OpenPGP trust status
         run: |
-          test -s dist/CKSUMS.txt.asc || { echo "missing CKSUMS.txt.asc"; exit 1; }
-          test -s dist/ahk-release.pub || { echo "missing ahk-release.pub"; exit 1; }
-          gpg --batch --import dist/ahk-release.pub 2>/dev/null
-          gpg --batch --verify dist/CKSUMS.txt.asc dist/CKSUMS.txt
+          if test -s dist/CKSUMS.txt.asc; then
+            test -s dist/SIGNING_KEY_FINGERPRINT.txt
+            grep -q 'OpenPGP status: SIGNED with pinned' dist/CKSUMS.txt
+          else
+            test -s dist/UNSIGNED.txt
+            grep -q 'OpenPGP status: UNSIGNED' dist/CKSUMS.txt
+            test ! -e dist/ahk-release.pub
+          fi
 
       # check0819 P2-1: actually INSTALL each package, run the interpreter
       # and the launcher commands, then remove it again -- the previous
@@ -354,6 +376,29 @@ jobs:
         run: |
           VER=$(ls dist/autohotkey-linux-*-amd64.deb | sed -n 's/.*linux-\([0-9.]*-linux\.[0-9]*\)-amd64.deb/\1/p' | head -1)
           bash tools/linux/verify-packages.sh "$VER"
+
+      # Current GitHub guidance uses actions/attest@v4. Public repositories
+      # receive a Sigstore Public Good signature + transparency-log entry
+      # (SLSA Build L2 provenance). Normal branch CI deliberately skips this.
+      - name: Attest release package provenance
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.attest_release == true }}
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            dist/autohotkey-linux-*.tar.gz
+            dist/autohotkey-linux-*.deb
+            dist/autohotkey-linux-*.rpm
+            dist/autohotkey-linux-*.AppImage
+            dist/CKSUMS.txt
+
+      - name: Verify release package attestations
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.attest_release == true }}
+        run: |
+          for artifact in dist/autohotkey-linux-*.tar.gz dist/autohotkey-linux-*.deb \
+                          dist/autohotkey-linux-*.rpm dist/autohotkey-linux-*.AppImage \
+                          dist/CKSUMS.txt; do
+            gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY"
+          done
 
       - name: Upload release assets
         uses: actions/upload-artifact@v5
@@ -366,5 +411,6 @@ jobs:
             dist/autohotkey-linux-*.AppImage
             dist/CKSUMS.txt
             dist/CKSUMS.txt.asc
-            dist/ahk-release.pub
+            dist/SIGNING_KEY_FINGERPRINT.txt
+            dist/UNSIGNED.txt
           if-no-files-found: error

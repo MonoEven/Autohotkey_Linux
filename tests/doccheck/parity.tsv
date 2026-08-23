@@ -12,9 +12,9 @@
 # the per-function evidence); keep this list in sync with that audit and with
 # tools/gen_parity.py (which regenerates source/linux/parity_data.h).
 #
-ComObject	P2	COM is a D-Bus adaptation: no IUnknown/IDispatch pointers; ComObject maps to a D-Bus service proxy
-ComObjGet	P2	COM is a D-Bus adaptation: ComObjGet creates a proxy for a D-Bus service
-ComObjActive	P2	COM is a D-Bus adaptation: ComObjActive is approximated by ComObjGet
+ComObject	P2	COM is a D-Bus adaptation: no IUnknown/IDispatch pointers; D-Bus service specs create proxies and known Windows ProgIDs raise a migration error
+ComObjGet	P2	COM is a D-Bus adaptation: D-Bus service specs create proxies and known Windows ProgIDs raise a migration error
+ComObjActive	P2	COM is a D-Bus adaptation: approximated by ComObjGet; known Windows ProgIDs raise a migration error
 ComObjFromPtr	P2	COM is a D-Bus adaptation: the pointer is treated as an opaque D-Bus handle
 ComObjType	P2	COM is a D-Bus adaptation: 'IID' returns a "(D-Bus)" placeholder
 ComObjFlags	P2	COM is a D-Bus adaptation: flags operate on the D-Bus wrapper, not a COM object
@@ -24,6 +24,7 @@ ComCall	P4	No COM vtable on Linux: raises "Invalid arg type." / "Invalid paramet
 ComObjArray	P4	SafeArray has no Linux counterpart: raises an explicit not-ported error
 ComObjQuery	P4	IUnknown/IID query has no Linux counterpart: raises an explicit not-ported error
 ComObjConnect	P4	COM event sink has no Linux counterpart: raises an explicit not-ported error
+DllCall	P2	Linux-native FFI uses .so/dlopen/libffi (maximum 64 ABI arguments); Windows .dll/user32-style specifications raise a migration error; Str/AStr are UTF-8 and WStr is UTF-16LE
 FileCreateShortcut	P2	Uses .desktop/.url instead of .lnk (icon index / run state fields defaulted)
 FileGetShortcut	P2	Reads .desktop/.url instead of .lnk (documented field semantics)
 SoundBeep	P2	Terminal/X11 bell; Frequency is ignored (no pitch control)

@@ -14,5 +14,7 @@ getid_ok=1
 listnames_ok=1
 bogus_err=1
 get_alias=1
+windows_progid_err=1
+windows_get_err=1
 flags0=1
 flags1=1

@@ -58,9 +58,9 @@ examples fall into three groups on Linux:</p>
 <p>The generated worklist records <b>369 implemented functions</b> and three
 explicit unavailable Windows COM boundaries (ComObjArray/Connect/Query);
 TrayTip is a desktop notification and TraySetIcon a StatusNotifierItem tray
-icon. 1148 doc-check assertions pass under Xvfb (including 29
-for <code>DllCall</code> against native <b>.so</b> libraries and 18 for the
-D-Bus COM layer). The port has two display backends:</p>
+icon. 1152 doc-check assertions pass under Xvfb (including 29
+for <code>DllCall</code> against native <b>.so</b> libraries and migration errors,
+and 20 for the D-Bus COM layer). The port has two display backends:</p>
 <ul>
   <li><b>X11 backend</b> (preferred when DISPLAY is set, including
     XWayland sessions): window management (Win*), controls, hotkeys via
@@ -222,12 +222,15 @@ D-Bus COM layer). The port has two display backends:</p>
     typed values (integers, doubles, strings, booleans, bytes). Windows
     COM interfaces (IUnknown/IDispatch pointers, SafeArrays, events) do
     not exist on Linux; ComObjQuery/ComObjConnect/ComObjArray raise an
-    error.</li>
+    error. Known Windows ProgIDs such as <code>Excel.Application</code> raise
+    migration guidance instead of becoming malformed D-Bus proxies.</li>
   <li><b>DllCall is supported</b> for native Linux shared objects (.so):
     functions are resolved with dlopen/dlsym and called through libffi,
     with Int/Int64/Short/Char/Float/Double/Ptr/Str/AStr/WStr argument
     types, by-address (&amp;Var) output parameters, and HRESULT-style
-    error reporting. Windows DLLs are not loadable.</li>
+    error reporting. A <code>.dll</code> or known Windows library name raises
+    explicit Linux-native FFI migration guidance and is never silently
+    rewritten to a similarly named <code>.so</code>.</li>
   <li>No registry access (Windows registry), no Win32 messages for other
     windows.</li>
   <li>The <code>SoundGet*/SoundSet*</code> mixer functions are available via
@@ -383,7 +386,7 @@ Highlights of this release:</p>
     <b>evdev/uinput permission artifacts</b>
     (<code>tools/linux/permissions/</code>: udev rule, input group,
     polkit action, install script — VM-verified).</li>
-  <li>Doc-check: 1148/1148 assertions pass on both the normal and the ASan
+  <li>Doc-check: 1152/1152 assertions pass on both the normal and the ASan
     builds; regression 27/27, Wayland 17/17, XWayland 255/255. (The
     authoritative numbers are machine-verified in CI by
     <code>verify_report_numbers.sh</code>.)</li>
@@ -488,9 +491,13 @@ and feedback of the AutoHotkey-on-Linux community:</p>
 <p>Release artifacts and their evaluation:</p>
 <ul>
   <li><b>tarball + <code>.deb</code></b> (amd64; arm64 builds the same way)
-    &mdash; shipped with every release, plus <code>CKSUMS.txt</code>
-    (SHA-256) and an OpenPGP detached signature
-    (<code>CKSUMS.txt.asc</code>, key <code>tools/linux/ahk-release.pub</code>).</li>
+    &mdash; shipped with every release, plus a <code>CKSUMS.txt</code> SHA-256
+    manifest. Release-tag packages use GitHub Artifact Attestations
+    (<code>actions/attest@v4</code>, Sigstore transparency log, SLSA Build L2)
+    as the primary provenance chain; verify with
+    <code>gh attestation verify &lt;file&gt; --repo MonoEven/Autohotkey_Linux</code>.
+    Packaging never generates an ephemeral OpenPGP key: without a configured,
+    fingerprint-pinned long-term key it emits <code>UNSIGNED.txt</code>.</li>
   <li><b>AppImage</b> &mdash; built by <code>tools/linux/pack-appimage.sh</code>
     (appimagetool; icon handling and no-FUSE extraction fixed in linux.15).
     Carries the interpreter and a launcher; GUI toolkits come from the host.</li>
