@@ -16,6 +16,8 @@ txt := FileRead(diag_out)
 MsgBox "diag_ran=" (InStr(txt, "=== AutoHotkey Linux diagnostic ===") ? 1 : 0)
 MsgBox "diag_header=" (InStr(txt, "=== end diagnostic ===") ? 1 : 0)
 MsgBox "diag_input_backend=" (InStr(txt, "input-backend:") ? 1 : 0)
+MsgBox "diag_caps_v2=" (InStr(txt, "caps-version=2")
+    && InStr(txt, "scan_code=") && InStr(txt, "synthetic_provenance=") ? 1 : 0)
 MsgBox "diag_gnome_major_line=" (InStr(txt, "gnome-major  :") ? 1 : 0)
 ; Fail-closed in CI/headless: no org.gnome.Shell on the bus and no
 ; gnome-shell-version file => "0 (unknown)".

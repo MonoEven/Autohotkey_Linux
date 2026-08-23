@@ -65,6 +65,18 @@ enum class AhkInputBackendKind
 // stream); suppression needs EVIOCGRAB (input group / root) and unmatched
 // keys are replayed through /dev/uinput.  Without grab permission it is a
 // listen-only lane (hotkeys still fire; keys pass through to the app).
+// Provenance strength for synthetic events.  HEURISTIC means the backend can
+// identify its own injections only through process-local/device heuristics;
+// AUTHORITATIVE is reserved for a broker/compositor-stamped origin.
+enum class AhkSyntheticProvenance
+{
+	NONE,
+	HEURISTIC,
+	AUTHORITATIVE,
+};
+
+constexpr unsigned AHK_INPUT_CAPS_VERSION = 2;
+
 struct AhkInputBackendCaps
 {
 	bool global_hotkeys;   // Can register global hotkeys.
@@ -76,6 +88,12 @@ struct AhkInputBackendCaps
 	bool zero_confirm;     // No per-binding confirmation dialog.
 	bool dynamic;          // Runtime register/unregister.
 	bool multi_owner;      // Multiple scripts can register concurrently.
+	bool scan_code;        // Script-level scXXX registration is implemented.
+	bool custom_combo;     // Native a & b prefix-combo state machine exists.
+	bool char_stream;      // Hotstring/InputHook character stream is usable.
+	AhkSyntheticProvenance synthetic_provenance;
+	bool send_level_gate;  // SendLevel/InputLevel is enforced on this lane.
+	bool injection_unicode;// Direct arbitrary-Unicode injection (not paste).
 };
 
 // Resolve the effective backend from the environment (see file header).
@@ -92,9 +110,13 @@ int LinuxGnomeMajorVersion();
 // Capabilities of the currently effective backend (kind + caps).
 const AhkInputBackendCaps *LinuxInputBackendCaps();
 const char *LinuxInputBackendName();
+unsigned LinuxInputBackendCapsVersion();
+const char *LinuxInputBackendProvenanceName(AhkSyntheticProvenance aValue);
 
-// Capabilities of a specific backend kind (for per-hotkey routing queries).
+// Capabilities/name of a specific backend kind (for per-hotkey routing and
+// generated documentation queries).
 const AhkInputBackendCaps *LinuxInputBackendCapsFor(AhkInputBackendKind aKind);
+const char *LinuxInputBackendNameFor(AhkInputBackendKind aKind);
 
 // Per-hotkey backend routing (check_detail0821 §1-A / R3): pick the best
 // backend whose capabilities satisfy the hotkey's needs (tilde passthrough,

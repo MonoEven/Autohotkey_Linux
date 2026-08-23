@@ -41,8 +41,10 @@ Send("hello ")              ; no match -> passthrough.
 SendText("你好")             ; round-34: CJK trigger -> "cn".
 Sleep(800)
 
-; Callback result.
+; Callback result + caps behavior contract: a backend may advertise
+; char_stream only when a real Hotstring fired on its character stream.
 Log("hs_cb=" cnt)
+Log("hs_caps_contract=" (HotkeyBackendGet().char_stream = 1 && cnt = 1 ? 1 : 0))
 ; Let the last forwarded events reach the client before reading its log.
 Sleep(500)
 ; Foreground client results (xkeycap keysym log).

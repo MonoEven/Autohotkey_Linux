@@ -16,6 +16,17 @@
 
 <h2 id="linux">Linux port changes</h2>
 
+<h2 id="linux-unreleased">Unreleased (check_detail0824 M0)</h2>
+<ul>
+  <li><b>Versioned input capability contract:</b>
+    <code>HotkeyBackendGet()</code> and <code>ahk_core --diag</code> now expose
+    <code>caps_version=2</code>, scan-code/custom-combo/character-stream,
+    synthetic provenance strength, SendLevel gating and direct-Unicode fields.
+    The backend table and Linux documentation are generated from one source;
+    CI rejects drift. Current branch totals are 1147/1147 X11/headless,
+    17/17 Wayland and 254/254 XWayland assertions.</li>
+</ul>
+
 <h2 id="linux.16">v2.0.26-linux.16</h2>
 <p><b>Wayland, packaging, interoperability and release-quality update:</b></p>
 <ul>
@@ -35,7 +46,7 @@
     blocking forever on an unclickable Xvfb dialog.</li>
   <li>Expanded CI with scenario gates, regular + ASan builds, four distribution
     containers, a no-XWayland job, packed-binary acceptance and RSS/event-count
-    soak. Current totals: 1143/1143 X11/headless, 17/17 Wayland and 252/252
+    soak. Release totals: 1143/1143 X11/headless, 17/17 Wayland and 252/252
     XWayland assertions.</li>
   <li>Added GNOME Wayland AT-SPI/portal/IBus/SNI scenarios, AUR and Flatpak
     metadata, and a concise README which links to the detailed capability

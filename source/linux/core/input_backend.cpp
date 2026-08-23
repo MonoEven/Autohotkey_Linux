@@ -217,24 +217,38 @@ AhkInputBackendKind &CurrentKind()
 	return sKind;
 }
 
+struct InputCapsEntry
+{
+	AhkInputBackendKind kind;
+	const char *name;
+	AhkInputBackendCaps caps;
+};
+
+// Generated from one compact definition file so C++, script-visible caps,
+// --diag and the documentation generator cannot maintain divergent tables.
+#define AHK_INPUT_CAPS(kind_, name_, gh_, sup_, pass_, up_, wild_, bare_, zero_, dyn_, multi_, sc_, combo_, chars_, prov_, level_, unicode_) \
+	{ AhkInputBackendKind::kind_, name_, { gh_, sup_, pass_, up_, wild_, bare_, zero_, dyn_, multi_, sc_, combo_, chars_, AhkSyntheticProvenance::prov_, level_, unicode_ } },
+static const InputCapsEntry sInputCaps[] = {
+#include "input_caps.def"
+};
+#undef AHK_INPUT_CAPS
+
+const InputCapsEntry *KindCapsEntry(AhkInputBackendKind aKind)
+{
+	for (const auto &entry : sInputCaps)
+		if (entry.kind == aKind)
+			return &entry;
+	// AUTO is resolved before normal use; preserve the legacy fallback.
+	for (const auto &entry : sInputCaps)
+		if (entry.kind == AhkInputBackendKind::EVDEV)
+			return &entry;
+	return nullptr;
+}
+
 const AhkInputBackendCaps *KindCaps(AhkInputBackendKind aKind)
 {
-	// Static table so pointers stay valid forever.
-	static const AhkInputBackendCaps sX11 =
-		{ true, true, true, true, true, true, true, true, true };
-	static const AhkInputBackendCaps sPortal =
-		{ true, true, false, false, false, false, false, true, false };
-	static const AhkInputBackendCaps sGnomeShell =
-		{ true, true, false, false, false, true, true, true, true };
-	static const AhkInputBackendCaps sEvdev =
-		{ true, true, true, true, true, true, true, false, false };
-	switch (aKind)
-	{
-	case AhkInputBackendKind::X11: return &sX11;
-	case AhkInputBackendKind::PORTAL: return &sPortal;
-	case AhkInputBackendKind::GNOME_SHELL: return &sGnomeShell;
-	default: return &sEvdev;
-	}
+	const InputCapsEntry *entry = KindCapsEntry(aKind);
+	return entry ? &entry->caps : nullptr;
 }
 
 // --- shared hotkey helpers (used by portal + gnome-shell backends) ----------
@@ -322,15 +336,31 @@ const AhkInputBackendCaps *LinuxInputBackendCapsFor(AhkInputBackendKind aKind)
 	return KindCaps(aKind);
 }
 
+const char *LinuxInputBackendNameFor(AhkInputBackendKind aKind)
+{
+	if (aKind == AhkInputBackendKind::AUTO)
+		return "auto";
+	const InputCapsEntry *entry = KindCapsEntry(aKind);
+	return entry ? entry->name : "unknown";
+}
+
 const char *LinuxInputBackendName()
 {
-	switch (CurrentKind())
+	return LinuxInputBackendNameFor(CurrentKind());
+}
+
+unsigned LinuxInputBackendCapsVersion()
+{
+	return AHK_INPUT_CAPS_VERSION;
+}
+
+const char *LinuxInputBackendProvenanceName(AhkSyntheticProvenance aValue)
+{
+	switch (aValue)
 	{
-	case AhkInputBackendKind::X11: return "x11";
-	case AhkInputBackendKind::PORTAL: return "portal";
-	case AhkInputBackendKind::GNOME_SHELL: return "gnome-shell";
-	case AhkInputBackendKind::EVDEV: return "evdev";
-	default: return "auto";
+	case AhkSyntheticProvenance::HEURISTIC: return "heuristic";
+	case AhkSyntheticProvenance::AUTHORITATIVE: return "authoritative";
+	default: return "none";
 	}
 }
 

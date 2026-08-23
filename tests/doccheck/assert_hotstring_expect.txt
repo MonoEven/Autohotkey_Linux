@@ -1,4 +1,5 @@
 hs_cb=1
+hs_caps_contract=1
 hs_zz_seen=1
 hs_x_hidden=1
 hs_q_hidden=1

@@ -1,6 +1,7 @@
 diag_ran=1
 diag_header=1
 diag_input_backend=1
+diag_caps_v2=1
 diag_gnome_major_line=1
 diag_gnome_major_unknown=1
 diag_portal_gs_no=1

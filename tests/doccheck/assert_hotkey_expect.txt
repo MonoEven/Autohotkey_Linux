@@ -11,5 +11,7 @@ hk_with_timer=1
 hk_this_prior=1
 caps_backend_nn=1
 caps_obj_ok=1
+caps_schema_v2=1
+caps_extended_x11=1
 route_f11=1
 route_tilde=1

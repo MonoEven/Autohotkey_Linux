@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **1143 / 1143 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 53 项(含 Unicode 文本发送 3 项,round-34;**SendEvent/SendInput 模式拆分与键延迟 6 项** R2 §2-B 与 **SendLevel/#InputLevel 门控与 InputHook MinSendLevel 4 项** R2 §2-C)、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 15 项、**热键透传/解除抓取模块 10 项**(round-29+round-36)、**Unicode 备用键码并发模块 5 项**(round-36)、**剪贴板回归模块 13 项**、**慢所有者剪贴板超时模块 4 项**、**剪贴板变更通知模块 4 项**(round-38)、**键盘布局切换模块 6 项**、**按键重复/长按模块 4 项**与**IME 激活状态模块 2 项**(check0820)、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 44 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 5 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 29 项** 与 **D-Bus COM 18 项**;round-34 增 **热字串 Unicode 触发词 2 项** 与 **InputHook OnChar/OnKeyDown/OnKeyUp 通知 4 项**;**--diag 诊断模块 9 项**(check_detail0821 §12/R1-3 + §1.2-C/R1-6 + §2.2-A/§3);**parity 分类模块 9 项**(check_detail0821 §13/R2)与**严格 parity 模式模块 3 项**(R2);**A_IconFile/A_IconNumber 4 项**(R2 §5-M5)、**A_ThisHotkey/A_PriorHotkey 1 项**(R2 §5)与 **caps API + 逐键路由 4 项**(R3 §1);27 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 17 项** 与 **XWayland 回退 252 项** 独立套件通过(见第 10 节)
+- **结果**: **1147 / 1147 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 53 项(含 Unicode 文本发送 3 项,round-34;**SendEvent/SendInput 模式拆分与键延迟 6 项** R2 §2-B 与 **SendLevel/#InputLevel 门控与 InputHook MinSendLevel 4 项** R2 §2-C)、控件模块 62 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 17 项、**热键透传/解除抓取模块 10 项**(round-29+round-36)、**Unicode 备用键码并发模块 5 项**(round-36)、**剪贴板回归模块 13 项**、**慢所有者剪贴板超时模块 4 项**、**剪贴板变更通知模块 4 项**(round-38)、**键盘布局切换模块 6 项**、**按键重复/长按模块 4 项**与**IME 激活状态模块 2 项**(check0820)、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 44 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 5 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 29 项** 与 **D-Bus COM 18 项**;round-34 增 **热字串 Unicode 触发词 2 项** 与 **InputHook OnChar/OnKeyDown/OnKeyUp 通知 4 项**;**--diag 诊断模块 10 项**(check_detail0821 §12/R1-3 + §1.2-C/R1-6 + §2.2-A/§3);**parity 分类模块 9 项**(check_detail0821 §13/R2)与**严格 parity 模式模块 3 项**(R2);**A_IconFile/A_IconNumber 4 项**(R2 §5-M5)、**A_ThisHotkey/A_PriorHotkey 1 项**(R2 §5)与 **caps API + 逐键路由/版本化 schema 6 项**(R3 §1);27 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 17 项** 与 **XWayland 回退 254 项** 独立套件通过(见第 10 节)
 
 ---
 
@@ -41,7 +41,7 @@
 | 显示器/像素/状态栏 (MonitorGet/GetCount/GetName/GetPrimary/GetWorkArea + PixelGetColor/PixelSearch + StatusBarGetText/StatusBarWait,XRandR/Xinerama + XGetImage 后端) | `assert_monitor.ahk` | 25 |
 | 显示/快捷方式 (FileCreateShortcut/FileGetShortcut + ListVars/ListHotkeys/KeyHistory,.desktop/.url 与 headless 输出) | `assert_display.ahk` | 15 |
 | 定时器/悬浮提示 (SetTimer + ToolTip,主循环 + X11 override-redirect 窗口) | `assert_timer.ahk` | 11 |
-| 热键 (Hotkey + XGrabKey 激活;含 A_ThisHotkey/A_PriorHotkey 跟踪 + caps API + 逐键路由) | `assert_hotkey.ahk` | 15 |
+| 热键 (Hotkey + XGrabKey 激活;含 A_ThisHotkey/A_PriorHotkey 跟踪 + caps API/版本化 schema + 逐键路由) | `assert_hotkey.ahk` | 17 |
 | 热键透传/解除抓取 (round-29:普通热键抑制、`~` 透传、Off 解除抓取、HotIf-false 透传,经独立 xkeycap 前台客户端验证;round-36 增快速双击) | `assert_hotkey_pt.ahk` | 10 |
 | Unicode 备用键码并发 (round-36:两个独立 AHK 进程同时向同一 X server 发送不同 CJK 字符,跨进程 X selection 租约必须串行化借用,前台 xkeycap 必须同时收到全部 4 个 keysym) | `assert_unicode_lease.ahk` | 5 |
 | 热键按钮 (round-30:XGrabButton 抓取左/右/中/X1/X2 与滚轮 4-7,`~`/HotIf-false/Off 以"暂撤被动抓取+XTEST 反注入"确定性透传,经独立 xkeycap 前台客户端验证) | `assert_hotkey_btn.ahk` | 12 |
@@ -49,7 +49,7 @@
 | 编辑/列表 (Edit/EditGet*/EditPaste + ListViewGetContent,虚拟编辑/列表状态) | `assert_edit.ahk` | 47 |
 | 文件对话框 (FileSelect/DirSelect,内置 X11 路径输入对话框 + 无显示 stdin 回退) | `assert_dialog.ahk` | 16 |
 | 消息/热字串/RunAs (OnMessage/SendMessage/PostMessage/MenuSelect/Hotstring/RunAs) | `assert_msg.ahk` | 49 |
-| 热字串展开 (round-32:按键捕获引擎的 hold/flush/match,C/*/O/X 选项,端字符与大小写跟随;xkeycap 独立客户端验证;round-34 增 Unicode 触发词 2 项:中文"你好"→"nn"替换与触发词抑制) | `assert_hotstring.ahk` | 13 |
+| 热字串展开 (round-32:按键捕获引擎的 hold/flush/match,C/*/O/X 选项,端字符与大小写跟随;xkeycap 独立客户端验证;含 caps.char_stream 行为 contract) | `assert_hotstring.ahk` | 14 |
 | InputHook 按键采集 (round-33:捕获引擎实时喂键——缓冲/结束键/匹配/退格撤销/抑制,xkeycap 独立客户端验证;round-34 增 OnChar/OnKeyDown/OnKeyUp 排队通知 3 项与 Unicode 字符流 1 项) | `assert_inputhook.ahk` | 10 |
 | 图像 (LoadPicture/IL_*/ImageSearch,BMP/ICO/PNG/GIF/CUR/JPEG/PPM 解码 + XGetImage 屏幕匹配) | `assert_image.ahk` | 44 |
 | 窗口形状 (WinSetRegion,X11 SHAPE 扩展;xshape_probe 端到端验证) | `assert_shape.ahk` | 19 |
@@ -64,13 +64,13 @@
 | IME 激活状态 (check0820:ibus/fcitx 框架检测(会话总线 owner)+ X11 XKB 组读,格式断言使无 IME/无显示的 CI 环境也可跑) | `assert_ime.ahk` | 2 |
 | 慢所有者剪贴板超时 (check0820:AHK_CLIPBOARD_TIMEOUT_MS 环境变量;默认 2s 对 2.5s 才应答的慢 owner 干净超时(空读,~1.8s),提升到 5s 后等待应答成功(读得数据);xclip_probe --serve-delay 模拟慢应用) | `assert_clipboard_slow.ahk` | 4 |
 | 剪贴板变更通知 (check_detail0821 §4/round:OnClipboardChange 经 XFixes selection tracking 监听 X11 CLIPBOARD 所有权变化——自写/外部 xclip 写触发 Type=1,owner 连接关闭(清空)触发 Type=0;此前 AddClipboardFormatListener 是 no-op 永不触发;R2 增纯 Wayland/GNOME 路径——扩展监听 Meta.Selection owner-changed 广播 ClipboardChanged,运行时经会话总线触发,VM 上 wl-copy 端到端实测 Type=1,CI 无 GNOME 会话故该路径仅 VM 验证) | `assert_clipboard_change.ahk` | 4 |
-| --diag 诊断输出 (check_detail0821 §12/R1-3 + §1.2-C/R1-6 + §2.2-A/§3:`ahk_core --diag` 在无显示/无 portal 的 headless 环境必须完整输出首尾标记、input-backend 行与 R1-6 新增的 gnome-major / portal-global-shortcuts / portal-app-id-resolvable 行,且 R1-6 探针必须失败闭合——无 org.gnome.Shell、无 GlobalShortcuts portal 后端时分别报 `0 (unknown)` 与 `no`;§3 新增 xi2-sourceid / xi2-xtest-dev 行必须存在(headless 失败闭合为 no/0),给 CI 作回归) | `assert_diag.ahk` | 9 |
+| --diag 诊断输出 (含 caps_version=2/schema 字段、headless 失败闭合的 GNOME/portal 探针与 XI2 sourceid/XTEST 设备行) | `assert_diag.ahk` | 10 |
 | parity 四级分类 (check_detail0821 §13/R2:parity 模型 P1 compatible/P2 adapted/P3 simulated/P4 unavailable 运行时可查——`ahk_core --parity FuncName` 打印级别+说明(ComObjArray→P4、SendInput→P2、RegRead→P3、MsgBox→P1),脚本内 `A_ParityLevel(FuncName)` 返回级别整数(未列函数默认 P1);数据源 parity.tsv + tools/gen_parity.py 生成 parity_data.h,CI 校验不漂移) | `assert_parity.ahk` | 9 |
 | 严格 parity 模式 (check_detail0821 §13/R2:`AHK_STRICT_PARITY=error` 下 P3/P4 函数首次调用抛错——InstallKeybdHook P3 抛"AHK_STRICT_PARITY=error"错误、P1/P2 函数不受影响;脚本内 EnvSet 设该变量同样生效;warn 模式 VM 实测打印 P3/P4 级别+说明,class 型 P4(ComObjArray 等)本就抛自身明确错误) | `assert_strict.ahk` | 3 |
-| **合计 (X11/headless,各 expect 文件行数之和 + assert_display_content 自由格式 4 项;由 verify_report_numbers.sh 机器校验,与 run_check.sh 实际 PASS 一致)** | | **1143** |
+| **合计 (X11/headless,各 expect 文件行数之和 + assert_display_content 自由格式 4 项;由 verify_report_numbers.sh 机器校验,与 run_check.sh 实际 PASS 一致)** | | **1147** |
 | Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端(含修饰键组合与鼠标按钮)、ToolTip xdg 窗口、X11 专属表面报错;round-34 增非 ASCII 剪贴板粘贴回退 2 项:Control_L+v 到达 compositor 与剪贴板还原;round-36 增空剪贴板还原 2 项) | `assert_wayland.ahk` | 17 |
 | **合计 (Wayland)** | | **17** |
-| XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 252 |
+| XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 254 |
 
 复现命令:
 
@@ -389,13 +389,13 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 
 ```
 普通构建: tests/run_tests.sh        PASS=27 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=1143 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=1147 FAIL=0
           tests/doccheck/wayland_run.sh PASS=17 FAIL=0 (Wayland 模式)
-          tests/doccheck/wayland_run.sh --xwayland PASS=252 FAIL=0 (XWayland 回退)
+          tests/doccheck/wayland_run.sh --xwayland PASS=254 FAIL=0 (XWayland 回退)
 ASan 构建: tests/run_tests.sh        PASS=27 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=1143 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=1147 FAIL=0
           tests/doccheck/wayland_run.sh PASS=17 FAIL=0
-          tests/doccheck/wayland_run.sh --xwayland PASS=252 FAIL=0
+          tests/doccheck/wayland_run.sh --xwayland PASS=254 FAIL=0
 ```
 
 ## 5.4 文档示例审计(Linux 可运行性)

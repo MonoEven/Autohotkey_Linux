@@ -59,11 +59,17 @@ extern "C" int LinuxRunDiagnostic()
 	std::printf("input-backend: %s\n", backend ? backend : "(unknown)");
 	if (const AhkInputBackendCaps *caps = LinuxInputBackendCaps())
 	{
-		std::printf("  caps global=%d suppress=%d passthrough=%d key_up=%d wildcard=%d"
-			" bare=%d zero_confirm=%d dynamic=%d multi_owner=%d\n"
+		std::printf("  caps-version=%u global=%d suppress=%d passthrough=%d key_up=%d wildcard=%d"
+			" bare=%d zero_confirm=%d dynamic=%d multi_owner=%d scan_code=%d"
+			" custom_combo=%d char_stream=%d synthetic_provenance=%s"
+			" send_level_gate=%d injection_unicode=%d\n"
+			, LinuxInputBackendCapsVersion()
 			, (int)caps->global_hotkeys, (int)caps->suppress, (int)caps->passthrough
 			, (int)caps->key_up, (int)caps->wildcard, (int)caps->bare_keys
-			, (int)caps->zero_confirm, (int)caps->dynamic, (int)caps->multi_owner);
+			, (int)caps->zero_confirm, (int)caps->dynamic, (int)caps->multi_owner
+			, (int)caps->scan_code, (int)caps->custom_combo, (int)caps->char_stream
+			, LinuxInputBackendProvenanceName(caps->synthetic_provenance)
+			, (int)caps->send_level_gate, (int)caps->injection_unicode);
 	}
 	const wchar_t *err = LinuxInputBackendLastError();
 	if (err && *err)

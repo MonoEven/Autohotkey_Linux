@@ -87,8 +87,8 @@ ahk_core --pack my-script script.ahk
 | Desktop | GTK3 GUI/Menu, notifications, AutoHotkey StatusNotifierItem tray icon and `A_TrayMenu` |
 | Distribution | deb, RPM, tarball, AppImage, AUR PKGBUILD, Flatpak manifest and `--pack` |
 
-The authoritative test totals are **1143/1143** X11/headless assertions,
-**17/17** native-Wayland assertions and **252/252** XWayland assertions. CI
+The authoritative test totals are **1147/1147** X11/headless assertions,
+**17/17** native-Wayland assertions and **254/254** XWayland assertions. CI
 also runs regular and ASan builds, four distro containers, no-XWayland,
 packed-binary acceptance, scenario gates and an RSS/event-count soak.
 

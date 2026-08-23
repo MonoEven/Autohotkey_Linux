@@ -11,6 +11,10 @@ files do not include these sources.
 - `compat/`: Win32/TCHAR/ABI compatibility used by the shared v2 runtime.
 - `protocols/`: generated Wayland protocol bindings.
 
+The input capability contract is generated from `core/input_caps.def`.
+`HotkeyBackendGet()` and `ahk_core --diag` expose schema version 2; generated
+documentation is checked by `tools/gen_input_caps.py --check`.
+
 Key runtime controls:
 
 ```text

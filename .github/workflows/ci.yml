@@ -135,6 +135,10 @@ jobs:
       - name: Verify parity doc badges are in sync
         run: python3 tools/gen_parity_badges.py --check
 
+      # check_detail0824 M0-A: script/diag/docs share one versioned caps table.
+      - name: Verify input capability documentation is in sync
+        run: python3 tools/gen_input_caps.py --check
+
   # check_detail0821 §16-1 / R4: container matrix over four distros -- builds
   # the port + runs the headless regression + a display smoke inside each
   # container, so glibc/GTK version differences cannot regress portability.

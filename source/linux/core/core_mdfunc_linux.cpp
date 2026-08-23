@@ -2165,11 +2165,11 @@ BIV_DECL_R(BIV_HotkeyBackend)
 	aResultToken.SetValue(_T(""));
 }
 
-// HotkeyBackendGet([KeyName]) -> {backend, global_hotkeys, suppress,
-// passthrough, key_up, wildcard, bare_keys, zero_confirm, dynamic,
-// multi_owner}.  With a key name it reports the backend that per-hotkey
-// routing (§1-A / R3) would assign to that registered hotkey (tilde ~ /
-// "up" / bare-key flags); without one it reports the effective backend lane.
+// HotkeyBackendGet([KeyName]) -> a versioned capability object.  caps_version
+// lets scripts reject a schema they do not understand; synthetic_provenance
+// is none/heuristic/authoritative rather than an over-promising bool.  With a
+// key name it reports the backend that per-hotkey routing would currently
+// choose; without one it reports the effective backend lane.
 BIF_DECL(BIF_Linux_HotkeyBackendGet)
 {
 	AhkInputBackendKind kind = LinuxInputBackendKind();
@@ -2194,17 +2194,8 @@ BIF_DECL(BIF_Linux_HotkeyBackendGet)
 			}
 		}
 	}
-	const char *name = nullptr;
-	const AhkInputBackendCaps *caps = nullptr;
-	switch (kind)
-	{
-	case AhkInputBackendKind::X11: name = "x11"; break;
-	case AhkInputBackendKind::PORTAL: name = "portal"; break;
-	case AhkInputBackendKind::GNOME_SHELL: name = "gnome-shell"; break;
-	case AhkInputBackendKind::EVDEV: name = "evdev"; break;
-	default: name = "auto"; break;
-	}
-	caps = LinuxInputBackendCapsFor(kind);
+	const char *name = LinuxInputBackendNameFor(kind);
+	const AhkInputBackendCaps *caps = LinuxInputBackendCapsFor(kind);
 	Object *obj = Object::Create();
 	if (!obj)
 	{
@@ -2224,6 +2215,7 @@ BIF_DECL(BIF_Linux_HotkeyBackendGet)
 	}
 	else
 		obj->SetOwnProp(_T("backend"), _T(""));
+	obj->SetOwnProp(_T("caps_version"), (__int64)LinuxInputBackendCapsVersion());
 	obj->SetOwnProp(_T("global_hotkeys"), (__int64)(caps && caps->global_hotkeys));
 	obj->SetOwnProp(_T("suppress"), (__int64)(caps && caps->suppress));
 	obj->SetOwnProp(_T("passthrough"), (__int64)(caps && caps->passthrough));
@@ -2233,6 +2225,20 @@ BIF_DECL(BIF_Linux_HotkeyBackendGet)
 	obj->SetOwnProp(_T("zero_confirm"), (__int64)(caps && caps->zero_confirm));
 	obj->SetOwnProp(_T("dynamic"), (__int64)(caps && caps->dynamic));
 	obj->SetOwnProp(_T("multi_owner"), (__int64)(caps && caps->multi_owner));
+	obj->SetOwnProp(_T("scan_code"), (__int64)(caps && caps->scan_code));
+	obj->SetOwnProp(_T("custom_combo"), (__int64)(caps && caps->custom_combo));
+	obj->SetOwnProp(_T("char_stream"), (__int64)(caps && caps->char_stream));
+	obj->SetOwnProp(_T("send_level_gate"), (__int64)(caps && caps->send_level_gate));
+	obj->SetOwnProp(_T("injection_unicode"), (__int64)(caps && caps->injection_unicode));
+	const char *provenance = caps
+		? LinuxInputBackendProvenanceName(caps->synthetic_provenance) : "none";
+	wchar_t prov_buf[32];
+	size_t prov_len = mbstowcs(prov_buf, provenance, _countof(prov_buf) - 1);
+	if (prov_len == (size_t)-1) prov_len = 0;
+	prov_buf[prov_len] = 0;
+	LPTSTR prov_persistent = (LPTSTR)SimpleHeap::Alloc((prov_len + 1) * sizeof(TCHAR));
+	tmemcpy(prov_persistent, prov_buf, prov_len + 1);
+	obj->SetOwnProp(_T("synthetic_provenance"), prov_persistent);
 	aResultToken.SetValue(obj);
 }
 
