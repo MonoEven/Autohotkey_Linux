@@ -5,6 +5,7 @@
 set -u
 AHK="${AHK:?runner must export AHK}"
 TOOLS="/home/mono/Autohotkey_Linux/tools/linux"
+unset DISPLAY WAYLAND_DISPLAY 2>/dev/null || true
 pkill -9 -f 'uinput-inject' 2>/dev/null; pkill -9 -f 'ahk_core.*evrem' 2>/dev/null
 gcc -o /tmp/uinput-inject "$TOOLS/uinput-inject.c" 2>/dev/null || exit 0
 [ -x /tmp/uinput-inject ] || exit 0

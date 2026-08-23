@@ -237,10 +237,17 @@ static int sUinputLastY = 0;
 static void LinuxFakeKey(Display *d, vk_type aVK, bool aDown)
 {
 	if (!d && LinuxWaylandKeyEvent((unsigned)aVK, aDown))
+	{
+		fprintf(stderr, "AHK fakekey: wayland vk=%u down=%d\n", (unsigned)aVK, (int)aDown);
 		return; // Wayland virtual keyboard.
+	}
 	if (!d && LinuxUinputKeyEvent((unsigned)aVK, aDown))
+	{
+		fprintf(stderr, "AHK fakekey: uinput vk=%u down=%d\n", (unsigned)aVK, (int)aDown);
 		return; // uinput fallback (GNOME/KWin lack the virtual-keyboard
 			// protocol; check0820 direction-B).
+	}
+	fprintf(stderr, "AHK fakekey: no-lane vk=%u down=%d\n", (unsigned)aVK, (int)aDown);
 	if (!d)
 		return; // No X display and no injection lane: no-op.
 	KeyCode kc = LinuxKeycodeForVk(d, aVK);

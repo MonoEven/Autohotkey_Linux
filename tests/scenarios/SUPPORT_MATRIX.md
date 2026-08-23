@@ -4,6 +4,7 @@
 |---|---|---|---|
 | a_and_b | x11 | not-run | "a & b" custom-combo registration (X11: documented unsupported error) |
 | callback_fp | x11 | not-run | "CallbackCreate with Float/Double ABI types (libffi SysV FP registers)" |
+| capslock_dual | x11 | not-run | "CapsLock dual-role: tap = CapsLock, hold = Esc (evdev/uinput)" |
 | capslock_remap | x11 | skip | CapsLock/Esc dual-role remap (needs the evdev inputd lane) |
 | clipboard_roundtrip | x11 | pass | A_Clipboard round-trips large text (X11 XFixes) |
 | evdev_remap | x11 | not-run | "evdev/uinput remap: physical key read -> hotkey fires -> uinput replay (a::b)" |

@@ -1,0 +1,8 @@
+id: capslock_dual
+title: "CapsLock dual-role: tap = CapsLock, hold = Esc (evdev/uinput)"
+script: run_caps.sh
+script_type: sh
+check: marker:/tmp/scn_capslock_dual
+envs: any
+expect: pass
+needs: uinput
