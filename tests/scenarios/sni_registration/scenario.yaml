@@ -1,0 +1,8 @@
+id: sni_registration
+title: "Tray SNI registration: A_TrayMenu + TraySetIcon register a StatusNotifierItem queried on the session bus"
+script: run_sni.sh
+script_type: sh
+check: marker:/tmp/scn_sni_registration
+envs: any
+expect: pass
+needs: gnome
