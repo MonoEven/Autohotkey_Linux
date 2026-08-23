@@ -105,7 +105,7 @@ Log("hk_with_timer=" (cnt6 = 1 && n >= 1 ? 1 : 0))
 
 ; --- A_ThisHotkey / A_PriorHotkey / A_EndChar tracking (check_detail0821 §5). ---
 this_ok := 0
-CB7(ThisHotkey) { ; F11 handler: A_ThisHotkey = F11, A_PriorHotkey = F11? no -- prior is F10.
+CB7(ThisHotkey) { ; F11 handler: A_ThisHotkey = F11, A_PriorHotkey = F10.
     global this_ok
     ; Prior hotkey is F10 (fired above); F10's cb ran in its own thread, so
     ; A_PriorHotkey should be "F10" when F11 fires.
@@ -116,6 +116,12 @@ Sleep(200)
 Send("{F11}")
 Sleep(300)
 Log("hk_this_prior=" this_ok)
+
+; --- caps API: A_HotkeyBackend + HotkeyBackendGet (check_detail0821 §1-B/D / R3). ---
+bk := A_HotkeyBackend
+Log("caps_backend_nn=" (bk != "" ? 1 : 0))
+bo := HotkeyBackendGet()
+Log("caps_obj_ok=" (IsObject(bo) && bo.backend != "" && (bo.global_hotkeys = 1 || bo.global_hotkeys = 0) ? 1 : 0))
 
 ; --- Cleanup. ---
 ExitApp(0)

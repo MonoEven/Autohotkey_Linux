@@ -32,6 +32,7 @@ extern "C" const char *LinuxParityLookup(const char *aName, int &aLevel);
 #include "core_display_linux.h"
 #include "core_timer_linux.h"
 #include "core_hotkey_linux.h"
+#include "input_backend.h"
 #include "core_clipboard_linux.h"
 #include "core_ime_linux.h"
 #include <cstdlib>
@@ -2136,6 +2137,67 @@ BIF_DECL(BIF_Linux_ParityLevel)
 	aResultToken.SetValue((__int64)level);
 }
 
+// A_HotkeyBackend -> the effective input-backend name ("x11"/"portal"/
+// "gnome-shell"/"evdev"; check_detail0821 §1-B/D / R3).  Mirrors --diag's
+// input-backend line.
+BIV_DECL_R(BIV_HotkeyBackend)
+{
+	const char *name = LinuxInputBackendName();
+	if (name && *name)
+	{
+		wchar_t wbuf[64];
+		size_t n = mbstowcs(wbuf, name, _countof(wbuf) - 1);
+		if (n != (size_t)-1)
+		{
+			wbuf[n] = 0;
+			aResultToken.SetValue(wbuf);
+			return;
+		}
+	}
+	aResultToken.SetValue(_T(""));
+}
+
+// HotkeyBackendGet([KeyName]) -> {backend, global_hotkeys, suppress,
+// passthrough, key_up, wildcard, bare_keys, zero_confirm, dynamic,
+// multi_owner} for the currently effective input backend (R3 §1-B/D).  The
+// optional key-name argument is accepted for forward compatibility with
+// per-hotkey routing; the returned object currently describes the effective
+// backend lane.
+BIF_DECL(BIF_Linux_HotkeyBackendGet)
+{
+	const char *name = LinuxInputBackendName();
+	const AhkInputBackendCaps *caps = LinuxInputBackendCaps();
+	Object *obj = Object::Create();
+	if (!obj)
+	{
+		aResultToken.Error(_T("HotkeyBackendGet: out of memory."));
+		return;
+	}
+	if (name && *name)
+	{
+		wchar_t wbuf[64];
+		size_t n = mbstowcs(wbuf, name, _countof(wbuf) - 1);
+		if (n == (size_t)-1)
+			n = 0;
+		wbuf[n] = 0;
+		LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((wcslen(wbuf) + 1) * sizeof(TCHAR));
+		tmemcpy(persistent, wbuf, wcslen(wbuf) + 1);
+		obj->SetOwnProp(_T("backend"), persistent);
+	}
+	else
+		obj->SetOwnProp(_T("backend"), _T(""));
+	obj->SetOwnProp(_T("global_hotkeys"), (__int64)(caps && caps->global_hotkeys));
+	obj->SetOwnProp(_T("suppress"), (__int64)(caps && caps->suppress));
+	obj->SetOwnProp(_T("passthrough"), (__int64)(caps && caps->passthrough));
+	obj->SetOwnProp(_T("key_up"), (__int64)(caps && caps->key_up));
+	obj->SetOwnProp(_T("wildcard"), (__int64)(caps && caps->wildcard));
+	obj->SetOwnProp(_T("bare_keys"), (__int64)(caps && caps->bare_keys));
+	obj->SetOwnProp(_T("zero_confirm"), (__int64)(caps && caps->zero_confirm));
+	obj->SetOwnProp(_T("dynamic"), (__int64)(caps && caps->dynamic));
+	obj->SetOwnProp(_T("multi_owner"), (__int64)(caps && caps->multi_owner));
+	aResultToken.SetValue(obj);
+}
+
 BIF_DECL(BIF_Linux_SetRegView)
 {
 	TCHAR view_buf[32];
@@ -2968,6 +3030,7 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(HotIfWinNotActive, BIF_Linux_HotIfWinNotActive, 0, 2),
 	LMD_IMPL(HotIfWinNotExist, BIF_Linux_HotIfWinNotExist, 0, 2),
 	LMD_IMPL(Hotkey, BIF_Linux_Hotkey, 1, 3),
+	LMD_IMPL(HotkeyBackendGet, BIF_Linux_HotkeyBackendGet, 0, 1),
 	LMD_IMPL(ImeGetState, BIF_Linux_ImeGetState, 0, 0),
 	LMD_IMPL(Hotstring, BIF_Linux_Hotstring, 1, 3),
 	LMD_IMPL(IL_Add, BIF_Linux_IL_Add, 2, 4),
