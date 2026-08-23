@@ -11,10 +11,14 @@
 | evdev_remap | x11 | not-run | "evdev/uinput remap: physical key read -> hotkey fires -> uinput replay (a::b)" |
 | fileinstall_pack | x11 | not-run | "FileInstall extracts the embedded resource from a packed binary" |
 | flatpak_app | x11 | skip | SendText to a Flatpak-sandboxed app (needs a Flatpak host with AT-SPI portal) |
+| gnome_regression | x11 | not-run | "GNOME Wayland regression: caps API routing + AT-SPI controls in the real session" |
 | highfreq_cpu | x11 | pass | High-frequency Send delivers all events without loss |
 | hotkey_basic | x11 | pass | Basic hotkey fires via the X grab |
 | hotkey_thisprior | x11 | pass | A_ThisHotkey / A_PriorHotkey track the fired hotkeys |
+| ibus_compat | x11 | not-run | "IBus session compatibility: the port runs + SendText Chinese does not crash (uinput clipboard fallback)" |
 | kde_sni | x11 | skip | Tray StatusNotifierItem on KDE Plasma (needs a KDE host) |
 | keydown_longpress | x11 | pass | Key-down hotkey fires repeatedly while held (bounded count) |
-| multiscript_conflict | x11 | not-run | "Second process registering the same hotkey raises a conflict error (KNOWN GAP: not detected yet)" |
+| multiscript_conflict | x11 | not-run | "Second process registering the same hotkey raises a conflict error" |
 | pack_compile | x11 | not-run | "ahk_core --pack produces a self-contained binary; A_IsCompiled=1 when run" |
+| panic_escape | x11 | not-run | "Panic escape key: Backspace->Escape->Enter releases the evdev grab (fail-open)" |
+| sni_registration | x11 | not-run | "Tray SNI registration: A_TrayMenu + TraySetIcon register a StatusNotifierItem queried on the session bus" |

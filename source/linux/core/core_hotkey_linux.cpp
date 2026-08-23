@@ -1237,7 +1237,12 @@ void LinuxReconcileHotkeyGrabs()
 		{
 						if (sInstalled.count(*it))
 				continue;
-			unsigned long serial = (unsigned long)XNextRequest(d) - 1;
+			// The serial of the grab we are about to send: XNextRequest returns
+			// the next request number, which the XGrabKey/XGrabButton request
+			// will use.  (Subtracting 1 here made the PendingGrab serial lag
+			// the real one, so the BadAccess error serial never matched and
+			// cross-process hotkey conflicts were silently missed.)
+			unsigned long serial = (unsigned long)XNextRequest(d);
 			if (it->button)
 				XGrabButton(d, it->button, it->modifiers, root, False
 					, ButtonPressMask | ButtonReleaseMask, GrabModeAsync, GrabModeAsync, None, None);
@@ -1245,8 +1250,14 @@ void LinuxReconcileHotkeyGrabs()
 				XGrabKey(d, it->keycode, it->modifiers, root, False, GrabModeAsync, GrabModeAsync);
 			pending.push_back(PendingGrab{serial, *it});
 		}
+		// Flush BEFORE checking the trap: XGrabKey/XGrabButton requests sit
+		// in the Xlib buffer until a sync/flush, so without this the BadAccess
+		// errors would only arrive during the trap destructor's XSync -- after
+		// the HasBadAccess() check, silently missing cross-process conflicts.
+		XSync(d, False);
 		if (trap.HasBadAccess())
 		{
+			// Find the offending grab and drop it from the "installed" view.
 			// Find the offending grab and drop it from the "installed" view.
 			for (size_t i = 0; i < pending.size(); ++i)
 			{

@@ -4,7 +4,8 @@
 WINOUT := "/tmp/scn_multiscript_conflict"
 FileDelete(WINOUT)
 FileDelete("/tmp/scn_ms_holder_ready")
-Run('"' A_AhkPath '" /tmp/scn_ms_holder.ahk')
+holder := A_ScriptDir "/holder.ahk"
+Run('"' A_AhkPath '" "' holder '"')
 ; Wait until the holder signals its grab is registered (up to 10s).
 deadline := A_TickCount + 10000
 while (!FileExist("/tmp/scn_ms_holder_ready") && A_TickCount < deadline)
