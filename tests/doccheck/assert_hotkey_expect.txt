@@ -8,3 +8,4 @@ hk_on=1
 hk_up=1
 hk_badkey=1
 hk_with_timer=1
+hk_this_prior=1

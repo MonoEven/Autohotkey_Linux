@@ -103,5 +103,19 @@ Send("{F10}")
 Sleep(300)
 Log("hk_with_timer=" (cnt6 = 1 && n >= 1 ? 1 : 0))
 
+; --- A_ThisHotkey / A_PriorHotkey / A_EndChar tracking (check_detail0821 §5). ---
+this_ok := 0
+CB7(ThisHotkey) { ; F11 handler: A_ThisHotkey = F11, A_PriorHotkey = F11? no -- prior is F10.
+    global this_ok
+    ; Prior hotkey is F10 (fired above); F10's cb ran in its own thread, so
+    ; A_PriorHotkey should be "F10" when F11 fires.
+    this_ok := (A_ThisHotkey = "F11" && A_PriorHotkey = "F10") ? 1 : 0
+}
+Hotkey("F11", CB7)
+Sleep(200)
+Send("{F11}")
+Sleep(300)
+Log("hk_this_prior=" this_ok)
+
 ; --- Cleanup. ---
 ExitApp(0)

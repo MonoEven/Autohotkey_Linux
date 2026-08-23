@@ -634,6 +634,17 @@ void LinuxButtonPassthrough(Display *d, unsigned int aButton, XEvent &ev)
 	}
 }
 
+// Track A_ThisHotkey / A_PriorHotkey (+ the *_StartTime timestamps) before
+// firing a hotkey callback, mirroring application.cpp's WM_AHK_HOTKEY handling
+// (check_detail0821 §5).
+static void LinuxTrackHotkey(Hotkey *aHotkey)
+{
+	g_script.mPriorHotkeyName = g_script.mThisHotkeyName;
+	g_script.mPriorHotkeyStartTime = g_script.mThisHotkeyStartTime;
+	g_script.mThisHotkeyName = aHotkey->mName;
+	g_script.mThisHotkeyStartTime = GetTickCount();
+}
+
 void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 {
 	sPrevKeyCode = ev.xkey.keycode;
@@ -703,6 +714,7 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 		++g_nThreads;
 		++g;
 		InitNewThread(vp_fire->mPriority, false, false);
+		LinuxTrackHotkey(hk_fire);
 		hk_fire->PerformInNewThreadMadeByCaller(*vp_fire);
 		ResumeUnderlyingThread();
 	}
@@ -795,6 +807,7 @@ void LinuxHandleButtonEvent(Display *d, XEvent &ev)
 		++g_nThreads;
 		++g;
 		InitNewThread(vp_fire->mPriority, false, false);
+		LinuxTrackHotkey(hk_fire);
 		hk_fire->PerformInNewThreadMadeByCaller(*vp_fire);
 		ResumeUnderlyingThread();
 	}

@@ -37,7 +37,6 @@ void name##_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValu
 
 LINUX_BIV_STUB_RW(BIV_AllowMainWindow)
 LINUX_BIV_STUB(BIV_Cursor)
-LINUX_BIV_STUB(BIV_EndChar)
 LINUX_BIV_STUB_RW(BIV_Hotkey)
 
 // A_IconFile / A_IconNumber: the file + number passed to TraySetIcon
@@ -584,13 +583,69 @@ BIV_DECL_R(BIV_ScreenDPI)
 	aResultToken.SetValue((__int64)(g_ScreenDPI ? g_ScreenDPI : 96));
 }
 
-LINUX_BIV_STUB(BIV_PriorHotkey)
-LINUX_BIV_STUB(BIV_PriorKey)
 LINUX_BIV_STUB(BIV_SpecialFolderPath)
-LINUX_BIV_STUB(BIV_ThisHotkey)
-LINUX_BIV_STUB(BIV_TimeIdle)
-LINUX_BIV_STUB(BIV_TimeSincePriorHotkey)
-LINUX_BIV_STUB(BIV_TimeSinceThisHotkey)
+
+// Hotkey-related built-in variables (check_detail0821 §5 / R2).  The hotkey
+// engine already tracks mThisHotkeyName / mPriorHotkeyName / mEndChar / the
+// key-history buffer; these un-stubs expose them like upstream lib/vars.cpp.
+
+BIV_DECL_R(BIV_ThisHotkey)
+{
+	_f_return_p(g_script.mThisHotkeyName);
+}
+
+BIV_DECL_R(BIV_PriorHotkey)
+{
+	_f_return_p(g_script.mPriorHotkeyName);
+}
+
+BIV_DECL_R(BIV_TimeSinceThisHotkey)
+{
+	if (*g_script.mThisHotkeyName)
+		_f_return_i((__int64)(GetTickCount() - g_script.mThisHotkeyStartTime));
+	else
+		_f_return_empty; // Cause any attempt at math to throw.
+}
+
+BIV_DECL_R(BIV_TimeSincePriorHotkey)
+{
+	if (*g_script.mPriorHotkeyName)
+		_f_return_i((__int64)(GetTickCount() - g_script.mPriorHotkeyStartTime));
+	else
+		_f_return_empty;
+}
+
+BIV_DECL_R(BIV_EndChar)
+{
+	_f_retval_buf[0] = g_script.mEndChar;
+	_f_retval_buf[1] = '\0';
+	_f_return_p(_f_retval_buf);
+}
+
+BIV_DECL_R(BIV_PriorKey)
+{
+	if (!g_KeyHistory || g_MaxHistoryKeys <= 0)
+		_f_return_empty;
+	int validEventCount = 0;
+	// Start at the current event (offset 1) and walk the circular buffer.
+	for (int iOffset = 1; iOffset <= g_MaxHistoryKeys; ++iOffset)
+	{
+		int i = (g_KeyHistoryNext + g_MaxHistoryKeys - iOffset) % g_MaxHistoryKeys;
+		if (g_KeyHistory[i].event_type != _T('i') // Not an ignored event.
+			&& g_KeyHistory[i].event_type != _T('U') // Not a Unicode packet.
+			&& ++validEventCount > 1)
+		{
+			if (!g_KeyHistory[i].key_up)
+			{
+				GetKeyName(g_KeyHistory[i].vk, g_KeyHistory[i].sc, _f_retval_buf, _f_retval_buf_size);
+				_f_return_p(_f_retval_buf);
+			}
+		}
+	}
+	_f_return_empty;
+}
+
+LINUX_BIV_STUB(BIV_TimeIdle) // Needs an X11 idle-time query (follow-up).
 
 // A_TrayMenu (check_detail0821 §5-M5): the script-customizable tray menu.
 // The Linux UserMenu (script_menu_linux.cpp) stores the items; the SNI tray
