@@ -1,4 +1,4 @@
-﻿/*
+/*
 AutoHotkey
 
 Copyright 2003-2009 Chris Mallett (support@autohotkey.com)
@@ -879,8 +879,23 @@ void Hotkey::PerformInNewThreadMadeByCaller(HotkeyVariant &aVariant)
 		// Seems safest to do this even if it isn't always necessary:
 		sDialogIsDisplayed = true;
 		g_AllowInterruption = FALSE;
+#ifdef __linux__
+		// Headless/automation-friendly (check_detail0821 §16-6 / R4): the
+		// runaway-hotkey throttle warning must NOT block on a dialog the user
+		// cannot see (Xvfb/CI has a DISPLAY but nobody to click).  Auto-continue
+		// and log the warning instead -- equivalent to the user clicking Yes.
+		{
+			char throttle_narrow[2048];
+			if (wcstombs(throttle_narrow, error_text, sizeof(throttle_narrow)) != (size_t)-1)
+			{
+				throttle_narrow[sizeof(throttle_narrow) - 1] = '\0';
+				std::fprintf(stderr, "AHK: %s", throttle_narrow);
+			}
+		}
+#else
 		if (MsgBox(error_text, MB_YESNO) == IDNO)
 			g_script.ExitApp(EXIT_CLOSE); // Might not actually Exit if there's an OnExit function.
+#endif
 		g_AllowInterruption = TRUE;
 		sDialogIsDisplayed = false;
 	}
