@@ -12,7 +12,7 @@ set -u
 REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$REPO_DIR" || exit 1
 
-VER="${1:-2.0.26-linux.15}"
+VER="${1:-2.0.26-linux.16}"
 ARCH=$(uname -m)
 case "$ARCH" in
   x86_64) RPM_ARCH=x86_64 ;;
@@ -38,6 +38,8 @@ mkdir -p "$RPMROOT/BUILD" "$RPMROOT/RPMS" "$RPMROOT/SOURCES" "$RPMROOT/SPECS" \
 SRCTREE="$RPMROOT/src/ahk-$VER"
 mkdir -p "$SRCTREE"
 install -m 0755 "$CORE" "$SRCTREE/ahk_core"
+install -m 0644 source/resources/icon_main.ico "$SRCTREE/icon_main.ico"
+install -m 0644 docs-v2/docs/static/ahk16.png "$SRCTREE/autohotkey.png"
 cp -r docs-v2 "$SRCTREE/docs-v2"
 install -m 0644 README.md "$SRCTREE/README.md"
 [ -f LICENSE ] && install -m 0644 LICENSE "$SRCTREE/LICENSE"
@@ -64,7 +66,7 @@ cat > "$RPMROOT/SPECS/autohotkey-linux.spec" <<EOF
 Name:           autohotkey-linux
 Version:        ${VER%%-*}
 Release:        1%{?dist}
-Summary:        AutoHotkey v2 Linux port (X11/Wayland)
+Summary:        AutoHotkey v2 automation for Linux (X11/Wayland)
 License:        GPL-2.0-only
 URL:            https://github.com/MonoEven/Autohotkey_Linux
 Source0:        $SRC
@@ -76,12 +78,11 @@ Requires:       libX11, libXext, libXrandr, libXinerama, libXtst, gtk3, dbus-lib
 %define debug_package %{nil}
 
 %description
-AutoHotkey is a free, open source macro-creation and automation utility
-driven by a custom scripting language with special provision for defining
-keyboard shortcuts.  This is the Linux port of AutoHotkey v2.0.26:
-AutoHotkey v2 syntax only (v1 is not supported), full X11 backend,
-GTK3-based Gui/GuiControl/Menu support, D-Bus COM support, and a native
-Wayland backend.
+AutoHotkey v2.0.26 interpreter and Linux desktop backends: X11/XWayland
+automation, native Wayland input routes, GTK3 GUI, AT-SPI controls,
+StatusNotifierItem tray, D-Bus and libffi interoperability. AutoHotkey v2
+syntax only; v1 is not supported. See the bundled Linux capability matrix
+for compositor-specific limits.
 
 %prep
 %setup -q -n ahk-$VER
@@ -93,9 +94,13 @@ Wayland backend.
 rm -rf %{buildroot}
 install -d %{buildroot}%{_bindir}
 install -d %{buildroot}%{_datadir}/autohotkey
+install -d %{buildroot}%{_datadir}/icons/hicolor/16x16/apps
 install -d %{buildroot}%{_docdir}/autohotkey
 install -d %{buildroot}%{_datadir}/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org
 install -m 0755 %{_builddir}/ahk-$VER/ahk_core %{buildroot}%{_datadir}/autohotkey/ahk_core
+install -m 0644 %{_builddir}/ahk-$VER/icon_main.ico %{buildroot}%{_datadir}/autohotkey/icon_main.ico
+install -m 0644 %{_builddir}/ahk-$VER/autohotkey.png %{buildroot}%{_datadir}/autohotkey/autohotkey.png
+install -m 0644 %{_builddir}/ahk-$VER/autohotkey.png %{buildroot}%{_datadir}/icons/hicolor/16x16/apps/autohotkey.png
 install -m 0755 %{_builddir}/ahk-$VER/ahk-launcher %{buildroot}%{_bindir}/ahk
 cp -r %{_builddir}/ahk-$VER/docs-v2 %{buildroot}%{_docdir}/autohotkey/
 install -m 0644 %{_builddir}/ahk-$VER/README.md %{buildroot}%{_docdir}/autohotkey/README.md
@@ -120,6 +125,9 @@ fi
 %files
 %{_bindir}/ahk
 %{_datadir}/autohotkey/ahk_core
+%{_datadir}/autohotkey/icon_main.ico
+%{_datadir}/autohotkey/autohotkey.png
+%{_datadir}/icons/hicolor/16x16/apps/autohotkey.png
 %{_datadir}/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org/*
 %{_docdir}/autohotkey/*
 %license LICENSE

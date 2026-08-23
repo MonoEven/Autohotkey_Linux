@@ -195,7 +195,10 @@ BIF_DECL(BIF_Linux_TraySetIcon)
 		g_script.mCustomIconFile = _tcsdup(icon);
 		g_script.mCustomIconNumber = (UINT)icon_number;
 	}
-	LinuxTraySetIcon(icon && *icon ? icon : L"application-x-executable");
+	// Omitted/empty FileName restores the port's own AutoHotkey icon (the
+	// previous generic application-x-executable name was commonly rendered as
+	// a terminal icon by desktop themes).
+	LinuxTraySetIcon(icon && *icon ? icon : nullptr);
 }
 
 // CallbackCreate/CallbackFree (libffi closure backend, core_callback_linux.cpp).

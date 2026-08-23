@@ -1,7 +1,7 @@
-﻿# AutoHotkey v2.0.26 Linux 移植 —— 模块验证矩阵
+# AutoHotkey v2.0.26 Linux 移植 —— 模块验证矩阵
 
 > 对照 AutoHotkey v2 官方文档逐模块确认可用性。完整逐模块校验报告见
-> `tests/doccheck/CHECK_REPORT.md`（1134/1134 断言，普通 + ASan 双构建）。
+> `tests/doccheck/CHECK_REPORT.md`（1143/1143 断言，普通 + ASan 双构建）。
 > 状态图例：✅ 已实现并有 .ahk 验证；⚠️ 部分实现/依赖外部工具；❌ 未实现（明确报错）。
 > GUI 类功能区分「有画面」(DISPLAY 可用，X11/WSLg/XFCE/XWayland) 与「无画面」(headless)。
 
@@ -29,7 +29,7 @@
 | OnExit / OnError / OnClipboardChange | ✅ | 事件注册回调可执行 |
 | SetTimer | ✅ | 周期触发/Period 0 删除/默认 250ms |
 | **DllCall** | ✅ | **.so 动态库**(dlopen/dlsym + libffi):全类型、&Var 输出、HRESULT 报错(29 断言) |
-| CallbackCreate | ✅ | 回调函数对象 |
+| CallbackCreate | ✅ | libffi closure；Float/Double 参数和返回按 SysV ABI 精确封送 |
 | VerCompare / Type / Is* | ✅ | 版本比较、类型判断 |
 
 ## 3. 数学 / 字符串 / 对象 / 日期 (Math / String / Object / Date)
@@ -58,7 +58,8 @@
 | 剪贴板 (A_Clipboard/ClipWait/ClipboardAll) | ✅ | X11 CLIPBOARD selection + Wayland wl_data_device;无显示时进程内回退 |
 | **SoundBeep / SoundPlay** | ✅ | 终端/X11 响铃等实现(aplay/paplay) |
 | SoundGet*/SoundSet* | ⚠️ | 依赖外部 `pactl`/`amixer`,否则 OSError |
-| TrayTip / TraySetIcon / ComObjArray | ❌ | Linux 无托盘/SafeArray,有意未实现,明确报错 |
+| TrayTip / TraySetIcon / A_TrayMenu | ✅ P2 | 通知走 org.freedesktop.Notifications；托盘走 StatusNotifierItem + dbusmenu，默认继承官方 AutoHotkey 图标 |
+| ComObjArray | ❌ | Windows SafeArray 不存在于 Linux，明确报错 |
 
 ## 5. 键盘 / 鼠标 / 热键 / 热字串 / InputHook (Input)
 
@@ -109,11 +110,11 @@
 
 ## 汇总
 
-- **1134/1134** doc-check 断言通过（普通 + ASan 双构建，含 Xvfb 窗口/输入/控件/像素/定时器/热键/热字串/InputHook/图像/形状/GUI/菜单实测；输入模块含 Unicode 发送 3 项、round-36 增快速双击回归）
-- **367/370** 内置函数已实现（3 个有意未实现:ComObjArray、TrayTip、TraySetIcon，见 `tests/doccheck/worklist.tsv`）
-- **27/27** headless 回归测试；Wayland 17 项 + XWayland 247 项独立套件
+- **1143/1143** X11/headless doc-check 断言通过（普通 + ASan 双构建）
+- **27/27** headless 回归测试；Wayland **17/17** + XWayland **252/252** 独立套件
+- 场景门禁覆盖 X11、纯 Wayland、GNOME 会话、evdev/uinput、打包和 SNI；CI 另跑四发行版容器、no-XWayland、pack 容器验收与 soak
 - Unicode 文本发送（round-34 + round-36）:X11/XWayland 非 ASCII 经 keysym 传输（借键码重映射 + 跨进程 X Selection 租约），纯 Wayland 走剪贴板粘贴回退（等待目标实际消费、恢复空原剪贴板、`AHK_WAYLAND_PASTE=0` 可禁、uinput 通道），无注入路径明确报错
-- 未实现（有意、明确报错）:ComObjArray、TrayTip、TraySetIcon、OnMessage/SendMessage/PostMessage、纯 Wayland 窗口枚举/hotstring/InputHook（需 XWayland）；SoundGet*/SoundSet* 依赖 pactl/amixer
+- 主要限制：ComObjArray、跨进程 Win32 消息和纯 Wayland 窗口枚举没有 Linux 等价物；完整 inputd 守护进程、IBus engine、KDE/Flatpak 宿主矩阵仍是后续项；SoundGet*/SoundSet* 依赖 pactl/amixer
 - 完整逐模块报告:`tests/doccheck/CHECK_REPORT.md`
 
 > 本矩阵为现状快照;状态随移植进度更新,以 CHECK_REPORT.md 与 worklist.tsv 为准。

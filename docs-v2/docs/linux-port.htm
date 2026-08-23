@@ -223,17 +223,18 @@ D-Bus COM layer). The port has two display backends:</p>
     a silent no-op (documented "never a critical error"). <code>TraySetIcon</code>
     registers a <b>StatusNotifierItem</b> with the desktop's tray
     (<code>org.kde.StatusNotifierItem</code> + <code>com.canonical.dbusmenu</code>):
-    the icon name is derived from the file path (basename without extension) and
-    an image-file path is additionally exposed as an <code>IconPixmap</code>
-    (ARGB32); a default menu offers Pause / Suspend / Reload / Exit.  No tray
-    watcher is a
-    silent no-op.  The menu is the script's <code>A_TrayMenu</code> (customizable
-    via <code>A_TrayMenu.Add</code>); the SNI dbusmenu renders its items and
-    clicks invoke the callbacks.  The item registers under the well-known
+    the default <code>IconName</code> is <code>autohotkey</code> and its
+    non-empty <code>IconPixmap</code> comes directly from the upstream
+    AutoHotkey <code>icon_main.ico</code>/<code>ahk16.png</code> asset; an
+    explicit image path overrides both. A default menu offers Pause / Suspend /
+    Reload / Exit. No tray watcher is a silent no-op. The menu is the script's
+    <code>A_TrayMenu</code> (customizable via <code>A_TrayMenu.Add</code>); the
+    SNI dbusmenu renders its items and clicks invoke the callbacks. The item
+    registers under the well-known
     <code>org.kde.StatusNotifierItem-&lt;pid&gt;-1</code> name so the watcher
-    removes it on exit (a unique-name registration leaks on ayatana/AppIndicator
-    hosts -- the icon never disappears).  Compiled-script
-    packaging is not available.</li>
+    removes it on exit. Self-contained compiled scripts are available via
+    <code>ahk_core --pack Output Script.ahk</code>, including
+    <code>FileInstall</code> resources and <code>A_IsCompiled</code>.</li>
   <li>CoordMode/SendMode semantics are honored; hotkeys work through
     XGrabKey (keys) and XGrabButton (mouse buttons/wheels) on X11/XWayland,
     and through the GNOME Shell extension or the Global Shortcuts Portal on
@@ -325,7 +326,7 @@ alongside the <code>.tar.gz</code> and <code>.deb</code>, so
 downgrade</i> (rollback) to any published release.  Releases before linux.15
 were removed when the new installer line shipped; their source remains on
 the <code>v2.0.26-linux.*</code> git tags.  The latest release is
-<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.15</a>.
+<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.16</a>.
 Highlights of this release:</p>
 <ul>
   <li><b><code>Hotkey()</code> works on Wayland</b>: the X-only guard is

@@ -63,7 +63,8 @@ bool LinuxTrayNotify(const wchar_t *aTitle, const wchar_t *aText)
 		dbus_message_iter_init_append(msg, &it);
 		const char *app = "AutoHotkey";
 		dbus_uint32_t replaces = 0;
-		const char *icon = "";
+		// Reuse AutoHotkey's own themed icon for notifications as well as SNI.
+		const char *icon = "autohotkey";
 		const char *summary_p = summary;
 		const char *body_p = body;
 		dbus_int32_t timeout = -1;
@@ -96,7 +97,10 @@ bool LinuxTrayNotify(const wchar_t *aTitle, const wchar_t *aText)
 
 static DBusConnection *sSniConn = nullptr;
 static char sSniBusName[128];        // org.kde.StatusNotifierItem-<pid>-<id>
-static char sSniIcon[256] = "application-x-executable";
+// Default to AutoHotkey's official tray icon.  The corresponding theme icon
+// is installed by every package; IconPixmap is also populated from the
+// upstream source/resources/icon_main.ico asset for hosts that ignore themes.
+static char sSniIcon[256] = "autohotkey";
 static char sSniTitle[256] = "AutoHotkey";
 static dbus_uint32_t sSniRevision = 1;
 // IconPixmap (ARGB32 pixels, host native endianness) when the TraySetIcon path
@@ -614,6 +618,73 @@ static void SniLoadPixmap(const char *aPath)
 	sSniPixH = h;
 }
 
+// Load the official upstream AutoHotkey icon for the default SNI pixmap.
+// Packages place icon_main.ico next to ahk_core in share/autohotkey; source
+// runs and AppImages have fallbacks below.  IconName remains "autohotkey" so
+// a desktop theme can choose its preferred size, while IconPixmap guarantees
+// that hosts without theme lookup still receive the AHK icon.
+static void SniLoadDefaultPixmap()
+{
+	char path[2048] = "";
+	if (g_script.mOurEXEDir && *g_script.mOurEXEDir)
+	{
+		size_t n = wcstombs(path, g_script.mOurEXEDir, sizeof(path) - 64);
+		if (n != (size_t)-1)
+		{
+			path[n] = '\0';
+			strncat(path, "/autohotkey.png", sizeof(path) - strlen(path) - 1);
+			SniLoadPixmap(path);
+			if (sSniPixW > 0)
+				return;
+			n = wcstombs(path, g_script.mOurEXEDir, sizeof(path) - 64);
+			if (n != (size_t)-1)
+			{
+				path[n] = '\0';
+				strncat(path, "/icon_main.ico", sizeof(path) - strlen(path) - 1);
+				SniLoadPixmap(path);
+				if (sSniPixW > 0)
+					return;
+			}
+			// Source build: build-core/source/linux/core -> repository root.
+			n = wcstombs(path, g_script.mOurEXEDir, sizeof(path) - 64);
+			if (n != (size_t)-1)
+			{
+				path[n] = '\0';
+				strncat(path, "/../../../../docs-v2/docs/static/ahk16.png", sizeof(path) - strlen(path) - 1);
+				SniLoadPixmap(path);
+				if (sSniPixW > 0)
+					return;
+			}
+		}
+	}
+	if (const char *appdir = getenv("APPDIR"))
+	{
+		snprintf(path, sizeof(path), "%s/usr/share/autohotkey/autohotkey.png", appdir);
+		SniLoadPixmap(path);
+		if (sSniPixW > 0)
+			return;
+		snprintf(path, sizeof(path), "%s/usr/share/autohotkey/icon_main.ico", appdir);
+		SniLoadPixmap(path);
+		if (sSniPixW > 0)
+			return;
+	}
+	const char *candidates[] = {
+		"/usr/share/autohotkey/autohotkey.png",
+		"/usr/local/share/autohotkey/autohotkey.png",
+		"/usr/share/icons/hicolor/16x16/apps/autohotkey.png",
+		"/usr/local/share/icons/hicolor/16x16/apps/autohotkey.png",
+		"docs-v2/docs/static/ahk16.png",          // source-tree fallback
+		"source/resources/icon_main.ico",         // ICO loader fallback
+		nullptr
+	};
+	for (int i = 0; candidates[i]; ++i)
+	{
+		SniLoadPixmap(candidates[i]);
+		if (sSniPixW > 0)
+			return;
+	}
+}
+
 bool LinuxTraySetIcon(const wchar_t *aIconFile)
 {
 	char full[1024] = "";
@@ -640,8 +711,9 @@ bool LinuxTraySetIcon(const wchar_t *aIconFile)
 	}
 	else
 	{
-		strncpy(sSniIcon, "application-x-executable", sizeof(sSniIcon) - 1);
-		SniLoadPixmap(nullptr);
+		strncpy(sSniIcon, "autohotkey", sizeof(sSniIcon) - 1);
+		sSniIcon[sizeof(sSniIcon) - 1] = '\0';
+		SniLoadDefaultPixmap();
 	}
 	if (!SniEnsure())
 		return false;

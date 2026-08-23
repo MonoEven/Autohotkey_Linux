@@ -1,3 +1,6 @@
+> **历史审计快照（2026-08-17）。** 本文描述当时源码，不是当前功能状态；
+> 当前事实请看 `../README.md`、`check_detail0821.md` 文首实质完成审计表和最新 Release。
+
 ## 总体判断
 
 截至 **2026 年 8 月 17 日**，当前 `linux-port` 分支的热键实现更接近“简单 X11 全局快捷键原型”，还不能视为 AutoHotkey 热键语义的完整迁移。问题不主要在解析器：代码复用了上游 `Hotkey()`、变体和 `HotIf` 解析；真正薄弱的是 **平台后端的注册生命周期、事件路由、按键抑制/透传，以及 Wayland 能力分层**。仓库自己的弱化审计也承认鼠标热键、自定义组合、`~`、`*`、扫描码和部分 `up` 语义尚未落地。([GitHub](https://github.com/MonoEven/Autohotkey_Linux/raw/refs/heads/linux-port/tests/doccheck/AUDIT_2026_WEAKENED.md))

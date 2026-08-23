@@ -5,7 +5,7 @@ import csv
 import re
 import os
 
-BASE = "/mnt/f/AI/Codex/Autohotkey_Linux"
+BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
 # 1) Implemented MdFunc entries from core_mdfunc_linux.cpp (LMD_IMPL)
 impl = set()
@@ -15,6 +15,9 @@ for m in re.finditer(r"LMD_IMPL\((\w+),", src):
     impl.add(m.group(1))
 for m in re.finditer(r"LMD_NI\((\w+),", src):
     ni.add(m.group(1))
+# Ignore macro formal-parameter names captured from the macro definitions.
+impl.discard("name")
+ni.discard("name")
 
 # 2) g_BIF entries from script.cpp (real ones, not stubs)
 g_bif = set()
@@ -73,6 +76,13 @@ CLASS_IMPL = {
 CLASS_NOT_IMPL = {"ComObjArray", "ComObjConnect", "ComObjQuery"}
 impl |= CLASS_IMPL
 ni |= CLASS_NOT_IMPL
+# Strip macro formal-parameter placeholders after every source has contributed.
+impl.discard("name")
+ni.discard("name")
+g_bif_impl.discard("name")
+# A registered Linux wrapper may exist solely to raise the explicit P4 error;
+# NOT_IMPL must win over a same-name LMD/g_BIF entry in the worklist.
+effective_impl = (impl | g_bif_impl) - ni
 
 # 3) Built-in variables implemented in core_builtin_stubs.cpp (BIV_ definitions)
 biv = set()
@@ -90,7 +100,7 @@ with open(os.path.join(BASE, "tests/doccheck/doc_index.tsv"), encoding="utf-8") 
 with open(os.path.join(BASE, "tests/doccheck/worklist.tsv"), "w", encoding="utf-8") as f:
     f.write("name\tstatus\tdoc_desc\tdoc_syntax\tdoc_params\tdoc_returns\n")
     seen = set()
-    for name in sorted(impl | g_bif_impl):
+    for name in sorted(effective_impl):
         if name in seen:
             continue
         seen.add(name)
@@ -98,16 +108,16 @@ with open(os.path.join(BASE, "tests/doccheck/worklist.tsv"), "w", encoding="utf-
         f.write("\t".join([
             name, "IMPL",
             d.get("desc", ""), d.get("syntax", ""), d.get("params", ""), d.get("returns", ""),
-        ]) + "\n")
+        ]).rstrip() + "\n")
     for name in sorted(ni):
         if name in seen:
             continue
         seen.add(name)
         d = doc.get(name, {})
-        f.write("\t".join([name, "NOT_IMPL", d.get("desc", ""), d.get("syntax", ""), d.get("params", ""), d.get("returns", "")]) + "\n")
+        f.write("\t".join([name, "NOT_IMPL", d.get("desc", ""), d.get("syntax", ""), d.get("params", ""), d.get("returns", "")]).rstrip() + "\n")
 
-print(f"IMPL funcs: {len(impl | g_bif_impl)} (mdFunc={len(impl)}, g_BIF={len(g_bif_impl)})")
+print(f"IMPL funcs: {len(effective_impl)} (after NOT_IMPL precedence; mdFunc={len(impl)}, g_BIF={len(g_bif_impl)})")
 print(f"NOT_IMPL funcs: {len(ni)}")
 print(f"BIV implemented: {len(biv)}")
-withdoc = sum(1 for n in (impl | g_bif_impl | ni) if n in doc)
+withdoc = sum(1 for n in (effective_impl | ni) if n in doc)
 print(f"functions with doc pages: {withdoc}")

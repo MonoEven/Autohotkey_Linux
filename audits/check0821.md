@@ -1,3 +1,6 @@
+> **历史审计快照（2026-08-21）。** 本文是 `check_detail0821.md` 路线图的
+> 输入，不是当前 Release 说明；当前状态以 `../README.md`、路线图文首实质完成审计表和 CI 为准。
+
 ## 结论
 
 这个仓库**不是概念验证或空壳项目**。它已经把 AutoHotkey v2 的解释器、X11 自动化、部分 Wayland 输入、GTK3 GUI、D-Bus、AT-SPI、安装打包和 CI 做到了相当深的程度。仓库当前明确将自身定位为 **technology preview**，最新发布版是 `v2.0.26-linux.15`，发布于 **2026 年 8 月 20 日**。([GitHub](https://github.com/MonoEven/Autohotkey_Linux))

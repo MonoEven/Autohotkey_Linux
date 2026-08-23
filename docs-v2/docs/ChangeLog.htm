@@ -16,6 +16,32 @@
 
 <h2 id="linux">Linux port changes</h2>
 
+<h2 id="linux.16">v2.0.26-linux.16</h2>
+<p><b>Wayland, packaging, interoperability and release-quality update:</b></p>
+<ul>
+  <li>Added script-visible input-backend capability and per-hotkey routing
+    (<code>A_HotkeyBackend</code> / <code>HotkeyBackendGet()</code>), wlroots
+    Unicode injection through a private xkb keymap, evdev/uinput remaps and a
+    physical panic sequence which releases all EVIOCGRABs.</li>
+  <li>Added self-contained <code>--pack</code> executables,
+    <code>A_IsCompiled</code>, embedded <code>FileInstall</code> resources and
+    Float/Double libffi callback ABI support.</li>
+  <li>Completed the StatusNotifierItem tray/menu implementation and made the
+    default icon inherit AutoHotkey's official <code>icon_main.ico</code> /
+    <code>ahk16.png</code>, instead of a generic executable/terminal icon.</li>
+  <li>Fixed X11 cross-process hotkey-conflict reporting: flush grab requests
+    before checking the BadAccess trap and use the correct X request serial.
+    Linux hotkey-throttle warnings now log and auto-continue instead of
+    blocking forever on an unclickable Xvfb dialog.</li>
+  <li>Expanded CI with scenario gates, regular + ASan builds, four distribution
+    containers, a no-XWayland job, packed-binary acceptance and RSS/event-count
+    soak. Current totals: 1143/1143 X11/headless, 17/17 Wayland and 252/252
+    XWayland assertions.</li>
+  <li>Added GNOME Wayland AT-SPI/portal/IBus/SNI scenarios, AUR and Flatpak
+    metadata, and a concise README which links to the detailed capability
+    matrix instead of duplicating it.</li>
+</ul>
+
 <h2 id="linux.15">v2.0.26-linux.15</h2>
 <p><b>check0820 direction-B core (round-37):</b></p>
 <ul>
@@ -60,7 +86,7 @@
     portal backend is active; an ungranted bind must not crash, must not
     fire, and must exit cleanly on SIGTERM (GNOME VM regression script).
     The interactive GNOME permission dialog itself is not automatable
-    headlessly - recorded in check0820.md.</li>
+    headlessly - recorded in <code>audits/check0820.md</code>.</li>
   <li><b>evdev/uinput permission model</b>:
     <code>tools/linux/permissions/</code> ships the udev rule
     (<code>/dev/uinput</code> 0666), the input-group setup for reading

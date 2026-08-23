@@ -12,7 +12,7 @@
 #                     $prefix/share/autohotkey)
 #   --doc DIR         directory for documentation (default:
 #                     $prefix/share/doc/autohotkey)
-#   --version VER     release to stamp into the launcher (e.g. 2.0.26-linux.15;
+#   --version VER     release to stamp into the launcher (e.g. 2.0.26-linux.16;
 #                     default: from AHK_VERSION env or "unknown")
 #   --uninstall       remove an existing installation (needs the same
 #                     --prefix it was installed with)
@@ -164,6 +164,7 @@ remove_extension() {
 BINDIR="$PREFIX/$BIN_SUB"
 LIBDIR="$PREFIX/$LIB_SUB"
 DOCDIR="$PREFIX/$DOC_SUB"
+ICONDIR="$PREFIX/share/icons/hicolor/16x16/apps"
 
 # Existing install?  The wrapper embeds the prefix; locate it.  The
 # launcher line is AHK_PREFIX="<path>" (double quotes are sh syntax, not
@@ -180,8 +181,11 @@ if [ "$UNINSTALL" = 1 ]; then
   [ -n "$OLD_PREFIX" ] || { echo "install.sh: no installation found at $BINDIR" >&2; exit 1; }
   echo "Removing AutoHotkey v2 from $OLD_PREFIX ..."
   rm -f "$OLD_PREFIX/$BIN_SUB/ahk" "$OLD_PREFIX/$BIN_SUB/ahk_core" \
-        "$OLD_PREFIX/$LIB_SUB/ahk_core" "$OLD_PREFIX/$LIB_SUB/ahk.ahk"
+        "$OLD_PREFIX/$LIB_SUB/ahk_core" "$OLD_PREFIX/$LIB_SUB/ahk.ahk" \
+        "$OLD_PREFIX/$LIB_SUB/icon_main.ico" "$OLD_PREFIX/$LIB_SUB/autohotkey.png" \
+        "$OLD_PREFIX/share/icons/hicolor/16x16/apps/autohotkey.png"
   rm -rf "$OLD_PREFIX/$DOC_SUB"
+  rmdir "$OLD_PREFIX/share/icons/hicolor/16x16/apps" 2>/dev/null || true
   rmdir "$OLD_PREFIX/$BIN_SUB" 2>/dev/null || true
   if [ "$GNOME_EXT" = yes ]; then
     remove_extension
@@ -204,10 +208,22 @@ if [ "$YES" != 1 ]; then
   case "$ans" in y|Y|yes) ;; *) echo "Aborted."; exit 1 ;; esac
 fi
 
-mkdir -p "$BINDIR" "$LIBDIR" "$DOCDIR" || { echo "install.sh: cannot create directories (need root for $PREFIX?)" >&2; exit 1; }
+mkdir -p "$BINDIR" "$LIBDIR" "$DOCDIR" "$ICONDIR" || { echo "install.sh: cannot create directories (need root for $PREFIX?)" >&2; exit 1; }
 
-# The interpreter binary.
+# The interpreter binary + the official upstream AutoHotkey tray icon.  The
+# ICO provides SNI IconPixmap; the 16px PNG makes IconName=autohotkey resolve
+# through the freedesktop icon theme.
 install -m 0755 "$CORE" "$LIBDIR/ahk_core" || exit 1
+for P in "$REPO_DIR/icon_main.ico" "$REPO_DIR/source/resources/icon_main.ico"; do
+  [ -f "$P" ] && { install -m 0644 "$P" "$LIBDIR/icon_main.ico"; break; }
+done
+for P in "$REPO_DIR/autohotkey.png" "$REPO_DIR/docs-v2/docs/static/ahk16.png"; do
+  if [ -f "$P" ]; then
+    install -m 0644 "$P" "$LIBDIR/autohotkey.png"
+    install -m 0644 "$P" "$ICONDIR/autohotkey.png"
+    break
+  fi
+done
 
 # A tiny wrapper so scripts can run `ahk script.ahk`; rendered from the
 # shared launcher template (--update/--uninstall/--check live in it).

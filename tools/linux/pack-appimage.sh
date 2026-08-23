@@ -10,7 +10,7 @@ set -u
 REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$REPO_DIR" || exit 1
 
-VER="${1:-2.0.26-linux.15}"
+VER="${1:-2.0.26-linux.16}"
 ARCH=$(uname -m)
 case "$ARCH" in
   x86_64) ARCH=x86_64 ;;
@@ -110,10 +110,13 @@ export APPIMAGE_EXTRACT_AND_RUN=1
 APP=dist/appimage/autohotkey.AppDir
 rm -rf dist/appimage
 mkdir -p "$APP/usr/bin" "$APP/usr/share/applications" \
+         "$APP/usr/share/autohotkey" \
          "$APP/usr/share/icons/hicolor/scalable/apps" \
          "$APP/usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org"
 
 install -m 0755 "$CORE" "$APP/usr/bin/ahk_core"
+install -m 0644 source/resources/icon_main.ico "$APP/usr/share/autohotkey/icon_main.ico"
+install -m 0644 docs-v2/docs/static/ahk16.png "$APP/usr/share/autohotkey/autohotkey.png"
 # The GNOME Shell global-hotkey extension ships inside the AppImage (the
 # AppDir is a read-only single file, so `AppRun --install-extension`
 # copies it into the user's ~/.local/share/gnome-shell/extensions and
@@ -133,7 +136,7 @@ chmod 0755 "$APP/usr/bin/ahk"
 cat > "$APP/autohotkey.desktop" <<EOF
 [Desktop Entry]
 Name=AutoHotkey (Linux)
-Comment=Automation scripting utility (v2, X11/Wayland)
+Comment=AutoHotkey v2 automation for Linux (X11/Wayland)
 Exec=ahk
 Type=Application
 Categories=Utility;

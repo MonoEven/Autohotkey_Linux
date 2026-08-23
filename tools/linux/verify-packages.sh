@@ -3,9 +3,9 @@
 # packages (check0819 P2-1): actually installs each package, runs the
 # launcher commands and the interpreter, then removes it again.
 #
-# Usage: verify-packages.sh [version]   (default: 2.0.26-linux.15)
-# Requires: dist/autohotkey-linux-<ver>-amd64.{deb,tar.gz}, sudo, network
-# (the tarball update step downloads the release asset from GitHub).
+# Usage: verify-packages.sh [version]   (default: 2.0.26-linux.16)
+# Requires: dist/autohotkey-linux-<ver>-amd64.{deb,tar.gz} and sudo.
+# The updater round-trip uses AHK_RELEASE_DIR, so it is valid before publish.
 #
 # check0820 fix: the version-stamp checks used to hardcode v2.0.26-linux.13,
 # so every later release failed the package job.  They now compare against
@@ -14,8 +14,9 @@
 # "echo: I/O error" false failures).
 set -u
 cd "$(dirname "$0")/../.." || exit 1 # repo root
-VER="${1:-2.0.26-linux.15}"
-DEB="$(pwd)/dist/autohotkey-linux-${VER}-amd64.deb"
+VER="${1:-2.0.26-linux.16}"
+RELEASE_DIR="$(pwd)/dist"
+DEB="$RELEASE_DIR/autohotkey-linux-${VER}-amd64.deb"
 TAR="$(pwd)/dist/autohotkey-linux-${VER}-amd64.tar.gz"
 
 [ -f "$DEB" ] || { echo "missing $DEB" >&2; exit 1; }
@@ -55,6 +56,8 @@ chk "deb: ahk --check integrity OK" "/usr/bin/ahk --check > /tmp/ahk_deb_check2.
 /usr/bin/ahk /tmp/ahk_smoke.ahk
 chk "deb: runs a script" "grep -q 'smoke-ok' /tmp/ahk_smoke_out.txt"
 chk "deb: ships the GNOME extension system-wide" "test -f /usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org/metadata.json"
+chk "deb: ships official AHK SNI pixmap" "test -f /usr/share/autohotkey/autohotkey.png && test -f /usr/share/autohotkey/icon_main.ico"
+chk "deb: installs themed AutoHotkey icon" "test -f /usr/share/icons/hicolor/16x16/apps/autohotkey.png"
 # The deb's postinst enable-hint text is verified on the GNOME VM with
 # `dpkg-deb -e` (it prints exactly the per-user steps); CI cannot read
 # DEBIAN/* through dpkg-deb -c, so the install-side assertions here are
@@ -85,10 +88,13 @@ chk "tar: ahk --check reports tarball" "/tmp/ahk_prefix/bin/ahk --check > /tmp/a
 chk "tar: ahk --check integrity OK" "/tmp/ahk_prefix/bin/ahk --check > /tmp/ahk_tar_check2.log 2>&1 && grep -F 'integrity         : OK' /tmp/ahk_tar_check2.log"
 /tmp/ahk_prefix/bin/ahk /tmp/ahk_smoke.ahk
 chk "tar: runs a script" "grep -q 'smoke-ok' /tmp/ahk_smoke_out.txt"
-# Upgrade/downgrade to the SAME release via the GitHub asset (real network
-# round-trip; proves the launcher survives the reinstall and re-stamps).
-(cd /tmp && /tmp/ahk_prefix/bin/ahk --update "$VER" > /tmp/ahk_update.log 2>&1)
-chk "tar: ahk --update downloads and reinstalls" "grep -F 'AutoHotkey updated to v$VER' /tmp/ahk_update.log"
+chk "tar: installs official AHK SNI pixmap" "test -f /tmp/ahk_prefix/share/autohotkey/autohotkey.png && test -f /tmp/ahk_prefix/share/autohotkey/icon_main.ico"
+chk "tar: installs themed AutoHotkey icon" "test -f /tmp/ahk_prefix/share/icons/hicolor/16x16/apps/autohotkey.png"
+# Upgrade/downgrade to the SAME release via the local release asset.  The
+# launcher normally downloads from GitHub; AHK_RELEASE_DIR lets a release
+# prove updater round-trip before its assets are published.
+(cd /tmp && AHK_RELEASE_DIR="$RELEASE_DIR" /tmp/ahk_prefix/bin/ahk --update "$VER" > /tmp/ahk_update.log 2>&1)
+chk "tar: ahk --update consumes the release asset and reinstalls" "grep -F 'AutoHotkey updated to v$VER' /tmp/ahk_update.log"
 chk "tar: launcher survives update" "test -x /tmp/ahk_prefix/bin/ahk"
 chk "tar: version after update" "/tmp/ahk_prefix/bin/ahk --version > /tmp/ahk_ver3.txt 2>&1 && grep -F 'v$VER' /tmp/ahk_ver3.txt"
 chk "tar: scripts still run after update" "/tmp/ahk_prefix/bin/ahk /tmp/ahk_smoke.ahk && grep -q 'smoke-ok' /tmp/ahk_smoke_out.txt"

@@ -23,7 +23,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0 # pack.sh derives the release from the newest v2.0.26-linux.* tag
+          fetch-depth: 0 # preserve release/tag metadata for packaging and changelogs
 
       - name: Install dependencies
         run: |
@@ -244,7 +244,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0 # pack.sh derives the release from the newest v2.0.26-linux.* tag
+          fetch-depth: 0 # preserve release/tag metadata for packaging and changelogs
 
       - name: Install dependencies
         run: |
@@ -309,7 +309,19 @@ jobs:
           set -e
           [ $tar_rc -eq 0 ] || [ $tar_rc -eq 141 ]
           dpkg-deb --info dist/autohotkey-linux-*.deb | head -8
-          ls dist/*.AppImage dist/*.rpm 2>/dev/null || true
+          # linux.16: every package must carry AutoHotkey's official tray
+          # assets (runtime IconPixmap + freedesktop IconName theme lookup).
+          tar tzf dist/autohotkey-linux-*.tar.gz | grep -q 'autohotkey-linux/icon_main.ico'
+          tar tzf dist/autohotkey-linux-*.tar.gz | grep -q 'autohotkey-linux/autohotkey.png'
+          dpkg-deb --contents dist/autohotkey-linux-*.deb | grep -q 'usr/share/autohotkey/icon_main.ico'
+          dpkg-deb --contents dist/autohotkey-linux-*.deb | grep -q 'usr/share/icons/hicolor/16x16/apps/autohotkey.png'
+          rpm -qlp dist/*.rpm | grep -q '/usr/share/autohotkey/icon_main.ico'
+          rpm -qlp dist/*.rpm | grep -q '/usr/share/icons/hicolor/16x16/apps/autohotkey.png'
+          dist/*.AppImage --appimage-extract >/tmp/appimage_extract.log 2>&1
+          test -f squashfs-root/usr/share/autohotkey/icon_main.ico
+          test -f squashfs-root/usr/share/autohotkey/autohotkey.png
+          rm -rf squashfs-root
+          ls dist/*.AppImage dist/*.rpm
 
       # check0820: every release ships a CKSUMS.txt (SHA-256) so
       # `ahk --update <VER>` can be verified against the published hashes
@@ -338,3 +350,17 @@ jobs:
         run: |
           VER=$(ls dist/autohotkey-linux-*-amd64.deb | sed -n 's/.*linux-\([0-9.]*-linux\.[0-9]*\)-amd64.deb/\1/p' | head -1)
           bash tools/linux/verify-packages.sh "$VER"
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v5
+        with:
+          name: release-assets
+          path: |
+            dist/autohotkey-linux-*.tar.gz
+            dist/autohotkey-linux-*.deb
+            dist/autohotkey-linux-*.rpm
+            dist/autohotkey-linux-*.AppImage
+            dist/CKSUMS.txt
+            dist/CKSUMS.txt.asc
+            dist/ahk-release.pub
+          if-no-files-found: error

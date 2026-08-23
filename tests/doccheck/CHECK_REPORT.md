@@ -14,7 +14,7 @@
 | 文件 | 作用 |
 |---|---|
 | `tests/doccheck/extract_docs.py` | 解析 `docs-v2/docs/lib/*.htm`,提取每个函数的名称/描述/语法/参数/返回值/示例 → `doc_index.tsv`(352 个函数条目) |
-| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(367 个已实现,6 个边界操作抛明确错误(含 D-Bus COM 三件套与 TrayTip/TraySetIcon),298 个 doc 页有状态) |
+| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(369 个已实现,3 个边界操作明确不可用;当前 298 个 doc 页有状态。NOT_IMPL 优先于同名 wrapper;TrayTip/TraySetIcon 已为 P2 实现,不再计入 NOT_IMPL) |
 | `tests/doccheck/assert_*.ahk` | 按模块编写的实测脚本(每个断言输出 `name=value` 行,取自官方文档语义) |
 | `tests/doccheck/assert_*_expect.txt` | 与文档语义对应的期望值 |
 | `tests/doccheck/run_check.sh` | 运行全部断言并逐条比对(支持传入任意二进制路径,如 `run_check.sh build-asan/ahk_core`) |
@@ -663,7 +663,7 @@ MsgBox/InputBox/FileSelect 带 autoclose 钩子):
   - **验证**:回归新增 **t26_reload**(端到端:旧实例 OnExit
     reason=Reload、新实例接管、无残留),26→27;doc-check
     **994/994**(core+ASan)、Wayland 13、XWayland 235 全绿。
-- **round 29(check0818 热键审计第一批)**:见 `check0818.md` 与
+- **round 29(check0818 热键审计第一批)**:见 `audits/check0818.md` 与
   `AUDIT_2026_WEAKENED.md §2.1`。
   - **独立热键 X 连接**(事件隔离)、**GrabSpec 差量同步与
     XUngrabKey**(Off/禁用变体解除抓取)、**Async 抓取 + 条件透传**

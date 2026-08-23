@@ -2,8 +2,8 @@
 
 > 本文基于 `check0821.md` 的评审结论,把其中每一个"缺失/弱化"论断拆解为可执行的
 > 子项,并为每个子项给出细致的解决思路(设计、实施步骤、落点文件、验收标准、
-> 风险)。所有"现状"均已对照本地仓库源码核实(linux-port 工作区,README 显示
-> v2.0.26-linux.15、doc-check 1099/1099),不再只依赖 GitHub 页面快照。
+> 风险)。第 0 节保留的是本文创建时的 linux.15/1099 基线，不代表当前状态；
+> 当前实现与证据以紧随其后的“2026-08-23 实质完成审计”表为准。
 >
 > 优先级沿用 check0821:P0 = 决定"是不是 AutoHotkey"的结构性差距;
 > P1 = 决定"能不能放心用"的质量差距;P2 = 认知/口径问题。
@@ -16,13 +16,37 @@
 > **ext-data-control-v1**(KWin 6.6 也支持,Mutter 仍不支持,GNOME 侧应走扩展内
 > Meta.Selection 信号);④ X11 侧"用 XI2 raw 事件区分 XTEST 注入"必须协商
 > **XI 2.1**(2.0 的 sourceid 恒为 0,是历史 bug)。
+>
+> ### 2026-08-23 实质完成审计（按代码/VM/CI 证据）
+>
+> | 节 | 当前结论 | 已有证据 | 未实质完成/不得再宣称完成 |
+> |---|---|---|---|
+> | §1 Wayland 输入模型 | **部分交付** | caps API、逐键路由、portal/GNOME/evdev backend、evdev remap、panic 释放均有场景/VM/CI | 多客户端 systemd `ahk-inputd`、libei/EIS 后端、设备级仲裁未实现 |
+> | §2 Send 等价语义 | **部分交付** | SendEvent/Input 分流、延迟、SendLevel/InputLevel、节流无头不阻塞有断言/CI | 不能把所有 Windows SendInput hook 语义概括为完全等价 |
+> | §3 低级 Hook | **部分交付** | XI2 sourceid、自注入门控、evdev 捕获/抑制已落地 | 没有 Windows WH_KEYBOARD_LL/WH_MOUSE_LL 等价 API；libei receiver 未实现 |
+> | §4 OnClipboardChange | **X11+GNOME 已交付，其他 Wayland 未交付** | XFixes + GNOME Meta.Selection VM 端到端 | ext-data-control/KDE/wlroots 路径仍未通过宿主端到端 |
+> | §5 迁移/托盘/打包/ABI | **大部分交付** | SNI/TrayTip、`--pack`/FileInstall、libffi callback、包和容器验收 | Windows COM/SafeArray、Win32 消息和 DLL 无等价物（按 P4 保留）；Flatpak 未宿主运行 |
+> | §6 Wayland Unicode/IME | **部分交付** | wlroots 私有 keymap BMP Unicode；GNOME IBus 共存/剪贴板回退实测 | IBus engine、libei 文本路径、补充平面代理对/emoji、富剪贴板安全未完成 |
+> | §7 AT-SPI | **部分交付** | GNOME Terminal + Firefox 控件树/ControlGetText VM 实测 | 原计划 8 应用矩阵、LibreOffice/Qt/Java/Flatpak 场景未完成 |
+> | §8 GTK3 GUI 深度 | **部分交付** | 现有 GTK3 GUI/Menu Xvfb 套件 | 不可把子集称为完整 Windows GUI 等价；无多显示器/主题/复杂布局全矩阵 |
+> | §9 测试口径 | **部分交付** | 1143/17/252、场景门禁、容器/no-XWayland/soak、ASan | Wine 语言差分、wtype/ydotool/keyd 体系化差分仍未实现 |
+> | §10 文档漂移 | **本轮修复并加门禁，但需持续维护** | verify_report_numbers、parity/badge 校验、README/活文档同步 | 历史审计文件保留旧时间点，不应被当当前状态 |
+> | §11 兼容层技术债 | **未完成** | wcslcpy/strlcpy 旧 glibc 可移植性已修 | 没有完成 stdafx_linux.h 分层/生成/系统性缩减 |
+> | §12 社区验证/分发 | **部分交付** | deb/RPM/tar/AppImage、PKGBUILD、Flatpak manifest、Release 资产 | 没有真实 AUR/Flathub 发布、独立用户样本或 KDE/Flatpak 宿主报告 |
+> | §13 parity 分类 | **已交付** | parity.tsv→生成数据、文档徽章、`--parity`、严格模式、CI 校验 | 后续新增 API 仍需同步维护 |
+> | §14 场景验收 | **部分交付** | 当前 `tests/scenarios/` 有 20 个定义，Xvfb/GNOME/evdev 场景有真实结果 | 原表 15 个指定种子并非逐项全实现；Flatpak/KDE/inputd daemon 等仍 skip |
+> | §15 Wayland 分级口径 | **部分交付** | Linux Port 矩阵、caps API、backend 诊断 | 尚无自动生成的三级发布评级和 compositor 全矩阵 |
+> | §16 CI 扩展 | **部分交付** | regular+ASan、四发行版容器、no-XWayland、pack 验收、soak | clang、ARM64 编译 job、KVM GNOME/KDE 夜跑未实现 |
+>
+> “场景 PASS”只证明对应场景，不自动上升为完整 inputd、IBus engine、Flatpak、KDE
+> 或全应用 AT-SPI 支持；本文后文若仍有旧措辞，与本表冲突时以本表为准。
 
 ---
 
 ## 0. 对 check0821 论断的本地核实与修正
 
-写解决方案前先校准事实。check0821 有 4 处与当前源码状态有出入,细化时按
-**当前实际状态**处理:
+以下是本文初建时（linux.15）的基线校准，保留用于解释方案来源；它不是当前
+状态。当前结论必须回看上方 2026-08-23 实质完成审计表:
 
 | check0821 论断 | 本地核实结果 | 影响 |
 |---|---|---|
@@ -31,7 +55,7 @@
 | Wayland 剪贴板粘贴回退是"固定 60ms sleep + 仅文本" | `core_input_linux.cpp:770-807` 已改为等待消费 + 还原 + `AHK_WAYLAND_PASTE=0` 可关闭,`AHK_CLIPBOARD_TIMEOUT_MS` 默认 2000 | 缺口收窄为"多 MIME 往返、事件驱动等待、敏感场景策略",见 §6 |
 | evdev/uinput 只是路线图 | `core_evdev_linux.cpp`(捕获,LISTEN/SUPPRESS 双模)与 `core_uinput_linux.cpp`(回放)骨架已存在,`AHK_INPUT_BACKEND=evdev` 可强制;`tools/linux/permissions/` 已有 udev 规则、polkit policy、安装脚本 | §1 的 Level 3 方案从"新建"改为"在现有 lane 上补齐" |
 
-仍然成立的关键事实(逐条已核实):
+本文初建时仍然成立的关键事实（历史基线，当前状态见文首审计表）:
 
 - 四个 Send 模式仍走同一条 XTEST 路径(`core_input_linux.cpp:745-748`);
 - `InstallKeybdHook/InstallMouseHook` 仅记录布尔(`core_input_linux.cpp:1150-1162`);
@@ -610,7 +634,8 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
   探测属性时连接被 daemon 断开。
   **swaybar 宿主实证(已补)**:headless sway 1.10 带 bar 配置起 swaybar →
   swaybar 注册 `org.kde.StatusNotifierWatcher` + `StatusNotifierHost-<pid>`;
-  TraySetIcon 脚本的 SNI 名注册成功,IconName='applications-system',
+  TraySetIcon 脚本的 SNI 名注册成功;linux.16 起默认
+  IconName='autohotkey' + 官方 ahk16.png 的非空 IconPixmap。
   GetLayout 显示 A_TrayMenu 自定义项("Sway Item"),退出后 well-known 名被
   watcher 清理(false)。**SNI 现已在 GNOME/AppIndicator + swaybar 双宿主验证**。
   **A_IconFile/A_IconNumber(已实现)**:BIF_Linux_TraySetIcon 记录
@@ -641,14 +666,18 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
 - 因此 Linux 侧的等价物就是"ELF + 附加段/尾部载荷",语义完全对得上,
   文档可以直说"与 Windows 的编译是同一种东西(内嵌脚本),不是编译成机器码"——
   顺带消除用户对性能的误解。实现细节两选一:
-  1. **追加载荷**(推荐):`[runtime ELF][tar: 主脚本+FileInstall 资源][magic+len footer]`,
-     启动读 `/proc/self/exe` 尾部;实现简单、对 strip/签名友好;
+  1. **追加载荷**(已实现):`[runtime ELF][resources(name\0,size,data)*][script]
+     [script_len][resources_len][magic]`,启动读 `/proc/self/exe` 尾部;
+     实现简单、对 strip/签名友好;
   2. **ELF section**:用 `objcopy --add-section .ahkscript=...`,更"正式"但对
      后续压缩/签名链更挑剔。
-- 同时要实现的配套:`A_IsCompiled`、`FileInstall` 的解包语义、
-  `--pack-appimage`(复用 `tools/linux/pack-appimage.sh`)。
-- **验收**:打包物在**无 ahk 安装**的 debian:12 容器里跑 doccheck 子集全绿;
-  `A_IsCompiled=1`;`FileInstall` 资源可正确落盘。
+- **已实现配套**:`A_IsCompiled`、`FileInstall` 资源扫描/解包和
+  `ahk_core --pack`;独立的 `pack-appimage.sh` 仍负责 AppImage,没有实现
+  `--pack-appimage` 组合命令。
+- **验收实况**:打包物在**无 ahk 安装**的干净 ubuntu:24.04 容器中运行;
+  `A_IsCompiled=1`且`FileInstall`资源正确落盘。未声称 debian:12 二进制
+  兼容:其 libjpeg ABI 与 ubuntu 构建宿主不同;旧 glibc 暴露的 wcslcpy/
+  strlcpy 问题已通过端口自包含实现修复并由四发行版构建矩阵覆盖。
 
 ---
 
@@ -1051,27 +1080,21 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
 
 3. **结果即文档**:runner 输出汇入 `status.json` → 生成 `SUPPORT_MATRIX.md`
    (场景×环境×等级),替代形容词式的"supported"。
-   **R3 已交付(场景 runner + 种子场景第一梯队)**:`tests/scenarios/` 建立
-   ——`run_scenarios.sh`(读 `*/scenario.yaml` 的极简 key:value 子集,按当前
-   环境执行可测子集,产出 `status.json` + `SUPPORT_MATRIX.md`;场景执行用
-   **SIGKILL watchdog**(实测挂死的核心可忽略 SIGTERM,普通 `timeout` 永不
-   返回,kill -9 才有效——keydown 场景的错误对话框事件证实);yaml 解析去引号
-   (`script: ""` 会被解析成字面 `""`)。种子场景 10 个:6 pass(a_and_b/
-   clipboard_roundtrip/highfreq_cpu/hotkey_basic/hotkey_thisprior/
-   keydown_longpress)+ 3 skip(capslock_remap/flatpak_app/kde_sni,needs
-   未满足)+ 1 fail(multiscript_conflict)。
-   **顺带修复 + 实证发现**:
-   ① **"A & B" 组合静默注册修复**(§1-A,不许沉默弱化):X11/portal/gnome-shell
-   注册 `Hotkey("a & b", ...)` 现在抛明确 OSError(此前静默注册但永不触发,
-   cnt=0 实测);evdev lane 仍允许。
-   ② **"X down" 是无效热键名**(v2 只接受 "up" 后缀):`Hotkey("F7 down")`
-   触发上游 ValueError → 脚本错误对话框 → 无头环境挂起(非热键路径 bug,
-   是错误对话框语义);长按场景改用普通 F7 + detectable auto-repeat(实测
-   1.2s 内触发 15 次)。
-   ③ **高频 Send 丢事件**:50 连发实测 49/50(紧循环每 ~50 丢 1,事件分类
-   窗口),场景按容差 ≥45 记录,丢失计数为后续。
-   ④ **跨进程热键冲突检测未生效**(multiscript_conflict 失败):第二个进程
-   注册同热键不报冲突(XGrabKey BadAccess trap 未触发,深挖中)。
+   **当前落地(部分交付,不是原 15 种子全完成)**:`tests/scenarios/` 现有
+   20 个场景定义；`run_scenarios.sh` 按 env/needs 执行,产出 `status.json` +
+   `SUPPORT_MATRIX.md`,expected-pass 失败即使 CI 变红。Xvfb 实测 15 pass/
+   5 skip,GNOME 专用 AT-SPI/portal/IBus/SNI 场景另有 VM 结果;Flatpak、KDE、
+   完整 inputd daemon 仍按 needs skip。SIGKILL watchdog 只用于回收真正卡死的
+   场景,不是功能完成证明。
+   **由场景发现并已修复**:
+   ① `A & B` 在非 evdev backend 静默注册但永不触发 → 现在明确 OSError;
+   ② 跨进程 XGrabKey 冲突:修复 PendingGrab serial 与 BadAccess 检查前缺
+   XSync 的问题,`multiscript_conflict` 已从 known-fail 变 pass;
+   ③ 高频 Send“约 70 次后卡死”并非 XTEST 洪泛,而是默认
+   `#MaxHotkeysPerInterval=70` 触发无人可点的 Xvfb 警告框;Linux 现在记录
+   throttle warning 并自动继续,场景不再永久阻塞;
+   ④ `"X down"` 是无效热键名(v2 只接受 `up` 后缀);长按场景使用普通热键
+   + detectable auto-repeat。
 
 ## 15. Wayland 支持分级的发布口径
 
@@ -1138,7 +1161,8 @@ KEYEV 流;`InstallKeybdHook` 的语义 = 启用该观察层。**
 
 ## 17. 路线图汇总(建议执行顺序)
 
-按"先止血 → 先可见 → 后攻坚"排序,R 为轮次概念(与仓库 round 节奏对齐):
+按"先止血 → 先可见 → 后攻坚"排序,R 为轮次概念(与仓库 round 节奏对齐)。
+这些行是目标集合,不是完成声明；当前完成度必须与文首实质审计表交叉阅读:
 
 | 轮次 | 内容 | 对应章节 | 性质 |
 |---|---|---|---|

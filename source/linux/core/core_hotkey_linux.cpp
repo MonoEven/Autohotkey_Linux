@@ -1,4 +1,4 @@
-// Linux hotkey activation (round 28 rewrite; see check0818.md audit).
+// Linux hotkey activation (round 28 rewrite; see audits/check0818.md).
 //
 // Design fixes applied per the audit:
 //   P0-1  Dedicated X11 connection (LinuxHotkeyDisplay): the hotkey backend

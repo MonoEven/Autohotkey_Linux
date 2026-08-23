@@ -14,14 +14,14 @@ set -u
 REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$REPO_DIR" || exit 1
 
-VER="${1:-}"
+VER="${1:-${VER:-}}"
+if [ -z "$VER" ] && [ -f tools/linux/VERSION ]; then
+  VER=$(tr -d '\r\n' < tools/linux/VERSION)
+fi
 if [ -z "$VER" ] && command -v git >/dev/null 2>&1; then
-  # Derive the release from the newest linux tag (the CI package job has no
-  # argument; hardcoding a version here drifted to linux.11 while the
-  # project was at linux.15 -- check0820 round-34 catch).
   VER=$(git describe --tags --abbrev=0 --match 'v2.0.26-linux.*' 2>/dev/null | sed 's/^v//')
 fi
-VER="${VER:-2.0.26-linux.15}"
+VER="${VER:-2.0.26-linux.16}"
 ARCH=$(uname -m)
 case "$ARCH" in
   x86_64) ARCH=amd64 ;;
@@ -44,6 +44,10 @@ STAGE=dist/stage/autohotkey-linux
 
 # --- stage the payload ------------------------------------------------
 install -m 0755 "$CORE" "$STAGE/ahk_core"
+# Official upstream AutoHotkey icon assets: the installer places the ICO next
+# to ahk_core (SNI IconPixmap) and the PNG in the hicolor theme.
+install -m 0644 source/resources/icon_main.ico "$STAGE/icon_main.ico"
+install -m 0644 docs-v2/docs/static/ahk16.png "$STAGE/autohotkey.png"
 install -m 0755 tools/linux/install.sh   "$STAGE/tools/linux/install.sh"
 install -m 0755 tools/linux/install-gui.sh "$STAGE/tools/linux/install-gui.sh"
 install -m 0644 tools/linux/ahk-launcher.in "$STAGE/tools/linux/ahk-launcher.in"
@@ -71,11 +75,15 @@ if command -v dpkg-deb >/dev/null 2>&1; then
   # chmod has no effect, which makes dpkg-deb reject the control dir.
   DEBROOT=$(mktemp -d /tmp/ahk-deb.XXXXXX)
   mkdir -p "$DEBROOT/usr/bin" "$DEBROOT/usr/share/autohotkey" \
+           "$DEBROOT/usr/share/icons/hicolor/16x16/apps" \
            "$DEBROOT/usr/share/doc/autohotkey" \
            "$DEBROOT/usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org" \
            "$DEBROOT/DEBIAN"
   chmod 0755 "$DEBROOT" "$DEBROOT/DEBIAN"
   install -m 0755 "$CORE" "$DEBROOT/usr/share/autohotkey/ahk_core"
+  install -m 0644 source/resources/icon_main.ico "$DEBROOT/usr/share/autohotkey/icon_main.ico"
+  install -m 0644 docs-v2/docs/static/ahk16.png "$DEBROOT/usr/share/autohotkey/autohotkey.png"
+  install -m 0644 docs-v2/docs/static/ahk16.png "$DEBROOT/usr/share/icons/hicolor/16x16/apps/autohotkey.png"
   cp -r docs-v2 "$DEBROOT/usr/share/doc/autohotkey/docs-v2"
   install -m 0644 README.md "$DEBROOT/usr/share/doc/autohotkey/README.md"
   [ -f LICENSE ] && install -m 0644 LICENSE "$DEBROOT/usr/share/doc/autohotkey/LICENSE"
@@ -107,17 +115,14 @@ Maintainer: MonoEven <MonoEven@users.noreply.github.com>
 Installed-Size: $DEB_SIZE
 Depends: libx11-6, libxext6, libxrandr2, libxinerama1, libxtst6, libgtk-3-0, libdbus-1-3, libffi8
 Recommends: zenity | yad
-Description: AutoHotkey v2 Linux port (X11/Wayland)
- AutoHotkey is a free, open source macro-creation and automation
- utility driven by a custom scripting language with special provision
- for defining keyboard shortcuts (hotkeys).
+Description: AutoHotkey v2 automation for Linux (X11/Wayland)
+ AutoHotkey v2.0.26 interpreter and Linux desktop backends: X11/XWayland
+ automation, native Wayland input routes, GTK3 GUI, AT-SPI controls,
+ StatusNotifierItem tray, D-Bus and libffi interoperability.
  .
- This package provides the Linux port of AutoHotkey v2.0.26: a full X11
- backend (window management, controls, hotkeys, pixel access, dialogs),
- GTK3-based Gui/GuiControl/Menu support, D-Bus COM support, and a native
- Wayland backend (xdg-shell windows, virtual keyboard and pointer,
- wlr-screencopy).  AutoHotkey v2 syntax only; v1 is not supported.
- Documentation is under /usr/share/doc/autohotkey/docs-v2.
+ AutoHotkey v2 syntax only; v1 is not supported. Documentation and the
+ precise capability/limitation matrix are under
+ /usr/share/doc/autohotkey/docs-v2.
 EOF
   cat > "$DEBROOT/DEBIAN/postinst" <<'EOF'
 #!/bin/sh
@@ -162,7 +167,9 @@ set -e
 case "$1" in
   remove|purge)
     rm -f /usr/bin/ahk /usr/bin/ahk_core /usr/bin/autohotkey \
-          /usr/share/autohotkey/ahk_core /usr/share/autohotkey/ahk.ahk
+          /usr/share/autohotkey/ahk_core /usr/share/autohotkey/ahk.ahk \
+          /usr/share/autohotkey/icon_main.ico /usr/share/autohotkey/autohotkey.png \
+          /usr/share/icons/hicolor/16x16/apps/autohotkey.png
     rm -rf /usr/share/autohotkey /usr/share/doc/autohotkey 2>/dev/null || true
     ;;
   upgrade|failed-upgrade)
