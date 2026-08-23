@@ -393,6 +393,8 @@ jobs:
 
       - name: Verify release package attestations
         if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.attest_release == true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           for artifact in dist/autohotkey-linux-*.tar.gz dist/autohotkey-linux-*.deb \
                           dist/autohotkey-linux-*.rpm dist/autohotkey-linux-*.AppImage \
