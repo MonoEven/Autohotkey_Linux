@@ -164,6 +164,14 @@ Level 3  内核输入层     evdev 捕获 + uinput 注入(ahk-inputd,需权限)
      **规则安装后要重载 uinput 模块才生效**(仓库现有
      `tools/linux/permissions/60-ahk-uinput.rules` 需核对这两点);socket 应放
      `$XDG_RUNTIME_DIR` 而非 `/tmp`;
+  **R4 关键路径已实证(§1-B remap 机制)**:VM(mono 在 input 组)上
+  `/dev/uinput` chmod 666 后,`AHK_INPUT_BACKEND=evdev` + `a::Send("b")` +
+  持久 uinput 测试键盘(`tools/linux/uinput-inject.c`,新建——设备常驻 + 命令
+  文件注入,解决 uinput-kbd 一过性设备被 evdev 2s rescan 错过的注入不可靠)——
+  evdev lane 读到物理 KEY_A(30) → remap 热键触发 → **uinput 回放 KEY_B(48)
+  被 evtest 在 AHK 虚拟设备上捕获**(全链闭环)。capslock_remap 场景的
+  CapsLock/Esc 双角色即此机制 + hold/tap 判定,inputd 守护进程化是后续
+  (场景 runner 的 needs 门禁已支持 uinput 未授权时 skip);
   2. n-key rollover/组合媒体键设备兼容性需要设备白名单(`EVIOCGBIT` 检查
      EV_KEY 且有字母区);
   3. keyd 实证的两个副作用要写进文档:虚拟键盘设备会让 libinput 的

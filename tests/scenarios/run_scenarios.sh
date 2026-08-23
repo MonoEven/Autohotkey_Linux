@@ -60,13 +60,27 @@ for yaml in "$DIR"/*/scenario.yaml; do
   needs="$(grep -m1 '^needs:' "$yaml" | sed 's/^needs:[[:space:]]*//')"
   [ -n "$id" ] || continue
 
+  # needs gate: capabilities the environment may lack (uinput writes, KDE,
+  # Flatpak, inputd) -- skip + record instead of failing the GATE.
+  needs_missing=""
+  if [ -n "$needs" ]; then
+    case ",$needs," in
+      *,uinput,*) [ -w /dev/uinput ] || needs_missing="uinput not writable" ;;
+      *,kde,*) needs_missing="no KDE host" ;;
+      *,flatpak,*) needs_missing="no Flatpak host" ;;
+      *,inputd,*) needs_missing="no inputd daemon" ;;
+    esac
+  fi
   # Env gate: scenario declares which envs it can run in.
   case ",$envs," in
     *,any,*) can_run=1 ;;
     *,"$ENV",*) can_run=1 ;;
     *) can_run=0 ;;
   esac
-  if [ "$can_run" != "1" ]; then
+  if [ -n "$needs_missing" ]; then
+    status="skip"
+    detail="needs missing: $needs_missing"
+  elif [ "$can_run" != "1" ]; then
     status="skip"
     detail="env $ENV not in envs=$envs"
   elif [ -z "$script" ]; then

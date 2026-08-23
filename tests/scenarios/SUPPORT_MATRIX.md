@@ -6,6 +6,7 @@
 | callback_fp | x11 | not-run | "CallbackCreate with Float/Double ABI types (libffi SysV FP registers)" |
 | capslock_remap | x11 | skip | CapsLock/Esc dual-role remap (needs the evdev inputd lane) |
 | clipboard_roundtrip | x11 | pass | A_Clipboard round-trips large text (X11 XFixes) |
+| evdev_remap | x11 | not-run | "evdev/uinput remap: physical key read -> hotkey fires -> uinput replay (a::b)" |
 | fileinstall_pack | x11 | not-run | "FileInstall extracts the embedded resource from a packed binary" |
 | flatpak_app | x11 | skip | SendText to a Flatpak-sandboxed app (needs a Flatpak host with AT-SPI portal) |
 | highfreq_cpu | x11 | pass | High-frequency Send delivers all events without loss |

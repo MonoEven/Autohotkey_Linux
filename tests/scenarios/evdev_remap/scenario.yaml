@@ -1,0 +1,8 @@
+id: evdev_remap
+title: "evdev/uinput remap: physical key read -> hotkey fires -> uinput replay (a::b)"
+script: run_evdev.sh
+script_type: sh
+check: marker:/tmp/scn_evdev_remap
+envs: any
+expect: pass
+needs: uinput
