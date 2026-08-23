@@ -1,0 +1,8 @@
+id: panic_escape
+title: "Panic escape key: Backspace->Escape->Enter releases the evdev grab (fail-open)"
+script: run_panic.sh
+script_type: sh
+check: marker:/tmp/scn_panic_escape
+envs: any
+expect: pass
+needs: uinput

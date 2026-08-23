@@ -46,10 +46,23 @@ struct EvdevDevice
 std::vector<EvdevDevice> sDevices;
 bool sScanned = false;
 bool sAnyGrabbed = false; // At least one device suppressed.
+bool sPanicked = false;   // Panic sequence fired: grabs released, fail-open.
 char sError[256] = { 0 };
 DWORD sLastRescanMs = 0;  // Periodic device discovery (check0820 direction-B:
                           // uinput test devices appear after startup; the
                           // broker must pick them up without a restart).
+
+// Panic escape key (check_detail0821 §1-B / R4, keyd-style): the sequence
+// Backspace -> Escape -> Enter releases every EVIOCGRAB and drops the lane
+// into fail-open, so a stuck grab can always be recovered physically.  The
+// stage advances on each down event and resets on any other key or after a
+// timeout.
+static int sPanicStage = 0;
+static DWORD sPanicStageMs = 0;
+#define PANIC_BACKSPACE 14 // KEY_BACKSPACE
+#define PANIC_ESCAPE    1  // KEY_ESC
+#define PANIC_ENTER     28 // KEY_ENTER
+#define PANIC_TIMEOUT_MS 1500
 
 // Which vk are currently physically down (modifiers + keys), updated from
 // the EV_KEY stream.  Used for modifier matching and key-up hotkeys.
@@ -357,6 +370,9 @@ bool LinuxEvdevCanSuppress()
 	return sAnyGrabbed;
 }
 
+// Panic escape key state machine (defined below; used by LinuxEvdevDispatch).
+bool EvdevPanicStep(unsigned int aCode, bool aDown);
+
 void LinuxEvdevDispatch()
 {
 	if (!LinuxEvdevActive() || sDevices.empty())
@@ -391,6 +407,12 @@ void LinuxEvdevDispatch()
 				break; // EAGAIN or short read: next poll.
 			if (ev.type != EV_KEY)
 				continue;
+			// Panic escape key: Backspace->Escape->Enter releases the grabs
+			// (check_detail0821 §1-B / R4).  Checked before hotkey dispatch so
+			// the sequence always wins.
+			EvdevPanicStep((unsigned int)ev.code, ev.value != 0);
+			if (sPanicked)
+				continue; // Fail-open: everything passes through.
 			bool suppressed = HandleEvdevKey(ev.code, ev.value != 0, ev.value == 2);
 			// Suppression cover: when this device is grabbed and the key
 			// was not consumed, replay it through /dev/uinput so the
@@ -417,6 +439,58 @@ void LinuxEvdevShutdown()
 	sAnyGrabbed = false;
 	sScanned = false;
 	memset(sDown, 0, sizeof(sDown));
+}
+
+// Panic escape key state machine (keyd-style Backspace->Escape->Enter).
+// Returns true when the sequence just fired (grabs released, fail-open).
+bool EvdevPanicStep(unsigned int aCode, bool aDown)
+{
+	DWORD now = GetTickCount();
+	if (!aDown)
+		return false; // Only advance on presses.
+	if (sPanicStage > 0 && now - sPanicStageMs > PANIC_TIMEOUT_MS)
+		sPanicStage = 0; // Stale sequence: reset.
+	switch (sPanicStage)
+	{
+	case 0:
+		if (aCode == PANIC_BACKSPACE)
+		{
+			sPanicStage = 1;
+			sPanicStageMs = now;
+		}
+		break;
+	case 1:
+		if (aCode == PANIC_ESCAPE)
+		{
+			sPanicStage = 2;
+			sPanicStageMs = now;
+		}
+		else if (aCode == PANIC_BACKSPACE)
+		{
+			sPanicStage = 1; // Repeated backspace keeps the stage.
+			sPanicStageMs = now;
+		}
+		else
+			sPanicStage = 0;
+		break;
+	case 2:
+		sPanicStage = 0;
+		if (aCode == PANIC_ENTER)
+		{
+			fprintf(stderr, "AHK evdev: PANIC sequence fired -- releasing all EVIOCGRAB (fail-open).\n");
+			for (auto &dev : sDevices)
+			{
+				if (dev.grabbed)
+					ioctl(dev.fd, EVIOCGRAB, 0);
+				dev.grabbed = false;
+			}
+			sAnyGrabbed = false;
+			sPanicked = true;
+			return true;
+		}
+		break;
+	}
+	return false;
 }
 
 const char *LinuxEvdevLastError()
