@@ -37,9 +37,10 @@ CKSUMS=dist/CKSUMS.txt
   echo
   echo "These hashes are computed from the files as packaged.  Verify a"
   echo "downloaded artifact with:  sha256sum -c <(grep '<filename>' CKSUMS.txt)"
-  echo "CKSUMS.txt.sig is an OpenPGP detached signature (ASC) of this file."
-  echo "Verify with:  gpg --verify CKSUMS.txt.sig CKSUMS.txt"
-  echo "The public key is tools/linux/ahk-release.pub (AutoHotkey Linux"
+  echo "CKSUMS.txt.asc is the ASCII-armored OpenPGP detached signature of this file."
+  echo "Verify with:  gpg --import ahk-release.pub"
+  echo "              gpg --verify CKSUMS.txt.asc CKSUMS.txt"
+  echo "The release asset ahk-release.pub contains the public key (AutoHotkey Linux"
   echo "Release <release@autohotkey-linux.invalid>)."
 } > "$CKSUMS"
 echo "built: dist/CKSUMS.txt"
