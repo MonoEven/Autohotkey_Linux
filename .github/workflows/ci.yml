@@ -96,8 +96,7 @@ jobs:
       # seeded user scenarios under Xvfb (hotkeys, clipboard, long-press,
       # a&b, --pack, FileInstall resources, typed callbacks).
       - name: Scenario runner (Xvfb)
-        run: |
-          bash -c 'xvfb-run -a bash tests/scenarios/run_scenarios.sh "$BUILD_DIR/source/linux/core/ahk_core" --env x11'
+        run: bash -c 'xvfb-run -a bash tests/scenarios/run_scenarios.sh "$1" --env x11' _ "$BUILD_DIR/source/linux/core/ahk_core"
         env:
           BUILD_DIR: ${{ matrix.build }}
 
