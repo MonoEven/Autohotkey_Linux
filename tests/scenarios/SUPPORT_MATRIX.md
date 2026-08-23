@@ -3,6 +3,7 @@
 | scenario | env | status | note |
 |---|---|---|---|
 | a_and_b | x11 | not-run | "a & b" custom-combo registration (X11: documented unsupported error) |
+| atspi_matrix | x11 | not-run | "AT-SPI app matrix: ControlGetText finds gnome-terminal + firefox under a GNOME Wayland session" |
 | callback_fp | x11 | not-run | "CallbackCreate with Float/Double ABI types (libffi SysV FP registers)" |
 | capslock_dual | x11 | not-run | "CapsLock dual-role: tap = CapsLock, hold = Esc (evdev/uinput)" |
 | capslock_remap | x11 | skip | CapsLock/Esc dual-role remap (needs the evdev inputd lane) |

@@ -1,0 +1,8 @@
+id: atspi_matrix
+title: "AT-SPI app matrix: ControlGetText finds gnome-terminal + firefox under a GNOME Wayland session"
+script: run_matrix.sh
+script_type: sh
+check: marker:/tmp/scn_atspi_matrix
+envs: any
+expect: pass
+needs: gnome
