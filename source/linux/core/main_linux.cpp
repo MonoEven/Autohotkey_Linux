@@ -12,6 +12,7 @@
 #include "../../SimpleHeap.h"
 #include "core_timer_linux.h"
 #include "core_hotkey_linux.h"
+#include "core_pack_linux.h"
 #include "../gui/script_gui_linux.h"
 #include <cstdio>
 #include <cstdlib>
@@ -60,20 +61,54 @@ int main(int argc, char** argv)
 		}
 	}
 
+	// The script path comes from the command line, or from the packed
+	// payload when no script argument was given (check_detail0821 §5-M6 / R4).
+	const char *run_path = nullptr;
+	char packed_tmp[80] = "";
 	if (argc < 2)
 	{
-		std::printf("AutoHotkey Linux (v2 port)\nUsage: ahk_core script.ahk [args...]\n");
-		return 1;
+		// A packed binary (ahk_core --pack outfile script.ahk) runs with no
+		// script argument: extract the embedded script to a temp file and
+		// load it.
+		if (LinuxIsPacked())
+		{
+			char sbuf[4 << 20];
+			size_t slen = LinuxExtractPackedScript(sbuf, sizeof(sbuf));
+			if (slen > 0)
+			{
+				snprintf(packed_tmp, sizeof(packed_tmp), "/tmp/ahk_packed_%ld.ahk", (long)getpid());
+				FILE *f = fopen(packed_tmp, "wb");
+				if (f)
+				{
+					fwrite(sbuf, 1, slen, f);
+					fclose(f);
+					g_LinuxPacked = true;
+					run_path = packed_tmp;
+				}
+			}
+			if (!run_path)
+			{
+				std::fprintf(stderr, "AutoHotkey Linux: packed payload missing or corrupt.\n");
+				return 1;
+			}
+		}
+		else
+		{
+			std::printf("AutoHotkey Linux (v2 port)\nUsage: ahk_core script.ahk [args...]\n");
+			return 1;
+		}
 	}
+	else
+		run_path = argv[script_arg];
 
 	// Version/help switches (Linux convention; the Windows build has no
 	// --version either, but installers and users expect one here).
-	if (!strcmp(argv[1], "--version") || !strcmp(argv[1], "-v"))
+	if (argc > 1 && (!strcmp(argv[1], "--version") || !strcmp(argv[1], "-v")))
 	{
 		std::printf("AutoHotkey v2.0.26 Linux port (X11/Wayland)\n");
 		return 0;
 	}
-	if (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h"))
+	if (argc > 1 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h")))
 	{
 		std::printf("AutoHotkey Linux (v2 port)\n"
 			"Usage: ahk_core script.ahk [args...]\n"
@@ -85,18 +120,33 @@ int main(int argc, char** argv)
 			"Wayland otherwise (xdg-shell + virtual input protocols).\n");
 		return 0;
 	}
-	if (!strcmp(argv[1], "--diag"))
+	if (argc > 1 && !strcmp(argv[1], "--diag"))
 		return LinuxRunDiagnostic();
-	if (!strcmp(argv[1], "--parity") && argc >= 3)
+	if (argc > 1 && !strcmp(argv[1], "--parity") && argc >= 3)
 		return LinuxRunParity(argv[2]);
-	if (!strcmp(argv[1], "--parity"))
+	if (argc > 1 && !strcmp(argv[1], "--parity"))
 	{
 		std::fprintf(stderr, "AutoHotkey Linux: --parity needs a function name.\n");
 		return 1;
 	}
+	// Packed-script support (check_detail0821 §5-M6 / R4): ahk_core --pack
+	// outfile script.ahk embeds the script behind the runtime; the produced
+	// executable runs it when invoked without a script argument.
+	if (argc > 1 && !strcmp(argv[1], "--pack"))
+	{
+		if (argc != 4)
+		{
+			std::fprintf(stderr, "AutoHotkey Linux: --pack needs an output file and a script.\n");
+			return 1;
+		}
+		if (!LinuxPackExecutable(argv[2], argv[3]))
+			return 1;
+		std::printf("packed: %s\n", argv[2]);
+		return 0;
+	}
 
 	wchar_t wpath[4096];
-	if (mbstowcs(wpath, argv[script_arg], 4095) == (size_t)-1)
+	if (mbstowcs(wpath, run_path, 4095) == (size_t)-1)
 	{
 		std::fprintf(stderr, "AutoHotkey Linux: invalid script path encoding.\n");
 		return 1;

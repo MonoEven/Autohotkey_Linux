@@ -6,6 +6,7 @@
 #include "../../globaldata.h"
 #include "../../script_func_impl.h"
 #include "../../window.h" // For MsgBox() and dialog size constants.
+#include "core_pack_linux.h" // g_LinuxPacked (A_IsCompiled).
 #include <fstream>
 #include <string>
 #include <vector>
@@ -695,7 +696,7 @@ BIV_DECL_R(BIV_ComSpec) { aResultToken.SetValue(_T("/bin/sh")); }
 BIV_DECL_R(BIV_InitialWorkingDir) { aResultToken.SetValue(g_WorkingDirOrig ? g_WorkingDirOrig : _T("")); }
 BIV_DECL_R(BIV_Is64bitOS) { aResultToken.SetValue((__int64)(sizeof(void*) == 8 ? 1 : 0)); }
 BIV_DECL_R(BIV_IsAdmin) { aResultToken.SetValue((__int64)0); }
-BIV_DECL_R(BIV_IsCompiled) { aResultToken.SetValue((__int64)0); }
+BIV_DECL_R(BIV_IsCompiled) { aResultToken.SetValue((__int64)(g_LinuxPacked ? 1 : 0)); }
 BIV_DECL_R(BIV_PtrSize) { aResultToken.SetValue((__int64)sizeof(void*)); }
 BIV_DECL_R(BIV_ScriptDir) { aResultToken.SetValue(g_script.mFileDir ? g_script.mFileDir : _T("")); }
 BIV_DECL_R(BIV_ScriptFullPath) { aResultToken.SetValue(g_script.mFileSpec ? g_script.mFileSpec : _T("")); }

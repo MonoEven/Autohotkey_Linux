@@ -12,3 +12,4 @@
 | kde_sni | x11 | skip | Tray StatusNotifierItem on KDE Plasma (needs a KDE host) |
 | keydown_longpress | x11 | pass | Key-down hotkey fires repeatedly while held (bounded count) |
 | multiscript_conflict | x11 | fail | Second process registering the same hotkey raises a conflict error |
+| pack_compile | x11 | not-run | "ahk_core --pack produces a self-contained binary; A_IsCompiled=1 when run" |

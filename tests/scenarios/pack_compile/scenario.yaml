@@ -1,0 +1,8 @@
+id: pack_compile
+title: "ahk_core --pack produces a self-contained binary; A_IsCompiled=1 when run"
+script: run_pack.sh
+script_type: sh
+check: marker:/tmp/scn_pack_compile
+envs: x11
+expect: pass
+needs: ""

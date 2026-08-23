@@ -103,6 +103,7 @@ add_executable(ahk_core
     core_display_linux.cpp
     core_timer_linux.cpp
     core_hotkey_linux.cpp
+    core_pack_linux.cpp
     core_capture_linux.cpp
     core_gshortcut_linux.cpp
     input_backend.cpp

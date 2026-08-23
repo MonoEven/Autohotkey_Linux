@@ -23,6 +23,7 @@ if [ -z "$AHK" ] || [ ! -x "$AHK" ]; then
   echo "usage: run_scenarios.sh <ahk_binary> [--env x11|wayland]" >&2
   exit 2
 fi
+export AHK
 
 # Determine the environment.
 ENV="x11"
@@ -44,6 +45,7 @@ for yaml in "$DIR"/*/scenario.yaml; do
   title="$(grep -m1 '^title:' "$yaml" | sed 's/^title:[[:space:]]*//')"
   sc_parse() { grep -m1 "^$1:" "$yaml" | sed "s/^$1:[[:space:]]*//; s/^\"//; s/\"\$//"; }
   script="$(sc_parse script)"
+  stype="$(sc_parse script_type)"
   check="$(sc_parse check)"
   envs="$(grep -m1 '^envs:' "$yaml" | sed 's/^envs:[[:space:]]*//')"
   expect="$(grep -m1 '^expect:' "$yaml" | sed 's/^expect:[[:space:]]*//')"
@@ -66,7 +68,11 @@ for yaml in "$DIR"/*/scenario.yaml; do
     detail="no script (needs: $needs)"
   else
     rm -f "$SC"/out.txt "$SC"/marker
-    ( cd "$SC" && "$AHK" "$script" > out.txt 2>&1 ) &
+    if [ "$stype" = "sh" ]; then
+      ( cd "$SC" && bash "$script" > out.txt 2>&1 ) &
+    else
+      ( cd "$SC" && "$AHK" "$script" > out.txt 2>&1 ) &
+    fi
     spid=$!
     # Bound the run with a SIGKILL watchdog: a hung core can ignore SIGTERM
     # (observed with a script-error dialog under Xvfb), so plain `timeout`
