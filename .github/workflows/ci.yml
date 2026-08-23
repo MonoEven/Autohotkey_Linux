@@ -169,12 +169,12 @@ jobs:
           mkdir -p /tmp/packwork && cd /tmp/packwork
           printf 'PACKED-FILEINSTALL-OK' > res.txt
           cat > pkg.ahk <<'EOF'
-#Requires AutoHotkey v2.0
-FileInstall("/tmp/packwork/res.txt", "/tmp/packwork/out.txt")
-c := FileExist("/tmp/packwork/out.txt") ? FileRead("/tmp/packwork/out.txt") : ""
-FileAppend("compiled=" A_IsCompiled " res=" (c = "PACKED-FILEINSTALL-OK" ? 1 : 0) "`n", "/tmp/packwork/pk.txt")
-ExitApp
-EOF
+          #Requires AutoHotkey v2.0
+          FileInstall("/tmp/packwork/res.txt", "/tmp/packwork/out.txt")
+          c := FileExist("/tmp/packwork/out.txt") ? FileRead("/tmp/packwork/out.txt") : ""
+          FileAppend("compiled=" A_IsCompiled " res=" (c = "PACKED-FILEINSTALL-OK" ? 1 : 0) "`n", "/tmp/packwork/pk.txt")
+          ExitApp
+          EOF
           "$AHK" --pack /tmp/packwork/packed /tmp/packwork/pkg.ahk
           # debian:12 container has no AHK installed; the packed binary must run.
           docker run --rm -v /tmp/packwork:/work -w /work debian:12 \
