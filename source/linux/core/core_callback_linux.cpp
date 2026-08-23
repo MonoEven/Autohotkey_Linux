@@ -32,6 +32,11 @@
 
 // ---------------------------------------------------------------------------
 
+// Callback ABI type tags (check_detail0821 §5-M4 / R4): the v2 options may
+// name Float/Double so libffi places them in the SysV FP registers correctly
+// (the old code used UINT_PTR slots for everything).
+enum CallbackArgType { CB_PTR, CB_FLOAT, CB_DOUBLE };
+
 struct LinuxCallback
 {
 	ffi_cif cif;
@@ -42,6 +47,8 @@ struct LinuxCallback
 	bool pass_params_pointer;   // '&' option.
 	bool create_new_thread;     // Default true unless 'F'.
 	ffi_type **arg_types;       // Owned; ffi_cif.arg_types points here.
+	CallbackArgType *param_types; // Per-parameter ABI type (owned).
+	CallbackArgType return_type;  // Return ABI type.
 };
 
 static std::mutex s_callback_mutex;
@@ -54,8 +61,16 @@ static void LinuxCallbackInvoke(ffi_cif *aCif, void *aRet, void **aArgs, void *a
 	LinuxCallback &cb = *(LinuxCallback *)aUser;
 
 	__int64 params[256];
+	double fparams[256];
 	for (int i = 0; i < cb.param_count && i < 256; ++i)
-		params[i] = *(UINT_PTR *)aArgs[i];
+	{
+		switch (cb.param_types ? cb.param_types[i] : CB_PTR)
+		{
+		case CB_FLOAT:  fparams[i] = *(float *)aArgs[i];  break;
+		case CB_DOUBLE: fparams[i] = *(double *)aArgs[i]; break;
+		default:        params[i] = *(UINT_PTR *)aArgs[i]; break;
+		}
+	}
 
 	BOOL pause_after_execute = FALSE;
 	if (cb.create_new_thread)
@@ -77,8 +92,6 @@ static void LinuxCallbackInvoke(ffi_cif *aCif, void *aRet, void **aArgs, void *a
 		}
 	}
 
-	__int64 number_to_return = 0;
-	FuncResult result_token;
 	ExprTokenType *param = nullptr, one_param;
 	int param_count;
 	if (cb.pass_params_pointer)
@@ -92,10 +105,28 @@ static void LinuxCallbackInvoke(ffi_cif *aCif, void *aRet, void **aArgs, void *a
 		param_count = cb.param_count;
 		param = (ExprTokenType *)_alloca(param_count * sizeof(ExprTokenType));
 		for (int i = 0; i < param_count; ++i)
-			param[i].SetValue((UINT_PTR)params[i]);
+		{
+			if (cb.param_types && cb.param_types[i] != CB_PTR)
+				param[i].SetValue(fparams[i]); // SYM_NUMBER with the double.
+			else
+				param[i].SetValue((UINT_PTR)params[i]);
+		}
 	}
 
-	CallMethod(cb.func, cb.func, nullptr, param, param_count, &number_to_return);
+	// Call the script function directly so a Float/Double return keeps its
+	// full precision (CallMethod() fills an int64 and truncates doubles).
+	ExprTokenType this_token(cb.func);
+	double number_to_return = 0;
+	{
+		FuncResult result_token;
+		ExprTokenType **pparam = (ExprTokenType **)_alloca((param_count ? (size_t)param_count : 1) * sizeof(ExprTokenType *));
+		for (int i = 0; i < param_count; ++i)
+			pparam[i] = param + i;
+		ResultType call_rc = cb.func->Invoke(result_token, IT_CALL, nullptr, this_token, pparam, param_count);
+		if (call_rc != EARLY_EXIT && call_rc != FAIL)
+			number_to_return = TokenToDouble(result_token);
+		result_token.Free();
+	}
 
 	if (cb.create_new_thread)
 		ResumeUnderlyingThread();
@@ -105,7 +136,12 @@ static void LinuxCallbackInvoke(ffi_cif *aCif, void *aRet, void **aArgs, void *a
 		++g_nPausedThreads;
 	}
 
-	*(UINT_PTR *)aRet = (UINT_PTR)number_to_return;
+	switch (cb.return_type)
+	{
+	case CB_FLOAT:  *(float *)aRet = (float)number_to_return; break;
+	case CB_DOUBLE: *(double *)aRet = (double)number_to_return; break;
+	default:        *(UINT_PTR *)aRet = (UINT_PTR)number_to_return; break;
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -144,22 +180,68 @@ bif_impl FResult CallbackCreate(IObject *func, optl<StrArg> aOptions, optl<int> 
 	// follow upstream default (create new thread when 'F' is absent).
 	// If 'F' is specified, skip the new thread (fast mode).
 
-	// Build the ffi call description: all arguments are pointers to
-	// UINT_PTR-sized slots (the closure receives pointer-sized args).
+	// Parse the ABI type words from the options (check_detail0821 §5-M4 / R4):
+	// option words (CDecl/C/Fast/F/&) are skipped; the FIRST type name is the
+	// return type, the following ones the parameter types
+	// (Float/Double/Int/Int64/Short/Char/Ptr, case-insensitive).  This mirrors
+	// the DllCall type-name convention.
+	auto type_word = [](const TCHAR *&p) -> CallbackArgType {
+		for (;;)
+		{
+			while (*p == _T(' ') || *p == _T('\t'))
+				++p;
+			if (!*p)
+				return CB_PTR;
+			const TCHAR *start = p;
+			while (*p && *p != _T(' ') && *p != _T('\t'))
+				++p;
+			size_t n = (size_t)(p - start);
+			if ((n == 1 && (*start == _T('C') || *start == _T('c') || *start == _T('F') || *start == _T('f')))
+				|| (n == 5 && !_tcsnicmp(start, _T("CDecl"), 5))
+				|| (n == 4 && !_tcsnicmp(start, _T("Fast"), 4)))
+				continue; // Option word, not a type.
+			if (n == 5 && !_tcsnicmp(start, _T("Float"), 5))
+				return CB_FLOAT;
+			if (n == 6 && !_tcsnicmp(start, _T("Double"), 6))
+				return CB_DOUBLE;
+			return CB_PTR; // Int/Int64/UInt/Short/Char/Ptr: pointer-sized slot.
+		}
+	};
 	ffi_type **arg_types = (ffi_type **)calloc(actual_param_count ? (size_t)actual_param_count : 1, sizeof(ffi_type *));
-	if (!arg_types)
+	CallbackArgType *param_types = (CallbackArgType *)calloc(actual_param_count ? (size_t)actual_param_count : 1, sizeof(CallbackArgType));
+	if (!arg_types || !param_types)
 	{
+		free(arg_types);
+		free(param_types);
 		delete cb;
 		return FR_E_OUTOFMEM;
 	}
+	const TCHAR *opt = options;
+	cb->return_type = type_word(opt); // First type name = return type.
 	for (int i = 0; i < actual_param_count; ++i)
-		arg_types[i] = &ffi_type_ulong;
+	{
+		CallbackArgType t = type_word(opt);
+		param_types[i] = t;
+		switch (t)
+		{
+		case CB_FLOAT:  arg_types[i] = &ffi_type_float;  break;
+		case CB_DOUBLE: arg_types[i] = &ffi_type_double; break;
+		default:        arg_types[i] = &ffi_type_ulong;  break;
+		}
+	}
 	cb->arg_types = arg_types;
+	cb->param_types = param_types;
+	ffi_type *ret_type = &ffi_type_ulong;
+	if (cb->return_type == CB_FLOAT)
+		ret_type = &ffi_type_float;
+	else if (cb->return_type == CB_DOUBLE)
+		ret_type = &ffi_type_double;
 
 	if (ffi_prep_cif(&cb->cif, FFI_DEFAULT_ABI, (unsigned)actual_param_count,
-		&ffi_type_ulong, arg_types) != FFI_OK)
+		ret_type, arg_types) != FFI_OK)
 	{
 		free(arg_types);
+		free(param_types);
 		delete cb;
 		return FR_E_OUTOFMEM;
 	}
@@ -168,6 +250,7 @@ bif_impl FResult CallbackCreate(IObject *func, optl<StrArg> aOptions, optl<int> 
 	if (!cb->closure)
 	{
 		free(arg_types);
+		free(param_types);
 		delete cb;
 		return FR_E_OUTOFMEM;
 	}
@@ -176,6 +259,7 @@ bif_impl FResult CallbackCreate(IObject *func, optl<StrArg> aOptions, optl<int> 
 	{
 		ffi_closure_free(cb->closure);
 		free(arg_types);
+		free(param_types);
 		delete cb;
 		return FR_E_OUTOFMEM;
 	}
@@ -209,6 +293,8 @@ bif_impl FResult CallbackFree(UINT_PTR aCallback)
 			ffi_closure_free(cb->closure);
 			if (cb->arg_types)
 				free(cb->arg_types);
+			if (cb->param_types)
+				free(cb->param_types);
 			s_callbacks.erase(it);
 			delete cb;
 			return OK;
