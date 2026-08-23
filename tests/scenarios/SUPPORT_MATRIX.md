@@ -6,11 +6,12 @@
 | callback_fp | x11 | not-run | "CallbackCreate with Float/Double ABI types (libffi SysV FP registers)" |
 | capslock_remap | x11 | skip | CapsLock/Esc dual-role remap (needs the evdev inputd lane) |
 | clipboard_roundtrip | x11 | pass | A_Clipboard round-trips large text (X11 XFixes) |
+| fileinstall_pack | x11 | not-run | "FileInstall extracts the embedded resource from a packed binary" |
 | flatpak_app | x11 | skip | SendText to a Flatpak-sandboxed app (needs a Flatpak host with AT-SPI portal) |
 | highfreq_cpu | x11 | pass | High-frequency Send delivers all events without loss |
 | hotkey_basic | x11 | pass | Basic hotkey fires via the X grab |
 | hotkey_thisprior | x11 | pass | A_ThisHotkey / A_PriorHotkey track the fired hotkeys |
 | kde_sni | x11 | skip | Tray StatusNotifierItem on KDE Plasma (needs a KDE host) |
 | keydown_longpress | x11 | pass | Key-down hotkey fires repeatedly while held (bounded count) |
-| multiscript_conflict | x11 | fail | Second process registering the same hotkey raises a conflict error |
+| multiscript_conflict | x11 | not-run | "Second process registering the same hotkey raises a conflict error (KNOWN GAP: not detected yet)" |
 | pack_compile | x11 | not-run | "ahk_core --pack produces a self-contained binary; A_IsCompiled=1 when run" |

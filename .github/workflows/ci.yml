@@ -92,6 +92,15 @@ jobs:
         env:
           XDG_RUNTIME_DIR: /tmp
 
+      # check_detail0821 §14 / R4: the scenario acceptance runner gates the
+      # seeded user scenarios under Xvfb (hotkeys, clipboard, long-press,
+      # a&b, --pack, FileInstall resources, typed callbacks).
+      - name: Scenario runner (Xvfb)
+        run: |
+          bash -c 'xvfb-run -a bash tests/scenarios/run_scenarios.sh "$BUILD_DIR/source/linux/core/ahk_core" --env x11'
+        env:
+          BUILD_DIR: ${{ matrix.build }}
+
       # check0819: the published numbers in CHECK_REPORT.md used to drift by
       # hand (Wayland "847", XWayland 235 vs 247).  This recomputes every
       # count from the expect files and fails the pipeline on any mismatch,

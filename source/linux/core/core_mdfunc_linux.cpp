@@ -32,6 +32,7 @@ extern "C" const char *LinuxParityLookup(const char *aName, int &aLevel);
 #include "core_display_linux.h"
 #include "core_timer_linux.h"
 #include "core_hotkey_linux.h"
+#include "core_pack_linux.h"
 #include "input_backend.h"
 #include "core_clipboard_linux.h"
 #include "core_ime_linux.h"
@@ -2468,6 +2469,36 @@ BIF_DECL(BIF_Linux_FileInstall)
 	TCHAR s_buf[4096], d_buf[4096];
 	LPTSTR s = TokenToString(*aParam[0], s_buf, nullptr);
 	LPTSTR d = TokenToString(*aParam[1], d_buf, nullptr);
+	// In a packed binary the FileInstall resource is embedded: extract it to
+	// the target instead of copying a source file (check_detail0821 §5-M6).
+	if (g_LinuxPacked)
+	{
+		char narrow_s[4096];
+		if (s && wcstombs(narrow_s, s, sizeof(narrow_s)) != (size_t)-1)
+		{
+			narrow_s[sizeof(narrow_s) - 1] = '\0';
+			std::vector<unsigned char> data;
+			if (LinuxPackGetResource(narrow_s, data))
+			{
+				if (!d)
+					_f_return_retval; // Dest empty: nothing to write.
+				char narrow_d[4096];
+				if (wcstombs(narrow_d, d, sizeof(narrow_d)) == (size_t)-1)
+					narrow_d[0] = '\0';
+				narrow_d[sizeof(narrow_d) - 1] = '\0';
+				FILE *f = fopen(narrow_d, "wb");
+				if (!f)
+				{
+					aResultToken.Error(_T("Cannot create destination file: "), d, ErrorPrototype::OS);
+					return;
+				}
+				fwrite(data.data(), 1, data.size(), f);
+				fclose(f);
+				return;
+			}
+			// Not an embedded resource: fall through to the copy semantics.
+		}
+	}
 	int slot = 0;
 	// Docs: in an uncompiled script the source file is copied to the target.
 	FResult fr = FileInstall(s ? s : s_buf, d ? d : d_buf, LinuxOptInt(slot, aParam, aParamCount, 2));

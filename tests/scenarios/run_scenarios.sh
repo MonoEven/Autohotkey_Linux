@@ -38,6 +38,7 @@ echo "env=$ENV binary=$AHK"
 
 RESULTS="{}"
 FIRST=1
+GATE=0
 for yaml in "$DIR"/*/scenario.yaml; do
   [ -f "$yaml" ] || continue
   SC="$(dirname "$yaml")"
@@ -121,6 +122,11 @@ for yaml in "$DIR"/*/scenario.yaml; do
     RESULTS="$RESULTS,$entry"
   fi
   printf '%-28s %-8s %s\n' "$id" "$status" "$detail"
+  # Gate: an expected-pass scenario that failed breaks the pipeline (the CI
+  # runner step); known-fail scenarios (recorded gaps) do not gate.
+  if [ "$expect" = "pass" ] && [ "$status" = "fail" ]; then
+    GATE=1
+  fi
 done
 RESULTS="$RESULTS]"
 printf '%s\n' "$RESULTS" > "$DIR/status.json"
@@ -140,3 +146,8 @@ printf '%s\n' "$RESULTS" > "$DIR/status.json"
   done
 } > "$DIR/SUPPORT_MATRIX.md"
 echo "wrote $DIR/status.json + $DIR/SUPPORT_MATRIX.md"
+if [ "$GATE" = "1" ]; then
+  echo "GATE: an expected-pass scenario failed (see status.json)" >&2
+  exit 1
+fi
+exit 0
