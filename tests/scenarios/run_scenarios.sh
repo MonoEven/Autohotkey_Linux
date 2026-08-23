@@ -24,6 +24,12 @@ if [ -z "$AHK" ] || [ ! -x "$AHK" ]; then
   echo "diag: AHK='$AHK' cwd=$(pwd) exists=$([ -e "$AHK" ] && echo yes || echo no)" >&2
   exit 2
 fi
+# The scenario scripts run from their own directory, so the binary must be an
+# absolute path (a relative build path would break after the per-scenario cd).
+case "$AHK" in
+  /*) : ;;
+  *) AHK="$(cd "$(dirname "$AHK")" && pwd)/$(basename "$AHK")" ;;
+esac
 export AHK
 
 # Determine the environment.
