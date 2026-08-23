@@ -1,7 +1,7 @@
 id: multiscript_conflict
-title: "Second process registering the same hotkey raises a conflict error"
+title: "Conflicted X11 hotkey reports BadAccess then auto-recovers after owner exit"
 script: run.ahk
-check: script:grep -q '^conflict:' /tmp/scn_multiscript_conflict
+check: script:grep -q '^conflict:' /tmp/scn_multiscript_conflict && grep -q '^recovered=1$' /tmp/scn_multiscript_conflict
 envs: x11
 expect: pass
 needs: ""

@@ -51,16 +51,40 @@ void ScriptSleep(int aDelay);
 // "no X display" gate silently fell through to the X11 path there).
 static bool LinuxCtrlSessionIsWayland()
 {
+	// XDG_SESSION_TYPE is authoritative when present.  In particular, GNOME
+	// still has an Xorg session: desktop name alone must never select AT-SPI.
 	const char *st = getenv("XDG_SESSION_TYPE");
 	if (st && strcmp(st, "wayland") == 0)
 		return true;
-	const char *dd = getenv("XDG_CURRENT_DESKTOP");
-	if (dd && strstr(dd, "GNOME"))
-		return true; // GNOME sessions are Wayland-first; X11 GNOME is legacy.
+	if (st && (strcmp(st, "x11") == 0 || strcmp(st, "xorg") == 0))
+		return false;
+	// SSH/systemd launch contexts commonly say "tty" or omit the variable;
+	// in those cases a supplied Wayland socket is the authoritative fallback.
+	// DISPLAY may coexist through XWayland.
 	const char *wl = getenv("WAYLAND_DISPLAY");
-	if (wl && *wl)
+	return wl && *wl;
+}
+
+static bool LinuxCtrlUtf8ToWide(const char *aText, size_t aLength, std::wstring &aOut)
+{
+	aOut.clear();
+	if (!aText || !aLength)
 		return true;
-	return false;
+	if (aLength > (size_t)INT_MAX)
+		return false;
+	int needed = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, aText
+		, (int)aLength, nullptr, 0);
+	if (needed <= 0)
+		return false;
+	aOut.resize((size_t)needed);
+	int written = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, aText
+		, (int)aLength, &aOut[0], needed);
+	if (written != needed)
+	{
+		aOut.clear();
+		return false;
+	}
+	return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,10 +115,9 @@ static std::wstring LinuxCtrlClassOf(Display *d, Window w)
 		const char *s2 = s + l1 + 1;
 		if (l1 && *s2) // WM_CLASS is "instance\0class\0".
 		{
-			// Reuse the wide conversion via a simple UTF-8/Latin-1 decode.
-			size_t len = strlen(s2);
-			for (size_t i = 0; i < len; ++i)
-				cls += (unsigned char)s2[i] < 0x80 ? (wchar_t)(unsigned char)s2[i] : L'?';
+			// Modern toolkits commonly store UTF-8 here despite XA_STRING; decode
+			// it instead of replacing every non-ASCII byte with '?'.
+			LinuxCtrlUtf8ToWide(s2, strlen(s2), cls);
 		}
 		XFree(prop);
 	}
@@ -441,8 +464,11 @@ BIF_DECL(BIF_Linux_ControlGetText)
 			if (LinuxAtspiFindByName(nb2, path) && LinuxAtspiGetText(path.c_str(), t))
 			{
 				std::wstring w;
-				for (size_t i = 0; i < t.size(); ++i)
-					w += (unsigned char)t[i] < 0x80 ? (wchar_t)(unsigned char)t[i] : L'?';
+				if (!LinuxCtrlUtf8ToWide(t.data(), t.size(), w))
+				{
+					aResultToken.Error(_T("ControlGetText: AT-SPI returned invalid UTF-8."));
+					return;
+				}
 				LinuxWinSetPersistentEx(aResultToken, w);
 				return;
 			}

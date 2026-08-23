@@ -93,6 +93,18 @@ Join(arr) {
 
 ; --- ControlGetText / ControlSetText (ClassNN, HWND and text identifiers). ---
 Log("gettext_classnn=" (ControlGetText("Edit1", "CtlMain") = "Edit1" ? 1 : 0))
+; check_detail0824 M0-B: GNOME desktop name and a leaked WAYLAND_DISPLAY must
+; not override an explicit XDG_SESSION_TYPE=x11 session.
+old_st := EnvGet("XDG_SESSION_TYPE")
+old_desktop := EnvGet("XDG_CURRENT_DESKTOP")
+old_wl := EnvGet("WAYLAND_DISPLAY")
+EnvSet("XDG_SESSION_TYPE", "x11")
+EnvSet("XDG_CURRENT_DESKTOP", "GNOME")
+EnvSet("WAYLAND_DISPLAY", "wayland-leaked")
+Log("gnome_x11_control=" (ControlGetText("Edit1", "CtlMain") = "Edit1" ? 1 : 0))
+EnvSet("XDG_SESSION_TYPE", old_st)
+EnvSet("XDG_CURRENT_DESKTOP", old_desktop)
+EnvSet("WAYLAND_DISPLAY", old_wl)
 ControlSetText("Hello World", "Edit1", "CtlMain")
 Log("settext=" (ControlGetText("Edit1", "CtlMain") = "Hello World" ? 1 : 0))
 ehwnd := ControlGetHwnd("Edit1", "CtlMain")

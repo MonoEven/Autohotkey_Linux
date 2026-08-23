@@ -117,6 +117,11 @@ bool sPrevWasPress = false;
 // ---------------------------------------------------------------------------
 
 std::set<GrabSpec> sInstalled; // GrabSpec lives in core_hotkey_linux.h.
+// Desired grabs which received BadAccess.  They are deliberately distinct
+// from sInstalled and retried while the script stays alive.
+std::set<GrabSpec> sConflicted;
+DWORD sNextConflictRetry = 0;
+constexpr DWORD CONFLICT_RETRY_MS = 1000;
 
 // Name of the key involved in the most recent BadAccess conflict (for the
 // BIF error message), or empty.
@@ -371,14 +376,14 @@ struct TrapRecord
 	int code;
 };
 
-TrapRecord sTrap = {0, 0};
+std::vector<TrapRecord> sTrapRecords;
 Display *sTrapDpy = nullptr;
 XErrorHandler sTrapPrev = nullptr;
 
 int LinuxErrorTrapHandler(Display *d, XErrorEvent *e)
 {
 	if (d == sTrapDpy && e->error_code == BadAccess)
-		sTrap = {e->serial, BadAccess};
+		sTrapRecords.push_back(TrapRecord{e->serial, BadAccess});
 	return 0;
 }
 
@@ -389,7 +394,7 @@ public:
 		: mD(d)
 	{
 		sTrapDpy = d;
-		sTrap = {0, 0};
+		sTrapRecords.clear();
 		sTrapPrev = XSetErrorHandler(LinuxErrorTrapHandler);
 	}
 	~ScopedXErrorTrap()
@@ -397,8 +402,13 @@ public:
 		XSync(mD, False); // Flush so any BadAccess reaches the trap.
 		XSetErrorHandler(sTrapPrev);
 	}
-	bool HasBadAccess() const { return sTrap.code == BadAccess; }
-	unsigned long BadSerial() const { return sTrap.serial; }
+	bool HasBadAccessFor(unsigned long aSerial) const
+	{
+		for (const TrapRecord &record : sTrapRecords)
+			if (record.code == BadAccess && record.serial == aSerial)
+				return true;
+		return false;
+	}
 
 private:
 	Display *mD;
@@ -1194,7 +1204,7 @@ Display *LinuxHotkeyDisplay()
 	return d;
 }
 
-void LinuxReconcileHotkeyGrabs()
+void LinuxReconcileHotkeyGrabs(bool aReportConflict)
 {
 	Display *d = LinuxHotkeyDisplay();
 	if (!d)
@@ -1221,6 +1231,13 @@ void LinuxReconcileHotkeyGrabs()
 		else
 			++it;
 	}
+	for (std::set<GrabSpec>::iterator it = sConflicted.begin(); it != sConflicted.end();)
+	{
+		if (!desired.count(*it))
+			sConflicted.erase(it++);
+		else
+			++it;
+	}
 
 	// Grab the missing combinations; record request serials so a BadAccess
 	// can be attributed to the exact grab.
@@ -1235,13 +1252,9 @@ void LinuxReconcileHotkeyGrabs()
 		ScopedXErrorTrap trap(d);
 		for (std::set<GrabSpec>::iterator it = desired.begin(); it != desired.end(); ++it)
 		{
-						if (sInstalled.count(*it))
+			if (sInstalled.count(*it))
 				continue;
-			// The serial of the grab we are about to send: XNextRequest returns
-			// the next request number, which the XGrabKey/XGrabButton request
-			// will use.  (Subtracting 1 here made the PendingGrab serial lag
-			// the real one, so the BadAccess error serial never matched and
-			// cross-process hotkey conflicts were silently missed.)
+			// XNextRequest is the serial the following grab request will use.
 			unsigned long serial = (unsigned long)XNextRequest(d);
 			if (it->button)
 				XGrabButton(d, it->button, it->modifiers, root, False
@@ -1250,38 +1263,42 @@ void LinuxReconcileHotkeyGrabs()
 				XGrabKey(d, it->keycode, it->modifiers, root, False, GrabModeAsync, GrabModeAsync);
 			pending.push_back(PendingGrab{serial, *it});
 		}
-		// Flush BEFORE checking the trap: XGrabKey/XGrabButton requests sit
-		// in the Xlib buffer until a sync/flush, so without this the BadAccess
-		// errors would only arrive during the trap destructor's XSync -- after
-		// the HasBadAccess() check, silently missing cross-process conflicts.
+		// Grabs are asynchronous. Flush before classifying every request, not
+		// in the trap destructor after the result has already been consumed.
 		XSync(d, False);
-		if (trap.HasBadAccess())
+		for (const PendingGrab &grab : pending)
 		{
-			// Find the offending grab and drop it from the "installed" view.
-			// Find the offending grab and drop it from the "installed" view.
-			for (size_t i = 0; i < pending.size(); ++i)
+			if (trap.HasBadAccessFor(grab.serial))
 			{
-				if (pending[i].serial == trap.BadSerial())
+				sConflicted.insert(grab.spec);
+				// Only the synchronous Hotkey() call reports an error. Background
+				// retries remain silent and cannot leave a stale error for a later
+				// unrelated registration.
+				if (aReportConflict && !sLastConflictName[0])
 				{
-					if (pending[i].spec.button)
+					if (grab.spec.button)
 						_sntprintf(sLastConflictName, _countof(sLastConflictName), _T("mouse button %u (modifiers %X)")
-							, pending[i].spec.button, pending[i].spec.modifiers);
+							, grab.spec.button, grab.spec.modifiers);
 					else
 					{
-						KeySym ks = XkbKeycodeToKeysym(d, pending[i].spec.keycode, 0, 0);
+						KeySym ks = XkbKeycodeToKeysym(d, grab.spec.keycode, 0, 0);
 						_sntprintf(sLastConflictName, _countof(sLastConflictName), _T("%s (modifiers %X)")
-							, ks ? XKeysymToString(ks) : _T("key"), pending[i].spec.modifiers);
+							, ks ? XKeysymToString(ks) : _T("key"), grab.spec.modifiers);
 					}
-					break;
 				}
+			}
+			else
+			{
+				sInstalled.insert(grab.spec);
+				sConflicted.erase(grab.spec);
 			}
 		}
 	}
 
-	// XSync inside the trap destructor flushed the requests above; the
-	// conflict-free grabs are now installed.
-	for (size_t i = 0; i < pending.size(); ++i)
-		sInstalled.insert(pending[i].spec);
+	if (!sConflicted.empty())
+		sNextConflictRetry = GetTickCount() + CONFLICT_RETRY_MS;
+	else
+		sNextConflictRetry = 0;
 	if (changed || !pending.empty())
 		sIndexDirty = true;
 }
@@ -1291,6 +1308,9 @@ void LinuxDispatchHotkeys()
 	Display *d = LinuxHotkeyDisplay();
 	if (!d)
 		return;
+	if (!sConflicted.empty() && sNextConflictRetry
+		&& (LONG)(GetTickCount() - sNextConflictRetry) >= 0)
+		sReconcileDirty = true;
 	if (sReconcileDirty)
 	{
 		LinuxReconcileHotkeyGrabs();
@@ -1452,7 +1472,7 @@ BIF_DECL(BIF_Linux_Hotkey)
 	// availability via LinuxInputBackendLastError().
 	if (backend_kind == AhkInputBackendKind::X11)
 	{
-		LinuxReconcileHotkeyGrabs();
+		LinuxReconcileHotkeyGrabs(true);
 		if (sLastConflictName[0])
 		{
 			aResultToken.Error(_T("Hotkey could not be registered: the key combination is already grabbed by another client (X11 BadAccess): ")

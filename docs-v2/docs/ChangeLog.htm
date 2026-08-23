@@ -23,8 +23,12 @@
     <code>caps_version=2</code>, scan-code/custom-combo/character-stream,
     synthetic provenance strength, SendLevel gating and direct-Unicode fields.
     The backend table and Linux documentation are generated from one source;
-    CI rejects drift. Current branch totals are 1147/1147 X11/headless,
-    17/17 Wayland and 254/254 XWayland assertions.</li>
+    CI rejects drift.</li>
+  <li><b>M0-B correctness fixes:</b> AT-SPI text now decodes complete UTF-8;
+    GNOME Xorg is no longer misclassified as Wayland; failed X11 grabs stay
+    out of the installed set and automatically recover after their former
+    owner exits. Current branch totals are 1148/1148 X11/headless, 17/17
+    Wayland and 255/255 XWayland assertions.</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>

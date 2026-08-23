@@ -58,7 +58,7 @@ examples fall into three groups on Linux:</p>
 <p>The generated worklist records <b>369 implemented functions</b> and three
 explicit unavailable Windows COM boundaries (ComObjArray/Connect/Query);
 TrayTip is a desktop notification and TraySetIcon a StatusNotifierItem tray
-icon. 1147 doc-check assertions pass under Xvfb (including 29
+icon. 1148 doc-check assertions pass under Xvfb (including 29
 for <code>DllCall</code> against native <b>.so</b> libraries and 18 for the
 D-Bus COM layer). The port has two display backends:</p>
 <ul>
@@ -383,8 +383,8 @@ Highlights of this release:</p>
     <b>evdev/uinput permission artifacts</b>
     (<code>tools/linux/permissions/</code>: udev rule, input group,
     polkit action, install script — VM-verified).</li>
-  <li>Doc-check: 1147/1147 assertions pass on both the normal and the ASan
-    builds; regression 27/27, Wayland 17/17, XWayland 254/254. (The
+  <li>Doc-check: 1148/1148 assertions pass on both the normal and the ASan
+    builds; regression 27/27, Wayland 17/17, XWayland 255/255. (The
     authoritative numbers are machine-verified in CI by
     <code>verify_report_numbers.sh</code>.)</li>
 </ul>

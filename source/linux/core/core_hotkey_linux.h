@@ -32,10 +32,11 @@ Display *LinuxHotkeyDisplay();
 // Reconcile the desired grab set with the installed one: XGrabKey the
 // missing combinations, XUngrabKey the obsolete ones (Hotkey Off / disabled
 // variants / keyboard-map changes / capture-mode changes).  Reports
-// BadAccess conflicts for BIF_Linux_Hotkey.  The reconcile is lazy: it runs
-// when LinuxSetReconcileDirty() has been called (the dispatch loop checks
-// the flag), so hotkey-state changes must call LinuxHotkeyStateChanged().
-void LinuxReconcileHotkeyGrabs();
+// BadAccess conflicts for BIF_Linux_Hotkey. Failed grabs never enter the
+// installed set; they are retried by the dispatch loop so a combination
+// recovers when its former owner exits. Pass true only for the synchronous
+// BIF registration call which must surface the immediate conflict.
+void LinuxReconcileHotkeyGrabs(bool aReportConflict = false);
 
 // Fire hotkeys for pending key events on the dedicated connection.
 void LinuxDispatchHotkeys();

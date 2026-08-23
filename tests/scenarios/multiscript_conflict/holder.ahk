@@ -3,4 +3,5 @@
 ; signals readiness so the main script cannot race it.
 Hotkey("F7", (*) => 0)
 FileAppend("ready`n", "/tmp/scn_ms_holder_ready")
-Sleep 8000
+Sleep 3000
+ExitApp

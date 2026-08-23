@@ -1,6 +1,7 @@
 ctrl_list=1
 ctrl_hwnds=1
 gettext_classnn=1
+gnome_x11_control=1
 settext=1
 gettext_hwnd=1
 gettext_ahkid=1
