@@ -48,11 +48,16 @@ Shell extension; see the [installation guide](docs-v2/docs/howto/Install.htm).
 ```ahk
 #Requires AutoHotkey v2.0
 
-^!t::Run("gnome-terminal")
 ::btw::by the way
 
-CapsLock::{
+F6::
+{
     SendText("Hello from AutoHotkey on Linux!")
+}
+
+^!o::
+{
+    Run("xdg-open https://www.autohotkey.com/docs/v2/")
 }
 ```
 
