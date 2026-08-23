@@ -187,7 +187,7 @@ jobs:
           # (debian:12 would work too but its libjpeg ABI differs from the
           # build host's libjpeg8; the wcslcpy/strlcpy self-containment that
           # debian's older glibc exposed is covered by the symbol check.)
-          docker run --rm -v /tmp/packwork:/work -w /work ubuntu:24.04 \
+          docker run --rm -v /tmp/packwork:/tmp/packwork -w /tmp/packwork ubuntu:24.04 \
             bash -c 'apt-get update -y -qq >/dev/null 2>&1 && apt-get install -y -qq --no-install-recommends libx11-6 libxext6 libxrandr2 libxinerama1 libxtst6 libxi6 libxfixes3 libxkbcommon0 libwayland-client0 libffi8 libgtk-3-0 zlib1g libjpeg8 >/dev/null 2>&1; rm -f out.txt pk.txt; ./packed; grep -q "compiled=1 res=1" pk.txt && echo pack-acceptance-pass'
 
   # check_detail0821 §16-3 / R4: a no-XWayland job -- sway with xwayland
