@@ -144,9 +144,13 @@ jobs:
 
       # A display smoke under Xvfb: the built binary must start + run a script
       # that touches the X11/GTK paths (MsgBox fallback would otherwise cover
-      # only the console path).
+      # only the console path).  Skipped when the distro lacks xvfb.
       - name: Xvfb smoke
         run: |
+          if ! command -v xvfb-run >/dev/null; then
+            echo "xvfb not installed; smoke skipped"
+            exit 0
+          fi
           printf 'MsgBox("container-smoke-ok")\nExitApp\n' > /tmp/smoke.ahk
           xvfb-run -a bash -c 'build-container/source/linux/core/ahk_core /tmp/smoke.ahk' && echo smoke-pass
 

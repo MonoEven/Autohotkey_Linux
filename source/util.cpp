@@ -429,7 +429,10 @@ SymbolType IsNumeric(LPCTSTR aBuf, BOOL aAllowNegative, BOOL aAllowAllWhitespace
 
 
 
-#ifndef __linux__
+// The port ships strlcpy/wcslcpy for systems without them.  On Linux, glibc
+// provides both from 2.38 onward (ubuntu:22.04's 2.35 does not), so define
+// ours only when the libc lacks them (the container matrix caught this).
+#if !defined(__linux__) || !defined(__GLIBC__) || !__GLIBC_PREREQ(2, 38)
 void strlcpy(LPSTR aDst, LPCSTR aSrc, size_t aDstSize) // Non-inline because it benches slightly faster that way.
 // Caller must ensure that aDstSize is greater than 0.
 // Caller must ensure that the entire capacity of aDst is writable, EVEN WHEN it knows that aSrc is much shorter

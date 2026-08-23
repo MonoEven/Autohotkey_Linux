@@ -704,7 +704,12 @@ __int64 FileTimeSecondsUntil(FILETIME *pftStart, FILETIME *pftEnd);
 SymbolType IsNumeric(LPCTSTR aBuf, BOOL aAllowNegative = false // BOOL vs. bool might squeeze a little more performance out of this frequently-called function.
 	, BOOL aAllowAllWhitespace = true, BOOL aAllowFloat = false, BOOL aAllowImpure = false);
 
-#ifndef __linux__
+// The port ships its own strlcpy/wcslcpy for systems without them.  On Linux,
+// glibc provides both from 2.38 onward (ubuntu:22.04's 2.35 does not), so
+// declare (and define, in util.cpp) ours only when the libc lacks them -- the
+// container matrix caught this.  The port's signatures use the TCHAR typedefs,
+// so they cannot coexist with the libc's on glibc >= 2.38.
+#if !defined(__linux__) || !defined(__GLIBC__) || !__GLIBC_PREREQ(2, 38)
 void strlcpy(LPSTR aDst, LPCSTR aSrc, size_t aDstSize);
 void wcslcpy(LPWSTR aDst, LPCWSTR aSrc, size_t aDstSize);
 #endif
