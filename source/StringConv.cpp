@@ -1,9 +1,9 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "KuString.h"
 #include "StringConv.h"
 #include "util.h"
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__linux__)
 LPCWSTR StringUTF8ToWChar(LPCSTR sUTF8, CStringW &sWChar, int iChars/* = -1*/)
 {
 	if (!sUTF8)

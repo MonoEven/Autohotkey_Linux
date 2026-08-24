@@ -14,6 +14,10 @@ What already works conceptually:
 
 Concrete Linux blockers found:
 
+- **Completed prerequisite:** Linux now exposes the existing StringConv UTF-8/
+  CString helper classes (`CStringUTF8FromTChar`, `StringTCharToUTF8`, etc.) by
+  reusing the tested shim conversions; the normal core remains debugger-off.
+
 1. `source/config.h` disables `CONFIG_DEBUGGER` under `__linux__`.
 2. `source/linux/core/CMakeLists.txt` does not compile/link `Debugger.cpp`.
 3. `Debugger.h` unconditionally includes Winsock; basic socket calls are portable, but `WSAAsyncSelect` must map to `PreExecLine`/Linux-main-loop polling.

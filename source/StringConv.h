@@ -1,6 +1,6 @@
-﻿#pragma once
+#pragma once
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__linux__)
 
 #define IsValidUTF8(str, cch) MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (str), (cch), NULL, 0)
 #define IsValidACP(str, cch) MultiByteToWideChar(CP_ACP, MB_ERR_INVALID_CHARS, (str), (cch), NULL, 0)
