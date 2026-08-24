@@ -1,0 +1,8 @@
+id: evdev_hotplug
+title: "evdev device add/remove: rescan, fire and prune stale event fds"
+script: run_hotplug.sh
+script_type: sh
+check: marker:/tmp/scn_evdev_hotplug
+envs: any
+expect: pass
+needs: uinput

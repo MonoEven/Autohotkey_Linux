@@ -39,6 +39,7 @@
 #include <cstdarg>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 namespace {
 
@@ -615,6 +616,42 @@ static void EvdevBrokerEventAdapter(unsigned int aCode, int aValue, long long aT
 	}
 }
 
+static void CloseRemovedDevice(EvdevDevice &aDevice)
+{
+	if (aDevice.fd < 0)
+		return;
+	if (aDevice.grabbed)
+		ioctl(aDevice.fd, EVIOCGRAB, 0);
+	if (sEvT)
+		fprintf(stderr, "[evdev] hot-remove fd%d\n", aDevice.fd);
+	close(aDevice.fd);
+	aDevice.fd = -1;
+	aDevice.grabbed = false;
+}
+
+static void PruneRemovedDevices()
+{
+	bool removed = std::any_of(sDevices.begin(), sDevices.end(),
+		[](const EvdevDevice &device) { return device.fd < 0; });
+	sDevices.erase(std::remove_if(sDevices.begin(), sDevices.end(),
+		[](const EvdevDevice &device) { return device.fd < 0; }), sDevices.end());
+	if (removed)
+	{
+		// Device disappearance supplies no reliable key-up events. Fail open
+		// instead of carrying ghost modifiers/custom-combo prefixes to the next
+		// keyboard which is hot-plugged.
+		memset(sDown, 0, sizeof(sDown));
+		memset(sPrefixDown, 0, sizeof(sPrefixDown));
+		memset(sPrefixUsed, 0, sizeof(sPrefixUsed));
+		memset(sPrefixPassthrough, 0, sizeof(sPrefixPassthrough));
+		memset(sPrefixMods, 0, sizeof(sPrefixMods));
+		memset(sComboSuppressed, 0, sizeof(sComboSuppressed));
+	}
+	sAnyGrabbed = false;
+	for (const auto &device : sDevices)
+		sAnyGrabbed = sAnyGrabbed || device.grabbed;
+}
+
 void LinuxEvdevDispatch()
 {
 	if (LinuxInputdClientActive())
@@ -622,9 +659,12 @@ void LinuxEvdevDispatch()
 		LinuxInputdClientDispatch(EvdevBrokerEventAdapter, nullptr);
 		return;
 	}
-	if (!LinuxEvdevActive() || sDevices.empty())
-		return;
+	// Scan even when there are currently zero devices; otherwise a backend
+	// which started before the first keyboard appeared can never recover.
+	LinuxEvdevActive();
 	RescanIfDue(); // Pick up uinput/hot-plugged devices (check0820).
+	if (sDevices.empty())
+		return;
 	struct pollfd pfds[64];
 	size_t n = sDevices.size();
 	if (n > 64) n = 64;
@@ -645,42 +685,50 @@ void LinuxEvdevDispatch()
 	{
 		if (sEvT && pfds[i].revents)
 			fprintf(stderr, "[evdev] fd%d revents=0x%x\n", pfds[i].fd, pfds[i].revents);
-		if (!(pfds[i].revents & POLLIN))
-			continue;
-		for (;;)
-		{
-			ssize_t rd = read(sDevices[i].fd, &ev, sizeof(ev));
-			if (rd != (ssize_t)sizeof(ev))
-				break; // EAGAIN or short read: next poll.
-			if (ev.type != EV_KEY)
-				continue;
-			unsigned int event_vk = VkForEvdev(ev.code);
-			AhkInputEvent normalized = {
-				LinuxInputEventMonotonicUs(), (uint32_t)ev.code,
-				(vk_type)(event_vk <= 0xff ? event_vk : 0),
-				LinuxScanCodeForEvdev((uint32_t)ev.code), 0,
-				ev.value == 0, ev.value == 2, AhkInputSource::PHYSICAL, -1,
-				(uint32_t)(i + 1), AhkInputOrigin::EVDEV
-			};
-			LinuxInputEventTrace(normalized);
-			// Panic escape key: Backspace->Escape->Enter releases the grabs
-			// (check_detail0821 §1-B / R4).  Checked before hotkey dispatch so
-			// the sequence always wins.
-			EvdevPanicStep((unsigned int)ev.code, ev.value != 0);
-			if (sPanicked)
-				continue; // Fail-open: everything passes through.
-			bool suppressed = HandleEvdevKey(ev.code, ev.value != 0, ev.value == 2);
-			// Suppression cover: when this device is grabbed and the key
-			// was not consumed, replay it through /dev/uinput so the
-			// compositor still receives the key.
-			if (sDevices[i].grabbed && !suppressed)
+		bool remove_device = (pfds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0;
+		if (pfds[i].revents & POLLIN)
+			for (;;)
 			{
-				unsigned int vk = VkForEvdev(ev.code);
-				if (vk && vk <= 0xFF)
-					LinuxUinputKeyEvent(vk, ev.value != 0);
+				ssize_t rd = read(sDevices[i].fd, &ev, sizeof(ev));
+				if (rd != (ssize_t)sizeof(ev))
+				{
+					if (rd == 0 || (rd < 0 && errno != EAGAIN
+						&& errno != EWOULDBLOCK && errno != EINTR))
+						remove_device = true;
+					break;
+				}
+				if (ev.type != EV_KEY)
+					continue;
+				unsigned int event_vk = VkForEvdev(ev.code);
+				AhkInputEvent normalized = {
+					LinuxInputEventMonotonicUs(), (uint32_t)ev.code,
+					(vk_type)(event_vk <= 0xff ? event_vk : 0),
+					LinuxScanCodeForEvdev((uint32_t)ev.code), 0,
+					ev.value == 0, ev.value == 2, AhkInputSource::PHYSICAL, -1,
+					(uint32_t)(i + 1), AhkInputOrigin::EVDEV
+				};
+				LinuxInputEventTrace(normalized);
+				// Panic escape key: Backspace->Escape->Enter releases the grabs
+				// (check_detail0821 §1-B / R4).  Checked before hotkey dispatch so
+				// the sequence always wins.
+				EvdevPanicStep((unsigned int)ev.code, ev.value != 0);
+				if (sPanicked)
+					continue; // Fail-open: everything passes through.
+				bool suppressed = HandleEvdevKey(ev.code, ev.value != 0, ev.value == 2);
+				// Suppression cover: when this device is grabbed and the key
+				// was not consumed, replay it through /dev/uinput so the
+				// compositor still receives the key.
+				if (sDevices[i].grabbed && !suppressed)
+				{
+					unsigned int vk = VkForEvdev(ev.code);
+					if (vk && vk <= 0xFF)
+						LinuxUinputKeyEvent(vk, ev.value != 0);
+				}
 			}
-		}
+		if (remove_device)
+			CloseRemovedDevice(sDevices[i]);
 	}
+	PruneRemovedDevices();
 }
 
 void LinuxEvdevShutdown()

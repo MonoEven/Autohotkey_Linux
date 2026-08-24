@@ -42,7 +42,6 @@ int main(int argc, char **argv)
 	if (ioctl(fd, UI_DEV_CREATE) != 0) { perror("UI_DEV_CREATE"); return 1; }
 	signal(SIGTERM, on_sig);
 	unlink(cmdpath);
-	int last_code = -1, last_val = -1;
 	while (g_run)
 	{
 		usleep(100000);
@@ -51,8 +50,8 @@ int main(int argc, char **argv)
 		int code = -1; char act[8] = "";
 		if (fscanf(f, "%d %s", &code, act) == 2)
 		{
-			if (!strcmp(act, "down")) { write_ev(fd, EV_KEY, code, 1); write_ev(fd, EV_SYN, SYN_REPORT, 0); last_code = code; last_val = 1; }
-			else if (!strcmp(act, "up")) { write_ev(fd, EV_KEY, code, 0); write_ev(fd, EV_SYN, SYN_REPORT, 0); last_code = code; last_val = 0; }
+			if (!strcmp(act, "down")) { write_ev(fd, EV_KEY, code, 1); write_ev(fd, EV_SYN, SYN_REPORT, 0); }
+			else if (!strcmp(act, "up")) { write_ev(fd, EV_KEY, code, 0); write_ev(fd, EV_SYN, SYN_REPORT, 0); }
 			else if (!strcmp(act, "tap")) { write_ev(fd, EV_KEY, code, 1); write_ev(fd, EV_SYN, SYN_REPORT, 0); write_ev(fd, EV_KEY, code, 0); write_ev(fd, EV_SYN, SYN_REPORT, 0); }
 		}
 		fclose(f);

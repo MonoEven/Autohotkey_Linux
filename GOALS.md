@@ -105,7 +105,7 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
   VS Code/Electron 1.134.0 window/document captured but Monaco content unavailable.
 - M6 TSan input gate: Debug/O0 race instrumentation runs 27 headless tests plus
   four independent X11/keymodel/raw/suppression oracles; package waits on it.
-- M6 scenario-oracle identity gate: 22 scenarios are linted for exact owned
+- M6 scenario-oracle identity gate: 23 scenarios are linted for exact owned
   evidence; D-Bus monitors must bind destination/object path. The SNI oracle now
   proves this AHK PID's bus instead of matching any StatusNotifierItem text.
 - M6 portal restart fault gate: NameOwnerChanged rebuilds GlobalShortcuts state;
@@ -118,6 +118,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - M6 mixed soak: one parameterized hotkey/Hotstring/clipboard/Timer workload runs
   30s in CI and accepts 86400s nightly. A 5-minute VM profile passed 1408 rounds;
   warm RSS grew 148KB (29.60KB/min). The actual 24h run remains open.
+- M6 evdev hotplug: zero-device rescans recover; removed device fds are ungrabbed,
+  closed and pruned. Three uinput add/fire/remove cycles returned fd count 5→6→5
+  with one stable runtime PID, no stale descriptor and no held-prefix ghost state.
 - Machine totals: 1143/1143 X11/headless, 17/17 Wayland and 234/234
   XWayland assertions; 27/27 headless regression tests.
 

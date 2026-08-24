@@ -9,6 +9,7 @@
 | capslock_remap | x11 | skip | CapsLock/Esc dual-role remap (needs the evdev inputd lane) |
 | clipboard_roundtrip | x11 | pass | A_Clipboard round-trips large text (X11 XFixes) |
 | custom_combo_evdev | x11 | not-run | "evdev custom combos: wildcard, key-up, tilde and delayed standalone prefix" |
+| evdev_hotplug | x11 | not-run | "evdev device add/remove: rescan, fire and prune stale event fds" |
 | evdev_remap | x11 | not-run | "evdev/uinput physical scan code: KEY_A -> sc01E hotkey -> uinput replay" |
 | fileinstall_pack | x11 | not-run | "FileInstall extracts the embedded resource from a packed binary" |
 | flatpak_app | x11 | skip | SendText to a Flatpak-sandboxed app (needs a Flatpak host with AT-SPI portal) |

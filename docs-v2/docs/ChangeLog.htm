@@ -187,11 +187,17 @@
     Action semantics. VS Code windows are captured on X11 and Wayland, but the
     Monaco document content remains unexposed (U+FFFC/window-only), recorded as
     a versioned limitation rather than support.</li>
+  <li><b>M6 evdev hotplug fault gate:</b> rescans now continue from zero devices;
+    removed device fds are ungrabbed, closed and pruned on poll/read failure. A
+    root/uinput VM oracle performs three add/fire/remove cycles in one runtime,
+    returning the event-fd count from 6 to the baseline 5 every time. Removing a
+    keyboard while a custom-combo prefix is down also clears ghost key state.</li>
   <li><b>M6 mixed reliability soak:</b> one parameterized hotkey, Hotstring,
     clipboard and Timer workload runs for 30 seconds in CI and accepts 86400
     seconds on the nightly VM. A 5-minute VM profile completed 1408 matching
-    rounds; warm RSS grew 148KB (29.60KB/min). The actual 24-hour result remains
-    explicitly open.</li>
+    rounds; warm RSS grew 148KB (29.60KB/min). Native CI gates warm RSS; ASan
+    gates event consistency while recording its intentional quarantine ramp.
+    The actual 24-hour result remains explicitly open.</li>
   <li><b>M6 Windows v2.0.26 differential gate (first slice):</b> the official
     x64 archive, executable and repeated byte-identical golden trace are hash
     pinned. An independent Linux XTEST replay strictly matches all 16 rows of
@@ -203,7 +209,7 @@
     and binds against a replacement owner. An independent two-process fake
     portal proves two activations reach one unchanged AHK process; session-bus
     reconnect attempts are throttled to 500 ms.</li>
-  <li><b>M6 scenario-oracle identity gate:</b> all 22 scenario definitions are
+  <li><b>M6 scenario-oracle identity gate:</b> all 23 scenario definitions are
     linted for exact scenario-owned evidence. D-Bus monitors must bind a dynamic
     destination and object path; the real GNOME SNI check now proves this AHK
     PID's bus instead of accepting any StatusNotifierItem text.</li>

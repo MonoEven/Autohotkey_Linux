@@ -601,9 +601,13 @@
   负载在CI跑30s并上传事件数/RSS slope JSON；夜跑入口接受
   `AHK_SOAK_SECONDS=86400`。GNOME VM 5分钟1408轮，三类事件最终一致，无丢失；
   X11 clipboard发布以≤200ms有界等待，记录535次重试；warm-up后RSS仅+148KB，
-  斜率29.60KB/min。**未完成**：实际24h结果、`kill -STOP` compositor、evdev
-  设备add/remove。
-- **M6-T5 oracle收紧已交付**：`lint_oracles.py`静态检查22个scenario：expected-pass
+  斜率29.60KB/min。**未完成**：实际24h结果、`kill -STOP` compositor。
+- **M6-T4 evdev热插拔已交付**：即使当前0设备仍按2s重扫；POLLHUP/ERR/NVAL
+  或read ENODEV/EIO会ungrab+close并压缩device vector，重新计算suppress能力。
+  root/uinput独立oracle在同一AHK PID做3轮add→KEY_A触发→remove→re-add；每轮
+  `/proc/$pid/fd`从baseline 5到6再回5，三次触发且stale fd=0；前两轮在
+  custom-combo前缀按住时拔设备，下一设备未继承ghost `A & B`状态。连续3轮通过。
+- **M6-T5 oracle收紧已交付**：`lint_oracles.py`静态检查23个scenario：expected-pass
   必须有脚本+显式check，marker必须是精确`/tmp/scn_*`，script grep必须锚定且消费
   scenario自有证据；D-Bus monitor必须绑定动态`destination=$BUS`与精确object path，
   并禁止裸`StatusNotifierItem` grep。SNI oracle现用AHK PID派生bus和

@@ -72,10 +72,19 @@ call remains successful. Cache/fallback/budget dumps require non-zero pending
 call/pump-slice counts; see `GUI_HOST_MATRIX.md` for versions and the explicit
 Monaco-content limitation.
 
+`run_evdev_hotplug_oracle.sh` is the privileged VM fault lane. An independent
+uinput keyboard is added, fires a physical SC hotkey and is destroyed three
+times while one runtime remains alive. `/proc/$pid/fd` independently requires
+each transition to return to baseline, proving no stale event descriptors. Two
+cycles remove the device with a custom-combo prefix held and require the next
+keyboard to have no ghost prefix state.
+
 `run_mixed_soak.sh` runs one parameterized hotkey/Hotstring/clipboard/Timer
 workload. CI uses 30 seconds; `AHK_SOAK_SECONDS=86400` is the unchanged nightly
 profile. It gates exact event counts and bounded clipboard convergence, samples
-warm RSS and emits a slope summary. The current VM evidence is 1408 matching
+warm RSS and emits a slope summary. Native builds gate warm RSS at 20MiB; ASan
+still gates all event counts but records (does not gate) its intentional quarantine
+RSS ramp. The current VM evidence is 1408 matching
 rounds in five minutes with +148KB warm RSS; this is not a 24-hour claim.
 
 `run_portal_restart_oracle.sh` starts an independent GlobalShortcuts portal twice

@@ -95,14 +95,27 @@ rss_max=$(awk 'BEGIN{m=0} $2>m{m=$2} END{print m}' /tmp/ahk_mixed_soak.rss)
 rss_min=$(awk 'NR==1{m=$2} $2<m{m=$2} END{print m+0}' /tmp/ahk_mixed_soak.rss)
 : "${rss_start:=0}" "${rss_end:=0}" "${rss_max:=0}" "${rss_min:=0}"
 rss_growth=$((rss_end - rss_start))
-# Positive end-to-start growth above 20 MiB is a hard failure. Transient max
-# is recorded but not gated because allocators legitimately retain arenas.
-[ "$rss_growth" -lt 20480 ] \
-  || { echo "MIXED_SOAK_RSS_FAIL growth_kb=$rss_growth"; cat /tmp/ahk_mixed_soak.rss; exit 1; }
 elapsed=$((end_epoch - start_epoch))
 [ "$elapsed" -gt 0 ] || elapsed=1
 slope=$(awk -v g="$rss_growth" -v e="$elapsed" 'BEGIN{printf "%.2f", g*60/e}')
+profile=native
+rss_gate=true
+case "$BIN" in
+  *asan*) profile=asan; rss_gate=false ;;
+esac
+result=pass
+# ASan intentionally retains freed blocks in its quarantine, producing a linear
+# RSS ramp under this allocation-heavy workload. Event consistency still gates
+# ASan; the native build is the authoritative 20 MiB warm-RSS slope gate.
+if [ "$rss_gate" = true ] && [ "$rss_growth" -ge 20480 ]; then
+  result=fail
+fi
 cat >"$OUT/mixed-soak-summary.json" <<EOF
-{"schema":1,"result":"pass","profile_seconds":$seconds,"elapsed_seconds":$elapsed,"rounds":$rounds,"hotkeys":$hotkeys,"hotstrings":$hotstrings,"clipboard":$clipboard,"clipboard_retries":$clipboard_retries,"clipboard_wait_budget_ms":200,"rss_start_kb":$rss_start,"rss_end_kb":$rss_end,"rss_min_kb":$rss_min,"rss_max_kb":$rss_max,"rss_growth_kb":$rss_growth,"rss_slope_kb_per_min":$slope}
+{"schema":1,"result":"$result","profile":"$profile","profile_seconds":$seconds,"elapsed_seconds":$elapsed,"rounds":$rounds,"hotkeys":$hotkeys,"hotstrings":$hotstrings,"clipboard":$clipboard,"clipboard_retries":$clipboard_retries,"clipboard_wait_budget_ms":200,"rss_gate":$rss_gate,"rss_start_kb":$rss_start,"rss_end_kb":$rss_end,"rss_min_kb":$rss_min,"rss_max_kb":$rss_max,"rss_growth_kb":$rss_growth,"rss_slope_kb_per_min":$slope}
 EOF
-echo "MIXED_SOAK_PASS seconds=$seconds rounds=$rounds clipboard_retries=$clipboard_retries rss_growth_kb=$rss_growth slope_kb_per_min=$slope"
+if [ "$result" != pass ]; then
+  echo "MIXED_SOAK_RSS_FAIL growth_kb=$rss_growth"
+  cat /tmp/ahk_mixed_soak.rss
+  exit 1
+fi
+echo "MIXED_SOAK_PASS profile=$profile seconds=$seconds rounds=$rounds clipboard_retries=$clipboard_retries rss_gate=$rss_gate rss_growth_kb=$rss_growth slope_kb_per_min=$slope"
