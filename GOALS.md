@@ -94,6 +94,10 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - M5-C pending-call integration: all 12 blocking libdbus calls were removed;
   bounded pending waits pump the Linux loop, Timer responsiveness is proven,
   nested AT-SPI returns EBUSY, and cache/fallback/budget counters are non-zero.
+- M5 IME: ImeStatus reports engine/preedit/listener state; real IBus 1.5.32 +
+  libpinyin commit `你好` drives Hotstring/InputHook after canceled-preedit rollback,
+  with normalized ime_commit events. Fcitx5 protocol CI passes; real desktop E2E
+  and Flatpak IM visibility remain explicit environment gaps.
 - VSC-1/VSC-2 VS Code 0.2.0: syntax/run/tasks/diagnostics/capabilities plus
   Linux DBGp and inline DAP breakpoint/stack/scopes/scalars/stepping; independent
   protocol/DAP oracles and a real VS Code 1.134 extension-host tracker pass.
@@ -101,7 +105,7 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
   VS Code/Electron 1.134.0 window/document captured but Monaco content unavailable.
 - M6 TSan input gate: Debug/O0 race instrumentation runs 27 headless tests plus
   four independent X11/keymodel/raw/suppression oracles; package waits on it.
-- Machine totals: 1139/1139 X11/headless, 17/17 Wayland and 234/234
+- Machine totals: 1143/1143 X11/headless, 17/17 Wayland and 234/234
   XWayland assertions; 27/27 headless regression tests.
 
 ## Active constraints / remaining work
@@ -111,7 +115,8 @@ result:
 
 - `ahk-inputd` systemd socket-activation/service packaging (daemon/client/
   arbitration are implemented and VM-verified).
-- Dedicated AutoHotkey IBus engine (coexistence is tested; no engine yet).
+- Real Fcitx5 desktop and Flatpak/portal IM-context visibility (protocol path is
+  CI-tested; the current GNOME VM uses IBus/libpinyin).
 - KDE VM end-to-end matrix and a real Flatpak-host run.
 - Wider AT-SPI matrix still needs LibreOffice/Java/real-document hosts; GTK,
   Qt6 and VS Code/Electron are now installed and versioned in the VM matrix.

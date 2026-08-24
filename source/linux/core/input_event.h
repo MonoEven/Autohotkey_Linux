@@ -21,6 +21,8 @@ enum class AhkInputOrigin : uint8_t
 	GNOME_SHELL = 3,
 	EVDEV = 4,
 	BROKER = 5,
+	IBUS = 6,
+	FCITX5 = 7,
 };
 
 struct AhkInputEvent

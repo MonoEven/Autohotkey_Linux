@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **1139 / 1139 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 53 项(含 Unicode 文本发送 3 项,round-34;**SendEvent/SendInput 模式拆分与键延迟 6 项** R2 §2-B 与 **SendLevel/#InputLevel 门控与 InputHook MinSendLevel 4 项** R2 §2-C)、控件模块 58 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 17 项、**热键透传/解除抓取模块 10 项**(round-29+round-36)、**Unicode 备用键码并发模块 5 项**(round-36)、**剪贴板回归模块 13 项**、**慢所有者剪贴板超时模块 4 项**、**剪贴板变更通知模块 4 项**(round-38)、**三层键模型/布局切换模块 6 项**、**按键重复/长按模块 4 项**与**IME 激活状态模块 2 项**(check0820)、编辑/列表模块 31 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 44 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 5 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 31 项** 与 **D-Bus COM 20 项**;round-34 增 **热字串 Unicode 触发词 2 项** 与 **InputHook OnChar/OnKeyDown/OnKeyUp 通知 4 项**;**--diag 诊断模块 10 项**(check_detail0821 §12/R1-3 + §1.2-C/R1-6 + §2.2-A/§3);**parity 分类模块 9 项**(check_detail0821 §13/R2)与**严格 parity 模式模块 3 项**(R2);**A_IconFile/A_IconNumber 4 项**(R2 §5-M5)、**A_ThisHotkey/A_PriorHotkey 1 项**(R2 §5)与 **caps API + 逐键路由/版本化 schema 6 项**(R3 §1);27 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 17 项** 与 **XWayland 回退 234 项** 独立套件通过(见第 10 节)
+- **结果**: **1143 / 1143 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 53 项(含 Unicode 文本发送 3 项,round-34;**SendEvent/SendInput 模式拆分与键延迟 6 项** R2 §2-B 与 **SendLevel/#InputLevel 门控与 InputHook MinSendLevel 4 项** R2 §2-C)、控件模块 58 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 17 项、**热键透传/解除抓取模块 10 项**(round-29+round-36)、**Unicode 备用键码并发模块 5 项**(round-36)、**剪贴板回归模块 13 项**、**慢所有者剪贴板超时模块 4 项**、**剪贴板变更通知模块 4 项**(round-38)、**三层键模型/布局切换模块 6 项**、**按键重复/长按模块 4 项**与**IME 状态/commit-preedit能力模块 6 项**(check0820)、编辑/列表模块 31 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 44 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 5 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 31 项** 与 **D-Bus COM 20 项**;round-34 增 **热字串 Unicode 触发词 2 项** 与 **InputHook OnChar/OnKeyDown/OnKeyUp 通知 4 项**;**--diag 诊断模块 10 项**(check_detail0821 §12/R1-3 + §1.2-C/R1-6 + §2.2-A/§3);**parity 分类模块 9 项**(check_detail0821 §13/R2)与**严格 parity 模式模块 3 项**(R2);**A_IconFile/A_IconNumber 4 项**(R2 §5-M5)、**A_ThisHotkey/A_PriorHotkey 1 项**(R2 §5)与 **caps API + 逐键路由/版本化 schema 6 项**(R3 §1);27 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 17 项** 与 **XWayland 回退 234 项** 独立套件通过(见第 10 节)
 
 ---
 
@@ -14,7 +14,7 @@
 | 文件 | 作用 |
 |---|---|
 | `tests/doccheck/extract_docs.py` | 解析 `docs-v2/docs/lib/*.htm`,提取每个函数的名称/描述/语法/参数/返回值/示例 → `doc_index.tsv`(352 个函数条目) |
-| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(369 个已实现,3 个边界操作明确不可用;当前 298 个 doc 页有状态。NOT_IMPL 优先于同名 wrapper;TrayTip/TraySetIcon 已为 P2 实现,不再计入 NOT_IMPL) |
+| `tests/doccheck/build_worklist.py` | 将实现清单与文档条目联接,标注每个函数的实现状态 → `worklist.tsv`(370 个已实现,3 个边界操作明确不可用;当前 298 个 doc 页有状态。NOT_IMPL 优先于同名 wrapper;TrayTip/TraySetIcon 已为 P2 实现,不再计入 NOT_IMPL) |
 | `tests/doccheck/assert_*.ahk` | 按模块编写的实测脚本(每个断言输出 `name=value` 行,取自官方文档语义) |
 | `tests/doccheck/assert_*_expect.txt` | 与文档语义对应的期望值 |
 | `tests/doccheck/run_check.sh` | 运行全部断言并逐条比对(支持传入任意二进制路径,如 `run_check.sh build-asan/ahk_core`) |
@@ -61,13 +61,13 @@
 | 剪贴板回归 (check0820:多 MIME TARGETS 广告与图片/HTML 拒绝、慢消费者延迟读取、252KB 大文本往返、外部 slow owner、空剪贴板、ClipWait;经独立 xclip_probe X11 客户端验证,owner 与 consumer 分属不同进程) | `assert_clipboard.ahk` | 13 |
 | 三层键模型/布局切换 (M1-K:确定性 AZERTY/AltGr XKB fixture；热键跨 MappingNotify、Send 字符按 live layout；外部 oracle 另验 sc01E + EuroSign/Mod5) | `assert_layout.ahk` | 6 |
 | 按键重复/长按/aaaa (check0820:SendText "aaaa" 四个字符不吞、30ms 连发 5 次每次触发热键、单发 `~` 透传回调+键到达前台;透传 down-copy 被 active passive grab 吸纳的背离与 pt 断言同理,见 check0818 P0-3) | `assert_repeat.ahk` | 4 |
-| IME 激活状态 (check0820:ibus/fcitx 框架检测(会话总线 owner)+ X11 XKB 组读,格式断言使无 IME/无显示的 CI 环境也可跑) | `assert_ime.ahk` | 2 |
+| IME 状态/commit-preedit能力 (框架 owner+XKB 组；ImeStatus engine/preedit/listener/scope/counters schema；真实 IBus commit oracle 独立覆盖) | `assert_ime.ahk` | 6 |
 | 慢所有者剪贴板超时 (check0820:AHK_CLIPBOARD_TIMEOUT_MS 环境变量;默认 2s 对 2.5s 才应答的慢 owner 干净超时(空读,~1.8s),提升到 5s 后等待应答成功(读得数据);xclip_probe --serve-delay 模拟慢应用) | `assert_clipboard_slow.ahk` | 4 |
 | 剪贴板变更通知 (check_detail0821 §4/round:OnClipboardChange 经 XFixes selection tracking 监听 X11 CLIPBOARD 所有权变化——自写/外部 xclip 写触发 Type=1,owner 连接关闭(清空)触发 Type=0;此前 AddClipboardFormatListener 是 no-op 永不触发;R2 增纯 Wayland/GNOME 路径——扩展监听 Meta.Selection owner-changed 广播 ClipboardChanged,运行时经会话总线触发,VM 上 wl-copy 端到端实测 Type=1,CI 无 GNOME 会话故该路径仅 VM 验证) | `assert_clipboard_change.ahk` | 4 |
 | --diag 诊断输出 (含 caps_version=2/schema 字段、headless 失败闭合的 GNOME/portal 探针与 XI2 sourceid/XTEST 设备行) | `assert_diag.ahk` | 10 |
 | parity 四级分类 (check_detail0821 §13/R2:parity 模型 P1 compatible/P2 adapted/P3 simulated/P4 unavailable 运行时可查——`ahk_core --parity FuncName` 打印级别+说明(ComObjArray→P4、SendInput→P2、RegRead→P3、MsgBox→P1),脚本内 `A_ParityLevel(FuncName)` 返回级别整数(未列函数默认 P1);数据源 parity.tsv + tools/gen_parity.py 生成 parity_data.h,CI 校验不漂移) | `assert_parity.ahk` | 9 |
 | 严格 parity 模式 (check_detail0821 §13/R2:`AHK_STRICT_PARITY=error` 下 P3/P4 函数首次调用抛错——InstallKeybdHook P3 抛"AHK_STRICT_PARITY=error"错误、P1/P2 函数不受影响;脚本内 EnvSet 设该变量同样生效;warn 模式 VM 实测打印 P3/P4 级别+说明,class 型 P4(ComObjArray 等)本就抛自身明确错误) | `assert_strict.ahk` | 3 |
-| **合计 (X11/headless,各 expect 文件行数之和 + assert_display_content 自由格式 4 项;由 verify_report_numbers.sh 机器校验,与 run_check.sh 实际 PASS 一致)** | | **1139** |
+| **合计 (X11/headless,各 expect 文件行数之和 + assert_display_content 自由格式 4 项;由 verify_report_numbers.sh 机器校验,与 run_check.sh 实际 PASS 一致)** | | **1143** |
 | Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端(含修饰键组合与鼠标按钮)、ToolTip xdg 窗口、X11 专属表面报错;round-34 增非 ASCII 剪贴板粘贴回退 2 项:Control_L+v 到达 compositor 与剪贴板还原;round-36 增空剪贴板还原 2 项) | `assert_wayland.ahk` | 17 |
 | **合计 (Wayland)** | | **17** |
 | XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 234 |
@@ -389,11 +389,11 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 
 ```
 普通构建: tests/run_tests.sh        PASS=27 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=1139 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=1143 FAIL=0
           tests/doccheck/wayland_run.sh PASS=17 FAIL=0 (Wayland 模式)
           tests/doccheck/wayland_run.sh --xwayland PASS=234 FAIL=0 (XWayland 回退)
 ASan 构建: tests/run_tests.sh        PASS=27 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=1139 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=1143 FAIL=0
           tests/doccheck/wayland_run.sh PASS=17 FAIL=0
           tests/doccheck/wayland_run.sh --xwayland PASS=234 FAIL=0
 ```

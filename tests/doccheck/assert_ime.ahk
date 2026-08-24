@@ -26,4 +26,10 @@ Log("ime_fw_known=" (fw = "ibus" || fw = "fcitx5" || fw = "none" ? 1 : 0))
 gi := Integer(g)
 Log("ime_group_int=" (g ~= "^-?[0-9]+$" && gi >= -1 && gi <= 8 ? 1 : 0))
 
+status := ImeStatus()
+Log("ime_status_obj=" (Type(status) = "Object" ? 1 : 0))
+Log("ime_status_identity=" ((status.Framework = "ibus" || status.Framework = "fcitx5" || status.Framework = "none") && Type(status.Engine) = "String" ? 1 : 0))
+Log("ime_status_flags=" ((status.Preedit = 0 || status.Preedit = 1) && (status.Listening = 0 || status.Listening = 1) && (status.Scope = "eavesdrop" || status.Scope = "state-only" || status.Scope = "none") ? 1 : 0))
+Log("ime_status_counts=" (Type(status.Commits) = "Integer" && Type(status.PreeditEvents) = "Integer" && Type(status.LastCommit) = "String" ? 1 : 0))
+
 ExitApp 0

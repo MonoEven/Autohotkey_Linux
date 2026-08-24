@@ -49,6 +49,8 @@ static const LinuxParityEntry kLinuxParity[] =
 	{ "DriveUnlock", 2, "Uses udisksctl; requires the external tool" },
 	{ "FileCreateShortcut", 2, "Uses .desktop/.url instead of .lnk (icon index / run state fields defaulted)" },
 	{ "FileGetShortcut", 2, "Reads .desktop/.url instead of .lnk (documented field semantics)" },
+	{ "ImeGetState", 2, "Linux extension: reports IBus/Fcitx framework ownership plus XKB group; no Windows v2 counterpart" },
+	{ "ImeStatus", 2, "Linux extension: reports engine/preedit/listener state and IME commit counters; no Windows v2 counterpart" },
 	{ "InstallKeybdHook", 3, "Records a boolean only; no low-level hook is installed" },
 	{ "InstallMouseHook", 3, "Records a boolean only; no low-level hook is installed" },
 	{ "KeyWait", 3, "XQueryKeymap polling; logical/physical state and debounce are approximate" },

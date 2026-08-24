@@ -55,10 +55,10 @@ examples fall into three groups on Linux:</p>
 </ul>
 
 <h2>What works on Linux</h2>
-<p>The generated worklist records <b>369 implemented functions</b> and three
+<p>The generated worklist records <b>370 implemented functions</b> and three
 explicit unavailable Windows COM boundaries (ComObjArray/Connect/Query);
 TrayTip is a desktop notification and TraySetIcon a StatusNotifierItem tray
-icon. 1139 doc-check assertions pass under Xvfb (including 29
+icon. 1143 doc-check assertions pass under Xvfb (including 29
 for <code>DllCall</code> against native <b>.so</b> libraries and migration errors,
 and 20 for the D-Bus COM layer). The port has two display backends:</p>
 <ul>
@@ -396,11 +396,15 @@ Highlights of this release:</p>
     adapter metadata and typed values without remote calls. Same-PID detach and
     reconnect work for idle/running scripts through a signal-safe SIGUSR2
     trigger; IDE socket crashes leave the script alive detached.</li>
-  <li><b>IME active-state detection</b>: <code>ImeGetState()</code>
-    (framework by session-bus owner + current XKB group).  wlroots
-    input-method-v2 text delivery is recorded as out of scope with the
-    concrete reasons (mutter implements no input-method symbols; sway
-    ships v1 XML only) — see <code>docs/IME-Integration.md</code>.</li>
+  <li><b>IME commit integration</b>: <code>ImeGetState()</code> retains the
+    framework/XKB summary and <a href="lib/ImeStatus.htm"><code>ImeStatus()</code></a> reports engine, preedit,
+    listener scope and counters. A private IBus eavesdrop listener and Fcitx5
+    InputContext1 path freeze preedit and feed only commit text to Hotstring/
+    InputHook as normalized IME_COMMIT events. GNOME IBus/libpinyin real GTK
+    input proves <code>nihao</code>&rarr;<code>你好</code>, Hotstring, canceled
+    preedit cleanliness and InputHook matching. Fcitx5 has CI protocol coverage;
+    real desktop/Flatpak visibility remains explicit. See
+    <code>docs/IME-Integration.md</code>.</li>
   <li><b>Clipboard slow-owner timeout</b>:
     <code>AHK_CLIPBOARD_TIMEOUT_MS</code> (default 2000) bounds reads;
     regression with a slow-owner probe.</li>
@@ -418,7 +422,7 @@ Highlights of this release:</p>
     <b>evdev/uinput permission artifacts</b>
     (<code>tools/linux/permissions/</code>: udev rule, input group,
     polkit action, install script — VM-verified).</li>
-  <li>Doc-check: 1139/1139 assertions pass on both the normal and the ASan
+  <li>Doc-check: 1143/1143 assertions pass on both the normal and the ASan
     builds; regression 27/27, Wayland 17/17, XWayland 234/234. (The
     authoritative numbers are machine-verified in CI by
     <code>verify_report_numbers.sh</code>.)</li>
@@ -481,14 +485,11 @@ full evdev capture lane remains):</b></p>
     <code>io.github.autohotkey.inputd</code>, install script) are shipped
     in <code>tools/linux/permissions/</code> (round-37) and VM-verified;
     hotkey policy stays in the AHK runtime.  Tracked in GOALS.md.</li>
-  <li><b>IME integration</b> &mdash; state detection is done
-    (<code>ImeGetState()</code>: framework by session-bus owner + XKB
-    group).  Unicode hotstrings/InputHook already work at the keysym level
-    (round-34); preedit reading, IME toggling and a wlroots
-    input-method-v2 commit path remain out of scope with the concrete
-    reasons recorded in <code>docs/IME-Integration.md</code> (mutter
-    implements no input-method symbols; sway ships v1 XML only, no v2
-    backend in CI/VM).</li>
+  <li><b>IME remaining environment gaps</b> &mdash; IBus commit/preedit and the
+    Fcitx5 protocol path are implemented. A real Fcitx5 desktop and Flatpak/
+    portal IM visibility are not available in the current VM, so only those
+    remain open. IME toggling and becoming a compositor input-method engine are
+    intentionally not claimed; see <code>docs/IME-Integration.md</code>.</li>
   <li><b>AT-SPI control backend</b> &mdash; minimal path is done
     (text read/set + click on the accessibility tree, GNOME VM
     GTK3 end-to-end).  Full automation depth (enumerating arbitrary

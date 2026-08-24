@@ -20,6 +20,8 @@ ComObjType	P2	COM is a D-Bus adaptation: 'IID' returns a "(D-Bus)" placeholder
 ComObjFlags	P2	COM is a D-Bus adaptation: flags operate on the D-Bus wrapper, not a COM object
 ComObjValue	P2	COM is a D-Bus adaptation: returns the opaque D-Bus handle value
 ComValue	P2	COM is a D-Bus adaptation: wraps typed values for the D-Bus layer
+ImeGetState	P2	Linux extension: reports IBus/Fcitx framework ownership plus XKB group; no Windows v2 counterpart
+ImeStatus	P2	Linux extension: reports engine/preedit/listener state and IME commit counters; no Windows v2 counterpart
 ComCall	P4	No COM vtable on Linux: raises "Invalid arg type." / "Invalid parameter #1" (no runnable implementation)
 ComObjArray	P4	SafeArray has no Linux counterpart: raises an explicit not-ported error
 ComObjQuery	P4	IUnknown/IID query has no Linux counterpart: raises an explicit not-ported error

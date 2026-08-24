@@ -54,3 +54,10 @@ wchar_t LinuxCharFromKeySym(KeySym aKs);
 // capture dispatch would re-enter the interpreter.  A no-op when the input
 // ended before the dispatch ran (its object may already be released).
 void LinuxCaptureDispatchInputNotifies();
+
+// IME bridge: physical key events continue to drive key options/end keys, but
+// preedit characters are rolled back/frozen and only committed UTF-8 enters the
+// Hotstring/InputHook character streams.
+void LinuxCaptureImePreedit(const char *aUtf8, bool aVisible);
+void LinuxCaptureImeCommit(const char *aUtf8, AhkInputOrigin aOrigin);
+bool LinuxCaptureImePreeditActive();

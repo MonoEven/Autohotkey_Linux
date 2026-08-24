@@ -33,6 +33,8 @@ const char *LinuxInputOriginName(AhkInputOrigin aOrigin)
 	case AhkInputOrigin::GNOME_SHELL: return "gnome-shell";
 	case AhkInputOrigin::EVDEV: return "evdev";
 	case AhkInputOrigin::BROKER: return "broker";
+	case AhkInputOrigin::IBUS: return "ibus";
+	case AhkInputOrigin::FCITX5: return "fcitx5";
 	default: return "unknown";
 	}
 }

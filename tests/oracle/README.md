@@ -72,6 +72,14 @@ call remains successful. Cache/fallback/budget dumps require non-zero pending
 call/pump-slice counts; see `GUI_HOST_MATRIX.md` for versions and the explicit
 Monaco-content limitation.
 
+`run_ibus_ime_oracle.sh` is the real GNOME/XWayland IME lane: a GTK Entry with
+GTK's IBus module receives XTEST `nihao+space`; an independent AHK process sees
+cross-context preedit/commit scoped by FocusIn, fires a Chinese Hotstring, rejects
+an ASCII preedit-decoy, and proves cancel/Backspace do not pollute InputHook,
+OnChar or target text. A direct digit proves the 500ms no-preedit fallback. `run_fcitx5_ime_protocol_oracle.sh`
+runs in CI with an independent D-Bus service and is explicitly protocol-only,
+not a substitute for a real Fcitx5 desktop.
+
 The physical-layer VM lane uses `tools/linux/uinput-inject.c`: its virtual
 keyboard deliberately has no AHK identity, so evdev sees an independent input
 device. It remains permission-gated and is not pretended to run on ordinary

@@ -17,6 +17,7 @@
 #include "../../globaldata.h"
 #include "../../abi.h"
 #include "../../script_func_impl.h"
+#include "../../StringConv.h"
 #include "../gui/x11_gui.h"
 #include <strings.h> // strcasecmp (AHK_STRICT_PARITY).
 #include <cstdio>
@@ -1602,6 +1603,43 @@ BIF_DECL(BIF_Linux_ImeGetState)
 	LinuxSetPersistentStrResult(aResultToken, r.c_str());
 }
 
+// ImeStatus() -> Object with live framework/engine/preedit/listener diagnostics.
+BIF_DECL(BIF_Linux_ImeStatus)
+{
+	LinuxImeStartListener(); // Explicit status query opts into the signal tap.
+	Object *status = Object::Create();
+	if (!status)
+	{
+		aResultToken.Error(_T("Unable to allocate IME status object."));
+		return;
+	}
+	LPCTSTR framework = _T("none");
+	switch (LinuxImeFramework())
+	{
+	case LINUX_IME_IBUS: framework = _T("ibus"); break;
+	case LINUX_IME_FCITX5: framework = _T("fcitx5"); break;
+	}
+	CStringTCharFromUTF8 engine(LinuxImeEngine());
+	CStringTCharFromUTF8 scope(LinuxImeListenerScope());
+	CStringTCharFromUTF8 last_commit(LinuxImeLastCommit());
+	bool ok = status->SetOwnProp(_T("Framework"), framework)
+		&& status->SetOwnProp(_T("Engine"), (LPCTSTR)engine)
+		&& status->SetOwnProp(_T("Preedit"), (__int64)(LinuxImePreeditActive() ? 1 : 0))
+		&& status->SetOwnProp(_T("Listening"), (__int64)(LinuxImeListening() ? 1 : 0))
+		&& status->SetOwnProp(_T("Scope"), (LPCTSTR)scope)
+		&& status->SetOwnProp(_T("XkbGroup"), (__int64)LinuxImeXkbGroup())
+		&& status->SetOwnProp(_T("Commits"), (__int64)LinuxImeCommitCount())
+		&& status->SetOwnProp(_T("PreeditEvents"), (__int64)LinuxImePreeditCount())
+		&& status->SetOwnProp(_T("LastCommit"), (LPCTSTR)last_commit);
+	if (!ok)
+	{
+		status->Release();
+		aResultToken.Error(_T("Unable to populate IME status object."));
+		return;
+	}
+	aResultToken.SetValue(status);
+}
+
 // ---------------------------------------------------------------------------
 // INI functions (simple UTF-8 INI parser)
 // ---------------------------------------------------------------------------
@@ -3108,6 +3146,7 @@ static LinuxMdFuncEntry sLinuxMdFuncs[] =
 	LMD_IMPL(Hotkey, BIF_Linux_Hotkey, 1, 3),
 	LMD_IMPL(HotkeyBackendGet, BIF_Linux_HotkeyBackendGet, 0, 1),
 	LMD_IMPL(ImeGetState, BIF_Linux_ImeGetState, 0, 0),
+	LMD_IMPL(ImeStatus, BIF_Linux_ImeStatus, 0, 0),
 	LMD_IMPL(Hotstring, BIF_Linux_Hotstring, 1, 3),
 	LMD_IMPL(IL_Add, BIF_Linux_IL_Add, 2, 4),
 	LMD_IMPL(IL_Create, BIF_Linux_IL_Create, 0, 3),

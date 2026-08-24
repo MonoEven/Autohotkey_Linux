@@ -1,0 +1,36 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+<title>ImeStatus - AutoHotkey Linux</title>
+<meta name="description" content="Returns Linux input-method framework, engine, preedit and listener status." />
+<meta charset="utf-8">
+<link href="../static/theme.css" rel="stylesheet" type="text/css" />
+<script src="../static/content.js" type="text/javascript"></script>
+</head>
+<body>
+<h1>ImeStatus</h1>
+<p class="parity-badge parity-p2" id="linux-parity" title="Linux extension: reports engine/preedit/listener state and IME commit counters; no Windows v2 counterpart">Linux parity: P2 adapted</p>
+<p>Returns live information about the Linux input-method framework and committed-text listener.</p>
+<pre class="Syntax">Status := <span class="func">ImeStatus</span>()</pre>
+<h2 id="Return_Value">Return Value</h2>
+<p>Returns an object with the following own properties:</p>
+<dl>
+  <dt>Framework</dt><dd><code>"ibus"</code>, <code>"fcitx5"</code> or <code>"none"</code>.</dd>
+  <dt>Engine</dt><dd>The active engine name when available, such as <code>"libpinyin"</code>.</dd>
+  <dt>Preedit</dt><dd>1 while composition/preedit is active, otherwise 0.</dd>
+  <dt>Listening</dt><dd>1 when the private commit/preedit signal listener is connected.</dd>
+  <dt>Scope</dt><dd><code>"eavesdrop"</code> when cross-context signals are observable, <code>"state-only"</code> when only framework state is available, or <code>"none"</code>.</dd>
+  <dt>XkbGroup</dt><dd>Current X11 XKB group, or -1 without an X display.</dd>
+  <dt>Commits / PreeditEvents</dt><dd>Signal counters observed by this process.</dd>
+  <dt>LastCommit</dt><dd>The most recent committed UTF-8 text.</dd>
+</dl>
+<h2>IME character-stream semantics</h2>
+<p>Physical keyboard events continue to drive InputHook key options and EndKeys. With a composing engine, physical OnChar candidates are held for at most 500 ms to resolve the cross-bus preedit race. During preedit, the trailing phonetic token and queued candidates are removed from the Hotstring/InputHook character stream and collection is frozen. A 200 ms tail window absorbs commit/cancel keys when the IME and physical streams arrive in opposite order. Canceling composition leaves the buffer unchanged. Only the framework's committed text is appended, sent to InputHook OnChar, and reported as normalized <code>IME_COMMIT</code> events.</p>
+<div class="note"><b>Privacy:</b> The cross-context listener starts only when Hotstrings/InputHook require it or a script explicitly calls ImeStatus. Once started it remains active for the script lifetime and can observe focused committed text system-wide, like the global keyboard capture path.</div>
+<div class="note"><b>Coverage:</b> IBus/libpinyin is verified end-to-end on GNOME with a real GTK input context and FocusIn-scoped filtering. Fcitx5 InputContext1 is protocol-tested in CI, but a real Fcitx5 desktop and Flatpak/portal IM visibility are not available in the current matrix. The runtime observes the user's IME; it does not replace or toggle it.</div>
+<h2>Example</h2>
+<div class="ex"><pre>s := ImeStatus()
+ToolTip s.Framework " / " s.Engine " / preedit=" s.Preedit
+; Result: ibus / libpinyin / preedit=0</pre></div>
+</body>
+</html>

@@ -20,6 +20,7 @@
 #include "core_inputd_client_linux.h"
 #include "core_clipboard_linux.h"
 #include "core_tray_linux.h"
+#include "core_ime_linux.h"
 #include "../../script.h"
 #include "../../globaldata.h"
 #include "../../script_func_impl.h"
@@ -621,6 +622,12 @@ void LinuxInputBackendDispatch()
 	// rides the session bus), so pump it on every main-loop pass -- the
 	// XFixes path above handles X11 and this covers pure Wayland.
 	LinuxClipboardDispatchWayland();
+	// IME commit/preedit signals are character-stream input, independent of
+	// which backend owns global hotkeys.
+	LinuxImeDispatch();
+	// Consume IME commits after the DBus loop has unwound. This also serves
+	// Hotstrings when no InputHook is active.
+	LinuxCaptureDispatchInputNotifies();
 	// §5-M5: the StatusNotifierItem tray service rides the session bus too.
 	LinuxTrayDispatch();
 }
@@ -630,6 +637,7 @@ void LinuxInputBackendShutdown()
 	LinuxGShortcutShutdown();
 	LinuxGnomeShellShutdown();
 	LinuxEvdevShutdown();
+	LinuxImeShutdown();
 	sMuxMask = 0;
 	UpdateMuxDescription();
 }

@@ -19,6 +19,7 @@
 #include "core_capture_linux.h"
 #include "core_input_linux.h"
 #include "core_keymodel_linux.h"
+#include "core_ime_linux.h"
 #include "input_event.h"
 #include "../../application.h"
 #include <X11/Xlib.h>
@@ -26,6 +27,7 @@
 #include <X11/XKBlib.h>
 #include <set>
 #include <vector>
+#include <algorithm>
 #include <string>
 #include <cstring>
 #include <cwctype>
@@ -43,6 +45,21 @@ bool sNeedsGrabs = false;
 bool sGrabKeycodesDirty = true;
 std::set<KeyCode> sGrabKeycodes;
 std::wstring sRawBuffer;
+bool sImePreeditActive = false;
+uint64_t sImePhysicalSuppressUntilUs = 0;
+struct PendingImeCommit
+{
+	std::wstring text;
+	AhkInputOrigin origin;
+};
+std::vector<PendingImeCommit> sPendingImeCommits;
+struct PendingImeHotstringChar
+{
+	AhkLinuxKeyIdentity key;
+	int self_level;
+	uint64_t ready_us;
+};
+std::vector<PendingImeHotstringChar> sPendingImeHotstringChars;
 
 // Held (typed-but-not-yet-committed) events: compatibility path for an
 // InputHook which explicitly suppresses input. Hotstrings never use it.
@@ -143,15 +160,20 @@ struct InputNotify
 	vk_type vk;
 	sc_type sc;
 	wchar_t ch;
+	uint64_t ready_us;
+	bool ime_candidate;
 };
 std::vector<InputNotify> sInputNotifies;
 
 static void LinuxInputNotifyQueue(input_type *aInput, int aKind
-	, vk_type aVk, sc_type aSc, wchar_t aCh)
+	, vk_type aVk, sc_type aSc, wchar_t aCh, bool aImeCandidate = false)
 {
 	if (!aInput || !aInput->ScriptObject)
 		return;
-	InputNotify n = { aInput, aKind, aVk, aSc, aCh };
+	uint64_t ready = LinuxInputEventMonotonicUs();
+	if (aImeCandidate)
+		ready += 500000ULL; // Let a slow toolkit's first preedit signal win the race.
+	InputNotify n = { aInput, aKind, aVk, aSc, aCh, ready, aImeCandidate };
 	sInputNotifies.push_back(n);
 }
 
@@ -364,6 +386,8 @@ void LinuxRawFireHotstring(Display *d, Hotstring *aHs, int aCaseMode
 
 void LinuxRawFeedHotstrings(Display *d, const AhkLinuxKeyIdentity &aKey, int aSelfLevel)
 {
+	if (sImePreeditActive)
+		return;
 	if (!Hotstring::sEnabledCount || !aKey.text)
 		return;
 	wchar_t ch = (wchar_t)aKey.text;
@@ -475,6 +499,112 @@ void LinuxCaptureFire(Display *d, Hotstring *aHs, int aCaseMode, bool aForwardEn
 // Public interface
 // ---------------------------------------------------------------------------
 
+static bool LinuxImeUtf8ToWide(const char *aUtf8, std::wstring &aWide)
+{
+	aWide.clear();
+	if (!aUtf8)
+		return false;
+	int bytes = (int)strlen(aUtf8);
+	if (!bytes)
+		return true;
+	int chars = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+		aUtf8, bytes, nullptr, 0);
+	if (chars <= 0)
+		return false;
+	aWide.resize((size_t)chars);
+	return MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+		aUtf8, bytes, &aWide[0], chars) == chars;
+}
+
+bool LinuxCaptureImePreeditActive()
+{
+	return sImePreeditActive;
+}
+
+void LinuxCaptureImePreedit(const char *aUtf8, bool aVisible)
+{
+	std::wstring preedit;
+	if (!LinuxImeUtf8ToWide(aUtf8 ? aUtf8 : "", preedit))
+		return;
+	bool active = aVisible && !preedit.empty();
+	if (active || sImePreeditActive)
+		sImePhysicalSuppressUntilUs = LinuxInputEventMonotonicUs() + 200000ULL;
+	if (active && !sImePreeditActive)
+	{
+		sPendingImeHotstringChars.clear();
+		// XI2 can drain several physical events before the first IBus signal is
+		// dispatched. Strip the complete trailing phonetic token, not merely
+		// preedit.size() (candidate "你" may represent raw "ni"). A preceding
+		// space/punctuation remains as Hotstring/InputHook context.
+		auto preedit_start = [](const wchar_t *text, size_t length, size_t fallback) {
+			size_t pos = length;
+			while (pos && (text[pos - 1] == L' ' || text[pos - 1] == L'\t')) --pos;
+			size_t token_end = pos;
+			while (pos)
+			{
+				wchar_t ch = text[pos - 1];
+				if (!((ch >= L'a' && ch <= L'z') || (ch >= L'A' && ch <= L'Z')
+					|| (ch >= L'0' && ch <= L'9') || ch == L'\''))
+					break;
+				--pos;
+			}
+			if (pos != token_end)
+				return pos;
+			return length > fallback ? length - fallback : 0;
+		};
+		size_t raw_restore_length = preedit_start(sRawBuffer.c_str(),
+			sRawBuffer.size(), preedit.size());
+		sRawBuffer.resize(raw_restore_length);
+		if (g_input && g_input->InProgress())
+		{
+			bool had_deferred_candidate = std::any_of(sInputNotifies.begin(), sInputNotifies.end(),
+				[](const InputNotify &notify) {
+					return notify.input == g_input && notify.kind == NOTIFY_CHAR
+						&& notify.ime_candidate;
+				});
+			// A late listener can miss the chance to defer the first physical key;
+			// only then is there anything to roll back from InputHook.Buffer.
+			if (!had_deferred_candidate)
+			{
+				int input_restore_length = (int)preedit_start(g_input->Buffer,
+					(size_t)g_input->BufferLength, preedit.size());
+				g_input->BufferLength = input_restore_length;
+				g_input->Buffer[input_restore_length] = L'\0';
+			}
+			// Drop physical candidates while preserving KeyDown/KeyUp semantics.
+			sInputNotifies.erase(std::remove_if(sInputNotifies.begin(), sInputNotifies.end(),
+				[](const InputNotify &notify) {
+					return notify.input == g_input && notify.kind == NOTIFY_CHAR
+						&& notify.ime_candidate;
+				}), sInputNotifies.end());
+		}
+	}
+	sImePreeditActive = active;
+}
+
+void LinuxCaptureImeCommit(const char *aUtf8, AhkInputOrigin aOrigin)
+{
+	std::wstring committed;
+	if (!LinuxImeUtf8ToWide(aUtf8, committed) || committed.empty())
+	{
+		sImePreeditActive = false;
+		return;
+	}
+	sImePreeditActive = false;
+	sImePhysicalSuppressUntilUs = LinuxInputEventMonotonicUs() + 200000ULL;
+	sPendingImeHotstringChars.clear();
+	// DBus dispatch must not invoke script callbacks recursively. Queue the
+	// immutable commit and consume it from LinuxCaptureDispatchInputNotifies(),
+	// which is already the safe InputHook callback context.
+	sPendingImeCommits.push_back(PendingImeCommit{committed, aOrigin});
+	if (g_input && g_input->InProgress())
+		sInputNotifies.erase(std::remove_if(sInputNotifies.begin(), sInputNotifies.end(),
+			[](const InputNotify &notify) {
+				return notify.input == g_input && notify.kind == NOTIFY_CHAR
+					&& notify.ime_candidate;
+			}), sInputNotifies.end());
+}
+
 wchar_t LinuxCharFromKeySym(KeySym aKs)
 {
 	if (aKs >= 0x20 && aKs <= 0x7e)
@@ -492,19 +622,95 @@ wchar_t LinuxCharFromKeySym(KeySym aKs)
 	return 0;
 }
 
+static void LinuxInputCollectAndNotify(input_type *aInput, wchar_t aChar)
+{
+	if (!aInput || !aInput->InProgress())
+		return;
+	auto *script_input = aInput->ScriptObject;
+	IObject *script_object = script_input;
+	IObject *callback = script_input ? script_input->onChar : nullptr;
+	IObjectRef script_guard(script_object);
+	IObjectRef callback_guard(callback);
+	TCHAR text[2] = { (TCHAR)aChar, 0 };
+	aInput->CollectChar(text, 1);
+	// Collect first so OnChar observes Input including this character. The
+	// guards keep both objects valid when CollectChar ends the hook.
+	if (callback_guard)
+	{
+		ExprTokenType params[] = { script_guard.ToObject(), text };
+		callback_guard->ExecuteInNewThread(_T("InputHook"), params, _countof(params));
+	}
+}
+
+static void LinuxCaptureDispatchImeCommits()
+{
+	if (sPendingImeCommits.empty())
+		return;
+	std::vector<PendingImeCommit> commits;
+	commits.swap(sPendingImeCommits);
+	for (const auto &commit : commits)
+		for (wchar_t ch : commit.text)
+		{
+			AhkInputEvent event = {
+				LinuxInputEventMonotonicUs(), 0, 0, 0, (char32_t)ch,
+				false, false, AhkInputSource::IME_COMMIT, -1, 0, commit.origin
+			};
+			LinuxInputEventTrace(event);
+			if (g_input && g_input->InProgress())
+				LinuxInputCollectAndNotify(g_input, ch == L'\n' ? L'\r' : ch);
+			else if (Hotstring::sEnabledCount)
+			{
+				AhkLinuxKeyIdentity key {};
+				key.text = (uint32_t)ch;
+				LinuxRawFeedHotstrings(LinuxHotkeyDisplay(), key, -1);
+			}
+		}
+}
+
+static void LinuxCaptureDispatchImeHotstringChars()
+{
+	if (sPendingImeHotstringChars.empty())
+		return;
+	uint64_t now = LinuxInputEventMonotonicUs();
+	std::vector<PendingImeHotstringChar> waiting;
+	waiting.reserve(sPendingImeHotstringChars.size());
+	for (const auto &candidate : sPendingImeHotstringChars)
+		if (candidate.ready_us <= now)
+		{
+			if (!sImePreeditActive)
+				LinuxRawFeedHotstrings(LinuxHotkeyDisplay(), candidate.key, candidate.self_level);
+		}
+		else
+			waiting.push_back(candidate);
+	sPendingImeHotstringChars.swap(waiting);
+}
+
 // Fire the queued InputHook notifications (see the queue comment above).
 void LinuxCaptureDispatchInputNotifies()
 {
+	LinuxCaptureDispatchImeCommits();
+	LinuxCaptureDispatchImeHotstringChars();
 	if (sInputNotifies.empty())
 		return;
-	std::vector<InputNotify> batch = sInputNotifies; // Copy: a callback may queue more.
-	sInputNotifies.clear();
+	uint64_t now = LinuxInputEventMonotonicUs();
+	std::vector<InputNotify> batch;
+	std::vector<InputNotify> waiting;
+	batch.reserve(sInputNotifies.size());
+	waiting.reserve(sInputNotifies.size());
+	for (const auto &notify : sInputNotifies)
+		(notify.ready_us <= now ? batch : waiting).push_back(notify);
+	sInputNotifies.swap(waiting); // Callbacks may append new notifications.
 	for (size_t i = 0; i < batch.size(); ++i)
 	{
 		InputNotify &n = batch[i];
 		// Only the CURRENT hook may be notified (see the queue comment).
 		if (n.input != g_input || !n.input->InProgress() || !n.input->ScriptObject)
 			continue;
+		if (n.kind == NOTIFY_CHAR && n.ime_candidate)
+		{
+			LinuxInputCollectAndNotify(n.input, n.ch);
+			continue;
+		}
 		IObject *cb = n.kind == NOTIFY_CHAR ? n.input->ScriptObject->onChar
 			: (n.kind == NOTIFY_KEYDOWN ? n.input->ScriptObject->onKeyDown
 			                            : n.input->ScriptObject->onKeyUp);
@@ -571,10 +777,22 @@ void LinuxCaptureRawKeyEvent(Display *d, KeyCode aKeycode, bool aIsPress,
 	}
 	if (!aIsPress || aSelfLevel == 0)
 		return;
+	if (identity.text && LinuxInputEventMonotonicUs() < sImePhysicalSuppressUntilUs)
+		return;
 	if (!identity.text)
 	{
 		if (!LinuxIsModifierKey(identity.keysym))
+		{
 			sRawBuffer.clear();
+			sPendingImeHotstringChars.clear();
+		}
+		return;
+	}
+	if (LinuxImeCommitCaptureActive())
+	{
+		sPendingImeHotstringChars.push_back(PendingImeHotstringChar{
+			identity, aSelfLevel, LinuxInputEventMonotonicUs() + 500000ULL
+		});
 		return;
 	}
 	LinuxRawFeedHotstrings(d, identity, aSelfLevel);
@@ -744,6 +962,11 @@ bool LinuxCaptureFeedInput(Display *d, XEvent &ev
 	if (active->ScriptObject && active->ScriptObject->onKeyDown)
 		LinuxInputNotifyQueue(active, NOTIFY_KEYDOWN, key.vk, key.sc, 0);
 	wchar_t ch = LinuxInputHookChar(key);
+	// KeyDown/EndKey above remain physical-key driven, but preedit text and its
+	// Backspaces never mutate the character buffer. CommitText is fed later.
+	if (ch && (sImePreeditActive
+		|| LinuxInputEventMonotonicUs() < sImePhysicalSuppressUntilUs))
+		return true;
 	if (ch == L'\b' && active->BackspaceIsUndo)
 	{
 		if (active->BufferLength > 0)
@@ -772,13 +995,19 @@ bool LinuxCaptureFeedInput(Display *d, XEvent &ev
 	}
 	if (ch)
 	{
-		// OnChar notification (queued; fired from the main-loop dispatch).
-		// Windows semantics: every character (including the end char) is
-		// reported.
-		if (active->ScriptObject && active->ScriptObject->onChar)
-			LinuxInputNotifyQueue(active, NOTIFY_CHAR, 0, 0, ch);
-		TCHAR cbuf[2] = { (TCHAR)ch, 0 };
-		active->CollectChar(cbuf, 1); // Ends on end char/match/limit internally.
+		// A composing engine needs one bounded race window: defer both CollectChar
+		// and OnChar so raw phonetic keys cannot satisfy Match/Limit before the
+		// toolkit emits preedit. Preedit/commit drops this candidate; no signal
+		// within 500ms turns it back into an ordinary physical character.
+		if (LinuxImeCommitCaptureActive())
+			LinuxInputNotifyQueue(active, NOTIFY_CHAR, 0, 0, ch, true);
+		else
+		{
+			if (active->ScriptObject && active->ScriptObject->onChar)
+				LinuxInputNotifyQueue(active, NOTIFY_CHAR, 0, 0, ch);
+			TCHAR cbuf[2] = { (TCHAR)ch, 0 };
+			active->CollectChar(cbuf, 1); // Ends on end char/match/limit internally.
+		}
 	}
 	return true;
 }

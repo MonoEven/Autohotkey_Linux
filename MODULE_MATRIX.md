@@ -1,7 +1,7 @@
 # AutoHotkey v2.0.26 Linux 移植 —— 模块验证矩阵
 
 > 对照 AutoHotkey v2 官方文档逐模块确认可用性。完整逐模块校验报告见
-> `tests/doccheck/CHECK_REPORT.md`（1139/1139 断言，普通 + ASan 双构建）。
+> `tests/doccheck/CHECK_REPORT.md`（1143/1143 断言，普通 + ASan 双构建）。
 > 状态图例：✅ 已实现并有 .ahk 验证；⚠️ 部分实现/依赖外部工具；❌ 未实现（明确报错）。
 > GUI 类功能区分「有画面」(DISPLAY 可用，X11/WSLg/XFCE/XWayland) 与「无画面」(headless)。
 
@@ -70,6 +70,7 @@
 | Hotkey / HotIf | ✅ | **per-hotkey mux**:按能力路由到 X11/portal/GNOME/evdev 并多 lane 同存；X11/evdev 支持 canonical set-1 `scXXX`；evdev 支持 `A & B` 状态机；**鼠标热键**(round-30,XGrabButton)、**左右修饰键与通配**、哈希索引、动态 modifier map、BadAccess 冲突报错、Off/透传 |
 | Hotstring | ✅ | XI2.1 raw multi-client 字符流；原始 trigger 到达目标，按精确 Backspace 数回删再替换；C/*/O/X/B0、大小写、inside-word、HotIf、Unicode；双进程外部 oracle |
 | InputHook | ✅ | XI2 raw 观察 + KeyOpt/visibility 精确 keycode suppression grabs；运行时重配；多脚本/目标可见；缓冲/EndKey/Match/退格、canonical VK/SC、Unicode/回调 |
+| IME commit/preedit | ✅ IBus E2E / Fcitx5协议 | `ImeStatus` engine/preedit/listener；preedit冻结、commit→Hotstring/InputHook、统一IME_COMMIT事件；真实Fcitx/Flatpak可见性保留 |
 | ahk-inputd broker | ✅ (M4-D) | 独立守护进程：EVIOCGRAB 捕获 + uinput 0x0FAC 回放 + UNIX socket v1 多客户端订阅/抑制仲裁 + 崩溃清理/watchdog/panic；root oracle 全绿（客户端消费接 M4-C） |
 
 ## 6. GUI(有画面 / 无画面)
@@ -113,7 +114,7 @@
 
 ## 汇总
 
-- **1139/1139** X11/headless doc-check 断言通过（普通 + ASan 双构建）
+- **1143/1143** X11/headless doc-check 断言通过（普通 + ASan 双构建）
 - **27/27** headless 回归测试；Wayland **17/17** + XWayland **234/234** 独立套件
 - VS Code 0.2.0：语言/运行/诊断 + DBGp/DAP 断点/分页变量/异常/idle Pause/同PID重连；raw/DAP/真实 extension-host oracle
 - 场景门禁覆盖 X11、纯 Wayland、GNOME 会话、evdev/uinput、打包和 SNI；CI 另跑四发行版容器、no-XWayland、pack 容器、TSan 输入 oracle 与 soak

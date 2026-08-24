@@ -67,7 +67,7 @@
     and navigation/numpad variants, and an independent XGrabKey oracle proves
     exact scope and target visibility. InputHook EndReason/EndKey now follows
     the official v2 contract for both keycode and E-character modes. Current
-    branch totals: 1139/1139 X11/headless, 17/17 Wayland, 234/234 XWayland.</li>
+    branch totals: 1143/1143 X11/headless, 17/17 Wayland, 234/234 XWayland.</li>
   <li><b>M3-E normalized input events:</b> version-1 events carry physical
     evdev/set-1 SC, logical VK, Unicode text, phase/repeat, source, SendLevel,
     device and origin across X11, evdev, Portal and GNOME Shell entry points.
@@ -145,6 +145,14 @@
     Linux errno values. Real/fault-injected oracles cover success 0, ENOENT 2,
     EINVAL 22, ENODATA 61, ENOTSUP 95, ENOTCONN 107 and ETIMEDOUT 110, including
     reading the value inside catch blocks.</li>
+  <li><b>M5 IME commit integration:</b> added <code>ImeStatus()</code> and
+    cross-context IBus/Fcitx5 listeners. Preedit rolls back/freeze the physical
+    phonetic suffix; only committed Unicode feeds Hotstring/InputHook and the
+    normalized IME_COMMIT event stream. A real GNOME IBus 1.5.32/libpinyin GTK
+    oracle proves <code>nihao</code>&rarr;<code>你好</code>, canceled-preedit
+    cleanliness and both consumers; CI validates the Fcitx5 InputContext1
+    protocol while real Fcitx/Flatpak E2E remains explicit. The status object
+    exposes framework, engine, preedit/listener scope and signal counters.</li>
   <li><b>M5-C pending-call integration:</b> removed all 12 blocking libdbus
     convenience calls. Bounded pending waits pump the Linux GTK/Wayland/
     hotkey/timer loop; diagnostics expose pending-call and pump-slice counts.

@@ -491,14 +491,23 @@
     绕过 IME（XTEST 直注 keysym / broker uinput），文档标注差异；
   4. `core_ime_linux.cpp` 的 owner 探测保留为 fallback，新增
     `ImeStatus()` 富查询（engine 名、preedit 活跃布尔）。
-- **落点文件**：`core_ime_linux.cpp` 重写、`core_capture_linux.cpp`
-  （buffer 冻结/追加钩子）、新 `tests/scenarios/ime_hotstring_zh/`。
-- **验收标准**：GNOME VM + IBus 拼音：输入 "nihao" + 空格提交"你好"后，
-  `::你好::hello` 触发；preedit 中途 Esc 不污染 buffer；Backspace 在 preedit
-  内不回退 buffer。
-- **风险**：GTK/Qt 应用走各自 IM module 时 IBus 全局信号仍可见（ibus-daemon
-  中转），但 Flatpak 沙箱内应用走 portal IM 时不可见——capability 标注。
-- **修复复杂度：高。**
+- **M5 IME监听/commit语义已交付**：`core_ime_linux.cpp`连接IBus私有bus，
+  `eavesdrop=true`接收其他toolkit InputContext的unicast preedit/commit；Fcitx5
+  实现InputContext1 CommitString/UpdateFormattedPreedit和Controller engine查询。
+  `ImeStatus()`返回Framework/Engine/Preedit/Listening/Scope/XkbGroup/counters。
+  capture层在preedit开始时回滚已被XI2提前收集的完整ASCII拼音token并冻结，
+  cancel不污染；只有commit以统一`IME_COMMIT`事件喂Hotstring/InputHook。
+- **验收**：GNOME49 VM IBus 1.5.32+libpinyin、XWayland GTK真实Entry、XTEST
+  `nihao+space`提交“你好”，Hotstring触发；InputHook先`abc+Esc`取消再提交，
+  最终Input/OnChar/target都仅“你好”；ASCII decoy不触发，FocusIn path生效，
+  无preedit数字在500ms恢复；trace恰2个U+4F60/U+597D origin=ibus。连续5轮通过。
+  CI独立Fcitx5 D-Bus producer验证engine/preedit/commit/Hotstring/origin，
+  但明确`real_desktop_e2e=false`。
+- **剩余环境边界**：真实Fcitx5桌面与Flatpak/portal IM可见性未提供；不实现
+  会与用户输入法争seat的伪IME engine，也不以协议oracle冒充桌面E2E。
+- **落点文件**：`core_ime_linux.cpp/.h`、`core_capture_linux.cpp/.h`、
+  `input_event.*`、`run_ibus_ime_oracle.sh`、`run_fcitx5_ime_protocol_oracle.sh`。
+- **修复复杂度：高（当前环境范围完成）。**
 
 ## 7. P1-4 X11 grab 冲突记录与全局 error handler（含 P1-2/P1-5 的调用纪律）
 
@@ -616,7 +625,7 @@
 - **落点文件**：`core_ctrl_linux.cpp`、`assert_ctrl.ahk`、
   `assert_edit.ahk`、`CHECK_REPORT.md`、`ControlSend.htm`。
 - **验收**：外部窗口全部 NotSupported（新断言）；真实操作不回归；
-  verify_report_numbers 通过（当前 x11=1139/wayland=17/xwayland=234）。
+  verify_report_numbers 通过（当前 x11=1143/wayland=17/xwayland=234）。
 - **M5-C Selection/Value 已交付**：Wayland的ControlFindItem/ChooseIndex/
   ChooseString/GetChoice/GetIndex/GetItems走AT-SPI Selection（SelectChild、
   ClearSelection、GetSelectedChild），ControlGetText/SetText对标量控件读写
@@ -685,7 +694,8 @@
   cache=27/约204、forced fallback=516/约1048、1ms budget=3/约5。200ms reply
   延迟注入时50ms Timer先触发，outer成功且A_LastError=0；Timer内nested AT-SPI
   为防共享cache/deadline重入明确EBUSY=16。CI静态门禁禁止blocking API回归。
-  **未完成**：IME集成。
+- **M5当前环境范围完成**：Win/Control/AT-SPI与IBus真实E2E均交付；Fcitx5
+  仅协议oracle、Flatpak IM可见性仍按环境缺口保留，不据此虚报桌面兼容。
 - **落点文件**：`core_atspi_linux.cpp/.h`、`core_ctrl_linux.cpp`、
   `tests/oracle/gtk_ok.c`、`run_atspi_wintitle_oracle.sh`、
   `run_atspi_cache_oracle.sh`、`scenarios/atspi_matrix/run_matrix.sh`。

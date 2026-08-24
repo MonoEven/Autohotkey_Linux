@@ -125,51 +125,86 @@ Why a live sway verification was not possible in this VM/CI matrix
 This is the concrete, recorded reason this sub-item is a scaffold, not
 an integrated feature (Phase 3 in the assessment above).
 
-## Implemented: IME active-state detection (check0820)
+## Implemented: IME state and committed-text capture
 
-A minimal, deterministic IME *state query* is now implemented as the
-`ImeGetState()` built-in (backed by `core/core_ime_linux.cpp`).  It
-reports the **active input-method framework** and the **effective XKB
-layout group**, which is the reliable on-X11 signal for "is the IME's
-alternate group engaged right now":
+`ImeGetState()` retains its compact compatible form:
 
 ```
-ImeGetState()  ->  "ibus|0"     ibus running, base layout group 0
-                  "ibus|1"      ibus running, group 1 (IME group) engaged
-                  "fcitx5|2"    fcitx5 running, group 2
-                  "none|-1"     no IME on the bus, no working X display
+ImeGetState()  ->  "ibus|0"     ibus running, XKB group 0
+                  "fcitx5|2"    fcitx5 running, XKB group 2
+                  "none|-1"     no framework and no X display
 ```
 
-- Framework detection is by session-bus name ownership:
-  `org.freedesktop.IBus` (ibus), `org.fcitx.Fcitx5.Controller1` /
-  `org.fcitx.Fcitx.Controller1` (fcitx5).  This is authoritative and
-  compositor-independent.
-- The XKB group (X11/XWayland) is read via `XkbGetState`; it is the
-  effective layout state the IME drives (0 = base layout, >= 1 = an
-  alternate/IME group).  Without a working X display the group is -1.
-- Verified on the GNOME 49 VM: `ibus|0` with ibus + libpinyin running,
-  and on Xvfb with `setxkbmap` layout switches the group tracks the
-  active layout.  Headless CI runs `assert_ime.ahk` (format checks)
-  so neither an IME nor a display is required to keep the suite green.
+`ImeStatus()` returns an Object with live fields:
 
-**Explicitly out of scope** (recorded honestly, check0820):
-- Reading the *preedit string* of a focused app or *which engine* a
-  foreign window uses depends on the IME's private D-Bus protocol and
-  per-window focus state; not exposed.
-- *Writing* preedit/commit text via `zwp_input_method_v2` on Wayland is
-  a compositor-side capability and remains unimplemented (Phase 3).
-- Toggling the IME (group-switch keysym injection, Phase 2) is also not
-  yet provided; `ImeGetState()` only reads, by design.
+- `Framework`: `ibus`, `fcitx5` or `none`;
+- `Engine`: for example `libpinyin`;
+- `Preedit`: 1 only while composition is active;
+- `Listening`: whether the commit listener is connected;
+- `Scope`: `eavesdrop`, `state-only` or `none`;
+- `XkbGroup`, `Commits`, `PreeditEvents`, `LastCommit`.
+
+### IBus
+
+The runtime resolves the standard `IBUS_ADDRESS`/XDG config address, opens a
+private registered bus connection and installs an explicit eavesdrop match for
+`org.freedesktop.IBus.InputContext`. This is necessary because toolkit context
+signals are unicast to their owning client. The same match observes FocusIn/
+FocusOut method calls; once a focused object path is known, commits from other
+contexts are ignored. It parses serialized `IBusText` from
+`UpdatePreeditText` and `CommitText`, and reads `GlobalEngine` without linking
+libibus.
+
+The listener starts automatically when Hotstring/InputHook capture is active (or
+explicitly when ImeStatus is queried). The GNOME 49 VM has IBus 1.5.32 +
+libpinyin. An independent XWayland GTK Entry
+uses the real GTK IBus module while xdotool injects `nihao+space`:
+
+- preedit transitions reach the listener;
+- commit is exactly `你好`;
+- dynamic Hotstring `你好` fires;
+- InputHook MatchList ends with `Input="你好"` and OnChar reports exactly `你好`;
+- a prior `abc+Escape` preedit cancellation leaves no `abc` in InputHook or the
+  target Entry;
+- normalized trace contains exactly two `source=ime_commit, origin=ibus` Unicode
+  events (U+4F60/U+597D).
+
+XI2/evdev physical events still drive KeyDown/KeyOpt/EndKey. With a composing
+engine, a physical OnChar candidate is held for at most 500ms so the toolkit's
+first preedit signal can win the cross-bus race; if no preedit/commit follows it
+is delivered normally. When preedit appears, the already-drained trailing
+phonetic token and queued candidate callbacks are rolled back and the character
+buffer freezes; a 200ms tail window absorbs commit/cancel keys when IBus and XI2
+arrive in the opposite order. Cancellation leaves it unchanged, while CommitText
+is the only text appended. This matches the useful Windows IME approximation.
+
+### Fcitx5
+
+The listener implements the documented session-bus
+`org.fcitx.Fcitx.InputContext1` `CommitString`, `UpdateFormattedPreedit` and
+`CurrentIM` signals, plus `Controller1.CurrentInputMethod`. CI runs an independent
+D-Bus protocol producer and proves preedit `nihao`, commit `你好`, Hotstring firing
+and normalized `origin=fcitx5` events. This is deliberately labelled protocol
+coverage: a real Fcitx5 desktop is not installed in the current VM, so desktop
+E2E remains open.
+
+### Explicit remaining boundaries
+
+- The listener observes commit/preedit; it does not impersonate an IME engine or
+  write foreign applications' preedit state.
+- Toggling the user's IME is not exposed. Sending group-switch shortcuts would
+  mutate user desktop state and is not equivalent to Windows per-window IME open.
+- `zwp_input_method_v2` remains unsuitable as a portable backend: one engine per
+  seat, no Mutter implementation, and conflict with the user's real IME.
+- Flatpak/portal IM contexts can hide toolkit-private signals; status then remains
+  usable but commit capture is capability-limited and must not be claimed.
 
 ## Tracking
 
-- [x] IME active-state query (`ImeGetState()`: framework + XKB group)
-- [ ] X11: XIM open + event filter in the hotkey/input path
-- [ ] X11: IME state variable (open/closed, preedit text) - preedit read
-- [ ] X11: IME toggle via group-switch keysym injection
-- [ ] Wayland: evaluate zwp_text_input_v3 for Send text delivery
-- [ ] Wayland: evaluate zwp_input_method_v2 for IME state/preedit
-
-See `CHECK_REPORT.md` for the module status; this assessment does not
-change the implemented-function matrix (IME support is a Linux-specific
-extension, not part of the v2 API).
+- [x] framework/XKB query (`ImeGetState`)
+- [x] rich engine/preedit/listener status (`ImeStatus`)
+- [x] IBus cross-process preedit/commit → Hotstring/InputHook
+- [x] Fcitx5 InputContext1 protocol path (CI protocol oracle)
+- [ ] real Fcitx5 desktop E2E
+- [ ] Flatpak/portal IM visibility matrix
+- [ ] IME toggle (no semantically safe cross-desktop design yet)

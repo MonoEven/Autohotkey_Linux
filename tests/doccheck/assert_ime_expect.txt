@@ -1,2 +1,6 @@
 ime_fw_known=1
 ime_group_int=1
+ime_status_obj=1
+ime_status_identity=1
+ime_status_flags=1
+ime_status_counts=1

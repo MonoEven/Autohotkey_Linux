@@ -106,6 +106,10 @@ jobs:
         if: matrix.build == 'core'
         run: xvfb-run -a bash tests/oracle/run_input_event_model_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
 
+      - name: Fcitx5 IME commit protocol oracle
+        if: matrix.build == 'core'
+        run: bash tests/oracle/run_fcitx5_ime_protocol_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
+
       - name: EWMH window enumeration oracle
         if: matrix.build == 'core'
         run: xvfb-run -a bash tests/oracle/run_ewmh_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
