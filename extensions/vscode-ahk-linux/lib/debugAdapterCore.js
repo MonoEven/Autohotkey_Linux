@@ -22,6 +22,7 @@ class AhkDebugAdapterCore {
     this.breakpoints = new Map();
     this.variableHandles = new Map();
     this.nextVariableHandle = 1;
+    this.exceptionBreakpointId = 0;
     this.terminated = false;
   }
 
@@ -67,6 +68,9 @@ class AhkDebugAdapterCore {
       supportsVariablePaging: true,
       supportsRestartRequest: false,
       supportsExceptionInfoRequest: false,
+      exceptionBreakpointFilters: [
+        { filter: 'all', label: 'All caught and uncaught exceptions', default: false },
+      ],
     });
   }
 
@@ -132,6 +136,20 @@ class AhkDebugAdapterCore {
   request_configurationDone(request) {
     this.respond(request);
     this.startContinuation('run', 'breakpoint');
+  }
+
+  async request_setExceptionBreakpoints(request) {
+    this.requireSession();
+    const enable = (request.arguments?.filters || []).includes('all');
+    if (this.exceptionBreakpointId) {
+      try { await this.session.send(`breakpoint_remove -d ${this.exceptionBreakpointId}`); } catch (_) { /* stale */ }
+      this.exceptionBreakpointId = 0;
+    }
+    if (enable) {
+      const packet = await this.session.send('breakpoint_set -t exception -x Any -s enabled');
+      this.exceptionBreakpointId = Number(packet.attributes.id || 0);
+    }
+    this.respond(request, { breakpoints: [{ verified: !enable || this.exceptionBreakpointId > 0 }] });
   }
 
   request_threads(request) {
@@ -302,7 +320,15 @@ class AhkDebugAdapterCore {
       if (packet.attributes.status === 'break') {
         this.variableHandles.clear();
         this.nextVariableHandle = 1;
-        this.event('stopped', { reason, threadId: 1, allThreadsStopped: true });
+        const stoppedReason = ['exception', 'error'].includes(packet.attributes.reason)
+          ? 'exception'
+          : reason;
+        this.event('stopped', {
+          reason: stoppedReason,
+          ...(stoppedReason === 'exception' ? { text: packet.attributes.reason } : {}),
+          threadId: 1,
+          allThreadsStopped: true,
+        });
       } else if (packet.attributes.status === 'stopped') {
         this.sendTerminated({ reason: packet.attributes.reason });
       }

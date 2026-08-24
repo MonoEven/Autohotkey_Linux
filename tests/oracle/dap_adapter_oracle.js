@@ -71,6 +71,10 @@ async function main() {
     if (!reply.success) throw new Error(reply.message || 'launch failed');
     await nextEvent('initialized', launchStart);
 
+    request = send('setExceptionBreakpoints', { filters: ['all'] });
+    reply = await response(request);
+    if (!reply.success || !reply.body.breakpoints[0].verified) throw new Error('exception breakpoint failed');
+
     request = send('setBreakpoints', {
       source: { name: path.basename(fixture), path: fixture },
       breakpoints: [{ line: 3 }],
@@ -172,6 +176,22 @@ async function main() {
     const y = reply.body.variables.find((variable) => variable.name === 'y');
     if (!y || y.value !== '15') throw new Error(`y variable mismatch: ${JSON.stringify(y)}`);
 
+    const exceptionStart = messages.length;
+    request = send('continue', { threadId: 1 });
+    await response(request);
+    const exceptionStop = await nextEvent('stopped', exceptionStart);
+    if (exceptionStop.body.reason !== 'exception') throw new Error(`wrong exception stop: ${JSON.stringify(exceptionStop)}`);
+
+    request = send('stackTrace', { threadId: 1 });
+    reply = await response(request);
+    const exceptionFrame = reply.body.stackFrames[0];
+    if (exceptionFrame.line !== 6) throw new Error(`wrong exception frame: ${JSON.stringify(exceptionFrame)}`);
+
+    request = send('evaluate', { expression: '<exception>.Message', frameId: exceptionFrame.id, context: 'watch' });
+    reply = await response(request);
+    if (reply.body.result !== 'D3-boom') throw new Error(`exception message mismatch: ${JSON.stringify(reply)}`);
+    const exceptionMessage = reply.body.result;
+
     const continueStart = messages.length;
     request = send('continue', { threadId: 1 });
     await response(request);
@@ -182,7 +202,7 @@ async function main() {
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
     const scriptResult = fs.readFileSync(marker, 'utf8').trim();
-    if (scriptResult !== 'value=30') throw new Error(`script result mismatch: ${scriptResult}`);
+    if (scriptResult !== 'value=30 caught=D3-boom') throw new Error(`script result mismatch: ${scriptResult}`);
 
     const summary = {
       schema: 1,
@@ -200,6 +220,8 @@ async function main() {
       nestedBeta: Number(beta.value),
       mapValues: { first: Number(mapValues['["first"]']), second: Number(mapValues['["second"]']) },
       globalY: Number(y.value),
+      exceptionLine: exceptionFrame.line,
+      exceptionMessage,
       terminated: true,
       scriptResult,
       dapMessages: messages.length,

@@ -69,10 +69,17 @@ before clean termination.
   (`first=101`, `second=202`) and nested Object (`alpha=A`, `beta=42`): raw DBGp,
   external DAP client and real VS Code 1.134 variable-tree requests.
 
+### Delivered: exception breakpoints
+
+- DAP exposes an `all` exception filter and maps it to DBGp `exception/Any`.
+- Caught and uncaught runtime reasons are normalized to DAP `stopped: exception`.
+- The oracle uses a caught `Error("D3-boom")`: raw DBGp, external DAP and real
+  VS Code all stop at throw line 6, evaluate `<exception>.Message`, continue
+  into the catch block and prove `value=30 caught=D3-boom`.
+
 Remaining D3 work:
 
 - an explicit debugger projection for Linux D-Bus compatibility objects;
-- exception breakpoints;
 - debugger break requests while a persistent script is idle in the Linux main loop;
 - reconnect/detach and crash cleanup.
 

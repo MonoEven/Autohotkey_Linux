@@ -808,8 +808,11 @@
 - **VSC-2 D3 第一项（容器树/分页）已交付**：Array/Map built-in enum 的
   `numchildren` 改为精确元素数；DAP handle 支持 `variables(start,count)`→
   `property_get -p`。raw DBGp、外部 DAP 与 VS Code tracker 均验证20项Array跨
-  两页、Map first=101/second=202、nested Object alpha=A/beta=42。**D3 剩余**：
-  exception、idle pause/reconnect、D-Bus 对象真实投影。
+  两页、Map first=101/second=202、nested Object alpha=A/beta=42。
+- **VSC-2 D3 第二项（exception）已交付**：DAP `all` filter 映射 DBGp Any；
+  caught `Error("D3-boom")` 在 throw line 6 停止，可 evaluate Message，continue
+  后进入 catch 并写出 `value=30 caught=D3-boom`；三层 oracle 同步通过。
+  **D3 剩余**：idle pause/reconnect、D-Bus 对象真实投影。
 
 ### B. GUI-1 真实宿主捕获矩阵（已交付）
 

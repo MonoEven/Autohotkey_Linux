@@ -59,6 +59,9 @@ test('DAP initialize advertises real debugger capabilities', async () => {
   assert.equal(response.success, true);
   assert.equal(response.body.supportsConfigurationDoneRequest, true);
   assert.equal(response.body.supportsTerminateRequest, true);
+  assert.deepEqual(response.body.exceptionBreakpointFilters, [
+    { filter: 'all', label: 'All caught and uncaught exceptions', default: false },
+  ]);
 });
 
 test('manifest contributes ahk-linux debugger and activation', () => {

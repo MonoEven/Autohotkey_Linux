@@ -83,6 +83,8 @@ assert debug["alpha"] == "A", data
 assert debug["beta"] == "42", data
 assert debug["mapValues"] == {'["first"]': "101", '["second"]': "202"}, data
 assert debug["y"] == "15", data
+assert debug["exceptionLine"] == 6, data
+assert debug["exceptionMessage"] == "D3-boom", data
 assert debug["terminated"] is True, data
 print(json.dumps(data, sort_keys=True))
 PY
@@ -90,7 +92,7 @@ rc=$?
 [ "$rc" = 0 ] || { echo VSCODE_EVIDENCE_FAIL; cat "$EVIDENCE"; exit 1; }
 grep -q '^VSCODE-RUN-PASS$' "$RUN_MARKER" \
   || { echo VSCODE_RUN_MARKER_FAIL; cat "$EVIDENCE"; exit 1; }
-grep -q '^value=30$' /tmp/ahk-dbgp-fixture.out \
+grep -q '^value=30 caught=D3-boom$' /tmp/ahk-dbgp-fixture.out \
   || { echo VSCODE_DEBUG_MARKER_FAIL; cat "$EVIDENCE"; exit 1; }
 cp "$EVIDENCE" "$ROOT/tests/oracle/out/vscode-extension-summary.json" 2>/dev/null || true
 echo "VSCODE_EXTENSION_ORACLE_PASS installed=$installed"

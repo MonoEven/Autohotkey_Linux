@@ -150,6 +150,12 @@ def main() -> int:
             transcript.append(text)
             assert feature.attrib.get("success") == "1", text
 
+            exception_bp, text = command_response(
+                conn, "breakpoint_set -t exception -x Any -s enabled", 17
+            )
+            transcript.append(text)
+            assert exception_bp.attrib.get("state") == "enabled" and exception_bp.attrib.get("id"), text
+
             bp, text = command_response(
                 conn, f"breakpoint_set -t line -f {file_uri} -n 3 -s enabled", 2
             )
@@ -240,6 +246,25 @@ def main() -> int:
             transcript.append(text)
             assert property_value(prop_y, "y") == "15", text
 
+            send_command(conn, "run -i 18")
+            exception_stop, text = recv_packet(conn)
+            transcript.append(text)
+            assert exception_stop.attrib.get("command") == "run", text
+            assert exception_stop.attrib.get("transaction_id") == "18", text
+            assert exception_stop.attrib.get("status") == "break", text
+            assert exception_stop.attrib.get("reason") == "exception", text
+
+            exception_stack, text = command_response(conn, "stack_get", 19)
+            transcript.append(text)
+            exception_line = stack_line(exception_stack)
+            assert exception_line == 6, text
+
+            exception_prop, text = command_response(
+                conn, "property_get -n <exception>.Message -c 0 -d 0", 20
+            )
+            transcript.append(text)
+            assert property_value(exception_prop, "<exception>.Message") == "D3-boom", text
+
             detach, text = command_response(conn, "detach", 11)
             transcript.append(text)
             assert detach.attrib.get("command") == "detach", text
@@ -251,7 +276,7 @@ def main() -> int:
         while not marker.exists() and time.monotonic() < deadline:
             time.sleep(0.02)
         result = marker.read_text(encoding="utf-8").strip()
-        assert result == "value=30", result
+        assert result == "value=30 caught=D3-boom", result
         summary = {
             "schema": 1,
             "result": "pass",
@@ -267,6 +292,8 @@ def main() -> int:
             "array_count": 20,
             "array_pages": 2,
             "array_edges": [1, 20],
+            "exception_line": exception_line,
+            "exception_message": "D3-boom",
             "detach": True,
             "script_result": result,
             "packets": len(transcript),

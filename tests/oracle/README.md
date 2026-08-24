@@ -52,8 +52,8 @@ explicit rejection of complex Send syntax.
 
 `run_dbgp_oracle.sh` starts an independent Python DBGp IDE server and proves
 protocol framing, init negotiation, a file-URI line breakpoint, run/step,
-stack/context/scalar properties, paged Array/Map/nested Object trees, detach
-and the resumed script's external result. `run_dap_adapter_oracle.sh` drives the inline adapter as an external DAP
+stack/context/scalar properties, paged Array/Map/nested Object trees, a caught
+exception stop/Message/continue, detach and the resumed script's external result. `run_dap_adapter_oracle.sh` drives the inline adapter as an external DAP
 client over that real runtime. `run_vscode_extension_oracle.sh` installs the
 packaged 0.2.0 VSIX into VS Code
 and proves extension-host activation, language/command registration, `--diag`

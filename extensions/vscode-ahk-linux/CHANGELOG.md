@@ -8,6 +8,8 @@
   Local/Global scopes, scalar variables, evaluate and termination.
 - Paged Array/Map/Object variable trees with nested handles; a two-page 20-item
   Array, Map string keys and nested Object are verified end-to-end.
+- Exception breakpoint filter with caught-exception stop/evaluate/continue;
+  `Error("D3-boom")` is inspected at line 6 and then handled normally.
 - Real VS Code extension-host oracle observes breakpoint line 3, step line 4,
   `x=10`, `y=15`, expanded container values and clean termination.
 

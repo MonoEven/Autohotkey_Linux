@@ -315,6 +315,8 @@ async function runDebugSelfTest(context, script, runtimePath) {
     alpha: null,
     beta: null,
     mapValues: {},
+    exceptionLine: 0,
+    exceptionMessage: null,
     terminated: false,
   };
   let debugSession;
@@ -374,12 +376,21 @@ async function runDebugSelfTest(context, script, runtimePath) {
                   .filter((item) => item.name !== '<base>')
                   .map((item) => [item.name, item.value]),
               );
+              await debugSession.customRequest('setExceptionBreakpoints', { filters: ['all'] });
               phase = 1;
               await debugSession.customRequest('stepIn', { threadId: 1 });
             } else if (phase === 1) {
               evidence.stepLine = snapshot.frame.line;
               evidence.y = snapshot.variables.find((item) => item.name === 'y')?.value ?? null;
               phase = 2;
+              await debugSession.customRequest('continue', { threadId: 1 });
+            } else if (phase === 2) {
+              evidence.exceptionLine = snapshot.frame.line;
+              const evaluated = await debugSession.customRequest('evaluate', {
+                expression: '<exception>.Message', frameId: snapshot.frame.id, context: 'watch',
+              });
+              evidence.exceptionMessage = evaluated.result;
+              phase = 3;
               await debugSession.customRequest('continue', { threadId: 1 });
             }
           });
