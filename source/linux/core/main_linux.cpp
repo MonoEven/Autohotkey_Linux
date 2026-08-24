@@ -45,7 +45,10 @@ int main(int argc, char** argv)
 	// instance signals the old process so it exits through EXIT_RELOAD.
 	int script_arg = 1;
 	pid_t restart_old_pid = 0;
-	if (argc > 1 && !strcmp(argv[1], "/restart"))
+	bool restart_mode = argc > 1 && !strcmp(argv[1], "/restart");
+	char debugger_host[256] = "";
+	char debugger_port[16] = "9000";
+	if (restart_mode)
 	{
 		for (int i = 2; i + 1 < argc; i += 2)
 		{
@@ -60,6 +63,39 @@ int main(int argc, char** argv)
 			return 1;
 		}
 	}
+#ifdef CONFIG_DEBUGGER
+	else if (argc > 1 && (!strcmp(argv[1], "--debug") || !strncmp(argv[1], "--debug=", 8)))
+	{
+		const char *spec = nullptr;
+		if (argv[1][7] == '=')
+		{
+			spec = argv[1] + 8;
+			script_arg = 2;
+		}
+		else if (argc >= 4)
+		{
+			spec = argv[2];
+			script_arg = 3;
+		}
+		if (!spec || !*spec || script_arg >= argc)
+		{
+			std::fprintf(stderr, "AutoHotkey Linux: --debug needs host:port and a script path.\n");
+			return 1;
+		}
+		const char *colon = strrchr(spec, ':');
+		if (colon)
+		{
+			size_t host_len = (size_t)(colon - spec);
+			if (!host_len || host_len >= sizeof(debugger_host) || !colon[1])
+				return 1;
+			memcpy(debugger_host, spec, host_len);
+			debugger_host[host_len] = '\0';
+			snprintf(debugger_port, sizeof(debugger_port), "%s", colon + 1);
+		}
+		else
+			snprintf(debugger_host, sizeof(debugger_host), "%s", spec);
+	}
+#endif
 
 	// The script path comes from the command line, or from the packed
 	// payload when no script argument was given (check_detail0821 §5-M6 / R4).
@@ -113,6 +149,9 @@ int main(int argc, char** argv)
 		std::printf("AutoHotkey Linux (v2 port)\n"
 			"Usage: ahk_core script.ahk [args...]\n"
 			"  --version, -v      print the version and exit\n"
+#ifdef CONFIG_DEBUGGER
+			"  --debug host:port script.ahk [args...]  connect to a DBGp IDE and break before auto-exec\n"
+#endif
 			"  --diag             print an environment diagnostic and exit\n"
 			"  --parity FuncName  print a function's parity level (P1-P4) + note and exit\n"
 			"  --help, -h         show this help\n"
@@ -205,7 +244,7 @@ int main(int argc, char** argv)
 	// A_Args: the command-line parameters after the script path (mirrors
 	// _tWinMain in AutoHotkey.cpp).  In /restart mode the reload protocol
 	// arguments are consumed here and must not leak into A_Args.
-	int args_start = (script_arg != 1) ? argc : 2;
+	int args_start = restart_mode ? argc : script_arg + 1;
 	if (Var *var = g_script.FindOrAddVar(_T("A_Args"), 6, VAR_DECLARE_GLOBAL))
 	{
 		TCHAR *wide_args[256];
@@ -243,6 +282,21 @@ int main(int argc, char** argv)
 	// running the auto-execute section.  This makes Script::ExitApp() use
 	// mPendingExitCode (0 for a clean run) instead of CRITICAL_ERROR (2).
 	g_script.mIsReadyToExecute = true;
+
+#ifdef CONFIG_DEBUGGER
+	if (debugger_host[0])
+	{
+		if (g_Debugger.Connect(debugger_host, debugger_port) != DEBUGGER_E_OK)
+		{
+			std::fprintf(stderr, "AutoHotkey Linux: failed to connect to DBGp IDE at %s:%s.\n",
+				debugger_host, debugger_port);
+			return 1;
+		}
+		// The DBGp IDE receives <init>, installs breakpoints/features and sends
+		// run/step/detach.  This is the same pre-auto-execute break as Windows.
+		g_Debugger.Break();
+	}
+#endif
 
 	Hotkey::ManifestAllHotkeysHotstringsHooks();
 	// LSan cleanliness: SimpleHeap keeps oversized allocations (e.g. a

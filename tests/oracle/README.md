@@ -50,8 +50,11 @@ count before it may pass. `run_controlsend_mode_oracle.sh` proves writable
 focus/atspi mode selection, Unicode EditableText updates without DISPLAY and
 explicit rejection of complex Send syntax.
 
-`run_vscode_extension_oracle.sh` installs the packaged VSIX into VS Code and
-proves extension-host activation, language/command registration, `--diag`
+`run_dbgp_oracle.sh` starts an independent Python DBGp IDE server and proves
+protocol framing, init negotiation, a file-URI line breakpoint, run/step,
+stack/context/scalar properties, detach and the resumed script's external
+result. `run_vscode_extension_oracle.sh` installs the packaged VSIX into VS Code
+and proves extension-host activation, language/command registration, `--diag`
 parsing and real script execution. `run_gui_host_matrix.sh` then aggregates
 independent GTK3, Qt6 and VS Code/Electron capture oracles; see
 `GUI_HOST_MATRIX.md` for the exact versions and the explicit Monaco-content

@@ -1,4 +1,4 @@
-﻿/*
+/*
 Debugger.h
 
 Original code by Steve Gray.
@@ -24,7 +24,11 @@ freely, without restriction.
 #ifndef Debugger_h
 #define Debugger_h
 
+#ifdef __linux__
+#include "linux/compat/debugger_socket_posix.h"
+#else
 #include <winsock2.h>
+#endif
 #include "script_object.h"
 
 

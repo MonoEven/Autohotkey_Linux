@@ -44,7 +44,7 @@ For Remote SSH, Dev Containers or WSL, install the extension in the remote exten
 
 ## Debugging status
 
-VSC-1 provides execution, process stopping, problem diagnostics and runtime/backend inspection. It does **not** claim an interactive debugger: breakpoints, stepping, variable inspection and DBGp/DAP transport belong to VSC-2 and will be enabled only after a Linux debugger adapter passes an end-to-end extension-host test. The tested core-port blockers and dependency-ordered acceptance plan are recorded in [VSC2_DEBUGGER_PORT.md](VSC2_DEBUGGER_PORT.md). Existing third-party AutoHotkey DBGp extensions may still be configured manually if their runtime protocol works in the user's environment.
+VSC-1 provides execution, process stopping, problem diagnostics and runtime/backend inspection. The VSC-2 D1 Linux DBGp core is now independently verified for breakpoints, stepping, stack/context and scalar variables. The extension still does **not** claim interactive debugging until the D2 DBGp-to-DAP adapter passes a real extension-host test. Protocol evidence and the remaining dependency order are recorded in [VSC2_DEBUGGER_PORT.md](VSC2_DEBUGGER_PORT.md).
 
 ## Package and test
 

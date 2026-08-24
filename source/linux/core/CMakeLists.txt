@@ -43,6 +43,7 @@ add_library(ahk_core_objects STATIC
     ../../lib/interop.cpp
     ../../lib/regex.cpp
     ../../error.cpp
+    ../../Debugger.cpp
     ../../hotkey.cpp
     ../../os_version.cpp
     ../../var.cpp

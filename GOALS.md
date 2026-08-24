@@ -106,8 +106,8 @@ result:
 - KDE VM end-to-end matrix and a real Flatpak-host run.
 - Wider AT-SPI matrix still needs LibreOffice/Java/real-document hosts; GTK,
   Qt6 and VS Code/Electron are now installed and versioned in the VM matrix.
-- VSC-2 interactive debugger adapter (VSC-1 deliberately provides run/diagnose,
-  not fake stepping/breakpoints).
+- VSC-2 D2 debug adapter: D1 Linux DBGp is delivered (filename breakpoint,
+  run/step/stack/context/scalars/detach oracle); VS Code DAP translation remains.
 - libei injection, unless a compositor/portal environment suitable for E2E
   verification is provided.
 - Supplementary-plane Wayland text (UTF-16 surrogate-pair/emoji combination);

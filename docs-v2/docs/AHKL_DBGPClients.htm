@@ -14,6 +14,11 @@
 <h1>Debugging Clients</h1>
 
 <p>Additional debugging features are supported via <a href="https://xdebug.org/docs/dbgp">DBGp</a>, a common debugger protocol for languages and debugger UI communication. See <a href="Scripts.htm#idebug">Interactive Debugging</a> for more details. Some UIs or "clients" known to be compatible with AutoHotkey are listed on this page:</p>
+<div class="note"><b>Linux port:</b> <code>ahk_core --debug HOST:PORT script.ahk</code>
+connects to a listening DBGp 1.0 IDE and breaks before auto-execute. An independent
+IDE-side oracle verifies filename breakpoints, run/step, stack/context, scalar
+properties and detach. The bundled VS Code extension's DBGp-to-DAP UI is still
+VSC-2 D2; ordinary Run is not described as interactive debugging.</div>
 <ul>
   <li><a href="#SciTE4AutoHotkey">SciTE4AutoHotkey</a></li>
   <li><a href="#XDebugClient">XDebugClient</a></li>

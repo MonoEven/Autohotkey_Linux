@@ -1,4 +1,4 @@
-﻿/*
+/*
 Debugger.cpp - Main body of AutoHotkey debugger engine.
 
 Original code by Steve Gray.
@@ -17,8 +17,11 @@ freely, without restriction.
 #include "defines.h"
 #include "globaldata.h" // for access to many global vars
 #include "script_object.h"
+#ifndef __linux__
 #include "script_com.h"
+#endif
 #include "TextIO.h"
+#include "StringConv.h"
 //#include "Debugger.h" // included by globaldata.h
 
 #ifdef CONFIG_DEBUGGER
@@ -26,8 +29,12 @@ freely, without restriction.
 // helper macro for WriteF()
 #define U4T(s) CStringUTF8FromTChar(s).GetString()
 
+#ifndef __linux__
 #include <ws2tcpip.h>
 #include <wspiapi.h> // for getaddrinfo()
+#else
+#include <netdb.h>
+#endif
 #include <stdarg.h>
 
 Debugger g_Debugger;
@@ -203,7 +210,6 @@ int Debugger::PreExecLine(Line *aLine)
 		// A command was sent asynchronously.
 		return ProcessCommands();
 	}
-	
 	return DEBUGGER_E_OK;
 }
 
@@ -243,8 +249,16 @@ bool Debugger::HasPendingCommand()
 // Returns true if there is data in the socket's receive buffer.
 // This is used for receiving commands asynchronously.
 {
+#ifdef __linux__
+	// Linux FIONREAD writes an int; its u_long is 64-bit on LP64, unlike the
+	// 32-bit Winsock u_long.  Using u_long left the upper half uninitialized
+	// and caused false pending-data results followed by a blocking recv().
+	int dataPending = 0;
+	if (ioctl(mSocket, FIONREAD, &dataPending) == 0)
+#else
 	u_long dataPending;
 	if (ioctlsocket(mSocket, FIONREAD, &dataPending) == 0)
+#endif
 		return dataPending > 0;
 	return false;
 }
@@ -1309,7 +1323,8 @@ int Debugger::WriteEnumItems(PropertyInfo &aProp)
 void Debugger::PropertyWriter::WriteEnumItems(IObject *aEnumerable, int aStart, int aEnd)
 {
 	IObject *enumerator;
-	auto result = GetEnumerator(enumerator, ExprTokenType(aEnumerable), 2, false);
+	ExprTokenType enumerable_token(aEnumerable);
+	auto result = GetEnumerator(enumerator, enumerable_token, 2, false);
 	if (result != OK)
 	{
 		// Just return no items, since setting an error would prevent any other properties
@@ -2386,6 +2401,11 @@ int Debugger::Connect(const char *aAddress, const char *aPort)
 				err = connect(s, res->ai_addr, (int)res->ai_addrlen);
 				if (err == 0)
 					break;
+#ifdef __linux__
+				closesocket(s);
+				freeaddrinfo(res);
+				return DEBUGGER_E_INTERNAL_ERROR;
+#else
 				switch (MessageBox(g_hWnd, DEBUGGER_ERR_FAILEDTOCONNECT, g_script.mFileSpec, MB_ABORTRETRYIGNORE | MB_ICONSTOP | MB_SETFOREGROUND | MB_APPLMODAL))
 				{
 				case IDABORT:
@@ -2395,6 +2415,7 @@ int Debugger::Connect(const char *aAddress, const char *aPort)
 					closesocket(s);
 					return DEBUGGER_E_INTERNAL_ERROR;
 				}
+#endif
 			}
 			
 			freeaddrinfo(res);
@@ -2403,8 +2424,15 @@ int Debugger::Connect(const char *aAddress, const char *aPort)
 			{
 				mSocket = s;
 
+#ifdef __linux__
+				const char *ide_key_env = getenv("DBGP_IDEKEY");
+				const char *session_env = getenv("DBGP_COOKIE");
+				CStringA ide_key(ide_key_env ? ide_key_env : "");
+				CStringA session(session_env ? session_env : "");
+#else
 				CStringUTF8FromTChar ide_key(CString().GetEnvironmentVariable(_T("DBGP_IDEKEY")));
 				CStringUTF8FromTChar session(CString().GetEnvironmentVariable(_T("DBGP_COOKIE")));
+#endif
 
 				// Clear the buffer in case of a previous failed session.
 				mResponseBuf.Clear();
@@ -2474,12 +2502,15 @@ void Debugger::Exit(ExitReasons aExitReason, char *aCommandName)
 int Debugger::FatalError(LPCTSTR aMessage)
 {
 	g_Debugger.Disconnect();
-
+#ifdef __linux__
+	fwprintf(stderr, L"AutoHotkey DBGp: %ls\n", aMessage ? aMessage : DEBUGGER_ERR_INTERNAL);
+#else
 	if (IDNO == MessageBox(g_hWnd, aMessage, g_script.mFileSpec, MB_YESNO | MB_ICONSTOP | MB_SETFOREGROUND | MB_APPLMODAL))
 	{
 		// This might not exit, depending on OnExit:
 		g_script.ExitApp(EXIT_CLOSE);
 	}
+#endif
 	return DEBUGGER_E_INTERNAL_ERROR;
 }
 
@@ -2711,7 +2742,11 @@ int Debugger::Buffer::WriteF(const char *aFormat, ...)
 
 int Debugger::Buffer::EstimateFileURILength(LPCTSTR aPath)
 {
+#ifdef __linux__
+	TBYTE c, len = 7; // "file://" + absolute path's leading slash.
+#else
 	TBYTE c, len = 8; // "file:///"
+#endif
 	for (LPCTSTR ptr = aPath; c = *ptr; ++ptr)
 	{
 		if (cisalnum(c) || _tcschr(_T("-_.!~*'()/\\"), c))
@@ -2728,8 +2763,13 @@ int Debugger::Buffer::EstimateFileURILength(LPCTSTR aPath)
 // Caller has already verified there is enough space in the buffer.
 void Debugger::Buffer::WriteFileURI(LPCWSTR aPath)
 {
+#ifdef __linux__
+	memcpy(mData + mDataUsed, "file://", 7);
+	mDataUsed += 7;
+#else
 	memcpy(mData + mDataUsed, "file:///", 8);
 	mDataUsed += 8;
+#endif
 
 	char utf8[4];
 
@@ -2791,9 +2831,15 @@ void Debugger::DecodeURI(char *aUri)
 
 	if (!strnicmp(aUri, "file:///", 8))
 	{
-		// Use memmove since I'm not sure if strcpy can handle overlap.
+		// Windows removes the URI slash before a drive letter; Unix keeps the
+		// absolute path's leading slash by removing only the scheme/authority.
+#ifdef __linux__
+		end -= 7;
+		memmove(aUri, aUri + 7, end - aUri);
+#else
 		end -= 8;
 		memmove(aUri, aUri + 8, end - aUri);
+#endif
 	}
 	// Some debugger UI's use file://path even though it is invalid (it should be file:///path or file://server/path).
 	// For compatibility with these UI's, support file://.
@@ -2812,8 +2858,10 @@ void Debugger::DecodeURI(char *aUri)
 			escape[1] = *++src;
 			*dst = (char)strtol(escape, NULL, 16);
 		}
+#ifndef __linux__
 		else if (*src == '/')
 			*dst = '\\';
+#endif
 		else
 			*dst = *src;
 	}
@@ -3127,9 +3175,9 @@ void GetScriptStack(LPTSTR aBuf, int aBufSize, DbgStack::Entry *aTop)
 
 #endif
 
-
-// Helper for Var::ToText().
-
+#ifndef __linux__
+// Helper for Var::ToText().  Linux keeps the native-object implementation in
+// core_platform_stubs.cpp; Windows COM wrapper details are not portable.
 LPTSTR Var::ObjectToText(LPTSTR aName, LPTSTR aBuf, int aBufSize)
 {
 	LPTSTR aBuf_orig = aBuf;
@@ -3140,3 +3188,4 @@ LPTSTR Var::ObjectToText(LPTSTR aName, LPTSTR aBuf, int aBufSize)
 		aBuf += sntprintf(aBuf, BUF_SPACE_REMAINING, _T(" {address: 0x%IX}"), mObject);
 	return aBuf;
 }
+#endif // !__linux__

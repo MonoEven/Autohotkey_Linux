@@ -497,7 +497,7 @@ LRESULT CALLBACK MainWindowProc(HWND hWnd, UINT iMsg, WPARAM wParam, LPARAM lPar
 			// And now pass this iMsg on to DefWindowProc() in case it does anything with it.
 		}
 		
-#ifdef CONFIG_DEBUGGER
+#if defined(CONFIG_DEBUGGER) && !defined(__linux__)
 		static UINT sAttachDebuggerMessage = RegisterWindowMessage(_T("AHK_ATTACH_DEBUGGER"));
 		if (iMsg == sAttachDebuggerMessage && !g_Debugger.IsConnected())
 		{

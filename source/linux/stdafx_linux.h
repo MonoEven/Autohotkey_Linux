@@ -3306,7 +3306,7 @@ inline int WideCharToMultiByte(UINT aCodePage, DWORD aFlags, LPCWSTR aSrc, int a
 	if (!aDst)
 		return required;
 	int written = 0;
-	for (int i = 0; i < aSrcLen && written + 3 < aDstLen; ++i)
+	for (int i = 0; i < aSrcLen; ++i)
 	{
 		unsigned int cp = (unsigned int)aSrc[i];
 		if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < aSrcLen
@@ -3314,16 +3314,17 @@ inline int WideCharToMultiByte(UINT aCodePage, DWORD aFlags, LPCWSTR aSrc, int a
 		{
 			cp = 0x10000 + ((cp - 0xD800) << 10) + ((unsigned int)aSrc[++i] - 0xDC00);
 		}
-		if (cp < 0x80)
-		{
+		int char_bytes = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+		if (written + char_bytes > aDstLen)
+			break;
+		if (char_bytes == 1)
 			aDst[written++] = (char)cp;
-		}
-		else if (cp < 0x800)
+		else if (char_bytes == 2)
 		{
 			aDst[written++] = (char)(0xC0 | (cp >> 6));
 			aDst[written++] = (char)(0x80 | (cp & 0x3F));
 		}
-		else if (cp < 0x10000)
+		else if (char_bytes == 3)
 		{
 			aDst[written++] = (char)(0xE0 | (cp >> 12));
 			aDst[written++] = (char)(0x80 | ((cp >> 6) & 0x3F));

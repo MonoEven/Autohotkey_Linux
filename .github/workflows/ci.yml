@@ -110,6 +110,10 @@ jobs:
         if: matrix.build == 'core'
         run: xvfb-run -a bash tests/oracle/run_ewmh_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
 
+      - name: Linux DBGp protocol oracle
+        if: matrix.build == 'core'
+        run: bash tests/oracle/run_dbgp_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
+
       - name: Set up Node for VS Code extension
         if: matrix.build == 'core'
         uses: actions/setup-node@v4

@@ -1,61 +1,68 @@
-# VSC-2 Linux interactive debugger plan
+# VSC-2 Linux interactive debugger
 
-VSC-1 intentionally provides run/stop/tasks/diagnostics, not fake breakpoints or stepping. The upstream AutoHotkey source contains a mature DBGp engine, but the Linux target deliberately excludes it today.
+VSC-1 provides run/stop/tasks/diagnostics. VSC-2 adds real interactive debugging in dependency order: the runtime protocol must pass independently before VS Code contributes a debug adapter.
 
-## Evidence from the Linux compile probe
+## D1 — Linux DBGp core: delivered
 
-A local/VM compile probe enabled `CONFIG_DEBUGGER`, added `Debugger.cpp` to the Linux target and supplied basic POSIX socket wrappers. It was reverted after collecting blockers so the main branch remains buildable.
+The upstream AutoHotkey DBGp engine is now compiled into `ahk_core` on Linux. The runtime accepts either:
 
-What already works conceptually:
+```text
+ahk_core --debug HOST:PORT script.ahk [args...]
+ahk_core --debug=HOST:PORT script.ahk [args...]
+```
 
-- `Debugger::PreExecLine()` checks breakpoints, step state and pending socket commands before every executable line.
-- The command set includes init/status/run, step_into/over/out, line breakpoints, stack/context/property and stdout/stderr redirection.
-- The engine is a DBGp **client**, matching the normal IDE-listens/runtime-connects topology.
+It connects to the listening IDE as a DBGp client, sends the protocol 1.0 init packet and breaks before auto-execute, matching the Windows topology and lifecycle.
 
-Concrete Linux blockers found:
+Port work completed:
 
-- **Completed prerequisite:** Linux now exposes the existing StringConv UTF-8/
-  CString helper classes (`CStringUTF8FromTChar`, `StringTCharToUTF8`, etc.) by
-  reusing the tested shim conversions; the normal core remains debugger-off.
+- POSIX socket compatibility for connect/send/recv/FIONREAD/close.
+- Correct 32-bit Linux `FIONREAD` result handling (LP64 `u_long` caused false pending reads and blocking recv).
+- Standard Unix `file:///absolute/path` generation and decoding without converting `/` to `\\`.
+- Linux UTF-8/CString and integer-format helpers.
+- Correct exact-size `WideCharToMultiByte` buffers (the old shim incorrectly required four bytes even for one-byte ASCII).
+- Windows attach-message and rich-edit call-stack UI isolated from the protocol core.
+- Windows `script_com.h` dependency removed on Linux. D-Bus compatibility objects remain visible as objects but deliberately expose no fake IDispatch/SAFEARRAY child projection.
+- `--debug` parsing, initial connect/break and ordinary script-argument preservation.
+- Existing `PreExecLine` breakpoint/step/pending-command hooks and debugger call stack enabled.
 
-1. `source/config.h` disables `CONFIG_DEBUGGER` under `__linux__`.
-2. `source/linux/core/CMakeLists.txt` does not compile/link `Debugger.cpp`.
-3. `Debugger.h` unconditionally includes Winsock; basic socket calls are portable, but `WSAAsyncSelect` must map to `PreExecLine`/Linux-main-loop polling.
-4. Enabling the macro also enables Windows debugger-rich-error UI code in `error.cpp` (`CHARFORMAT`, `EM_EXGETSEL`) which must be separated from protocol support.
-5. `Debugger.cpp` includes Windows COM property marshalling (`script_com.h`, IDispatch/SAFEARRAY). Linux needs a debugger-property adapter for native objects/D-Bus values or an explicit unsupported type marker.
-6. Windows-only string/number helpers (`CStringUTF8FromTChar`, `_itoa`, `_i64toa`, `_atoi64`, `_stricmp`) need narrow POSIX replacements.
-7. Linux `main_linux.cpp` has no `/Debug`/`--debug` parser or post-load connect-and-break phase.
-8. Persistent/idle scripts need debugger socket pumping in the Linux main loop in addition to `PreExecLine` polling.
+Independent acceptance is `tests/oracle/run_dbgp_oracle.sh`. Its Python IDE server validates:
 
-## Dependency-ordered VSC-2 milestones
+- NUL-delimited DBGp length framing and UTF-8 XML;
+- init language/protocol/file URI;
+- feature negotiation and transaction IDs;
+- a filename-scoped breakpoint at line 3;
+- run-to-break and stack line;
+- Local/Global context names and full global `context_get`;
+- scalar `property_get` (`x=10`);
+- step-into to line 4 and `y=15`;
+- detach response and resumed process result `value=30`.
 
-### D1 — protocol-minimal Linux DBGp core
+The oracle is independent of the runtime and is a required core CI gate.
 
-- POSIX socket transport.
-- `--debug host:port` and initial break.
-- init/status/run/stop/detach.
-- line breakpoints and step_into/over/out.
-- stack/context/basic scalar property values.
-- Explicit `unsupported` property type for COM-only values.
+## D2 — VS Code debug adapter: next
 
-Acceptance: an independent Python IDE server validates framing, init packet, transaction IDs, breakpoint hit line, step line, context scalar and clean detach.
+Implement a small Debug Adapter Protocol process translating:
 
-### D2 — VS Code debug adapter
+- launch/terminate;
+- setBreakpoints;
+- threads/stackTrace/scopes/variables;
+- continue, next, stepIn and stepOut;
+- stopped/terminated events.
 
-- A small Debug Adapter Protocol process translating launch, breakpoints, threads, stackTrace, scopes, variables, continue and stepping to DBGp.
-- No VS Code command is contributed as a debugger until D1 protocol acceptance passes.
+Acceptance requires a real VS Code extension-host test which launches `ahk_core --debug`, hits two source breakpoints, steps, reads a variable and terminates. VSC-1 does not claim interactive debugging until that passes.
 
-Acceptance: a real VS Code extension-host test launches the adapter, hits two source breakpoints, steps, reads a variable and terminates.
+## D3 — advanced values and persistence
 
-### D3 — advanced values and persistence
+Remaining protocol expansion:
 
-- Arrays/Maps/objects with paging and depth limits.
-- Exception breakpoints.
-- Idle/persistent script break requests.
-- Reconnect/detach and crash cleanup.
+- Arrays/Maps/objects with paging and depth limits;
+- an explicit debugger projection for Linux D-Bus compatibility objects;
+- exception breakpoints;
+- debugger break requests while a persistent script is idle in the Linux main loop;
+- reconnect/detach and crash cleanup.
 
 ## Non-goals
 
 - Reimplementing the Windows rich-edit debugger UI on Linux.
 - Pretending process execution is interactive debugging.
-- Claiming Windows COM property inspection on the D-Bus compatibility layer without a type adapter.
+- Claiming Windows COM property inspection on the D-Bus compatibility layer without a real type adapter.

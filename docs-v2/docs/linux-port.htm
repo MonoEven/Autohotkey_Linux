@@ -378,8 +378,10 @@ Highlights of this release:</p>
   <li><b>VS Code extension product</b>: <code>extensions/vscode-ahk-linux/</code>
     packages syntax, run/stop/tasks, diagnostics and a backend capability tree
     as a VSIX. A real VS Code extension-host oracle verifies activation,
-    <code>--diag</code> parsing and script execution; interactive debugging is
-    explicitly deferred to VSC-2.</li>
+    <code>--diag</code> parsing and script execution. VSC-2 D1 also enables the
+    Linux DBGp runtime (<code>--debug host:port</code>): an independent IDE oracle
+    proves breakpoint/run/step/stack/context/scalars/detach. The VS Code DAP
+    adapter remains D2 and is not yet claimed by the extension UI.</li>
   <li><b>IME active-state detection</b>: <code>ImeGetState()</code>
     (framework by session-bus owner + current XKB group).  wlroots
     input-method-v2 text delivery is recorded as out of scope with the

@@ -71,7 +71,12 @@ public:
 		return mIsProxy ? Object::sComObjectPrototype : Object::sComValuePrototype;
 	}
 	bool IsOfType(Object *aPrototype);
-	IObject_DebugWriteProperty_Def
+#ifdef CONFIG_DEBUGGER
+	// D1 boundary: the Linux D-Bus compatibility object has no Windows COM
+	// IDispatch/SAFEARRAY debugger projection yet.  Emit no child properties;
+	// the top-level object remains visible as an explicit ComObject value.
+	IObject_DebugWriteProperty_Def { (void)aPage; (void)aPageSize; (void)aMaxDepth; }
+#endif
 
 	// SafeArray-ish members (limited support on Linux).
 	FResult SafeArray_Item(VariantParams &aParam, ExprTokenType *aNewValue, ResultToken *aResultToken);

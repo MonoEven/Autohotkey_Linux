@@ -33,10 +33,8 @@
 #endif
 
 #ifndef AUTOHOTKEYSC
-#ifndef __linux__
-// DBGp
+// DBGp: Linux uses the POSIX compatibility layer and Linux CLI/main-loop.
 #define CONFIG_DEBUGGER
-#endif
 #endif
 
 // Generates warnings to help we check whether the codes are ready to handle Unicode or not.

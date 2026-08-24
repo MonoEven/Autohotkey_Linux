@@ -795,8 +795,13 @@
   release-assets。
 - VS Code 1.134.0 VM extension-host oracle：VSIX 安装、ahk2 language、5 命令、
   16 条 diag 解析及实际 `.ahk` 进程 exit=0/外部 marker 全部通过。
-- **未冒充完成**：VSC-1 是 run/diagnose，不声称 breakpoint/step/variables；
-  DBGp/DAP adapter 为 VSC-2。
+- **VSC-2 D1 Linux DBGp 已交付**：完整既有协议引擎通过 POSIX socket 编译；
+  `--debug host:port` 在 auto-exec 前发 init/break。独立 Python IDE oracle 验证
+  标准 file URI、transaction、文件断点 3、run、stack/context、`x=10`、step 到
+  4、`y=15`、detach 与恢复结果 30。修复 FIONREAD LP64 假 pending、Unix URI
+  反斜杠及精确 UTF-8 缓冲区 bug；D-Bus ComObject 不伪造 IDispatch 子属性。
+- **未冒充完成**：VSC-1 UI 尚未贡献 debugger；DBGp→DAP adapter 与真实 VS Code
+  breakpoint/step/variable extension-host 验收为 VSC-2 D2。
 
 ### B. GUI-1 真实宿主捕获矩阵（已交付）
 

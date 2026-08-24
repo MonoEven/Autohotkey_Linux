@@ -144,7 +144,9 @@
     language support, run/selection/stop/tasks, problem diagnostics and a live
     input-backend capability tree. VSIX packaging is in CI/release checksums and
     a real VS Code 1.134 extension-host oracle proves activation and execution.
-    Interactive debugging remains an explicit VSC-2 boundary.</li>
+    VSC-2 D1 now enables the Linux DBGp core: a Python IDE oracle proves a
+    filename breakpoint, run/step, stack/context, scalar variables and detach.
+    The VS Code DBGp-to-DAP adapter remains the explicit D2 boundary.</li>
   <li><b>GUI-1 real host matrix:</b> installed and tested GTK 3.24.50, Qt 6.9.2
     and VS Code/Electron 1.134. GTK/Qt tested controls pass X11/AT-SPI text and
     Action semantics. VS Code windows are captured on X11 and Wayland, but the

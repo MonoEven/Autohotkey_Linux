@@ -288,7 +288,7 @@ struct ErrorBoxParam
 };
 
 
-#ifdef CONFIG_DEBUGGER
+#if defined(CONFIG_DEBUGGER) && !defined(__linux__)
 void InsertCallStack(HWND re, ErrorBoxParam &error)
 {
 	TCHAR buf[SCRIPT_STACK_BUF_SIZE], *stack = _T("");
@@ -490,7 +490,7 @@ void InitErrorBox(HWND hwnd, ErrorBoxParam &error)
 		SendMessage(re, EM_REPLACESEL, FALSE, (LPARAM)footer);
 	}
 
-#ifdef CONFIG_DEBUGGER
+#if defined(CONFIG_DEBUGGER) && !defined(__linux__)
 	ExprTokenType tk;
 	if (   error.stack_index >= 0
 		|| error.obj && error.obj->IsOfType(Object::sPrototype)
@@ -629,7 +629,7 @@ INT_PTR CALLBACK ErrorBoxProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 					*tr.lpstrText = '\0';
 					SendMessage(re, EM_GETTEXTRANGE, 0, (LPARAM)&tr);
 					PostMessage(hwnd, WM_NEXTDLGCTL, TRUE, FALSE); // Make it less edit-like by shifting focus away.
-#ifdef CONFIG_DEBUGGER
+#if defined(CONFIG_DEBUGGER) && !defined(__linux__)
 					if (!_tcscmp(tr.lpstrText, SHOW_CALL_STACK_TEXT))
 					{
 						auto &error = *(ErrorBoxParam*)GetWindowLongPtr(hwnd, DWLP_USER);
