@@ -584,11 +584,17 @@
   链接问题，故固定 O0），`halt_on_error=1/exitcode=66`；VM 27/27 headless +
   X11 双向/布局/多客户端 raw/精确 suppression 四个独立 oracle 均无
   race/deadlock。CI 新增 `tsan-input` job，并成为 package 依赖。
-- **T4 剩余**：24h soak 移到夜跑 VM（每 5 分钟一轮
-  hotkey/hotstring/clipboard 混合负载，RSS 斜率 gate）；故障注入场景：
-  `kill -STOP` compositor 3s、重启 xdg-desktop-portal、evdev 设备 add/remove。
-- **T5 oracle 收紧纪律**：场景 PASS 判据必须绑定**本进程身份**（bus name、
-  PID、object path）；`run_scenarios.sh` 增加 lint：禁止裸 `grep` 通配判 PASS。
+- **M6-T4 portal重启故障注入已交付**：runtime订阅portal Desktop
+  `NameOwnerChanged`；owner消失清session/bind/map但保留wanted，replacement出现
+  自动CreateSession+Bind；session bus断线丢弃dead connection并以500ms节流重连。
+  CI独立fake portal A/B进程真实换owner，同一AHK PID、同一shortcut id依次收到
+  两次Activated；连续3轮通过。剩余T4：24h soak夜跑、`kill -STOP` compositor、
+  evdev设备add/remove。
+- **M6-T5 oracle收紧已交付**：`lint_oracles.py`静态检查22个scenario：expected-pass
+  必须有脚本+显式check，marker必须是精确`/tmp/scn_*`，script grep必须锚定且消费
+  scenario自有证据；D-Bus monitor必须绑定动态`destination=$BUS`与精确object path，
+  并禁止裸`StatusNotifierItem` grep。SNI oracle现用AHK PID派生bus和
+  `/StatusNotifierItem`双绑定，GNOME VM真实通过；CI在scenario runner前gate。
 - **修复复杂度：中高**（T2 需要 Windows 基建，但一次投入长期复利）。
 
 ## 9. P1-2 / P1-5 / P2-1 Win*/Control*/AT-SPI 收敛（合并处理）

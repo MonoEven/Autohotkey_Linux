@@ -42,12 +42,19 @@ bool sSessionJustResolved = false; // Set when the session handle materialised (
 wchar_t sLastErrorBuf[512] = { 0 };
 bool sFailed = false;
 bool sBound = false;
+bool sPortalRestartPending = false;
+bool sBusReconnectPending = false;
+DWORD sNextReconnectTick = 0;
 std::map<std::string, Hotkey *> sShortcutMap;
 std::map<std::string, Hotkey *> sWanted; // Desired set awaiting a bind.
 
 #define GS_MAX_PENDING 64
 std::string sPending[GS_MAX_PENDING];
 int sPendingCount = 0;
+const char *sPortalOwnerMatch =
+	"type='signal',sender='org.freedesktop.DBus',"
+	"interface='org.freedesktop.DBus',member='NameOwnerChanged',"
+	"arg0='org.freedesktop.portal.Desktop'";
 
 void SetError(const char *aText)
 {
@@ -223,6 +230,17 @@ void FireShortcut(const std::string &aId)
 
 // --- D-Bus filter: session/bind responses + Activated ----------------------
 
+void ResetPortalSession()
+{
+	if (sRequestPath) { free(sRequestPath); sRequestPath = nullptr; }
+	if (sSessionPath) { free(sSessionPath); sSessionPath = nullptr; }
+	sBound = false;
+	sBindPending = false;
+	sSessionJustResolved = false;
+	sShortcutMap.clear();
+	sPendingCount = 0;
+}
+
 void DoBind(); // forward
 
 DBusHandlerResult Handler(DBusConnection *, DBusMessage *aMsg, void *)
@@ -230,6 +248,30 @@ DBusHandlerResult Handler(DBusConnection *, DBusMessage *aMsg, void *)
 	const char *iface = dbus_message_get_interface(aMsg);
 	const char *member = dbus_message_get_member(aMsg);
 	if (!iface || !member) return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+
+	if (!strcmp(iface, DBUS_INTERFACE_DBUS) && !strcmp(member, "NameOwnerChanged"))
+	{
+		const char *name = nullptr, *old_owner = nullptr, *new_owner = nullptr;
+		if (dbus_message_get_args(aMsg, nullptr,
+			DBUS_TYPE_STRING, &name, DBUS_TYPE_STRING, &old_owner,
+			DBUS_TYPE_STRING, &new_owner, DBUS_TYPE_INVALID)
+			&& name && !strcmp(name, "org.freedesktop.portal.Desktop"))
+		{
+			ResetPortalSession();
+			sFailed = false; // A replacement owner gets a fresh capability attempt.
+			if (new_owner && *new_owner)
+			{
+				sLastErrorBuf[0] = 0;
+				sPortalRestartPending = true;
+			}
+			else
+			{
+				SetError("GlobalShortcuts portal disappeared; waiting for restart");
+				sPortalRestartPending = false;
+			}
+		}
+		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+	}
 
 	if (!strcmp(iface, "org.freedesktop.portal.Request") && !strcmp(member, "Response"))
 	{
@@ -458,10 +500,22 @@ void LinuxGShortcutSync()
 		dbus_error_free(&err);
 		dbus_connection_set_exit_on_disconnect(sConn, FALSE);
 		dbus_connection_add_filter(sConn, Handler, nullptr, nullptr);
+		sBusReconnectPending = false;
+		sNextReconnectTick = 0;
+		DBusError match_error; dbus_error_init(&match_error);
+		dbus_bus_add_match(sConn, sPortalOwnerMatch, &match_error);
+		if (dbus_error_is_set(&match_error))
+		{
+			SetError(match_error.message);
+			dbus_error_free(&match_error);
+		}
 	}
 
 	if (!sSessionPath && !sRequestPath)
+	{
+		sPortalRestartPending = false;
 		SendCreateSession(); // The Response (dispatched later) materializes the session.
+	}
 	else if (sSessionPath && !sBindPending)
 	{
 		sSessionJustResolved = true; // let Dispatch issue exactly one bind
@@ -471,15 +525,36 @@ void LinuxGShortcutSync()
 void LinuxGShortcutDispatch()
 {
 	static int dbg = 0;
-	if (!sConn) return;
+	if (!sConn)
+	{
+		DWORD now = GetTickCount();
+		if (sBusReconnectPending && (!sNextReconnectTick || now >= sNextReconnectTick))
+		{
+			sNextReconnectTick = now + 500;
+			LinuxGShortcutSync();
+		}
+		return;
+	}
 	if (dbus_connection_read_write_dispatch(sConn, 0) == FALSE)
 	{
-		// Portal connection dropped (portal restarted/crashed): reset and retry.
-		if (sRequestPath) { free(sRequestPath); sRequestPath = nullptr; }
-		if (sSessionPath) { free(sSessionPath); sSessionPath = nullptr; }
-		sBound = false;
-		sBindPending = false;
+		// The session bus connection itself dropped. Discard the dead shared
+		// handle; Sync obtains a new one and recreates the portal session.
+		dbus_connection_remove_filter(sConn, Handler, nullptr);
+		dbus_connection_unref(sConn);
+		sConn = nullptr;
+		ResetPortalSession();
+		sFailed = false;
+		sPortalRestartPending = false;
+		sBusReconnectPending = true;
+		sNextReconnectTick = 0;
+		SetError("GlobalShortcuts session bus disconnected; reconnecting");
+		LinuxGShortcutSync();
 		return;
+	}
+	if (sPortalRestartPending && !sRequestPath && !sSessionPath && !sWanted.empty())
+	{
+		sPortalRestartPending = false;
+		SendCreateSession();
 	}
 	// The very first bind happens once the session handle materialises.
 	// Subsequent re-binds are driven by LinuxGShortcutSync (state changes),
@@ -504,18 +579,21 @@ void LinuxGShortcutShutdown()
 {
 	if (sConn)
 	{
+		DBusError match_error; dbus_error_init(&match_error);
+		dbus_bus_remove_match(sConn, sPortalOwnerMatch, &match_error);
+		dbus_error_free(&match_error);
 		dbus_connection_remove_filter(sConn, Handler, nullptr);
-		dbus_connection_close(sConn);
+		// dbus_bus_get() returns a shared connection; closing it would break
+		// clipboard/tray/IME users in this process. Drop only our reference.
 		dbus_connection_unref(sConn);
 		sConn = nullptr;
 	}
-	if (sRequestPath) { free(sRequestPath); sRequestPath = nullptr; }
-	if (sSessionPath) { free(sSessionPath); sSessionPath = nullptr; }
-	sBound = false;
-	sBindPending = false;
-	sShortcutMap.clear();
+	ResetPortalSession();
 	sWanted.clear();
 	sFailed = false;
+	sPortalRestartPending = false;
+	sBusReconnectPending = false;
+	sNextReconnectTick = 0;
 }
 
 const wchar_t *LinuxGShortcutLastError()

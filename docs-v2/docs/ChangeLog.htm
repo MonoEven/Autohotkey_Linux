@@ -187,6 +187,15 @@
     Action semantics. VS Code windows are captured on X11 and Wayland, but the
     Monaco document content remains unexposed (U+FFFC/window-only), recorded as
     a versioned limitation rather than support.</li>
+  <li><b>M6 portal restart fault gate:</b> GlobalShortcuts now watches the
+    portal name owner, clears stale session/bind state and automatically creates
+    and binds against a replacement owner. An independent two-process fake
+    portal proves two activations reach one unchanged AHK process; session-bus
+    reconnect attempts are throttled to 500 ms.</li>
+  <li><b>M6 scenario-oracle identity gate:</b> all 22 scenario definitions are
+    linted for exact scenario-owned evidence. D-Bus monitors must bind a dynamic
+    destination and object path; the real GNOME SNI check now proves this AHK
+    PID's bus instead of accepting any StatusNotifierItem text.</li>
   <li><b>M6 ThreadSanitizer gate:</b> a Debug/O0 TSan job runs all 27 headless
     regressions plus four external input/keymodel/raw/suppression oracles with
     halt-on-race/deadlock. VM validation reports no findings and release

@@ -110,6 +110,10 @@ jobs:
         if: matrix.build == 'core'
         run: bash tests/oracle/run_fcitx5_ime_protocol_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
 
+      - name: Portal owner restart fault oracle
+        if: matrix.build == 'core'
+        run: bash tests/oracle/run_portal_restart_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
+
       - name: EWMH window enumeration oracle
         if: matrix.build == 'core'
         run: xvfb-run -a bash tests/oracle/run_ewmh_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
@@ -178,6 +182,9 @@ jobs:
       # check_detail0821 §14 / R4: the scenario acceptance runner gates the
       # seeded user scenarios under Xvfb (hotkeys, clipboard, long-press,
       # a&b, --pack, FileInstall resources, typed callbacks).
+      - name: Scenario oracle identity lint
+        run: python3 tests/scenarios/lint_oracles.py
+
       - name: Scenario runner (Xvfb)
         run: xvfb-run -a bash tests/scenarios/run_scenarios.sh "$BUILD_DIR/source/linux/core/ahk_core" --env x11
 

@@ -36,7 +36,8 @@ kill "$MON" "$AP" 2>/dev/null
 if [ -f /tmp/scn_sni_out.txt ] \
    && grep -q 'autohotkey' /tmp/scn_sni_icon.txt \
    && grep -Eq '\([1-9][0-9]*, [1-9][0-9]*,' /tmp/scn_sni_pixmap.txt \
-   && grep -q 'StatusNotifierItem' /tmp/scn_sni_mon.log 2>/dev/null; then
+   && grep -Fq "destination=$BUS" /tmp/scn_sni_mon.log 2>/dev/null \
+   && grep -Fq 'path=/StatusNotifierItem;' /tmp/scn_sni_mon.log 2>/dev/null; then
   touch /tmp/scn_sni_registration
 fi
 exit 0

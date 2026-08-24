@@ -118,7 +118,11 @@ and 20 for the D-Bus COM layer). The port has two display backends:</p>
         CreateSession/BindShortcuts/ListShortcuts, Activated/Deactivated
         signals) and auto selection routes to it once the extension is
         disabled &mdash; with no spurious error, because the functional
-        probe finds the backend.</li>
+        probe finds the backend. The runtime watches the portal bus-name owner:
+        after a crash/restart it discards stale session/bind handles, recreates
+        the session and rebinds the same desired shortcuts. A two-owner fault
+        oracle proves both activations reach one AHK PID; session-bus reconnect
+        attempts are throttled to 500 ms.</li>
       <li><b>GNOME version support</b> (extension vs. portal backend):</li>
       <table>
         <tr><th>GNOME version</th><th>Native hotkey backend</th><th>VM-verified</th></tr>

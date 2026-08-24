@@ -72,6 +72,12 @@ call remains successful. Cache/fallback/budget dumps require non-zero pending
 call/pump-slice counts; see `GUI_HOST_MATRIX.md` for versions and the explicit
 Monaco-content limitation.
 
+`run_portal_restart_oracle.sh` starts an independent GlobalShortcuts portal twice
+on one private session bus. It proves one unchanged AHK process receives an
+activation, survives the owner disappearance, recreates/rebinds its session to
+the replacement owner, and receives a second activation with the same shortcut
+id. This is the CI fault-injection lane for portal restarts.
+
 `run_ibus_ime_oracle.sh` is the real GNOME/XWayland IME lane: a GTK Entry with
 GTK's IBus module receives XTEST `nihao+space`; an independent AHK process sees
 cross-context preedit/commit scoped by FocusIn, fires a Chinese Hotstring, rejects
