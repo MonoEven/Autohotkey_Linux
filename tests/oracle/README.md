@@ -50,6 +50,13 @@ count before it may pass. `run_controlsend_mode_oracle.sh` proves writable
 focus/atspi mode selection, Unicode EditableText updates without DISPLAY and
 explicit rejection of complex Send syntax.
 
+`run_vscode_extension_oracle.sh` installs the packaged VSIX into VS Code and
+proves extension-host activation, language/command registration, `--diag`
+parsing and real script execution. `run_gui_host_matrix.sh` then aggregates
+independent GTK3, Qt6 and VS Code/Electron capture oracles; see
+`GUI_HOST_MATRIX.md` for the exact versions and the explicit Monaco-content
+limitation.
+
 The physical-layer VM lane uses `tools/linux/uinput-inject.c`: its virtual
 keyboard deliberately has no AHK identity, so evdev sees an independent input
 device. It remains permission-gated and is not pretended to run on ordinary

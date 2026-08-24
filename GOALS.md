@@ -86,6 +86,10 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - M5-C A_ControlSendMode: writable focus/atspi mode; AT-SPI appends plain Unicode
   to EditableText or triggers Enter/Space Action without X focus, rejecting
   unsupported key syntax explicitly; GNOME oracle + four CI contract assertions.
+- VSC-1 VS Code extension: syntax, run/selection/stop/tasks, diagnostics,
+  backend status/capability tree, VSIX packaging and real extension-host oracle.
+- GUI-1 real host matrix: GTK 3.24.50 and Qt 6.9.2 full tested controls;
+  VS Code/Electron 1.134.0 window/document captured but Monaco content unavailable.
 - Machine totals: 1139/1139 X11/headless, 17/17 Wayland and 234/234
   XWayland assertions; 27/27 headless regression tests.
 
@@ -94,13 +98,14 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 These are not marked complete without a matching environment and automated
 result:
 
-- Full multi-client `ahk-inputd` system service (the remap core and panic key
-  exist; daemon arbitration/systemd ownership remain).
+- `ahk-inputd` systemd socket-activation/service packaging (daemon/client/
+  arbitration are implemented and VM-verified).
 - Dedicated AutoHotkey IBus engine (coexistence is tested; no engine yet).
 - KDE VM end-to-end matrix and a real Flatpak-host run.
-- Wider AT-SPI application matrix (currently GNOME Terminal + Firefox; evince
-  needs a real document fixture, and LibreOffice/Qt/Electron/Java hosts are not
-  installed in the current VM).
+- Wider AT-SPI matrix still needs LibreOffice/Java/real-document hosts; GTK,
+  Qt6 and VS Code/Electron are now installed and versioned in the VM matrix.
+- VSC-2 interactive debugger adapter (VSC-1 deliberately provides run/diagnose,
+  not fake stepping/breakpoints).
 - libei injection, unless a compositor/portal environment suitable for E2E
   verification is provided.
 - Supplementary-plane Wayland text (UTF-16 surrogate-pair/emoji combination);

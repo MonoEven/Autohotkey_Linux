@@ -41,10 +41,10 @@ CKSUMS=dist/CKSUMS.txt
 {
   echo "AutoHotkey v2 Linux port package set v$VER (built $(date -u +%Y-%m-%dT%H:%MZ))"
   echo "SHA-256 (one per line: '<hash>  <filename>'):"
-  for f in dist/autohotkey-linux-$VER-*; do
+  for f in dist/autohotkey-linux-$VER-* dist/*.vsix; do
     [ -f "$f" ] || continue
     case "$f" in
-      *.tar.gz|*.deb|*.AppImage|*.rpm) ;;
+      *.tar.gz|*.deb|*.AppImage|*.rpm|*.vsix) ;;
       *) continue ;;
     esac
     name=$(basename "$f")

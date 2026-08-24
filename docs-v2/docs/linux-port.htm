@@ -368,11 +368,18 @@ Highlights of this release:</p>
     well-known name) and the extension&rsquo;s GNOME-49 version-guard
     import was corrected; live VM verification (see the "Native Wayland
     backend" section).</li>
-  <li><b>AT-SPI control automation (minimal path)</b>:
+  <li><b>AT-SPI control automation</b>:
     <code>ControlGetText</code>/<code>ControlSetText</code>/
-    <code>ControlClick</code> drive GTK/Qt/Electron accessibility objects
-    on Wayland (text read, editable-text set, <code>DoAction("click")</code>);
-    verified end-to-end on a GTK3 app.</li>
+    <code>ControlClick</code> and <code>A_ControlSendMode="atspi"</code> drive
+    accessible text/actions on Wayland. Cache.GetItems bulk discovery,
+    application-scoped WinTitle matching and a 2s total budget are active.
+    Real-host tests cover GTK 3.24 and Qt 6.9. VS Code/Electron 1.134 exposes
+    its window/Document but not Monaco source content (window-only support).</li>
+  <li><b>VS Code extension product</b>: <code>extensions/vscode-ahk-linux/</code>
+    packages syntax, run/stop/tasks, diagnostics and a backend capability tree
+    as a VSIX. A real VS Code extension-host oracle verifies activation,
+    <code>--diag</code> parsing and script execution; interactive debugging is
+    explicitly deferred to VSC-2.</li>
   <li><b>IME active-state detection</b>: <code>ImeGetState()</code>
     (framework by session-bus owner + current XKB group).  wlroots
     input-method-v2 text delivery is recorded as out of scope with the

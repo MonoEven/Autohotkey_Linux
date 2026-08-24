@@ -18,3 +18,4 @@ tests/oracle/out/
 
 # Release packaging output
 dist/
+extensions/vscode-ahk-linux/*.vsix

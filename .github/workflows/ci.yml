@@ -110,6 +110,27 @@ jobs:
         if: matrix.build == 'core'
         run: xvfb-run -a bash tests/oracle/run_ewmh_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
 
+      - name: Set up Node for VS Code extension
+        if: matrix.build == 'core'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test and package VS Code extension
+        if: matrix.build == 'core'
+        working-directory: extensions/vscode-ahk-linux
+        run: |
+          npm test
+          npm run package
+
+      - name: Upload VS Code extension VSIX
+        if: matrix.build == 'core'
+        uses: actions/upload-artifact@v5
+        with:
+          name: vscode-ahk-linux-vsix
+          path: extensions/vscode-ahk-linux/*.vsix
+          if-no-files-found: error
+
       - name: Upload external oracle trace
         if: always() && matrix.build == 'core'
         uses: actions/upload-artifact@v5
@@ -306,6 +327,11 @@ jobs:
         with:
           fetch-depth: 0 # preserve release/tag metadata for packaging and changelogs
 
+      - name: Set up Node for VSIX packaging
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Install dependencies
         run: |
           # GitHub-hosted runners intermittently hang contacting archive.ubuntu.com
@@ -354,8 +380,10 @@ jobs:
           # under `|| true`; now they must build).
           bash tools/linux/pack-appimage.sh
           bash tools/linux/pack-rpm.sh
+          ( cd extensions/vscode-ahk-linux && npm test && npm run package )
+          cp extensions/vscode-ahk-linux/*.vsix dist/
           # Regenerate CKSUMS.txt so it covers ALL dist artifacts (incl.
-          # AppImage/RPM) and re-sign it (pack.sh runs before those exist).
+          # AppImage/RPM/VSIX) and re-sign it (pack.sh runs before those exist).
           bash tools/linux/pack-finalize.sh
           ls -la dist/
 
@@ -381,7 +409,8 @@ jobs:
           test -f squashfs-root/usr/share/autohotkey/icon_main.ico
           test -f squashfs-root/usr/share/autohotkey/autohotkey.png
           rm -rf squashfs-root
-          ls dist/*.AppImage dist/*.rpm
+          ls dist/*.AppImage dist/*.rpm dist/*.vsix
+          grep -q 'autohotkey-linux-tools-0.1.0.vsix' dist/CKSUMS.txt
 
       # check0820: every release ships a CKSUMS.txt (SHA-256) so
       # `ahk --update <VER>` can be verified against the published hashes
@@ -428,6 +457,7 @@ jobs:
             dist/autohotkey-linux-*.deb
             dist/autohotkey-linux-*.rpm
             dist/autohotkey-linux-*.AppImage
+            dist/*.vsix
             dist/CKSUMS.txt
 
       - name: Verify release package attestations
@@ -437,7 +467,7 @@ jobs:
         run: |
           for artifact in dist/autohotkey-linux-*.tar.gz dist/autohotkey-linux-*.deb \
                           dist/autohotkey-linux-*.rpm dist/autohotkey-linux-*.AppImage \
-                          dist/CKSUMS.txt; do
+                          dist/*.vsix dist/CKSUMS.txt; do
             gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY"
           done
 
@@ -450,6 +480,7 @@ jobs:
             dist/autohotkey-linux-*.deb
             dist/autohotkey-linux-*.rpm
             dist/autohotkey-linux-*.AppImage
+            dist/*.vsix
             dist/CKSUMS.txt
             dist/CKSUMS.txt.asc
             dist/SIGNING_KEY_FINGERPRINT.txt

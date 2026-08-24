@@ -1,0 +1,224 @@
+{
+  "name": "autohotkey-linux-tools",
+  "displayName": "AutoHotkey Linux Tools",
+  "description": "Run AutoHotkey v2 Linux scripts and inspect input-backend capabilities from VS Code.",
+  "version": "0.1.0",
+  "publisher": "autohotkey-linux-community",
+  "license": "GPL-2.0-or-later",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "autohotkey",
+    "ahk",
+    "linux",
+    "wayland",
+    "x11"
+  ],
+  "activationEvents": [
+    "onLanguage:ahk2",
+    "onCommand:ahkLinux.runFile",
+    "onCommand:ahkLinux.runSelection",
+    "onCommand:ahkLinux.showDiagnostics",
+    "onView:ahkLinux.capabilities"
+  ],
+  "main": "./extension.js",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "package": "npx --yes @vscode/vsce@3.6.2 package"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "ahk2",
+        "aliases": [
+          "AutoHotkey v2",
+          "AHK v2"
+        ],
+        "extensions": [
+          ".ahk",
+          ".ah2"
+        ],
+        "configuration": "./language-configuration.json",
+        "firstLine": "^#!.*(?:AutoHotkey|ahk_core)"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ahk2",
+        "scopeName": "source.ahk2",
+        "path": "./syntaxes/ahk2.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "ahkLinux.runFile",
+        "title": "AutoHotkey Linux: Run Current File",
+        "category": "AutoHotkey Linux"
+      },
+      {
+        "command": "ahkLinux.runSelection",
+        "title": "AutoHotkey Linux: Run Selection",
+        "category": "AutoHotkey Linux"
+      },
+      {
+        "command": "ahkLinux.stop",
+        "title": "AutoHotkey Linux: Stop Running Script",
+        "category": "AutoHotkey Linux"
+      },
+      {
+        "command": "ahkLinux.showDiagnostics",
+        "title": "AutoHotkey Linux: Show Runtime Diagnostics",
+        "category": "AutoHotkey Linux"
+      },
+      {
+        "command": "ahkLinux.refreshCapabilities",
+        "title": "AutoHotkey Linux: Refresh Backend Capabilities",
+        "category": "AutoHotkey Linux"
+      },
+      {
+        "command": "ahkLinux.openLinuxDocs",
+        "title": "AutoHotkey Linux: Open Linux Port Documentation",
+        "category": "AutoHotkey Linux"
+      }
+    ],
+    "configuration": {
+      "title": "AutoHotkey Linux",
+      "properties": {
+        "ahkLinux.runtime": {
+          "type": "string",
+          "default": "ahk_core",
+          "description": "Path to the AutoHotkey Linux ahk_core executable."
+        },
+        "ahkLinux.runtimeArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Arguments inserted before the script path."
+        },
+        "ahkLinux.workingDirectory": {
+          "type": "string",
+          "default": "${workspaceFolder}",
+          "description": "Working directory for scripts. Supports ${workspaceFolder} and ${fileDirname}."
+        },
+        "ahkLinux.inputBackend": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "x11",
+            "portal",
+            "gnome-shell",
+            "evdev"
+          ],
+          "default": "auto",
+          "description": "AHK_INPUT_BACKEND value for launched scripts."
+        },
+        "ahkLinux.inputdSocket": {
+          "type": "string",
+          "default": "",
+          "description": "Optional AHK_INPUTD_SOCKET path. Empty uses the runtime default."
+        },
+        "ahkLinux.clearOutputBeforeRun": {
+          "type": "boolean",
+          "default": true,
+          "description": "Clear the AutoHotkey Linux output channel before each run."
+        },
+        "ahkLinux.saveBeforeRun": {
+          "type": "boolean",
+          "default": true,
+          "description": "Save the current document before running it."
+        }
+      }
+    },
+    "taskDefinitions": [
+      {
+        "type": "ahk-linux",
+        "required": [
+          "script"
+        ],
+        "properties": {
+          "script": {
+            "type": "string",
+            "description": "Script path; ${file} is supported."
+          },
+          "backend": {
+            "type": "string",
+            "description": "Optional input backend override."
+          }
+        }
+      }
+    ],
+    "problemMatchers": [
+      {
+        "name": "ahk-linux",
+        "owner": "ahk-linux",
+        "fileLocation": "absolute",
+        "pattern": {
+          "regexp": "^(.+?\\.(?:ahk|ah2))\\s*\\((\\d+)(?:,\\s*(\\d+))?\\)\\s*:\\s*(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
+        }
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "ahkLinux.capabilities",
+          "name": "AHK Linux Capabilities",
+          "when": "workspaceFolderCount > 0"
+        }
+      ]
+    },
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "ahkLinux.runFile",
+          "when": "editorLangId == ahk2",
+          "group": "run@1"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "ahkLinux.runSelection",
+          "when": "editorLangId == ahk2 && editorHasSelection",
+          "group": "navigation@20"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "ahkLinux.refreshCapabilities",
+          "when": "view == ahkLinux.capabilities",
+          "group": "navigation"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "ahkLinux.runFile",
+        "key": "f6",
+        "when": "editorLangId == ahk2"
+      },
+      {
+        "command": "ahkLinux.stop",
+        "key": "shift+f6",
+        "when": "editorLangId == ahk2"
+      }
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MonoEven/Autohotkey_Linux"
+  },
+  "homepage": "https://github.com/MonoEven/Autohotkey_Linux",
+  "bugs": {
+    "url": "https://github.com/MonoEven/Autohotkey_Linux/issues"
+  }
+}

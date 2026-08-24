@@ -779,6 +779,38 @@
    KindCaps 表一致。
 - **修复复杂度：低。**
 
+## 16. 延伸产品：VS Code 与真实 GUI 宿主矩阵
+
+### A. VSC-1 VS Code 扩展（已交付）
+
+- `extensions/vscode-ahk-linux/`：AutoHotkey v2 language/grammar、运行文件与
+  选区、停止进程、TaskProvider/problem matcher、错误 diagnostics、状态栏
+  backend 与 `--diag` 能力树；input backend/inputd socket 可配置。
+- 官方 `@vscode/vsce@3.6.2` 生成 `autohotkey-linux-tools-0.1.0.vsix`；CI 单测、
+  打包并上传 VSIX，release package job 把 VSIX 纳入 CKSUMS、attestation 与
+  release-assets。
+- VS Code 1.134.0 VM extension-host oracle：VSIX 安装、ahk2 language、5 命令、
+  16 条 diag 解析及实际 `.ahk` 进程 exit=0/外部 marker 全部通过。
+- **未冒充完成**：VSC-1 是 run/diagnose，不声称 breakpoint/step/variables；
+  DBGp/DAP adapter 为 VSC-2。
+
+### B. GUI-1 真实宿主捕获矩阵（已交付）
+
+- VM 实际安装 Qt 6.9.2 与 VS Code 1.134.0；统一 oracle 覆盖 GTK 3.24.50、
+  Qt6、VS Code/Electron。
+- GTK：Wayland AT-SPI UTF-8 读写/Action/WinTitle application scope；Qt6：
+  X11 `WinGetList` + Wayland Entry Unicode 读写 + Button Action 外部 marker；
+  两者 tested controls 全通过。
+- VS Code/Electron：X11 窗口可枚举；Wayland 在
+  `--force-renderer-accessibility` + `editor.accessibilitySupport=on` 下暴露
+  Window/Document 与 Text/Hypertext/Document interfaces，但 Monaco source
+  内容未进入 cache，Document.Text 仅 U+FFFC。矩阵明确标记
+  `window-only-content-unavailable`，未来版本若改善则 limitation oracle 失败，
+  不能静默宣称支持。
+- 落点：`tests/oracle/GUI_HOST_MATRIX.md`、`qt6_probe.cpp`、
+  `run_qt6_capture_oracle.sh`、`run_vscode_gui_capture_oracle.sh`、
+  `run_gui_host_matrix.sh`。
+
 ---
 
 # 第四部分 执行顺序与依赖图

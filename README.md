@@ -82,10 +82,11 @@ ahk_core --pack my-script script.ahk
 | X11/XWayland | `Win*`, `Control*`, hotkeys, hotstrings, InputHook, Unicode Send, pixels/monitors, dialogs and GTK3 GUI |
 | Native Wayland | xdg-shell, wlroots virtual keyboard/pointer and screencopy; global hotkeys via portal, GNOME Shell or evdev |
 | Input backends | Versioned normalized events/caps; X11/portal/GNOME/evdev routes; layout-aware key model; XI2 raw multi-client Hotstring/InputHook; physical `scXXX` and evdev `A & B` |
-| Accessibility | AT-SPI text/action controls on GNOME Wayland; tested with GNOME Terminal and Firefox |
+| Accessibility | AT-SPI Cache text/action controls on GNOME Wayland; real GTK 3.24, Qt 6.9 and VS Code/Electron 1.134 host matrix |
 | Interop | `.so` `DllCall` + libffi callbacks, including Float/Double ABI types; D-Bus adapted COM layer |
 | Desktop | GTK3 GUI/Menu, notifications, AutoHotkey StatusNotifierItem tray icon and `A_TrayMenu` |
-| Distribution | deb, RPM, tarball, AppImage, AUR PKGBUILD, Flatpak manifest and `--pack` |
+| Developer tooling | Packaged VS Code extension: v2 syntax, run/stop/tasks, diagnostics and backend capability panel |
+| Distribution | deb, RPM, tarball, AppImage, VSIX, AUR PKGBUILD, Flatpak manifest and `--pack` |
 
 The authoritative test totals are **1139/1139** X11/headless assertions,
 **17/17** native-Wayland assertions and **234/234** XWayland assertions. CI
@@ -101,8 +102,10 @@ packed-binary acceptance, scenario gates and an RSS/event-count soak.
 - Native-Wayland capabilities vary by compositor. wlroots offers the deepest
   direct input path; GNOME/KDE generally require portal, extension, libei or
   evdev/uinput integration.
-- The evdev/uinput remap chain and panic escape key are implemented and tested;
-  a multi-client systemd `ahk-inputd` daemon remains future work.
+- The evdev/uinput chain and multi-client `ahk-inputd` broker are implemented;
+  privileged installation still needs the supplied udev/polkit policy.
+- VS Code 1.134 exposes its Electron window/Document to AT-SPI, but not Monaco
+  source content even with forced accessibility; the matrix reports window-only.
 - IBus coexistence is tested, but a dedicated AutoHotkey IBus engine is not yet
   implemented. KDE VM and Flatpak-host end-to-end matrices still need dedicated
   environments.

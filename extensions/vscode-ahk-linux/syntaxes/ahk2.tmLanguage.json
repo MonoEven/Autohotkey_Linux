@@ -1,0 +1,123 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "AutoHotkey v2",
+  "scopeName": "source.ahk2",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#directives" },
+    { "include": "#hotkeys" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#builtins" },
+    { "include": "#functions" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.semicolon.ahk2",
+          "match": ";.*$"
+        },
+        {
+          "name": "comment.block.ahk2",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.ahk2",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.ahk2", "match": "`[abfnrtv0`\"']" },
+            { "name": "constant.character.escape.unicode.ahk2", "match": "`u[0-9A-Fa-f]{4}" }
+          ]
+        },
+        {
+          "name": "string.quoted.single.ahk2",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            { "name": "constant.character.escape.ahk2", "match": "`[abfnrtv0`\"']" }
+          ]
+        }
+      ]
+    },
+    "directives": {
+      "patterns": [
+        {
+          "name": "keyword.control.directive.ahk2",
+          "match": "(?i)(?<!\\w)#(?:ClipboardTimeout|DllLoad|ErrorStdOut|HotIf|Hotstring|IncludeAgain|Include|InputLevel|MaxThreadsBuffer|MaxThreadsPerHotkey|MaxThreads|NoTrayIcon|Persistent|Requires|SingleInstance|SuspendExempt|UseHook|Warn|WinActivateForce)\\b"
+        }
+      ]
+    },
+    "hotkeys": {
+      "patterns": [
+        {
+          "name": "entity.name.function.hotkey.ahk2",
+          "match": "^\\s*[~*$<>!^+#&A-Za-z0-9_ ]+::"
+        },
+        {
+          "name": "entity.name.function.hotstring.ahk2",
+          "match": "^\\s*:[^:]*:[^:]+::"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.hex.ahk2", "match": "(?i)\\b0x[0-9a-f]+\\b" },
+        { "name": "constant.numeric.float.ahk2", "match": "\\b(?:\\d+\\.\\d*|\\.\\d+)(?:e[+-]?\\d+)?\\b" },
+        { "name": "constant.numeric.integer.ahk2", "match": "\\b\\d+\\b" }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.ahk2",
+          "match": "(?i)\\b(?:break|case|catch|class|continue|else|exit|extends|finally|for|global|goto|if|in|local|loop|return|static|switch|throw|try|until|while)\\b"
+        },
+        {
+          "name": "constant.language.ahk2",
+          "match": "(?i)\\b(?:true|false|unset)\\b"
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "name": "support.constant.variable.ahk2",
+          "match": "(?i)\\bA_(?:AhkPath|AhkVersion|Args|Clipboard|ComSpec|ControlSendMode|HotkeyBackend|Index|InitialWorkingDir|IsAdmin|IsCompiled|Language|LineFile|LineNumber|Now|OSVersion|PriorHotkey|ScriptDir|ScriptFullPath|ScriptName|Temp|ThisFunc|ThisHotkey|TickCount|TimeSinceThisHotkey|UserName|WorkingDir|YYYY|MM|DD|Hour|Min|Sec)\\b"
+        },
+        {
+          "name": "support.function.ahk2",
+          "match": "(?i)\\b(?:Array|Buffer|Click|ControlClick|ControlGetText|ControlSend|ControlSendText|ControlSetText|DirCopy|DirCreate|DirDelete|ExitApp|FileAppend|FileDelete|FileExist|FileOpen|FileRead|Format|Hotkey|HotkeyBackendGet|HotIf|Hotstring|InputHook|Map|MsgBox|Object|OnError|OnExit|RegExMatch|RegExReplace|Run|RunWait|Send|SendEvent|SendInput|SendText|SetTimer|Sleep|Type|WinActivate|WinExist|WinGetList|WinWait)\\b(?=\\s*\\()"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.ahk2",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b(?=\\s*\\()"
+        },
+        {
+          "name": "variable.other.readwrite.ahk2",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.ahk2",
+          "match": "(?::=|=>|==|!=|<=|>=|&&|\\|\\||\\+\\+|--|\\*\\*|//|~=|[+\\-*/%<>=!&|^?:.])"
+        }
+      ]
+    }
+  }
+}

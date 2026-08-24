@@ -78,6 +78,9 @@ struct AtspiRef
 	std::string name;
 	std::string path;
 	std::string dest; // D-Bus destination hosting this object.
+	std::string interfaces; // Comma-separated Cache.GetItems interface names.
+	std::string description;
+	uint32_t role = 0;
 };
 std::vector<AtspiRef> sTable;
 
@@ -201,8 +204,8 @@ std::string GetNameProp(const char *aDest, const char *aPath)
 }
 
 // Parse one item of the preferred Cache.GetItems signature:
-// ((so)(so)(so)iiassusau).  We only need the main object reference and its
-// cached Name; role/states remain in the reply for future enrichment.
+// ((so)(so)(so)iiassusau).  Capture enough metadata for honest GUI-host
+// matrices without extra per-node round trips.
 static bool ReadCacheItemNew(DBusMessageIter *aItem, const char *aFallbackDest, AtspiRef &aOut)
 {
 	if (dbus_message_iter_get_arg_type(aItem) != DBUS_TYPE_STRUCT)
@@ -212,16 +215,42 @@ static bool ReadCacheItemNew(DBusMessageIter *aItem, const char *aFallbackDest, 
 	std::string obj_dest, obj_path;
 	if (!ReadRef(&fields, obj_dest, obj_path) || obj_path.empty())
 		return false;
-	// main ref -> application ref -> parent ref -> index -> child count ->
-	// interfaces -> name (six iterator advances).
-	for (int i = 0; i < 6; ++i)
+	// main -> application -> parent -> index -> child count -> interfaces.
+	for (int i = 0; i < 5; ++i)
 		if (!dbus_message_iter_next(&fields))
 			return false;
-	if (dbus_message_iter_get_arg_type(&fields) != DBUS_TYPE_STRING)
+	if (dbus_message_iter_get_arg_type(&fields) != DBUS_TYPE_ARRAY)
 		return false; // Old Qt signature reaches a different type here.
+	DBusMessageIter interfaces;
+	dbus_message_iter_recurse(&fields, &interfaces);
+	while (dbus_message_iter_get_arg_type(&interfaces) == DBUS_TYPE_STRING)
+	{
+		const char *iface = nullptr;
+		dbus_message_iter_get_basic(&interfaces, &iface);
+		if (iface && *iface)
+		{
+			if (!aOut.interfaces.empty())
+				aOut.interfaces += ',';
+			aOut.interfaces += iface;
+		}
+		dbus_message_iter_next(&interfaces);
+	}
+	if (!dbus_message_iter_next(&fields)
+		|| dbus_message_iter_get_arg_type(&fields) != DBUS_TYPE_STRING)
+		return false;
 	const char *name = nullptr;
 	dbus_message_iter_get_basic(&fields, &name);
 	aOut.name = name ? name : "";
+	if (!dbus_message_iter_next(&fields)
+		|| dbus_message_iter_get_arg_type(&fields) != DBUS_TYPE_UINT32)
+		return false;
+	dbus_message_iter_get_basic(&fields, &aOut.role);
+	if (!dbus_message_iter_next(&fields)
+		|| dbus_message_iter_get_arg_type(&fields) != DBUS_TYPE_STRING)
+		return false;
+	const char *description = nullptr;
+	dbus_message_iter_get_basic(&fields, &description);
+	aOut.description = description ? description : "";
 	aOut.path = obj_path;
 	aOut.dest = obj_dest.empty() ? (aFallbackDest ? aFallbackDest : "") : obj_dest;
 	return !aOut.dest.empty();
@@ -497,7 +526,9 @@ int LinuxAtspiRefresh()
 				sLastCacheApps, sLastFallbackApps, sLastCacheItems, sTable.size(),
 				sLastBudgetMs, sLastBudgetExceeded ? 1 : 0);
 			for (const auto &e : sTable)
-				fprintf(f, "%s\t%s\n", e.name.c_str(), e.path.c_str());
+				fprintf(f, "%s\t%s\tdest=%s\trole=%u\tinterfaces=%s\tdescription=%s\n",
+					e.name.c_str(), e.path.c_str(), e.dest.c_str(), e.role,
+					e.interfaces.c_str(), e.description.c_str());
 			fclose(f);
 		}
 	}
