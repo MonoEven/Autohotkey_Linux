@@ -317,10 +317,14 @@ async function runDebugSelfTest(context, script, runtimePath) {
     mapValues: {},
     exceptionLine: 0,
     exceptionMessage: null,
+    idlePauseMs: null,
+    idleFrame: null,
+    idleValue: null,
     terminated: false,
   };
   let debugSession;
   let phase = 0;
+  let idlePauseStarted = 0;
   let chain = Promise.resolve();
   let resolveTerminated;
   const terminated = new Promise((resolve) => { resolveTerminated = resolve; });
@@ -392,6 +396,18 @@ async function runDebugSelfTest(context, script, runtimePath) {
               evidence.exceptionMessage = evaluated.result;
               phase = 3;
               await debugSession.customRequest('continue', { threadId: 1 });
+              const idleDeadline = Date.now() + 3000;
+              while (!fs.existsSync('/tmp/ahk-dbgp-fixture.out') && Date.now() < idleDeadline) {
+                await new Promise((resolve) => setTimeout(resolve, 20));
+              }
+              idlePauseStarted = Date.now();
+              await debugSession.customRequest('pause', { threadId: 1 });
+            } else if (phase === 3) {
+              evidence.idlePauseMs = Date.now() - idlePauseStarted;
+              evidence.idleFrame = snapshot.frame.name;
+              evidence.idleValue = snapshot.variables.find((item) => item.name === 'idleValue')?.value ?? null;
+              phase = 4;
+              await debugSession.customRequest('terminate');
             }
           });
         },

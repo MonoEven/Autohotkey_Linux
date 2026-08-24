@@ -385,7 +385,8 @@ Highlights of this release:</p>
     oracles and a VS Code 1.134 extension-host tracker pass. D3 Array/Map/Object
     trees support nested handles and paging (20-item/two-page oracle). Exception
     filters stop caught errors at throw, expose Message and continue into catch.
-    Idle pause/reconnect and D-Bus object projection remain.</li>
+    Persistent idle Pause is bounded below 500 ms and exposes an explicit
+    no-active-frame Global scope. Reconnect and D-Bus object projection remain.</li>
   <li><b>IME active-state detection</b>: <code>ImeGetState()</code>
     (framework by session-bus owner + current XKB group).  wlroots
     input-method-v2 text delivery is recorded as out of scope with the

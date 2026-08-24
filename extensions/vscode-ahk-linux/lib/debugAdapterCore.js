@@ -23,6 +23,7 @@ class AhkDebugAdapterCore {
     this.variableHandles = new Map();
     this.nextVariableHandle = 1;
     this.exceptionBreakpointId = 0;
+    this.pendingPause = false;
     this.terminated = false;
   }
 
@@ -175,6 +176,23 @@ class AhkDebugAdapterCore {
         source: { name: path.basename(sourcePath), path: sourcePath },
       };
     });
+    if (!frames.length && this.init) {
+      // A persistent script which finished auto-execute has no active DBGp
+      // stack frame.  DAP needs a frame to expose scopes, so provide an honest
+      // synthetic idle frame: depth 0 permits Global context/property queries,
+      // but the label explicitly says there is no active script frame.
+      let sourcePath = '';
+      try { sourcePath = fileURLToPath(this.init.attributes.fileuri); } catch (_) { sourcePath = this.init.attributes.fileuri || ''; }
+      this.frames.set(1, 0);
+      frames.push({
+        id: 1,
+        name: 'Idle (no active script frame)',
+        line: 1,
+        column: 1,
+        presentationHint: 'subtle',
+        source: { name: path.basename(sourcePath), path: sourcePath },
+      });
+    }
     this.respond(request, { stackFrames: frames, totalFrames: frames.length });
   }
 
@@ -295,8 +313,16 @@ class AhkDebugAdapterCore {
   }
 
   request_pause(request) {
+    this.requireSession();
+    this.pendingPause = true;
     this.respond(request);
-    this.startContinuation('break', 'pause');
+    // DBGp emits the outstanding run continuation response first when break
+    // enters the stopped state, followed by the break command response.  The
+    // continuation handler consumes pendingPause to emit exactly one DAP stop.
+    this.session.send('break').catch((error) => {
+      this.pendingPause = false;
+      this.output(`${error.message}\n`, 'stderr');
+    });
   }
 
   request_disconnect(request) {
@@ -322,7 +348,8 @@ class AhkDebugAdapterCore {
         this.nextVariableHandle = 1;
         const stoppedReason = ['exception', 'error'].includes(packet.attributes.reason)
           ? 'exception'
-          : reason;
+          : this.pendingPause ? 'pause' : reason;
+        this.pendingPause = false;
         this.event('stopped', {
           reason: stoppedReason,
           ...(stoppedReason === 'exception' ? { text: packet.attributes.reason } : {}),

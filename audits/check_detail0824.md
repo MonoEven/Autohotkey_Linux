@@ -812,7 +812,11 @@
 - **VSC-2 D3 第二项（exception）已交付**：DAP `all` filter 映射 DBGp Any；
   caught `Error("D3-boom")` 在 throw line 6 停止，可 evaluate Message，continue
   后进入 catch 并写出 `value=30 caught=D3-boom`；三层 oracle 同步通过。
-  **D3 剩余**：idle pause/reconnect、D-Bus 对象真实投影。
+- **VSC-2 D3 第三项（idle Pause）已交付**：Linux main loop 在既有50ms wait
+  上界内泵 DBGp；DAP Pause 只发一个 stopped。auto-exec结束后runtime真实stack=0，
+  UI明确显示 `Idle (no active script frame)` 合成frame，仅提供Global scope。
+  raw/DAP约72ms、VS Code 318ms内暂停并读 `idleValue=77`，均低于500ms gate。
+  **D3 剩余**：detach后reconnect、D-Bus 对象真实投影。
 
 ### B. GUI-1 真实宿主捕获矩阵（已交付）
 

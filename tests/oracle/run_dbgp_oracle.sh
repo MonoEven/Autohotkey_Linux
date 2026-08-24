@@ -10,4 +10,4 @@ test -x "$BIN" || { echo "DBGP_ORACLE_FAIL missing-runtime=$BIN"; exit 1; }
 python3 "$ROOT/tests/oracle/dbgp_server_oracle.py" \
   "$BIN" "$ROOT/tests/oracle/dbgp_fixture.ahk" \
   --summary "$OUT/dbgp-summary.json" || exit 1
-echo "DBGP_ORACLE_PASS breakpoint=3 step=4 array_pages=2 map=101,202 nested=42 exception=6:D3-boom detach=1"
+echo "DBGP_ORACLE_PASS breakpoint=3 step=4 array_pages=2 map=101,202 nested=42 exception=6:D3-boom idle_pause_lt500ms=1 idle_stack=0 idle_value=77 stop=1"

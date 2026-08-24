@@ -265,10 +265,39 @@ def main() -> int:
             transcript.append(text)
             assert property_value(exception_prop, "<exception>.Message") == "D3-boom", text
 
-            detach, text = command_response(conn, "detach", 11)
+            send_command(conn, "run -i 21")
+            idle_deadline = time.monotonic() + 3
+            while not marker.exists() and time.monotonic() < idle_deadline:
+                time.sleep(0.02)
+            assert marker.exists(), "persistent fixture did not enter idle loop"
+
+            pause_started = time.monotonic()
+            send_command(conn, "break -i 22")
+            paused_run, text = recv_packet(conn)
             transcript.append(text)
-            assert detach.attrib.get("command") == "detach", text
-            assert detach.attrib.get("status") == "stopped", text
+            assert paused_run.attrib.get("command") == "run", text
+            assert paused_run.attrib.get("transaction_id") == "21", text
+            assert paused_run.attrib.get("status") == "break", text
+            pause_response, text = recv_packet(conn)
+            transcript.append(text)
+            pause_ms = round((time.monotonic() - pause_started) * 1000, 3)
+            assert pause_response.attrib.get("command") == "break", text
+            assert pause_response.attrib.get("transaction_id") == "22", text
+            assert pause_ms < 500, pause_ms
+
+            idle_stack, text = command_response(conn, "stack_get", 23)
+            transcript.append(text)
+            idle_stack_frames = sum(1 for item in idle_stack.iter() if local_name(item.tag) == "stack")
+            assert idle_stack_frames == 0, text
+            idle_prop, text = command_response(conn, "property_get -n idleValue -c 1 -d 0", 24)
+            transcript.append(text)
+            assert property_value(idle_prop, "idleValue") == "77", text
+
+            send_command(conn, "stop -i 25")
+            stopped_packet, text = recv_packet(conn)
+            transcript.append(text)
+            assert stopped_packet.attrib.get("transaction_id") == "25", text
+            assert stopped_packet.attrib.get("status") == "stopped", text
 
         stdout, stderr = proc.communicate(timeout=10)
         assert proc.returncode == 0, (proc.returncode, stdout, stderr)
@@ -294,7 +323,10 @@ def main() -> int:
             "array_edges": [1, 20],
             "exception_line": exception_line,
             "exception_message": "D3-boom",
-            "detach": True,
+            "idle_pause_ms": pause_ms,
+            "idle_stack_frames": idle_stack_frames,
+            "idle_value": 77,
+            "stop": True,
             "script_result": result,
             "packets": len(transcript),
         }

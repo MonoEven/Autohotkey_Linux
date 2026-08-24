@@ -192,10 +192,8 @@ async function main() {
     if (reply.body.result !== 'D3-boom') throw new Error(`exception message mismatch: ${JSON.stringify(reply)}`);
     const exceptionMessage = reply.body.result;
 
-    const continueStart = messages.length;
     request = send('continue', { threadId: 1 });
     await response(request);
-    await nextEvent('terminated', continueStart);
 
     const deadline = Date.now() + 3000;
     while (!fs.existsSync(marker) && Date.now() < deadline) {
@@ -203,6 +201,34 @@ async function main() {
     }
     const scriptResult = fs.readFileSync(marker, 'utf8').trim();
     if (scriptResult !== 'value=30 caught=D3-boom') throw new Error(`script result mismatch: ${scriptResult}`);
+
+    const pauseStartIndex = messages.length;
+    const pauseStarted = Date.now();
+    request = send('pause', { threadId: 1 });
+    await response(request);
+    const pauseStop = await nextEvent('stopped', pauseStartIndex);
+    const idlePauseMs = Date.now() - pauseStarted;
+    if (pauseStop.body.reason !== 'pause' || idlePauseMs >= 500) {
+      throw new Error(`idle pause mismatch: ${idlePauseMs}ms ${JSON.stringify(pauseStop)}`);
+    }
+
+    request = send('stackTrace', { threadId: 1 });
+    reply = await response(request);
+    const idleFrame = reply.body.stackFrames[0];
+    if (idleFrame.name !== 'Idle (no active script frame)') throw new Error(`idle frame mismatch: ${JSON.stringify(idleFrame)}`);
+
+    request = send('scopes', { frameId: idleFrame.id });
+    reply = await response(request);
+    const idleGlobal = reply.body.scopes.find((scope) => scope.name === 'Global');
+    request = send('variables', { variablesReference: idleGlobal.variablesReference });
+    reply = await response(request);
+    const idleValue = reply.body.variables.find((variable) => variable.name === 'idleValue');
+    if (!idleValue || idleValue.value !== '77') throw new Error(`idle value mismatch: ${JSON.stringify(idleValue)}`);
+
+    const terminateStart = messages.length;
+    request = send('terminate');
+    await response(request);
+    await nextEvent('terminated', terminateStart);
 
     const summary = {
       schema: 1,
@@ -222,6 +248,9 @@ async function main() {
       globalY: Number(y.value),
       exceptionLine: exceptionFrame.line,
       exceptionMessage,
+      idlePauseMs,
+      idleFrame: idleFrame.name,
+      idleValue: Number(idleValue.value),
       terminated: true,
       scriptResult,
       dapMessages: messages.length,

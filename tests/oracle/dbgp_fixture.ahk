@@ -6,5 +6,6 @@ try
     throw Error("D3-boom")
 catch as caught
     caughtMessage := caught.Message
+idleValue := 77
 FileAppend("value=" z " caught=" caughtMessage "`n", "/tmp/ahk-dbgp-fixture.out")
-ExitApp
+Persistent(True)

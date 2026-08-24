@@ -85,6 +85,9 @@ assert debug["mapValues"] == {'["first"]': "101", '["second"]': "202"}, data
 assert debug["y"] == "15", data
 assert debug["exceptionLine"] == 6, data
 assert debug["exceptionMessage"] == "D3-boom", data
+assert debug["idlePauseMs"] < 500, data
+assert debug["idleFrame"] == "Idle (no active script frame)", data
+assert debug["idleValue"] == "77", data
 assert debug["terminated"] is True, data
 print(json.dumps(data, sort_keys=True))
 PY

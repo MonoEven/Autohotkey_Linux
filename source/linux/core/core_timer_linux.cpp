@@ -191,6 +191,13 @@ void LinuxRunMainLoop()
 		// Global-hotkey backends (portal / GNOME Shell) need pumping
 		// regardless of which backend the loop waited on.
 		LinuxInputBackendDispatch();
+#ifdef CONFIG_DEBUGGER
+		// PreExecLine polls DBGp while script code is running.  A persistent
+		// script can be completely idle in this loop, so pump an asynchronous
+		// break/stop command within the same bounded 50 ms responsiveness budget.
+		if (g_Debugger.IsConnected() && g_Debugger.HasPendingCommand())
+			g_Debugger.ProcessCommands();
+#endif
 		LinuxCheckScriptTimers();
 		// A non-persistent GUI script ends when its last window closes (and
 		// there are no timers to keep it alive) - the same way the Windows

@@ -77,11 +77,21 @@ before clean termination.
   VS Code all stop at throw line 6, evaluate `<exception>.Message`, continue
   into the catch block and prove `value=30 caught=D3-boom`.
 
+### Delivered: bounded idle pause
+
+- The Linux persistent/GUI main loop pumps pending DBGp commands within its
+  existing 50 ms wait bound; running code remains handled by `PreExecLine`.
+- DAP Pause maps the outstanding run continuation to one `stopped: pause` event.
+- Finished auto-execute has no real DBGp stack, so DAP exposes an explicitly
+  labelled `Idle (no active script frame)` synthetic frame only to reach Global
+  scope; it does not pretend there is a runtime call frame.
+- Raw DBGp and external DAP pause in ~72 ms; real VS Code 1.134 pauses in 318 ms,
+  reads global `idleValue=77`, then terminates cleanly (all gated below 500 ms).
+
 Remaining D3 work:
 
 - an explicit debugger projection for Linux D-Bus compatibility objects;
-- debugger break requests while a persistent script is idle in the Linux main loop;
-- reconnect/detach and crash cleanup.
+- reconnect after detach and crash cleanup.
 
 ## Non-goals
 

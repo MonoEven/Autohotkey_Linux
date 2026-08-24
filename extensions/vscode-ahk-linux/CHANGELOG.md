@@ -10,6 +10,8 @@
   Array, Map string keys and nested Object are verified end-to-end.
 - Exception breakpoint filter with caught-exception stop/evaluate/continue;
   `Error("D3-boom")` is inspected at line 6 and then handled normally.
+- Persistent idle-script Pause with a bounded main-loop socket pump, explicit
+  no-active-frame label and readable Global scope.
 - Real VS Code extension-host oracle observes breakpoint line 3, step line 4,
   `x=10`, `y=15`, expanded container values and clean termination.
 

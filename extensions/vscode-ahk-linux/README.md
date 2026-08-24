@@ -62,8 +62,9 @@ VSC-2 D1 (runtime DBGp) and D2 (inline DBGp-to-DAP adapter) are both
 independently exercised, including a real VS Code 1.134 extension-host run.
 D3 object trees and exception breakpoints are implemented: Array/Map/Object
 expansion supports paging/nested handles, and caught exceptions expose their
-message before continuing. Idle-script pause/reconnect and a D-Bus object
-projection remain; see [VSC2_DEBUGGER_PORT.md](VSC2_DEBUGGER_PORT.md).
+message before continuing. Persistent idle scripts can also be paused within a 500 ms gate and expose an
+explicitly labelled no-active-frame Global scope. Reconnect after detach and a
+D-Bus object projection remain; see [VSC2_DEBUGGER_PORT.md](VSC2_DEBUGGER_PORT.md).
 
 ## Package and test
 

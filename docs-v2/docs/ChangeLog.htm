@@ -149,7 +149,9 @@
     Array/Map/Object values; a 20-item Array across two pages, Map string keys
     and a nested Object pass raw DBGp, external DAP and real VS Code tests.
     Exception filters also stop a caught error at its throw line, expose its
-    Message and continue normally into catch. Idle pause/reconnect and D-Bus
+    Message and continue normally into catch. Persistent idle scripts can Pause
+    via the bounded Linux main-loop pump; an explicit no-active-frame entry
+    exposes Global scope without inventing a runtime stack. Reconnect and D-Bus
     projection remain. VSIX stays in release checksums/artifacts.</li>
   <li><b>GUI-1 real host matrix:</b> installed and tested GTK 3.24.50, Qt 6.9.2
     and VS Code/Electron 1.134. GTK/Qt tested controls pass X11/AT-SPI text and
