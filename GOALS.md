@@ -65,6 +65,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - Per-hotkey input mux: capability-based routing across X11/portal/GNOME/evdev
   with concurrent multi-lane registration and differential start/stop; exposed
   via HotkeyBackendGet().mux and --diag.
+- ahk-inputd broker daemon: EVIOCGRAB capture, uinput replay, UNIX-socket v1
+  multi-client subscription protocol with suppression arbitration, fail-open
+  cleanup and watchdog/panic recovery (M4-D; core client consumption is M4-C).
 - Machine totals: 1160/1160 X11/headless, 17/17 Wayland and 255/255
   XWayland assertions; 27/27 headless regression tests.
 

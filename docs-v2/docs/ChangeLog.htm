@@ -80,6 +80,15 @@
     and <code>--diag input-mux</code>; runtime Hotkey changes differentially
     start/stop lanes. A scenario proves XTEST F12 (X11) and a uinput
     <code>a &amp; b</code> (evdev) fire concurrently in the same script.</li>
+  <li><b>M4-D ahk-inputd broker:</b> a new standalone <code>ahk-inputd</code>
+    daemon captures every keyboard with EVIOCGRAB, replays unconsumed keys via
+    a 0x0FAC virtual device and distributes length-prefixed v1 frames over a
+    UNIX socket to multi-client subscription rules (with per-key
+    want_suppress arbitration). Client crashes clean rules instantly; a
+    SIGALRM watchdog and the Backspace-Esc-Enter panic release grabs on a
+    stuck loop. An independent VM oracle proves distribution, replay,
+    suppression, client-crash cleanup and grab recovery after broker death.
+    The core client that consumes these frames lands with M4-C.</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>

@@ -161,7 +161,23 @@
 - **验收标准**：两个脚本同时 Hotstring/InputHook 且互不冲突；`kill -9` 任一
   客户端后 1s 内其 suppression 规则消失；`kill -9` broker 后键盘立即恢复
   （EVIOCGRAB 随 fd 关闭自动释放）。
-- **修复复杂度：极高**（与 check0824 一致），但阶段 A 单独交付即有价值。
+- **M4-D 已交付（broker 守护进程）**：新增 `source/linux/inputd/inputd.c`
+  独立 `ahk-inputd` 二进制（纯 C、无 X11/AHK 依赖）。单实例 flock、启动及
+  每 1s 增量扫描键盘设备并 EVIOCGRAB（跳过自身回放设备，vendor 0x0FAC），
+  UNIX socket 长度前缀二进制协议 v1（HELLO/SUBSCRIBE{code,suppress}/
+  UNSUBSCRIBE/PING ↔ EVENT/ACK/PONG）。仲裁：任一在线客户端 want_suppress 某
+  code 则抑制回放，否则经 uinput 回放；每个订阅客户端都收到事件帧。客户端
+  崩溃/kill 立即清规则 fail-open；SIGALRM watchdog 卡死 2s 释放全部 grab；
+  Backspace-Esc-Enter panic 保留。VM 上独立 oracle 全绿：HELLO/SUBSCRIBE
+  ACK、F12 分发+回放、A 分发+抑制、kill -9 客户端后 1s 内规则消失、kill -9
+  broker 后键盘立即可 grab。**未完成**：客户端（ahk_core）连接 broker 并
+  消费事件帧的 M4-C、libei/InputCapture 上游未就绪的接收端。
+- **落点文件**：`source/linux/inputd/`（inputd.c + CMakeLists.txt 独立
+  target）、`tests/oracle/inputd_client.c`、`inputd_watch.c`、
+  `run_inputd_oracle.sh`。
+- **验收标准**：见 oracle 全绿项；需要 root（EVIOCGRAB），CI 只验证编译，
+  行为验收在 VM 执行。
+- **修复复杂度：极高**（守护进程 + 协议已就绪；客户端接入 + libei 留后续）
 
 #### D. capability 结构版本化细化（解 U6）
 

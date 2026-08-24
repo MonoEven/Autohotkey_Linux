@@ -28,7 +28,10 @@ M3/M4: every lane reports physical/logical/text/source/level/device/origin, and
 `AHK_INPUT_EVENT_TRACE=<path>` writes its JSONL oracle. `input_backend.*` owns
 the per-hotkey mux: each hotkey is routed to the lane whose caps satisfy it, and
 several lanes can stay active at once (see `--diag input-mux` /
-`HotkeyBackendGet().mux`).
+`HotkeyBackendGet().mux`). `inputd/` holds the standalone `ahk-inputd`
+single-instance evdev broker (EVIOCGRAB capture, uinput 0x0FAC replay,
+UNIX-socket v1 subscription protocol, watchdog/panic recovery); the
+`tests/oracle/run_inputd_oracle.sh` suite validates it as root.
 
 Key runtime controls:
 

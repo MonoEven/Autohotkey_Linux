@@ -12,9 +12,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(BUILD_AHK_CORE "Build AutoHotkey core interpreter for Linux" ON)
+option(BUILD_AHK_INPUTD "Build the ahk-inputd evdev broker daemon" ON)
 
 add_subdirectory(source/linux)
 
 if(BUILD_AHK_CORE)
     add_subdirectory(source/linux/core)
+endif()
+
+if(BUILD_AHK_INPUTD)
+    add_subdirectory(source/linux/inputd)
 endif()
