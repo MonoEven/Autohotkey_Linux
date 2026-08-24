@@ -22,7 +22,7 @@
 #define INPUTD_S2C_ACK 2u
 #define INPUTD_S2C_PONG 3u
 
-#define INPUTD_MAX_RULES 128
+#define INPUTD_MAX_RULES 1024
 #define INPUTD_MAX_FRAME (4 + 1 + 4 + (INPUTD_MAX_RULES * 5))
 #define INPUTD_DEFAULT_SOCKET_NAME "ahk-inputd.sock"
 

@@ -12,7 +12,11 @@
 #include "input_backend.h"
 #include "core_keymodel_linux.h"
 #include "core_wayland_linux.h"
+#include "core_capture_linux.h" // LinuxCaptureUsesRaw
+#include "core_win_linux.h"     // LinuxX11Display
 #include "../inputd/inputd_proto.h"
+#include <X11/Xlib.h>
+#include <linux/input.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <poll.h>
@@ -161,6 +165,24 @@ void LinuxInputdClientUpdateRules()
 		return;
 	struct { unsigned int code; unsigned char suppress; } rules[INPUTD_MAX_RULES];
 	int count = 0;
+	auto add_rule = [&](unsigned int aCode, unsigned char aSuppress) {
+		if (!aCode)
+			return;
+		for (int r = 0; r < count; ++r)
+			if (rules[r].code == aCode)
+			{
+				if (aSuppress)
+					rules[r].suppress = 1;
+				return;
+			}
+		if (count < INPUTD_MAX_RULES)
+		{
+			rules[count].code = aCode;
+			rules[count].suppress = aSuppress;
+			++count;
+		}
+	};
+	// EVDEV-assigned hotkeys with the want_suppress flag derived from tilde.
 	for (int i = 0; i < Hotkey::sHotkeyCount && count < INPUTD_MAX_RULES; ++i)
 	{
 		Hotkey *hk = Hotkey::shk[i];
@@ -168,36 +190,37 @@ void LinuxInputdClientUpdateRules()
 			continue;
 		if (!LinuxInputBackendHotkeyAssigned(hk, AhkInputBackendKind::EVDEV))
 			continue;
-		unsigned int codes[2];
-		int ncodes = 0;
-		if (hk->mSC)
-			codes[ncodes++] = LinuxEvdevCodeForScanCode(hk->mSC);
-		else if (hk->mVK)
-			codes[ncodes++] = LinuxWaylandKeycodeForVk(hk->mVK);
-		if (hk->mModifierSC)
-			codes[ncodes++] = LinuxEvdevCodeForScanCode(hk->mModifierSC);
-		else if (hk->mModifierVK)
-			codes[ncodes++] = LinuxWaylandKeycodeForVk(hk->mModifierVK);
 		bool passthrough = (hk->mNoSuppress & (AT_LEAST_ONE_VARIANT_HAS_TILDE
 			| AT_LEAST_ONE_COMBO_HAS_TILDE)) != 0;
-		for (int c = 0; c < ncodes; ++c)
+		unsigned char sup = passthrough ? 0 : 1;
+		if (hk->mSC)
+			add_rule(LinuxEvdevCodeForScanCode(hk->mSC), sup);
+		else if (hk->mVK)
+			add_rule(LinuxWaylandKeycodeForVk(hk->mVK), sup);
+		if (hk->mModifierSC)
+			add_rule(LinuxEvdevCodeForScanCode(hk->mModifierSC), sup);
+		else if (hk->mModifierVK)
+			add_rule(LinuxWaylandKeycodeForVk(hk->mModifierVK), sup);
+	}
+	// Character-stream needs (Hotstring / visible InputHook): subscribe every
+	// key which the X11 layout can produce text from, without suppression (the
+	// M2-R backspace-replacement model relies on the original trigger reaching
+	// the target first).  Pure Wayland has no X layout source here, so broker
+	// char_stream stays limited to sessions with a working X11 display.
+	if (LinuxCaptureUsesRaw())
+	{
+		Display *d = LinuxX11Display();
+		if (d)
 		{
-			if (!codes[c])
-				continue;
-			bool found = false;
-			for (int r = 0; r < count; ++r)
-				if (rules[r].code == codes[c])
-				{
-					if (!passthrough)
-						rules[r].suppress = 1;
-					found = true;
-					break;
-				}
-			if (!found && count < INPUTD_MAX_RULES)
+			LinuxKeyModelX11Refresh(d);
+			for (unsigned int code = 1; code < KEY_MAX && count < INPUTD_MAX_RULES; ++code)
 			{
-				rules[count].code = codes[c];
-				rules[count].suppress = passthrough ? 0 : 1;
-				++count;
+				sc_type sc = LinuxScanCodeForEvdev(code);
+				if (!sc)
+					continue;
+				KeyCode xk = LinuxX11KeycodeForScanCode(sc);
+				if (xk && LinuxKeyModelX11KeyProducesText(d, xk))
+					add_rule(code, 0);
 			}
 		}
 	}

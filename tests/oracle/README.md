@@ -31,11 +31,13 @@ values for both self Send and another XTEST process. The same schema is emitted
 by evdev and shortcut entry points when `AHK_INPUT_EVENT_TRACE` is set.
 
 `run_inputd_oracle.sh` proves the broker itself (distribution, replay,
-suppression arbitration, client-crash cleanup, grab recovery) and
+suppression arbitration, client-crash cleanup, grab recovery),
 `run_inputd_client_oracle.sh` proves the core client (two ahk_core scripts
 share one broker stream and both fire combos without BadAccess; in-process
-fallback when no broker exists). Both need root for EVIOCGRAB, so they run on
-the VM rather than GitHub-hosted runners.
+fallback when no broker exists) and `run_inputd_charstream_oracle.sh` proves
+the broker character stream (a Hotstring fires from broker-distributed uinput
+events decoded through the X11 layout). All three need root for EVIOCGRAB, so
+they run on the VM rather than GitHub-hosted runners.
 
 The physical-layer VM lane uses `tools/linux/uinput-inject.c`: its virtual
 keyboard deliberately has no AHK identity, so evdev sees an independent input

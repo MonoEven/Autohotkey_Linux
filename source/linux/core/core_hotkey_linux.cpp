@@ -62,6 +62,7 @@
 #include "core_wayland_linux.h"
 #include "core_input_linux.h"
 #include "core_keymodel_linux.h"
+#include "core_inputd_client_linux.h"
 #include "core_capture_linux.h"
 #include "core_gshortcut_linux.h"
 #include "input_backend.h"
@@ -1426,7 +1427,11 @@ void LinuxDispatchHotkeys()
 					// §3: record the source classification (sourceid is only
 					// valid from XI 2.1; the tap is disabled otherwise).
 					LinuxXTestTapRecord((unsigned int)raw_keycode, is_press, is_xtest);
-					if (LinuxCaptureUsesRaw() || LinuxInputEventTraceEnabled())
+					// In broker mode the broker stream owns the character
+					// capture (EvdevBrokerEventAdapter); the XI2 observer only
+					// records provenance, so no double capture here.
+					if (!LinuxInputdClientActive()
+						&& (LinuxCaptureUsesRaw() || LinuxInputEventTraceEnabled()))
 					{
 						int raw_level = -1;
 						bool raw_sendinput = false;

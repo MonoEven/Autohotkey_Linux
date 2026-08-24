@@ -183,12 +183,20 @@
   （custom_combo_evdev）不回归。**尚未完成**：Hotstring/InputHook 的
   broker char_stream（X11 布局解码 + capture 喂入）与 libei/InputCapture
   上游未就绪的接收端。
-- **落点文件**：`core_inputd_client_linux.{h,cpp}`、
-  `core_evdev_linux.cpp`、`input_backend.cpp`、
-  `inputd/inputd_proto.h`（共享协议头）。
-- **验收标准**：双脚本 broker 模式同时触发无冲突；进程内回退场景不回归。
-- **修复复杂度：极高**（守护进程 + 协议 + 客户端已就绪；char_stream 与
-  libei 留后续）
+- **M4-C2 已交付（broker char_stream）**：capture 激活（Hotstring/InputHook）
+  且有效后端为 evdev 时，mux 激活 evdev/broker lane；订阅规则按 X11 布局枚举
+  文本产生键（suppress=false，保持 M2-R 回删模型）；broker EVENT 经三层键
+  模型解码喂 capture 引擎；XI2 raw 在 broker 模式下跳过 capture 防双计。
+  VM oracle 通过：`:B0X*:pq` Hotstring 从 broker 分发的 uinput 事件触发。
+  **纯 Wayland 无 X 布局源时 broker char_stream 不可用**（如实受限，等待
+  compositor 布局接口）；libei/InputCapture 上游未就绪。
+- **落点文件**：`core_inputd_client_linux.cpp`、`core_evdev_linux.cpp`、
+  `core_hotkey_linux.cpp`、`input_backend.cpp`、
+  `inputd/inputd_proto.h`（规则上限 1024）。
+- **验收标准**：char-stream oracle 通过；X11 raw/headless/XWayland 全回归；
+  scenario gate 通过。
+- **修复复杂度：极高**（守护进程 + 协议 + 客户端 + char_stream 已就绪；
+  纯 Wayland 布局源与 libei 留后续）
 
 #### D. capability 结构版本化细化（解 U6）
 

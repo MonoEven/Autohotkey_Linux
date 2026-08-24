@@ -97,6 +97,15 @@
     the broker stream and both fire <code>a &amp; b</code> / <code>c &amp; d</code>
     without BadAccess. The shared protocol header lives in
     <code>inputd/inputd_proto.h</code>.</li>
+  <li><b>M4-C2 broker character stream:</b> when Hotstring/InputHook capture is
+    active under <code>AHK_INPUT_BACKEND=evdev</code>, the mux activates the
+    broker lane, subscribes text-producing keys (no suppression, matching the
+    M2-R backspace model) and decodes broker EVENT frames through the
+    three-layer model into the capture engine; XI2 raw skips capture in broker
+    mode to avoid double feeding. A VM oracle proves a
+    <code>:B0X*:pq</code> Hotstring fires from broker-distributed uinput
+    events. Pure Wayland still lacks a layout source for broker char_stream,
+    and the libei/InputCapture receiver remains upstream-gated.</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>

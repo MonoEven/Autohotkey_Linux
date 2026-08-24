@@ -26,6 +26,7 @@
 #include "../../hotkey.h"
 #include "../../keyboard_mouse.h"
 #include "../../application.h"
+#include "core_capture_linux.h" // LinuxCaptureUsesRaw (needs X headers AFTER AHK)
 #include <dbus/dbus.h>
 #include <cstring>
 #include <cstdlib>
@@ -589,7 +590,12 @@ void LinuxInputBackendSync()
 		LinuxGShortcutSync();
 	if (LinuxInputBackendMuxUses(AhkInputBackendKind::GNOME_SHELL))
 		LinuxGnomeShellSync();
-	if (LinuxInputBackendMuxUses(AhkInputBackendKind::EVDEV))
+	// The evdev lane also serves the character stream when the effective
+	// backend is evdev and Hotstring/InputHook capture is active (broker or
+	// in-process devices), even with no EVDEV-assigned hotkey.
+	bool evdev_needed = LinuxInputBackendMuxUses(AhkInputBackendKind::EVDEV)
+		|| (CurrentKind() == AhkInputBackendKind::EVDEV && LinuxCaptureUsesRaw());
+	if (evdev_needed)
 	{
 		// Hotkey state changed: re-push the subscription rules in broker mode,
 		// or surface the in-process lane's failure when it cannot open devices.
@@ -608,7 +614,8 @@ void LinuxInputBackendDispatch()
 		LinuxGShortcutDispatch();
 	if (LinuxInputBackendMuxUses(AhkInputBackendKind::GNOME_SHELL))
 		LinuxGnomeShellDispatch();
-	if (LinuxInputBackendMuxUses(AhkInputBackendKind::EVDEV))
+	if (LinuxInputBackendMuxUses(AhkInputBackendKind::EVDEV)
+		|| (CurrentKind() == AhkInputBackendKind::EVDEV && LinuxCaptureUsesRaw()))
 		LinuxEvdevDispatch();
 	// §4: the GNOME-extension clipboard listener is display-independent (it
 	// rides the session bus), so pump it on every main-loop pass -- the

@@ -25,6 +25,8 @@
 #include "input_backend.h" // AhkBackendHotkeyEnabled
 #include "input_event.h"
 #include "core_inputd_client_linux.h"
+#include "core_capture_linux.h" // LinuxCaptureRawKeyEvent / LinuxCaptureUsesRaw
+#include "core_win_linux.h"     // LinuxX11Display
 #include <linux/input.h>
 #include <sys/poll.h>
 #include <unistd.h>
@@ -588,7 +590,29 @@ static void EvdevBrokerEventAdapter(unsigned int aCode, int aValue, long long aT
 		AhkInputSource::PHYSICAL, -1, 0, AhkInputOrigin::BROKER
 	};
 	LinuxInputEventTrace(normalized);
-	HandleEvdevKey(aCode, aValue != 0, aValue == 2);
+	bool down = aValue != 0;
+	HandleEvdevKey(aCode, down, aValue == 2);
+	// Broker character stream: when the script needs Hotstring/InputHook
+	// capture and an X11 layout source exists, decode through the same
+	// three-layer model and feed the capture engine (M2-R backspace model:
+	// triggers reach the target first because capture keys are subscribed
+	// without suppression).  Pure Wayland has no layout source here.
+	if (LinuxCaptureUsesRaw())
+	{
+		Display *d = LinuxX11Display();
+		sc_type sc = LinuxScanCodeForEvdev(aCode);
+		KeyCode xk = d && sc ? LinuxX11KeycodeForScanCode(sc) : 0;
+		if (xk)
+		{
+			unsigned int mods = ActiveMods();
+			unsigned int state = (mods & MOD_SHIFT ? ShiftMask : 0)
+				| (mods & MOD_CONTROL ? ControlMask : 0)
+				| (mods & MOD_ALT ? Mod1Mask : 0)
+				| (mods & MOD_WIN ? Mod4Mask : 0);
+			LinuxCaptureRawKeyEvent(d, xk, down, (Time)(aTsUs / 1000), state,
+				-1, false, AhkInputSource::PHYSICAL, 0);
+		}
+	}
 }
 
 void LinuxEvdevDispatch()

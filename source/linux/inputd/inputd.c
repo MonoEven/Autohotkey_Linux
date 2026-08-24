@@ -56,7 +56,7 @@ struct rule { unsigned int code; unsigned char suppress; };
 
 struct client {
 	int fd;
-	struct rule rules[128];
+	struct rule rules[INPUTD_MAX_RULES];
 	int rule_count;
 	char dead;
 };
@@ -266,7 +266,7 @@ static void handle_client_cmd(struct client *c, const unsigned char *cmd, size_t
 		if (n < 1 + 4) { c->dead = 1; return; }
 		unsigned int count;
 		memcpy(&count, cmd + 1, 4);
-		if (count > 128 || n != 1 + 4 + (size_t)count * 5) { c->dead = 1; return; }
+		if (count > INPUTD_MAX_RULES || n != 1 + 4 + (size_t)count * 5) { c->dead = 1; return; }
 		c->rule_count = 0;
 		for (unsigned int i = 0; i < count; ++i)
 		{
