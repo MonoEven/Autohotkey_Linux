@@ -48,6 +48,12 @@
     layout before borrowing a Unicode keycode. A deterministic external oracle
     verifies physical <code>sc01E</code> across US/AZERTY and EuroSign on an
     AltGr-only level.</li>
+  <li><b>M1-C evdev custom combinations:</b> the evdev lane implements prefix
+    state for <code>A &amp; B</code>, wildcard modifiers, key-up variants, tilde
+    passthrough and delayed/cancelled standalone-prefix hotkeys, including
+    explicit scan-code prefixes/suffixes. X11/portal/GNOME keep
+    <code>custom_combo=false</code> and reject registration until the M2 raw
+    event path can implement them without fragile passive grabs.</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>

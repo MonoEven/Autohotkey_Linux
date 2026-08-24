@@ -68,6 +68,11 @@ static DWORD sPanicStageMs = 0;
 // Which vk are currently physically down (modifiers + keys), updated from
 // the EV_KEY stream.  Used for modifier matching and key-up hotkeys.
 unsigned char sDown[256 / 8] = { 0 }; // bitmask by vk (0x00-0xFF ok).
+unsigned char sPrefixDown[KEY_CNT] = { 0 };
+unsigned char sPrefixUsed[KEY_CNT] = { 0 };
+unsigned char sPrefixPassthrough[KEY_CNT] = { 0 };
+unsigned int sPrefixMods[KEY_CNT] = { 0 };
+unsigned char sComboSuppressed[KEY_CNT] = { 0 };
 
 void SetDown(unsigned int vk, bool down)
 {
@@ -108,6 +113,93 @@ void SetModifierFromEvdev(unsigned int ev, bool down)
 	case KEY_LEFTMETA:    SetDown(0x5B, down); break;
 	case KEY_RIGHTMETA:   SetDown(0x5C, down); break;
 	}
+}
+
+unsigned int EvdevForHotkeyKey(Hotkey *aHotkey, bool aPrefix)
+{
+	if (!aHotkey)
+		return 0;
+	vk_type vk = aPrefix ? aHotkey->mModifierVK : aHotkey->mVK;
+	sc_type sc = aPrefix ? aHotkey->mModifierSC : aHotkey->mSC;
+	if (sc)
+		return LinuxEvdevCodeForScanCode(sc);
+	return vk ? LinuxWaylandKeycodeForVk(vk) : 0;
+}
+
+bool EvdevVariantFor(Hotkey *aHotkey, HotkeyVariant *&aVariant)
+{
+	aVariant = nullptr;
+	if (!aHotkey || !AhkBackendHotkeyEnabled(aHotkey))
+		return false;
+	HotkeyVariant *variant = aHotkey->FindVariant();
+	if (!variant || !variant->mEnabled || !aHotkey->PerformIsAllowed(*variant))
+		return false;
+	aVariant = variant;
+	return true;
+}
+
+void FireEvdevVariant(Hotkey *aHotkey, HotkeyVariant *aVariant)
+{
+	++g_nThreads;
+	++g;
+	InitNewThread(aVariant->mPriority, false, false);
+	aHotkey->PerformInNewThreadMadeByCaller(*aVariant);
+	ResumeUnderlyingThread();
+}
+
+void FireEvdevStandalonePrefix(unsigned int aCode, unsigned int aMods, int aPhase)
+{
+	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
+	{
+		Hotkey *hk = Hotkey::shk[i];
+		if (!hk || hk->mModifierVK || hk->mModifierSC
+			|| EvdevForHotkeyKey(hk, false) != aCode)
+			continue;
+		if ((aPhase == 0 && hk->mKeyUp) || (aPhase == 1 && !hk->mKeyUp))
+			continue;
+		unsigned int required = (unsigned int)hk->mModifiers;
+		if ((aMods & required) != required
+			|| (!hk->mAllowExtraModifiers && (aMods & ~required)))
+			continue;
+		HotkeyVariant *variant = nullptr;
+		if (EvdevVariantFor(hk, variant))
+			FireEvdevVariant(hk, variant);
+	}
+}
+
+bool EvdevPrefixNativeByDefault(unsigned int aCode)
+{
+	switch (aCode)
+	{
+	case KEY_LEFTSHIFT: case KEY_RIGHTSHIFT:
+	case KEY_LEFTCTRL: case KEY_RIGHTCTRL:
+	case KEY_LEFTALT: case KEY_RIGHTALT:
+	case KEY_LEFTMETA: case KEY_RIGHTMETA:
+	case KEY_CAPSLOCK: case KEY_NUMLOCK: case KEY_SCROLLLOCK:
+		return true;
+	default:
+		return false;
+	}
+}
+
+bool EvdevPrefixProperties(unsigned int aCode, bool &aPassthrough)
+{
+	aPassthrough = EvdevPrefixNativeByDefault(aCode);
+	bool found = false;
+	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
+	{
+		Hotkey *hk = Hotkey::shk[i];
+		if (!hk || (!hk->mModifierVK && !hk->mModifierSC)
+			|| EvdevForHotkeyKey(hk, true) != aCode)
+			continue;
+		HotkeyVariant *variant = nullptr;
+		if (!EvdevVariantFor(hk, variant))
+			continue;
+		found = true;
+		if (hk->mNoSuppress & AT_LEAST_ONE_COMBO_HAS_TILDE)
+			aPassthrough = true;
+	}
+	return found;
 }
 
 // evdev code -> Win32 virtual key (inverse of LinuxWaylandKeycodeForVk).
@@ -283,6 +375,89 @@ static void EvTrace(const char *fmt, ...)
 	fprintf(stderr, "\n"); fflush(stderr);
 }
 
+// -1 = not a combo event, 0 = handled/pass through, 1 = handled/suppress.
+int HandleEvdevCombo(unsigned int aCode, bool aDown, bool aRepeat, unsigned int aMods)
+{
+	if (aCode >= KEY_CNT)
+		return -1;
+	if (!aDown && sPrefixDown[aCode])
+	{
+		bool passthrough = sPrefixPassthrough[aCode] != 0;
+		if (passthrough)
+			FireEvdevStandalonePrefix(aCode, sPrefixMods[aCode], 1); // key-up only
+		else if (!sPrefixUsed[aCode])
+			FireEvdevStandalonePrefix(aCode, sPrefixMods[aCode], -1); // delayed down + up
+		sPrefixDown[aCode] = 0;
+		sPrefixUsed[aCode] = 0;
+		return passthrough ? 0 : 1;
+	}
+	bool prefix_passthrough = false;
+	bool is_prefix = EvdevPrefixProperties(aCode, prefix_passthrough);
+	if (is_prefix)
+	{
+		if (aDown && !aRepeat)
+		{
+			sPrefixDown[aCode] = 1;
+			sPrefixUsed[aCode] = 0;
+			sPrefixPassthrough[aCode] = prefix_passthrough ? 1 : 0;
+			sPrefixMods[aCode] = aMods;
+			if (prefix_passthrough)
+				FireEvdevStandalonePrefix(aCode, aMods, 0); // down immediately
+		}
+		else if (!aDown)
+			sPrefixDown[aCode] = 0;
+		// A custom prefix loses its native action unless prefixed with tilde.
+		return sPrefixPassthrough[aCode] ? 0 : 1;
+	}
+
+	bool release_suppressed = !aDown && sComboSuppressed[aCode];
+	if (release_suppressed)
+		sComboSuppressed[aCode] = 0;
+
+	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
+	{
+		Hotkey *hk = Hotkey::shk[i];
+		if (!hk || (!hk->mModifierVK && !hk->mModifierSC)
+			|| EvdevForHotkeyKey(hk, false) != aCode)
+			continue;
+		unsigned int prefix = EvdevForHotkeyKey(hk, true);
+		if (!prefix || prefix >= KEY_CNT || !sPrefixDown[prefix])
+			continue;
+		// Custom combos are wildcard-like: additional modifiers are accepted,
+		// but any explicit neutral modifiers still have to be present.
+		unsigned int required = (unsigned int)hk->mModifiers;
+		if ((aMods & required) != required)
+			continue;
+		HotkeyVariant *variant = nullptr;
+		if (!EvdevVariantFor(hk, variant))
+			continue;
+		bool passthrough = (variant->mNoSuppress & (NO_SUPPRESS_PREFIX
+			| AT_LEAST_ONE_VARIANT_HAS_TILDE)) != 0;
+		// A key-up combo owns the suffix press but defers its callback until
+		// release, preserving a balanced suppression pair.
+		if (aDown && hk->mKeyUp)
+		{
+			sPrefixUsed[prefix] = 1;
+			if (!passthrough)
+				sComboSuppressed[aCode] = 1;
+			return passthrough ? 0 : 1;
+		}
+		if (hk->mKeyUp != !aDown)
+			continue;
+		sPrefixUsed[prefix] = 1;
+		if (aDown && !passthrough)
+			sComboSuppressed[aCode] = 1;
+		FireEvdevVariant(hk, variant);
+		return passthrough ? 0 : 1;
+	}
+
+	if (aDown && !aRepeat)
+		for (unsigned int code = 0; code < KEY_CNT; ++code)
+			if (sPrefixDown[code] && code != aCode)
+				sPrefixUsed[code] = 1;
+	return release_suppressed ? 1 : -1;
+}
+
 bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat)
 {
 	EvTraceStart();
@@ -294,19 +469,21 @@ bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat)
 	SetModifierFromEvdev(evcode, down);
 	if (vk)
 		SetDown(vk, down);
+	unsigned int mods = ActiveMods();
+	EvTrace("ev %u vk=%u down=%d mods=%u", evcode, vk, (int)down, mods);
+	int combo_result = HandleEvdevCombo(evcode, down, isRepeat, mods);
+	if (combo_result >= 0)
+		return combo_result != 0;
 	if (vk == 0x10 || vk == 0x11 || vk == 0x12 || vk == 0x5B || vk == 0x5C
 		|| (vk >= 0xA0 && vk <= 0xA5))
 		return false;
-
-	unsigned int mods = ActiveMods();
-	EvTrace("ev %u vk=%u down=%d mods=%u", evcode, vk, (int)down, mods);
 	Hotkey *hk_fire = nullptr;
 	HotkeyVariant *vp_fire = nullptr;
 
 	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
 	{
 		Hotkey *hk = Hotkey::shk[i];
-		if (!hk || hk->mModifierVK || hk->IsCompletelyDisabled())
+		if (!hk || hk->mModifierVK || hk->mModifierSC || hk->IsCompletelyDisabled())
 			continue;
 		if (hk->mKeyUp == down) // up-variants need a release; down need press.
 			continue;
@@ -444,6 +621,11 @@ void LinuxEvdevShutdown()
 	sAnyGrabbed = false;
 	sScanned = false;
 	memset(sDown, 0, sizeof(sDown));
+	memset(sPrefixDown, 0, sizeof(sPrefixDown));
+	memset(sPrefixUsed, 0, sizeof(sPrefixUsed));
+	memset(sPrefixPassthrough, 0, sizeof(sPrefixPassthrough));
+	memset(sPrefixMods, 0, sizeof(sPrefixMods));
+	memset(sComboSuppressed, 0, sizeof(sComboSuppressed));
 }
 
 // Panic escape key state machine (keyd-style Backspace->Escape->Enter).

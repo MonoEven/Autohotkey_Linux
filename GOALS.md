@@ -51,6 +51,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - Layout-aware three-layer key model: active X11 keymap/state from
   xkbcommon-x11, canonical evdev/set-1 SC + VK/keysym + UTF-32, explicit scan
   code hotkeys on X11/evdev, and live-layout Shift/AltGr Send lookup.
+- evdev custom-combo state machine: wildcard modifiers, up variants, tilde,
+  VK/SC prefixes and delayed standalone-prefix behavior; X11 remains explicit
+  unsupported until the raw capture batch.
 - Machine totals: 1152/1152 X11/headless, 17/17 Wayland and 255/255
   XWayland assertions; 27/27 headless regression tests.
 

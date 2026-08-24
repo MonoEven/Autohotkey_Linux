@@ -17,7 +17,9 @@ documentation is checked by `tools/gen_input_caps.py --check`.
 `core/core_keymodel_linux.*` is the canonical physical evdev/set-1 SC → logical
 VK/keysym → Unicode-text model. X11 loads the active server map through
 xkbcommon-x11; Send character lookup prefers the least-modified live-layout
-binding before the Unicode borrow fallback.
+binding before the Unicode borrow fallback. The evdev lane also owns the first
+custom-combo state machine (`A & B`, up/tilde/wildcard and standalone-prefix
+delay); other lanes keep `custom_combo=false` until they share the M2 raw flow.
 
 Key runtime controls:
 

@@ -1,0 +1,8 @@
+id: custom_combo_evdev
+title: "evdev custom combos: wildcard, key-up, tilde and delayed standalone prefix"
+script: run_combo.sh
+script_type: sh
+check: marker:/tmp/scn_custom_combo_evdev
+envs: any
+expect: pass
+needs: uinput

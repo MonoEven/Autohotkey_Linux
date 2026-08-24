@@ -275,7 +275,7 @@
   AltGr/Shift+AltGr 的最小组合。外部 oracle 在受版本控制的 <=255-keycode
   AZERTY/AltGr fixture 上证明 `sc01E` 跨 layout 仍跟物理键、`SendText("€")`
   被独立 X11 client 读为 EuroSign + Mod5；GNOME VM uinput 也以 `sc01E` 触发。
-  **未冒充完成**：custom combo 仍 false；Hotstring 改 raw XI2 属 M2。另发现并
+  **未冒充完成**：X11 custom combo 仍 false；Hotstring 改 raw XI2 属 M2。另发现并
   消除旧 `setxkbmap` 测试假阳性：现代 xkeyboard-config 最大 keycode 708，
   X11 仅支持 255，xkbcomp 会 clipping 后留下 US map。
 - **验收标准**：差分断言（见 §8）——`sc01E::` 在 US 与 AZERTY 布局下都触发
@@ -292,8 +292,15 @@
   用 XTEST 补发前缀键（等价 Windows 行为：无 `~` 时前缀键默认丢失 tap，需
   对齐 `&` 的 ~/tap 语义矩阵）。evdev/broker 路径：状态机放 broker 判定更稳
   （CapsLock 双角色场景已有 `caps_dual_role` 场景可扩展）。
-- **落点文件**：`core_hotkey_linux.cpp`（注册 + 状态机）、`hotkey.cpp` 上游
-  解析已有 `mModifierVK`，不需动。
+- **M1-C 第一层已交付（evdev）**：进程内 evdev lane 已实现 prefix down/up
+  状态、custom combo 默认 wildcard、suffix key-up、prefix/suffix tilde、非标准
+  prefix 默认抑制、标准 modifier/toggle 保留 native，以及“prefix 未用于组合时
+  standalone hotkey 延迟到 release；用于组合则取消”语义；VK/SC prefix/suffix
+  共用三层键模型。独立 uinput 设备矩阵逐项验收。`custom_combo=true` 只对 evdev
+  上报；X11 仍 false/明确拒绝，待 M2 XI2 raw 流后实现，避免 passive-grab 假支持。
+- **落点文件**：`core_hotkey_linux.cpp`（注册能力校验）、
+  `core_evdev_linux.cpp`（状态机）；`hotkey.cpp` 上游解析已有
+  `mModifierVK/mModifierSC`，未修改。
 - **验收标准**：`CapsLock & j::Left` + 单独 tap CapsLock 保持切换大小写
   （加 `~CapsLock`）；`a & b::` 时快速打 "ab" 文本不误触（timing 阈值对照
   Windows 实测）。

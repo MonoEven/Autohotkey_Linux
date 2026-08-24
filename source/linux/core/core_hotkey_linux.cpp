@@ -1465,7 +1465,7 @@ BIF_DECL(BIF_Linux_Hotkey)
 	// (including evdev), matching custom_combo=false in the versioned caps.
 	// Reject before mutating the upstream hotkey table: never accept a binding
 	// which cannot fire.
-	if (wcsstr(name, L" & "))
+	if (wcsstr(name, L" & ") && (!backend_caps || !backend_caps->custom_combo))
 	{
 		aResultToken.Error(_T("Hotkey \"A & B\" custom combinations are not implemented by the active Linux input backend."), _T(""), ErrorPrototype::OS);
 		return;

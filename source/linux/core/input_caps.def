@@ -15,4 +15,4 @@ AHK_INPUT_CAPS(GNOME_SHELL, "gnome-shell",
     false, false, false, NONE, false, false)
 AHK_INPUT_CAPS(EVDEV, "evdev",
     true, true, true, true, true, true, true, false, false,
-    true, false, false, HEURISTIC, false, false)
+    true, true, false, HEURISTIC, false, false)

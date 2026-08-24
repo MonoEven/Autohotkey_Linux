@@ -67,7 +67,7 @@
 |---|---|---|
 | Send/SendEvent/SendInput/SendPlay/SendText | ✅ | X11:XTEST + xkbcommon-x11 当前布局 Shift/AltGr 反查；Wayland:虚拟键盘/指针；独立 XI2/keysym oracle 验证 |
 | Click/Mouse*/KeyWait/GetKeyState/BlockInput | ✅ | X11 实测;锁键开关、阻断语义 |
-| Hotkey / HotIf | ✅ | X11/XWayland:XGrabKey；X11/evdev 支持 canonical set-1 `scXXX` 物理热键；**鼠标热键**(round-30,XGrabButton:左/右/中/X1/X2/滚轮)、**左右修饰键 `<^a`/`>^a` 与通配 `*`**(round-31)、哈希索引、动态 modifier map、BadAccess 冲突报错、Off/透传(round-29) |
+| Hotkey / HotIf | ✅ | X11/XWayland:XGrabKey；X11/evdev 支持 canonical set-1 `scXXX`；evdev 支持 `A & B` 状态机（X11/portal/GNOME 明确不支持）；**鼠标热键**(round-30,XGrabButton:左/右/中/X1/X2/滚轮)、**左右修饰键 `<^a`/`>^a` 与通配 `*`**(round-31)、哈希索引、动态 modifier map、BadAccess 冲突报错、Off/透传(round-29) |
 | Hotstring | ✅ | **round-32 真实触发**:全键捕获引擎 hold/flush/match,支持 C/*/O/X 选项、大小写跟随、HotIf;触发词抑制并发送替换(或回调);xkeycap 独立客户端验证(11 断言);round-34 增 Unicode 触发词(中文端到端) |
 | InputHook | ✅ | **round-33 按键采集核心**:捕获引擎实时喂键——缓冲收集、结束键(EndChar/EndKey)、匹配表(Match)、退格撤销、输入抑制(6 断言);**round-34 增 OnChar/OnKeyDown/OnKeyUp 排队通知**(主循环派发;Windows 参数语义;SC=X11 keycode)+ Unicode 字符流,共 10 断言 |
 

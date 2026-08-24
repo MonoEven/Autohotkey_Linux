@@ -8,7 +8,8 @@
 | capslock_dual | x11 | not-run | "CapsLock dual-role: tap = CapsLock, hold = Esc (evdev/uinput)" |
 | capslock_remap | x11 | skip | CapsLock/Esc dual-role remap (needs the evdev inputd lane) |
 | clipboard_roundtrip | x11 | pass | A_Clipboard round-trips large text (X11 XFixes) |
-| evdev_remap | x11 | not-run | "evdev/uinput remap: physical key read -> hotkey fires -> uinput replay (a::b)" |
+| custom_combo_evdev | x11 | not-run | "evdev custom combos: wildcard, key-up, tilde and delayed standalone prefix" |
+| evdev_remap | x11 | not-run | "evdev/uinput physical scan code: KEY_A -> sc01E hotkey -> uinput replay" |
 | fileinstall_pack | x11 | not-run | "FileInstall extracts the embedded resource from a packed binary" |
 | flatpak_app | x11 | skip | SendText to a Flatpak-sandboxed app (needs a Flatpak host with AT-SPI portal) |
 | gnome_regression | x11 | not-run | "GNOME Wayland regression: caps API routing + AT-SPI controls in the real session" |
@@ -18,7 +19,7 @@
 | ibus_compat | x11 | not-run | "IBus session compatibility: the port runs + SendText Chinese does not crash (uinput clipboard fallback)" |
 | kde_sni | x11 | skip | Tray StatusNotifierItem on KDE Plasma (needs a KDE host) |
 | keydown_longpress | x11 | pass | Key-down hotkey fires repeatedly while held (bounded count) |
-| multiscript_conflict | x11 | not-run | "Second process registering the same hotkey raises a conflict error" |
+| multiscript_conflict | x11 | not-run | "Conflicted X11 hotkey reports BadAccess then auto-recovers after owner exit" |
 | pack_compile | x11 | not-run | "ahk_core --pack produces a self-contained binary; A_IsCompiled=1 when run" |
 | panic_escape | x11 | not-run | "Panic escape key: Backspace->Escape->Enter releases the evdev grab (fail-open)" |
 | sni_registration | x11 | not-run | "Tray SNI registration: A_TrayMenu + TraySetIcon register a StatusNotifierItem queried on the session bus" |
