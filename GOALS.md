@@ -67,7 +67,11 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
   via HotkeyBackendGet().mux and --diag.
 - ahk-inputd broker daemon: EVIOCGRAB capture, uinput replay, UNIX-socket v1
   multi-client subscription protocol with suppression arbitration, fail-open
-  cleanup and watchdog/panic recovery (M4-D; core client consumption is M4-C).
+  cleanup and watchdog/panic recovery (M4-D).
+- Core broker client (M4-C): connect-first subscription to ahk-inputd, EVENT
+  frames through the evdev matcher, in-process fallback, dual-script
+  no-conflict acceptance; Hotstring/InputHook char_stream over the broker and
+  the libei receiver remain tracked follow-ups.
 - Machine totals: 1160/1160 X11/headless, 17/17 Wayland and 255/255
   XWayland assertions; 27/27 headless regression tests.
 

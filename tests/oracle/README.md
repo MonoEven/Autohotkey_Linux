@@ -30,6 +30,13 @@ schema independently of the matching code. It requires exact physical
 values for both self Send and another XTEST process. The same schema is emitted
 by evdev and shortcut entry points when `AHK_INPUT_EVENT_TRACE` is set.
 
+`run_inputd_oracle.sh` proves the broker itself (distribution, replay,
+suppression arbitration, client-crash cleanup, grab recovery) and
+`run_inputd_client_oracle.sh` proves the core client (two ahk_core scripts
+share one broker stream and both fire combos without BadAccess; in-process
+fallback when no broker exists). Both need root for EVIOCGRAB, so they run on
+the VM rather than GitHub-hosted runners.
+
 The physical-layer VM lane uses `tools/linux/uinput-inject.c`: its virtual
 keyboard deliberately has no AHK identity, so evdev sees an independent input
 device. It remains permission-gated and is not pretended to run on ordinary

@@ -31,7 +31,10 @@ several lanes can stay active at once (see `--diag input-mux` /
 `HotkeyBackendGet().mux`). `inputd/` holds the standalone `ahk-inputd`
 single-instance evdev broker (EVIOCGRAB capture, uinput 0x0FAC replay,
 UNIX-socket v1 subscription protocol, watchdog/panic recovery); the
-`tests/oracle/run_inputd_oracle.sh` suite validates it as root.
+`tests/oracle/run_inputd_oracle.sh` suite validates it as root, and
+`core_inputd_client_linux.cpp` is the connect-first client that consumes
+broker EVENT frames through the evdev matcher (falling back to the in-process
+lane when no broker is reachable).
 
 Key runtime controls:
 

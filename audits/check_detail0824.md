@@ -172,12 +172,23 @@
   ACK、F12 分发+回放、A 分发+抑制、kill -9 客户端后 1s 内规则消失、kill -9
   broker 后键盘立即可 grab。**未完成**：客户端（ahk_core）连接 broker 并
   消费事件帧的 M4-C、libei/InputCapture 上游未就绪的接收端。
-- **落点文件**：`source/linux/inputd/`（inputd.c + CMakeLists.txt 独立
-  target）、`tests/oracle/inputd_client.c`、`inputd_watch.c`、
-  `run_inputd_oracle.sh`。
-- **验收标准**：见 oracle 全绿项；需要 root（EVIOCGRAB），CI 只验证编译，
-  行为验收在 VM 执行。
-- **修复复杂度：极高**（守护进程 + 协议已就绪；客户端接入 + libei 留后续）
+- **M4-C 已交付（客户端接入 broker）**：新增 `core_inputd_client_linux.{h,cpp}`
+  客户端：connect-first（在设备扫描前尝试，避免双路径重复处理），HELLO +
+  SUBSCRIBE（从 Hotkey 表计算 EVDEV 分配键 + prefix 键码，tilde 清除
+  suppress），Dispatch 消费 EVENT 帧并喂同一个 `HandleEvdevKey` 匹配器
+  （combo/scXXX 全部复用），broker 断开自动回退进程内 lane。`mux` 路由、
+  `LinuxInputBackendSync` 在 hotkey 变化时重推订阅。双脚本 VM oracle
+  `run_inputd_client_oracle.sh` 通过：两个 ahk_core 同时连 broker、各自
+  `a & b` / `c & d` 都触发且无 BadAccess；无 broker 时进程内回退场景
+  （custom_combo_evdev）不回归。**尚未完成**：Hotstring/InputHook 的
+  broker char_stream（X11 布局解码 + capture 喂入）与 libei/InputCapture
+  上游未就绪的接收端。
+- **落点文件**：`core_inputd_client_linux.{h,cpp}`、
+  `core_evdev_linux.cpp`、`input_backend.cpp`、
+  `inputd/inputd_proto.h`（共享协议头）。
+- **验收标准**：双脚本 broker 模式同时触发无冲突；进程内回退场景不回归。
+- **修复复杂度：极高**（守护进程 + 协议 + 客户端已就绪；char_stream 与
+  libei 留后续）
 
 #### D. capability 结构版本化细化（解 U6）
 

@@ -17,6 +17,7 @@
 #include "core_gshortcut_linux.h"
 #include "input_backend_gnome_shell.h"
 #include "core_evdev_linux.h"
+#include "core_inputd_client_linux.h"
 #include "core_clipboard_linux.h"
 #include "core_tray_linux.h"
 #include "../../script.h"
@@ -588,8 +589,15 @@ void LinuxInputBackendSync()
 		LinuxGShortcutSync();
 	if (LinuxInputBackendMuxUses(AhkInputBackendKind::GNOME_SHELL))
 		LinuxGnomeShellSync();
-	if (LinuxInputBackendMuxUses(AhkInputBackendKind::EVDEV) && !LinuxEvdevActive())
-		SetError(LinuxEvdevLastError());
+	if (LinuxInputBackendMuxUses(AhkInputBackendKind::EVDEV))
+	{
+		// Hotkey state changed: re-push the subscription rules in broker mode,
+		// or surface the in-process lane's failure when it cannot open devices.
+		if (!LinuxEvdevActive())
+			SetError(LinuxEvdevLastError());
+		else if (LinuxInputdClientActive())
+			LinuxInputdClientUpdateRules();
+	}
 }
 
 void LinuxInputBackendDispatch()

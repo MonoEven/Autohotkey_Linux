@@ -24,6 +24,7 @@
 #include "core_keymodel_linux.h"
 #include "input_backend.h" // AhkBackendHotkeyEnabled
 #include "input_event.h"
+#include "core_inputd_client_linux.h"
 #include <linux/input.h>
 #include <sys/poll.h>
 #include <unistd.h>
@@ -47,6 +48,7 @@ struct EvdevDevice
 
 std::vector<EvdevDevice> sDevices;
 bool sScanned = false;
+bool sConnectTried = false; // Broker connect attempted once (connect-first).
 bool sAnyGrabbed = false; // At least one device suppressed.
 bool sPanicked = false;   // Panic sequence fired: grabs released, fail-open.
 char sError[256] = { 0 };
@@ -537,6 +539,19 @@ bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat)
 
 bool LinuxEvdevActive()
 {
+	// Prefer a running ahk-inputd broker: connect once before any device
+	// scan so the two capture paths can never double-process the same keys.
+	if (!sScanned && !sConnectTried)
+	{
+		sConnectTried = true;
+		if (LinuxInputdClientConnect())
+		{
+			LinuxInputdClientUpdateRules();
+			fprintf(stderr, "[evdev] broker mode active\n");
+		}
+	}
+	if (LinuxInputdClientActive())
+		return true;
 	if (!sScanned)
 	{
 		sScanned = true;
@@ -560,8 +575,29 @@ bool LinuxEvdevCanSuppress()
 // Panic escape key state machine (defined below; used by LinuxEvdevDispatch).
 bool EvdevPanicStep(unsigned int aCode, bool aDown);
 
+// Broker-mode event adapter: broker owns grabs/replay/arbitration, so the
+// client only normalizes and matches (no panic, no uinput replay here).
+static void EvdevBrokerEventAdapter(unsigned int aCode, int aValue, long long aTsUs, void *aUser)
+{
+	(void)aUser;
+	unsigned int event_vk = VkForEvdev(aCode);
+	AhkInputEvent normalized = {
+		aTsUs > 0 ? (uint64_t)aTsUs : LinuxInputEventMonotonicUs(),
+		aCode, (vk_type)(event_vk <= 0xff ? event_vk : 0),
+		LinuxScanCodeForEvdev(aCode), 0, aValue == 0, aValue == 2,
+		AhkInputSource::PHYSICAL, -1, 0, AhkInputOrigin::BROKER
+	};
+	LinuxInputEventTrace(normalized);
+	HandleEvdevKey(aCode, aValue != 0, aValue == 2);
+}
+
 void LinuxEvdevDispatch()
 {
+	if (LinuxInputdClientActive())
+	{
+		LinuxInputdClientDispatch(EvdevBrokerEventAdapter, nullptr);
+		return;
+	}
 	if (!LinuxEvdevActive() || sDevices.empty())
 		return;
 	RescanIfDue(); // Pick up uinput/hot-plugged devices (check0820).
@@ -625,6 +661,8 @@ void LinuxEvdevDispatch()
 
 void LinuxEvdevShutdown()
 {
+	LinuxInputdClientShutdown();
+	sConnectTried = false;
 	for (auto &dev : sDevices)
 	{
 		if (dev.grabbed)

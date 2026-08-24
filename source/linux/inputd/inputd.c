@@ -21,6 +21,7 @@
  *         AHK_INPUT_BACKEND=evdev scripts auto-connect to this socket.
  */
 #define _GNU_SOURCE /* ppoll */
+#include "inputd_proto.h"
 #include <linux/input.h>
 #include <linux/uinput.h>
 #include <sys/ioctl.h>
@@ -40,7 +41,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define PROTO_VERSION 1u
+#define INPUTD_PROTO_VERSION 1u
 #define PANIC_TIMEOUT_MS 1500
 #define WATCHDOG_MS 2000
 #define MAX_CLIENTS 32
@@ -49,16 +50,7 @@
 #define PANIC_ESCAPE 1
 #define PANIC_ENTER 28
 
-/* ---- protocol v1 (length-prefixed binary frames) ------------------------ */
-
-#define C2S_HELLO 1u
-#define C2S_SUBSCRIBE 2u
-#define C2S_UNSUBSCRIBE 3u
-#define C2S_PING 4u
-
-#define S2C_EVENT 1u
-#define S2C_ACK 2u
-#define S2C_PONG 3u
+/* ---- protocol v1 (see inputd_proto.h) ------------------------------------ */
 
 struct rule { unsigned int code; unsigned char suppress; };
 
@@ -200,7 +192,7 @@ static void send_event_to(struct client *c, unsigned int code, int value, long l
 {
 	if (c->dead) return;
 	unsigned char frame[1 + 4 + 1 + 8];
-	frame[0] = S2C_EVENT;
+	frame[0] = INPUTD_S2C_EVENT;
 	memcpy(frame + 1, &code, 4);
 	frame[5] = (unsigned char)value;
 	memcpy(frame + 6, &ts, 8);
@@ -211,7 +203,7 @@ static void send_event_to(struct client *c, unsigned int code, int value, long l
 static void send_ack(struct client *c, unsigned char ok, unsigned int detail)
 {
 	unsigned char frame[1 + 1 + 4];
-	frame[0] = S2C_ACK; frame[1] = ok;
+	frame[0] = INPUTD_S2C_ACK; frame[1] = ok;
 	memcpy(frame + 2, &detail, 4);
 	if (write_full(c->fd, frame, sizeof(frame)) != 0)
 		c->dead = 1;
@@ -220,7 +212,7 @@ static void send_ack(struct client *c, unsigned char ok, unsigned int detail)
 static void send_pong(struct client *c)
 {
 	unsigned char frame[1];
-	frame[0] = S2C_PONG;
+	frame[0] = INPUTD_S2C_PONG;
 	if (write_full(c->fd, frame, sizeof(frame)) != 0)
 		c->dead = 1;
 }
@@ -261,15 +253,15 @@ static void handle_client_cmd(struct client *c, const unsigned char *cmd, size_t
 	if (n < 1) { c->dead = 1; return; }
 	switch (cmd[0])
 	{
-	case C2S_HELLO:
+	case INPUTD_C2S_HELLO:
 	{
 		if (n != 1 + 4) { c->dead = 1; return; }
 		unsigned int ver;
 		memcpy(&ver, cmd + 1, 4);
-		send_ack(c, ver == PROTO_VERSION ? 1 : 0, PROTO_VERSION);
+		send_ack(c, ver == INPUTD_PROTO_VERSION ? 1 : 0, INPUTD_PROTO_VERSION);
 		break;
 	}
-	case C2S_SUBSCRIBE:
+	case INPUTD_C2S_SUBSCRIBE:
 	{
 		if (n < 1 + 4) { c->dead = 1; return; }
 		unsigned int count;
@@ -289,11 +281,11 @@ static void handle_client_cmd(struct client *c, const unsigned char *cmd, size_t
 		send_ack(c, 1, (unsigned int)c->rule_count);
 		break;
 	}
-	case C2S_UNSUBSCRIBE:
+	case INPUTD_C2S_UNSUBSCRIBE:
 		c->rule_count = 0;
 		send_ack(c, 1, 0);
 		break;
-	case C2S_PING:
+	case INPUTD_C2S_PING:
 		send_pong(c);
 		break;
 	default:

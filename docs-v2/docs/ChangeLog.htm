@@ -89,6 +89,14 @@
     stuck loop. An independent VM oracle proves distribution, replay,
     suppression, client-crash cleanup and grab recovery after broker death.
     The core client that consumes these frames lands with M4-C.</li>
+  <li><b>M4-C broker client:</b> with <code>AHK_INPUT_BACKEND=evdev</code> the
+    core first tries the ahk-inputd socket (HELLO + SUBSCRIBE from the
+    EVDEV-assigned hotkey table, tilde clears suppression), consumes EVENT
+    frames through the same combo/scXXX matcher and falls back to the
+    in-process lane when no broker is reachable. Two scripts in one VM share
+    the broker stream and both fire <code>a &amp; b</code> / <code>c &amp; d</code>
+    without BadAccess. The shared protocol header lives in
+    <code>inputd/inputd_proto.h</code>.</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>

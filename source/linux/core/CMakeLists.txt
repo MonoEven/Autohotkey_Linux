@@ -110,6 +110,7 @@ add_executable(ahk_core
     core_capture_linux.cpp
     core_gshortcut_linux.cpp
     input_event.cpp
+    core_inputd_client_linux.cpp
     input_backend.cpp
     input_backend_gnome_shell.cpp
     core_clipboard_linux.cpp
