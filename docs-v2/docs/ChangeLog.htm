@@ -67,7 +67,7 @@
     and navigation/numpad variants, and an independent XGrabKey oracle proves
     exact scope and target visibility. InputHook EndReason/EndKey now follows
     the official v2 contract for both keycode and E-character modes. Current
-    branch totals: 1135/1135 X11/headless, 17/17 Wayland, 230/230 XWayland.</li>
+    branch totals: 1139/1139 X11/headless, 17/17 Wayland, 234/234 XWayland.</li>
   <li><b>M3-E normalized input events:</b> version-1 events carry physical
     evdev/set-1 SC, logical VK, Unicode text, phase/repeat, source, SendLevel,
     device and origin across X11, evdev, Portal and GNOME Shell entry points.
@@ -134,6 +134,12 @@
     returns its partial table on expiry; diagnostics expose cache/fallback/item
     and budget state. VM oracles prove cache, fallback and a 1ms fault-injected
     timeout while preserving UTF-8 text results.</li>
+  <li><b>M5-C A_ControlSendMode:</b> the writable Linux variable accepts
+    <code>focus</code> (existing X11 focus/send/restore behavior) or
+    <code>atspi</code>. AT-SPI mode appends plain Unicode text to EditableText
+    without an X display and maps Enter/Space to Action; complex Send syntax is
+    rejected explicitly. CI covers the variable contract and a GNOME oracle
+    proves real <code>Base-世界</code> text without focus fallback.</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>

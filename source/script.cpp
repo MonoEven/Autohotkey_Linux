@@ -175,6 +175,9 @@ VarEntry g_BIV_A[] =
 	A_x(ComputerName, BIV_UserName_ComputerName),
 	A_(ComSpec),
 	A_wx(ControlDelay, BIV_xDelay, BIV_xDelay_Set),
+#ifdef __linux__
+	A_w(ControlSendMode),
+#endif
 	A_wx(CoordModeCaret, BIV_CoordMode, BIV_CoordMode_Set),
 	A_wx(CoordModeMenu, BIV_CoordMode, BIV_CoordMode_Set),
 	A_wx(CoordModeMouse, BIV_CoordMode, BIV_CoordMode_Set),

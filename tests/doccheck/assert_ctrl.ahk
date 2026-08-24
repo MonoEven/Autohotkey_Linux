@@ -182,6 +182,19 @@ ControlSendText("{x}", "Edit1", "CtlMain")
 Sleep(80)
 Log("sendtext=" (downs(next_lines()) = "Shift_L,braceleft,x,Shift_L,braceright" ? 1 : 0))
 
+; --- M5-C A_ControlSendMode built-in variable (actual AT-SPI write is VM oracle). ---
+Log("sendmode_default=" (A_ControlSendMode = "focus" ? 1 : 0))
+A_ControlSendMode := "atspi"
+Log("sendmode_set=" (A_ControlSendMode = "atspi" ? 1 : 0))
+try {
+    A_ControlSendMode := "bad"
+    Log("sendmode_invalid=0")
+} catch ValueError {
+    Log("sendmode_invalid=1")
+}
+A_ControlSendMode := "focus"
+Log("sendmode_restore=" (A_ControlSendMode = "focus" ? 1 : 0))
+
 ; --- M5-B: virtual state (style/exstyle/enabled/checked and Combo/List
 ; --- entries) has no real X11 effect on EXTERNAL windows; the port refuses
 ; --- to pretend success and throws OSError instead. ---

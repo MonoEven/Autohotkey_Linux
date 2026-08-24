@@ -606,15 +606,14 @@
   DeleteItem）一律抛 **NotSupported(OSError)**，删除 shadow 假成功；
   类名 gate（Combo/List）仍先于进程 gate。文本读写（GetText/SetText/
   EditPaste 写入/EditGetLine/SelectedText/ListViewGetContent 读空 store）
-  保持真实。ControlSend 语义文档化（WinActivate+Send+恢复，规划
-  `A_ControlSendMode=atspi|focus`）。`assert_ctrl` 63→54、
+  保持真实。ControlSend 语义文档化（WinActivate+Send+恢复；
+  `A_ControlSendMode=atspi|focus` 已由 M5-C 实现）。`assert_ctrl` 63→54、
   `assert_edit` 47→31 迁移为 NotSupported 断言；XWayland 套件 255→230。
 - **落点文件**：`core_ctrl_linux.cpp`、`assert_ctrl.ahk`、
   `assert_edit.ahk`、`CHECK_REPORT.md`、`ControlSend.htm`。
 - **验收**：外部窗口全部 NotSupported（新断言）；真实操作不回归；
-  verify_report_numbers 通过（x11=1135/wayland=17/xwayland=230）。
-- **剩余**：AT-SPI 真实操作（点击/设文本/读文本/选择列表项）对接与
-  `A_ControlSendMode` 实现留 M5-C。
+  verify_report_numbers 通过（当前 x11=1139/wayland=17/xwayland=234）。
+- **剩余**：AT-SPI 选择列表项/Value 等真实操作留 M5-C。
 
 - 原则改为"**真实效果或明确报错**"：
   1. 能通过 AT-SPI action/text/value 接口真实完成的（点击、设文本、读文本、
@@ -655,8 +654,14 @@
   2000ms（`AHK_ATSPI_TOTAL_BUDGET_MS` 可覆盖）；root、Cache、Name 与 fallback
   调用都收敛到剩余预算，递归/缓存解析在 deadline 后返回已收集的部分表。
   dump 标记 `budget_ms/budget_exceeded`；1ms 故障注入在 253ms 内返回并标记
-  exceeded，正常 GNOME 矩阵在 2s 内完整 2043 节点且未超预算。**未完成**：
-  pending-call + 主循环异步化、公开 A_LastError、`A_ControlSendMode`、IME 集成。
+  exceeded，正常 GNOME 矩阵在 2s 内完整 2043 节点且未超预算。
+- **M5-C 第四项（A_ControlSendMode）已交付**：Linux-only 可写 BIV 接受
+  `focus`（默认 X11 focus/send/restore）或 `atspi`。AT-SPI 模式无需 DISPLAY：
+  对 EditableText 在末尾追加纯 Unicode 文本，`{Enter}/{Space}` 映射 Action；
+  复杂 Send 语法、无 Action/EditableText 与无名控件明确 NotSupported，不回退
+  抢焦点。GNOME oracle 写出 `Base-世界`，同时验证默认/非法值/复杂语法/focus
+  无 X 路径；CI 增 4 个 BIV 契约断言。**未完成**：pending-call + 主循环
+  异步化、公开 A_LastError、AT-SPI Selection/Value、IME 集成。
 - **落点文件**：`core_atspi_linux.cpp/.h`、`core_ctrl_linux.cpp`、
   `tests/oracle/gtk_ok.c`、`run_atspi_wintitle_oracle.sh`、
   `run_atspi_cache_oracle.sh`、`scenarios/atspi_matrix/run_matrix.sh`。

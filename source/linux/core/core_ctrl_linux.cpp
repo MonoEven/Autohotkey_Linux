@@ -44,6 +44,26 @@
 
 void ScriptSleep(int aDelay);
 
+enum LinuxControlSendMode { LCS_FOCUS = 0, LCS_ATSPI = 1 };
+static LinuxControlSendMode sControlSendMode = LCS_FOCUS;
+
+// Linux extension: process-wide mode for ControlSend/ControlSendText.
+BIV_DECL_R(BIV_ControlSendMode)
+{
+	aResultToken.SetValue(sControlSendMode == LCS_ATSPI ? _T("atspi") : _T("focus"));
+}
+
+BIV_DECL_W(BIV_ControlSendMode_Set)
+{
+	auto value = BivRValueToString(nullptr);
+	if (!_tcsicmp(value, _T("focus")))
+		sControlSendMode = LCS_FOCUS;
+	else if (!_tcsicmp(value, _T("atspi")))
+		sControlSendMode = LCS_ATSPI;
+	else
+		_f_throw_value(ERR_INVALID_VALUE, value);
+}
+
 // Session-level Wayland detection for the Control* AT-SPI fallback.
 // Unlike LinuxWaylandActive() this does NOT depend on whether an X display
 // (including XWayland, which shares the desktop but never hosts Wayland
@@ -1125,8 +1145,85 @@ BIF_DECL(BIF_Linux_ControlClick)
 // ControlSend / ControlSendText
 // ---------------------------------------------------------------------------
 
+static void LinuxCtrlSendAtspi(ResultToken &aResultToken, ExprTokenType *aParam[]
+	, int aParamCount, bool aRaw)
+{
+	TCHAR keys_buf[65536], ctrl_buf[1024], title_buf[1024];
+	LPTSTR keys = aParamCount > 0 ? TokenToString(*aParam[0], keys_buf, nullptr) : nullptr;
+	LPTSTR ctrl = (aParamCount > 1 && !ParamIndexIsOmitted(1))
+		? TokenToString(*aParam[1], ctrl_buf, nullptr) : nullptr;
+	LPTSTR title = (aParamCount > 2 && !ParamIndexIsOmitted(2))
+		? TokenToString(*aParam[2], title_buf, nullptr) : nullptr;
+	if (!ctrl || !*ctrl)
+	{
+		aResultToken.Error(_T("A_ControlSendMode=atspi requires a named control."), _T(""), ErrorPrototype::Target);
+		return;
+	}
+	if (!LinuxAtspiAvailable())
+	{
+		aResultToken.Error(_T("A_ControlSendMode=atspi requires an available AT-SPI accessibility bus."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	char control_name[4096], window_name[4096] = { 0 };
+	if (WideCharToUTF8(ctrl, control_name, (int)sizeof(control_name)) <= 0)
+	{
+		aResultToken.Error(_T("ControlSend: invalid control name."), _T(""), ErrorPrototype::Value);
+		return;
+	}
+	if (title && *title)
+		WideCharToUTF8(title, window_name, (int)sizeof(window_name));
+	LinuxAtspiRefresh();
+	std::string path;
+	if (!LinuxAtspiFindByName(control_name, path, window_name))
+	{
+		aResultToken.Error(_T("ControlSend: the AT-SPI control or WinTitle could not be found."), _T(""), ErrorPrototype::Target);
+		return;
+	}
+	if (!keys)
+		keys = keys_buf;
+	if (!aRaw && (!_tcsicmp(keys, _T("{Enter}")) || !_tcsicmp(keys, _T("{Space}"))))
+	{
+		if (!(LinuxAtspiDoAction(path.c_str(), -1, "click")
+			|| LinuxAtspiDoAction(path.c_str(), 0, nullptr)))
+			aResultToken.Error(_T("ControlSend: the AT-SPI control exposes no usable Action."), _T(""), ErrorPrototype::OS);
+		else
+			LinuxCtrlDelay();
+		return;
+	}
+	if (!aRaw && wcspbrk(keys, L"{}^!+#"))
+	{
+		aResultToken.Error(_T("ControlSendMode=atspi supports plain text or {Enter}/{Space}; complex Send syntax is NotSupported."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	std::string current;
+	if (!LinuxAtspiGetText(path.c_str(), current))
+	{
+		aResultToken.Error(_T("ControlSendMode=atspi requires an EditableText control."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	char append[131072];
+	int len = WideCharToUTF8(keys, append, (int)sizeof(append));
+	if (len <= 0)
+	{
+		aResultToken.Error(_T("ControlSend: text could not be encoded as UTF-8."), _T(""), ErrorPrototype::Value);
+		return;
+	}
+	current.append(append, (size_t)(len - 1));
+	if (!LinuxAtspiSetText(path.c_str(), current.c_str()))
+	{
+		aResultToken.Error(_T("ControlSendMode=atspi could not update the EditableText control."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	LinuxCtrlDelay();
+}
+
 static void LinuxCtrlSendImpl(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount, bool aRaw)
 {
+	if (sControlSendMode == LCS_ATSPI)
+	{
+		LinuxCtrlSendAtspi(aResultToken, aParam, aParamCount, aRaw);
+		return;
+	}
 	Display *d = LinuxX11Display();
 	if (!d)
 	{

@@ -14,14 +14,15 @@
 <h1>ControlSend / ControlSendText</h1>
 
 <div class="note" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b>
-<code>ControlSend</code>/<code>ControlSendText</code> move the input focus to the
-target control, send via the X11 engine, then restore the previous focus — the
-semantics of <code>WinActivate + Send + restore</code> (there is no X11
-equivalent of a windowless control key stream). An
-<code>A_ControlSendMode</code> variable is planned: <code>atspi</code> mode
-will target controls that expose AT-SPI <code>Action</code>/<code>Text</code>
-interfaces without stealing focus. On pure Wayland the X11 focus move is not
-available and ControlSend is not usable.</div>
+<code>A_ControlSendMode</code> is writable and accepts <code>focus</code>
+(default) or <code>atspi</code>. Focus mode moves X11 input focus to the target,
+sends, then restores focus — equivalent to <code>WinActivate + Send +
+restore</code>. AT-SPI mode works without an X display: plain text is appended
+to an <code>EditableText</code> control and <code>{Enter}</code>/<code>{Space}</code>
+invoke its Action. Complex Send syntax is explicitly NotSupported in AT-SPI
+mode; it never silently falls back to focus-stealing. Appending at the end is an
+adapted semantic because AT-SPI exposes text replacement but not a portable
+keystroke stream/caret insertion API.</div>
 
 <p>Sends simulated keystrokes or text to a window or control.</p>
 

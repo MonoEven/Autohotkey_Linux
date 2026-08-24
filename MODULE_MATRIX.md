@@ -1,7 +1,7 @@
 # AutoHotkey v2.0.26 Linux 移植 —— 模块验证矩阵
 
 > 对照 AutoHotkey v2 官方文档逐模块确认可用性。完整逐模块校验报告见
-> `tests/doccheck/CHECK_REPORT.md`（1135/1135 断言，普通 + ASan 双构建）。
+> `tests/doccheck/CHECK_REPORT.md`（1139/1139 断言，普通 + ASan 双构建）。
 > 状态图例：✅ 已实现并有 .ahk 验证；⚠️ 部分实现/依赖外部工具；❌ 未实现（明确报错）。
 > GUI 类功能区分「有画面」(DISPLAY 可用，X11/WSLg/XFCE/XWayland) 与「无画面」(headless)。
 
@@ -112,8 +112,8 @@
 
 ## 汇总
 
-- **1135/1135** X11/headless doc-check 断言通过（普通 + ASan 双构建）
-- **27/27** headless 回归测试；Wayland **17/17** + XWayland **230/230** 独立套件
+- **1139/1139** X11/headless doc-check 断言通过（普通 + ASan 双构建）
+- **27/27** headless 回归测试；Wayland **17/17** + XWayland **234/234** 独立套件
 - 场景门禁覆盖 X11、纯 Wayland、GNOME 会话、evdev/uinput、打包和 SNI；CI 另跑四发行版容器、no-XWayland、pack 容器验收与 soak
 - Unicode 文本发送（round-34 + round-36）:X11/XWayland 非 ASCII 经 keysym 传输（借键码重映射 + 跨进程 X Selection 租约），纯 Wayland 走剪贴板粘贴回退（等待目标实际消费、恢复空原剪贴板、`AHK_WAYLAND_PASTE=0` 可禁、uinput 通道），无注入路径明确报错
 - 主要限制：ComObjArray、跨进程 Win32 消息和纯 Wayland 窗口枚举没有 Linux 等价物；完整 inputd 守护进程、IBus engine、KDE/Flatpak 宿主矩阵仍是后续项；SoundGet*/SoundSet* 依赖 pactl/amixer

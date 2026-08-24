@@ -3096,6 +3096,9 @@ BIV_DECL_RW(BIV_Clipboard);
 BIV_DECL_R (BIV_MMM_DDD);
 BIV_DECL_R (BIV_DateTime);
 BIV_DECL_RW(BIV_ListLines);
+#ifdef __linux__
+BIV_DECL_RW(BIV_ControlSendMode);
+#endif
 BIV_DECL_RW(BIV_TitleMatchMode);
 BIV_DECL_R (BIV_TitleMatchModeSpeed); // Write is handled by BIV_TitleMatchMode_Set.
 BIV_DECL_RW(BIV_DetectHiddenWindows);

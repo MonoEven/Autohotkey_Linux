@@ -83,7 +83,10 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - M5-C AT-SPI bulk cache/budget: one Cache.GetItems call per app (500ms),
   per-app GetChildren fallback, 2s total refresh deadline with partial results;
   diagnostics and VM oracles prove cache, fallback and 1ms timeout injection.
-- Machine totals: 1135/1135 X11/headless, 17/17 Wayland and 230/230
+- M5-C A_ControlSendMode: writable focus/atspi mode; AT-SPI appends plain Unicode
+  to EditableText or triggers Enter/Space Action without X focus, rejecting
+  unsupported key syntax explicitly; GNOME oracle + four CI contract assertions.
+- Machine totals: 1139/1139 X11/headless, 17/17 Wayland and 234/234
   XWayland assertions; 27/27 headless regression tests.
 
 ## Active constraints / remaining work

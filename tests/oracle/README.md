@@ -46,7 +46,9 @@ per-app GetChildren fallback and a 1ms total-budget fault injection (bounded
 partial return) while preserving UTF-8 text. These require a real GNOME
 Wayland accessibility session and run on
 the VM; the scenario `atspi_matrix` additionally requires a non-zero cache
-count before it may pass.
+count before it may pass. `run_controlsend_mode_oracle.sh` proves writable
+focus/atspi mode selection, Unicode EditableText updates without DISPLAY and
+explicit rejection of complex Send syntax.
 
 The physical-layer VM lane uses `tools/linux/uinput-inject.c`: its virtual
 keyboard deliberately has no AHK identity, so evdev sees an independent input
