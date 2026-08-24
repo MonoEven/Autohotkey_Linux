@@ -9,6 +9,8 @@ const {
   findTopLevelProperties,
 } = require('./dbgp');
 
+const VARIABLE_PAGE_SIZE = 16;
+
 class AhkDebugAdapterCore {
   constructor(sendMessage) {
     this.sendMessage = sendMessage;
@@ -18,6 +20,8 @@ class AhkDebugAdapterCore {
     this.init = null;
     this.frames = new Map();
     this.breakpoints = new Map();
+    this.variableHandles = new Map();
+    this.nextVariableHandle = 1;
     this.terminated = false;
   }
 
@@ -60,6 +64,7 @@ class AhkDebugAdapterCore {
       supportsTerminateRequest: true,
       supportsEvaluateForHovers: true,
       supportsSetVariable: false,
+      supportsVariablePaging: true,
       supportsRestartRequest: false,
       supportsExceptionInfoRequest: false,
     });
@@ -91,6 +96,8 @@ class AhkDebugAdapterCore {
       this.sendTerminated({ code, signal });
     });
     this.init = await this.session.waitForInit();
+    await this.session.send(`feature_set -n max_children -v ${VARIABLE_PAGE_SIZE}`);
+    await this.session.send('feature_set -n max_depth -v 1');
     this.respond(request);
     this.event('initialized');
   }
@@ -166,16 +173,71 @@ class AhkDebugAdapterCore {
 
   async request_variables(request) {
     this.requireSession();
-    const scope = decodeScope(Number(request.arguments?.variablesReference));
-    if (!scope) throw new Error('Unknown variable scope');
-    const packet = await this.session.send(`context_get -c ${scope.context} -d ${scope.depth}`);
-    const variables = findTopLevelProperties(packet.xml).map((property) => ({
-      name: property.name || property.fullname || '?',
-      value: property.value,
-      type: property.type || '',
-      variablesReference: 0,
-    }));
+    const reference = Number(request.arguments?.variablesReference);
+    const scope = decodeScope(reference);
+    let variables;
+    if (scope) {
+      const packet = await this.session.send(`context_get -c ${scope.context} -d ${scope.depth}`);
+      const properties = findTopLevelProperties(packet.xml);
+      const start = Math.max(0, Number(request.arguments?.start || 0));
+      const count = Number(request.arguments?.count || properties.length);
+      variables = properties.slice(start, start + count)
+        .map((property) => this.toDapVariable(property, scope.context, scope.depth));
+    } else {
+      const handle = this.variableHandles.get(reference);
+      if (!handle) throw new Error('Unknown variable reference');
+      variables = await this.objectVariables(handle, request.arguments || {});
+    }
     this.respond(request, { variables });
+  }
+
+  async objectVariables(handle, args) {
+    const total = Math.max(0, Number(handle.numchildren || 0));
+    const start = Math.max(0, Number(args.start || 0));
+    const requested = Number(args.count || VARIABLE_PAGE_SIZE);
+    const end = Math.min(total || start + requested, start + requested);
+    const result = [];
+    let position = start;
+    while (position < end) {
+      const page = Math.floor(position / VARIABLE_PAGE_SIZE);
+      const packet = await this.session.send(
+        `property_get -n ${handle.fullname} -c ${handle.context} -d ${handle.depth} -p ${page}`,
+      );
+      const root = findTopLevelProperties(packet.xml)[0];
+      if (!root) break;
+      const offset = position - page * VARIABLE_PAGE_SIZE;
+      const available = root.childProperties.slice(offset);
+      if (!available.length) break;
+      const take = Math.min(available.length, end - position);
+      result.push(...available.slice(0, take)
+        .map((property) => this.toDapVariable(property, handle.context, handle.depth)));
+      position += take;
+    }
+    return result;
+  }
+
+  toDapVariable(property, context, depth) {
+    const numchildren = Math.max(0, Number(property.numchildren || 0));
+    let variablesReference = 0;
+    if (property.children === '1' || numchildren > 0) {
+      variablesReference = this.nextVariableHandle++;
+      this.variableHandles.set(variablesReference, {
+        fullname: property.fullname,
+        context,
+        depth,
+        numchildren,
+      });
+    }
+    const objectLabel = property.classname
+      ? `${property.classname}${numchildren ? ` (${numchildren})` : ''}`
+      : property.value;
+    return {
+      name: property.name || property.fullname || '?',
+      value: variablesReference ? objectLabel : property.value,
+      type: property.classname || property.type || '',
+      variablesReference,
+      ...(variablesReference ? { namedVariables: numchildren } : {}),
+    };
   }
 
   async request_evaluate(request) {
@@ -185,10 +247,12 @@ class AhkDebugAdapterCore {
     const depth = this.frames.get(frameId) || 0;
     const packet = await this.session.send(`property_get -n ${expression} -c 0 -d ${depth}`);
     const property = findTopLevelProperties(packet.xml)[0];
+    const variable = property ? this.toDapVariable(property, 0, depth) : null;
     this.respond(request, {
-      result: property ? property.value : 'undefined',
-      type: property ? property.type : 'undefined',
-      variablesReference: 0,
+      result: variable ? variable.value : 'undefined',
+      type: variable ? variable.type : 'undefined',
+      variablesReference: variable ? variable.variablesReference : 0,
+      ...(variable && variable.namedVariables ? { namedVariables: variable.namedVariables } : {}),
     });
   }
 
@@ -236,6 +300,8 @@ class AhkDebugAdapterCore {
     this.requireSession();
     this.session.send(command).then((packet) => {
       if (packet.attributes.status === 'break') {
+        this.variableHandles.clear();
+        this.nextVariableHandle = 1;
         this.event('stopped', { reason, threadId: 1, allThreadsStopped: true });
       } else if (packet.attributes.status === 'stopped') {
         this.sendTerminated({ reason: packet.attributes.reason });

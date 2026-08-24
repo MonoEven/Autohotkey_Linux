@@ -690,6 +690,7 @@ class Map : public Object
 	ResultType GetEnumItem(UINT &aIndex, Var *, Var *, int);
 
 public:
+	index_t Count() { return mCount; }
 	static Map *Create(ExprTokenType *aParam[] = NULL, int aParamCount = 0);
 
 	bool HasItem(ExprTokenType &aKey)

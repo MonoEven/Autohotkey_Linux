@@ -70,15 +70,35 @@ def command_response(conn: socket.socket, command: str, tx: int) -> tuple[ET.Ele
     return root, text
 
 
+def decoded_property(prop: ET.Element) -> str:
+    data = (prop.text or "").strip()
+    if prop.attrib.get("encoding") == "base64" and data:
+        return base64.b64decode(data).decode("utf-8")
+    if prop.attrib.get("type") == "undefined":
+        return "undefined"
+    return data
+
+
 def property_value(root: ET.Element, name: str) -> str:
     for prop in root.iter():
-        if local_name(prop.tag) != "property" or prop.attrib.get("name") != name:
-            continue
-        data = prop.text or ""
-        if prop.attrib.get("encoding") == "base64":
-            return base64.b64decode(data).decode("utf-8")
-        return data
+        if local_name(prop.tag) == "property" and prop.attrib.get("name") == name:
+            return decoded_property(prop)
     raise AssertionError(f"property {name!r} absent")
+
+
+def first_property(root: ET.Element) -> ET.Element:
+    for prop in root:
+        if local_name(prop.tag) == "property":
+            return prop
+    raise AssertionError("top-level property absent")
+
+
+def direct_properties(prop: ET.Element) -> dict[str, ET.Element]:
+    return {
+        child.attrib.get("name", ""): child
+        for child in prop
+        if local_name(child.tag) == "property"
+    }
 
 
 def stack_line(root: ET.Element) -> int:
@@ -161,6 +181,49 @@ def main() -> int:
             transcript.append(text)
             assert property_value(prop_x, "x") == "10", text
 
+            prop_obj, text = command_response(conn, "property_get -n obj -c 1 -d 0 -p 0", 12)
+            transcript.append(text)
+            obj_root = first_property(prop_obj)
+            obj_children = direct_properties(obj_root)
+            assert decoded_property(obj_children["alpha"]) == "A", text
+            assert obj_children["nested"].attrib.get("children") == "1", text
+
+            prop_arr0, text = command_response(conn, "property_get -n arr -c 1 -d 0 -p 0", 13)
+            transcript.append(text)
+            arr_root0 = first_property(prop_arr0)
+            assert arr_root0.attrib.get("children") == "1", text
+            assert arr_root0.attrib.get("numchildren") == "21", text  # base + 20 values
+            arr_page0 = [
+                decoded_property(child)
+                for name, child in direct_properties(arr_root0).items()
+                if name != "<base>"
+            ]
+            prop_arr1, text = command_response(conn, "property_get -n arr -c 1 -d 0 -p 1", 15)
+            transcript.append(text)
+            arr_page1 = [
+                decoded_property(child)
+                for name, child in direct_properties(first_property(prop_arr1)).items()
+                if name != "<base>"
+            ]
+            arr_values = [int(value) for value in arr_page0 + arr_page1]
+            assert arr_values == list(range(1, 21)), (arr_values, text)
+
+            prop_nested, text = command_response(conn, "property_get -n obj.nested -c 1 -d 0 -p 0", 14)
+            transcript.append(text)
+            nested_children = direct_properties(first_property(prop_nested))
+            assert decoded_property(nested_children["beta"]) == "42", text
+
+            prop_map, text = command_response(conn, "property_get -n mapv -c 1 -d 0 -p 0", 16)
+            transcript.append(text)
+            map_root = first_property(prop_map)
+            assert map_root.attrib.get("numchildren") == "3", text  # base + 2 pairs
+            map_values = {
+                name: decoded_property(child)
+                for name, child in direct_properties(map_root).items()
+                if name != "<base>"
+            }
+            assert map_values == {'["first"]': "101", '["second"]': "202"}, (map_values, text)
+
             send_command(conn, "step_into -i 8")
             stepped, text = recv_packet(conn)
             transcript.append(text)
@@ -198,6 +261,12 @@ def main() -> int:
             "step_line": second_line,
             "context_x": 10,
             "property_y": 15,
+            "object_alpha": "A",
+            "nested_beta": 42,
+            "map_values": {"first": 101, "second": 202},
+            "array_count": 20,
+            "array_pages": 2,
+            "array_edges": [1, 20],
             "detach": True,
             "script_result": result,
             "packets": len(transcript),

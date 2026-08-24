@@ -37,7 +37,8 @@ test('DBGp XML helpers decode stack and top-level scalar properties', () => {
     + '</response>';
   assert.equal(findElements(xml, 'stack')[0].lineno, '3');
   const properties = findTopLevelProperties(xml);
-  assert.deepEqual(properties.map((p) => [p.name, p.value]), [['x', '10'], ['obj', '']]);
+  assert.deepEqual(properties.map((p) => [p.name, p.value]), [['x', '10'], ['obj', 'object']]);
+  assert.deepEqual(properties[1].childProperties.map((p) => [p.name, p.value]), [['nested', 'y']]);
 });
 
 test('DAP scope references round-trip depth and context', () => {

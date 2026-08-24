@@ -78,6 +78,10 @@ assert debug["started"] is True, data
 assert debug["breakpointLine"] == 3, data
 assert debug["stepLine"] == 4, data
 assert debug["x"] == "10", data
+assert debug["arrayValues"] == list(range(1, 21)), data
+assert debug["alpha"] == "A", data
+assert debug["beta"] == "42", data
+assert debug["mapValues"] == {'["first"]': "101", '["second"]': "202"}, data
 assert debug["y"] == "15", data
 assert debug["terminated"] is True, data
 print(json.dumps(data, sort_keys=True))

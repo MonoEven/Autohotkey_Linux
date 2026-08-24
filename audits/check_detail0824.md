@@ -804,8 +804,12 @@
   filename breakpoints、continue、step in/over/out、stack/scopes/scalar variables/
   evaluate 与 terminate。外部 DAP client 对真实 runtime 通过；VS Code 1.134
   extension-host tracker 同样观察 breakpoint=3、step=4、x=10、y=15 与 clean
-  termination。**D3 未完成**：对象分页、exception、idle pause/reconnect、D-Bus
-  对象真实投影。
+  termination。
+- **VSC-2 D3 第一项（容器树/分页）已交付**：Array/Map built-in enum 的
+  `numchildren` 改为精确元素数；DAP handle 支持 `variables(start,count)`→
+  `property_get -p`。raw DBGp、外部 DAP 与 VS Code tracker 均验证20项Array跨
+  两页、Map first=101/second=202、nested Object alpha=A/beta=42。**D3 剩余**：
+  exception、idle pause/reconnect、D-Bus 对象真实投影。
 
 ### B. GUI-1 真实宿主捕获矩阵（已交付）
 

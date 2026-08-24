@@ -60,8 +60,9 @@ Press F5 on an AHK v2 file or add this launch configuration:
 
 VSC-2 D1 (runtime DBGp) and D2 (inline DBGp-to-DAP adapter) are both
 independently exercised, including a real VS Code 1.134 extension-host run.
-Advanced object paging, exception breaks and idle-script pause/reconnect remain
-D3; see [VSC2_DEBUGGER_PORT.md](VSC2_DEBUGGER_PORT.md).
+D3 object trees are implemented: Array/Map/Object expansion supports paging and
+nested handles. Exception breaks, idle-script pause/reconnect and a D-Bus object
+projection remain; see [VSC2_DEBUGGER_PORT.md](VSC2_DEBUGGER_PORT.md).
 
 ## Package and test
 

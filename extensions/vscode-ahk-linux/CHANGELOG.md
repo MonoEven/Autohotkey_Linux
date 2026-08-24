@@ -6,8 +6,10 @@
 - Launch configurations and F5 debugging for `.ahk`/`.ah2` files.
 - Verified filename breakpoints, continue, step into/over/out, stack frames,
   Local/Global scopes, scalar variables, evaluate and termination.
+- Paged Array/Map/Object variable trees with nested handles; a two-page 20-item
+  Array, Map string keys and nested Object are verified end-to-end.
 - Real VS Code extension-host oracle observes breakpoint line 3, step line 4,
-  `x=10`, `y=15` and clean termination.
+  `x=10`, `y=15`, expanded container values and clean termination.
 
 ## 0.1.0
 

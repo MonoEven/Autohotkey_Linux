@@ -104,7 +104,49 @@ async function main() {
     request = send('variables', { variablesReference: globalScope.variablesReference });
     reply = await response(request);
     const x = reply.body.variables.find((variable) => variable.name === 'x');
+    const arr = reply.body.variables.find((variable) => variable.name === 'arr');
+    const obj = reply.body.variables.find((variable) => variable.name === 'obj');
+    const mapv = reply.body.variables.find((variable) => variable.name === 'mapv');
     if (!x || x.value !== '10') throw new Error(`x variable mismatch: ${JSON.stringify(x)}`);
+    if (!arr || !arr.variablesReference) throw new Error(`arr is not expandable: ${JSON.stringify(arr)}`);
+    if (!obj || !obj.variablesReference) throw new Error(`obj is not expandable: ${JSON.stringify(obj)}`);
+    if (!mapv || !mapv.variablesReference) throw new Error(`mapv is not expandable: ${JSON.stringify(mapv)}`);
+
+    request = send('variables', { variablesReference: arr.variablesReference, start: 0, count: 16 });
+    reply = await response(request);
+    const arrayPage0 = reply.body.variables;
+    request = send('variables', { variablesReference: arr.variablesReference, start: 16, count: 16 });
+    reply = await response(request);
+    const arrayPage1 = reply.body.variables;
+    const arrayValues = [...arrayPage0, ...arrayPage1]
+      .map((variable) => Number(variable.value))
+      .filter(Number.isFinite);
+    if (JSON.stringify(arrayValues) !== JSON.stringify(Array.from({ length: 20 }, (_, i) => i + 1))) {
+      throw new Error(`array paging mismatch: ${JSON.stringify({ arrayPage0, arrayPage1 })}`);
+    }
+
+    request = send('variables', { variablesReference: obj.variablesReference, start: 0, count: 16 });
+    reply = await response(request);
+    const alpha = reply.body.variables.find((variable) => variable.name === 'alpha');
+    const nested = reply.body.variables.find((variable) => variable.name === 'nested');
+    if (!alpha || alpha.value !== 'A') throw new Error(`alpha mismatch: ${JSON.stringify(alpha)}`);
+    if (!nested || !nested.variablesReference) throw new Error(`nested object missing: ${JSON.stringify(nested)}`);
+
+    request = send('variables', { variablesReference: nested.variablesReference, start: 0, count: 16 });
+    reply = await response(request);
+    const beta = reply.body.variables.find((variable) => variable.name === 'beta');
+    if (!beta || beta.value !== '42') throw new Error(`beta mismatch: ${JSON.stringify(beta)}`);
+
+    request = send('variables', { variablesReference: mapv.variablesReference, start: 0, count: 16 });
+    reply = await response(request);
+    const mapValues = Object.fromEntries(
+      reply.body.variables
+        .filter((variable) => variable.name !== '<base>')
+        .map((variable) => [variable.name, variable.value]),
+    );
+    if (mapValues['["first"]'] !== '101' || mapValues['["second"]'] !== '202') {
+      throw new Error(`map mismatch: ${JSON.stringify(mapValues)}`);
+    }
 
     request = send('evaluate', { expression: 'x', frameId: frame1.id, context: 'watch' });
     reply = await response(request);
@@ -151,6 +193,12 @@ async function main() {
       stepLine: frame2.line,
       globalX: Number(x.value),
       evaluatedX: Number(evaluatedX),
+      arrayCount: arrayValues.length,
+      arrayPages: 2,
+      arrayEdges: [arrayValues[0], arrayValues.at(-1)],
+      objectAlpha: alpha.value,
+      nestedBeta: Number(beta.value),
+      mapValues: { first: Number(mapValues['["first"]']), second: Number(mapValues['["second"]']) },
       globalY: Number(y.value),
       terminated: true,
       scriptResult,

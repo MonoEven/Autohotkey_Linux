@@ -1252,7 +1252,16 @@ int Debugger::WritePropertyObjectXml(PropertyInfo &aProp)
 void Object::DebugWriteProperty(IDebugProperties *aDebugger, int aPage, int aPageSize, int aDepth)
 {
 	auto enum_method = IsClassPrototype() ? nullptr : GetMethod(_T("__Enum"));
-	int num_children = (int)mFields.Length() + (mBase != nullptr) + (enum_method != nullptr);
+	int enum_children = enum_method != nullptr;
+	// Built-in Array/Map enumerators have a stable exact size.  Counting only
+	// the __Enum marker made numchildren report 2 for [base + any Array], so
+	// DAP clients paged only the first element.  Custom enumerators remain one
+	// lazy <enum> child because invoking them merely to count can have effects.
+	if (auto array = dynamic_cast<Array *>(this))
+		enum_children = (int)array->Length();
+	else if (auto map = dynamic_cast<Map *>(this))
+		enum_children = (int)map->Count();
+	int num_children = (int)mFields.Length() + (mBase != nullptr) + enum_children;
 
 	DebugCookie cookie;
 	aDebugger->BeginProperty(NULL, "object", num_children, cookie);

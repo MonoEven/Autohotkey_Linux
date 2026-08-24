@@ -58,9 +58,19 @@ before clean termination.
 
 ## D3 — advanced values and persistence
 
-Remaining protocol expansion:
+### Delivered: paged Array/Map/Object trees
 
-- Arrays/Maps/objects with paging and depth limits;
+- DBGp Array/Map `numchildren` now reports exact built-in enumerable size instead
+  of counting only the lazy `__Enum` marker.
+- DAP advertises variable paging and keeps per-stop object handles.
+- `variables(start,count)` translates to `property_get -p PAGE`, including
+  page-boundary slicing and nested object handles.
+- Three independent layers prove a 20-item Array over two pages, Map string keys
+  (`first=101`, `second=202`) and nested Object (`alpha=A`, `beta=42`): raw DBGp,
+  external DAP client and real VS Code 1.134 variable-tree requests.
+
+Remaining D3 work:
+
 - an explicit debugger projection for Linux D-Bus compatibility objects;
 - exception breakpoints;
 - debugger break requests while a persistent script is idle in the Linux main loop;

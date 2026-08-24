@@ -305,7 +305,18 @@ async function runDebugSelfTest(context, script, runtimePath) {
     new vscode.Location(uri, new vscode.Position(2, 0)),
     true,
   );
-  const evidence = { started: false, breakpointLine: 0, stepLine: 0, x: null, y: null, terminated: false };
+  const evidence = {
+    started: false,
+    breakpointLine: 0,
+    stepLine: 0,
+    x: null,
+    y: null,
+    arrayValues: [],
+    alpha: null,
+    beta: null,
+    mapValues: {},
+    terminated: false,
+  };
   let debugSession;
   let phase = 0;
   let chain = Promise.resolve();
@@ -334,6 +345,35 @@ async function runDebugSelfTest(context, script, runtimePath) {
             if (phase === 0) {
               evidence.breakpointLine = snapshot.frame.line;
               evidence.x = snapshot.variables.find((item) => item.name === 'x')?.value ?? null;
+              const arr = snapshot.variables.find((item) => item.name === 'arr');
+              const obj = snapshot.variables.find((item) => item.name === 'obj');
+              const mapv = snapshot.variables.find((item) => item.name === 'mapv');
+              const arrPage0 = await debugSession.customRequest('variables', {
+                variablesReference: arr.variablesReference, start: 0, count: 16,
+              });
+              const arrPage1 = await debugSession.customRequest('variables', {
+                variablesReference: arr.variablesReference, start: 16, count: 16,
+              });
+              evidence.arrayValues = [...arrPage0.variables, ...arrPage1.variables]
+                .map((item) => Number(item.value))
+                .filter(Number.isFinite);
+              const objChildren = await debugSession.customRequest('variables', {
+                variablesReference: obj.variablesReference, start: 0, count: 16,
+              });
+              evidence.alpha = objChildren.variables.find((item) => item.name === 'alpha')?.value ?? null;
+              const nested = objChildren.variables.find((item) => item.name === 'nested');
+              const nestedChildren = await debugSession.customRequest('variables', {
+                variablesReference: nested.variablesReference, start: 0, count: 16,
+              });
+              evidence.beta = nestedChildren.variables.find((item) => item.name === 'beta')?.value ?? null;
+              const mapChildren = await debugSession.customRequest('variables', {
+                variablesReference: mapv.variablesReference, start: 0, count: 16,
+              });
+              evidence.mapValues = Object.fromEntries(
+                mapChildren.variables
+                  .filter((item) => item.name !== '<base>')
+                  .map((item) => [item.name, item.value]),
+              );
               phase = 1;
               await debugSession.customRequest('stepIn', { threadId: 1 });
             } else if (phase === 1) {

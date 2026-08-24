@@ -33,39 +33,45 @@ function findElements(xml, name) {
   return values;
 }
 
-function findTopLevelProperties(xml) {
-  const values = [];
-  const token = /<property\b[^>]*>|<\/property\s*>/g;
-  let depth = 0;
-  let start = -1;
+function parsePropertyTree(xml) {
+  const roots = [];
+  const stack = [];
+  const token = /<property\b([^>]*?)(\/?)>|<\/property\s*>/g;
+  let cursor = 0;
   let match;
+  const appendText = (text) => {
+    if (stack.length) stack[stack.length - 1]._text += text;
+  };
+  const finish = (node) => {
+    const encoded = node._text.trim();
+    delete node._text;
+    if (node.encoding === 'base64' && encoded) node.value = Buffer.from(encoded, 'base64').toString('utf8');
+    else if (node.type === 'undefined') node.value = 'undefined';
+    else if (node.children === '1' || node.childProperties.length) node.value = node.classname || node.type || 'object';
+    else node.value = decodeXml(encoded);
+    return node;
+  };
   while ((match = token.exec(xml))) {
-    if (match[0][1] !== '/') {
-      if (depth === 0) start = match.index;
-      depth += 1;
-    } else {
-      depth -= 1;
-      if (depth === 0 && start >= 0) {
-        const block = xml.slice(start, token.lastIndex);
-        const open = block.match(/^<property\b([^>]*)>/);
-        const attrs = parseAttributes(open ? open[1] : '');
-        const bodyStart = open ? open[0].length : 0;
-        const nested = block.indexOf('<property', bodyStart);
-        const close = block.lastIndexOf('</property>');
-        const bodyEnd = nested >= 0 ? nested : close;
-        let encoded = bodyEnd >= bodyStart ? block.slice(bodyStart, bodyEnd).trim() : '';
-        let value = encoded;
-        if (attrs.encoding === 'base64' && encoded) {
-          value = Buffer.from(encoded, 'base64').toString('utf8');
-        } else if (attrs.type === 'undefined') {
-          value = 'undefined';
-        }
-        values.push({ ...attrs, value });
-        start = -1;
-      }
+    appendText(xml.slice(cursor, match.index));
+    cursor = token.lastIndex;
+    if (match[0].startsWith('</')) {
+      const node = stack.pop();
+      if (!node) throw new Error('Unexpected DBGp property close tag');
+      finish(node);
+      continue;
     }
+    const node = { ...parseAttributes(match[1]), value: '', childProperties: [], _text: '' };
+    if (stack.length) stack[stack.length - 1].childProperties.push(node);
+    else roots.push(node);
+    if (match[2] === '/') finish(node);
+    else stack.push(node);
   }
-  return values;
+  if (stack.length) throw new Error('Unclosed DBGp property element');
+  return roots;
+}
+
+function findTopLevelProperties(xml) {
+  return parsePropertyTree(xml);
 }
 
 class DbgpPacketParser {
@@ -193,5 +199,6 @@ module.exports = {
   findElements,
   findTopLevelProperties,
   parseAttributes,
+  parsePropertyTree,
   rootInfo,
 };
