@@ -74,7 +74,10 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
   needs a compositor layout source). libei receiver remains tracked follow-up.
 - M5-A EWMH window enumeration: _NET_CLIENT_LIST preferred with ICCCM WM_STATE
   subtree-probe fallback that preserves unmanaged windows; dual-path oracle.
-- Machine totals: 1160/1160 X11/headless, 17/17 Wayland and 255/255
+- M5-B Control* virtual-state retirement: external windows get a clear
+  NotSupported for style/enabled/checked/Combo-List/Edit-caret/ListView-row
+  instead of a fake process-local shadow; text operations stay real.
+- Machine totals: 1135/1135 X11/headless, 17/17 Wayland and 230/230
   XWayland assertions; 27/27 headless regression tests.
 
 ## Active constraints / remaining work

@@ -40,6 +40,7 @@
 #include <vector>
 #include <map>
 #include <algorithm>
+#include <unistd.h> // getpid
 
 void ScriptSleep(int aDelay);
 
@@ -291,6 +292,57 @@ static LinuxCtrlState &LinuxCtrlStateOf(Window w)
 	if (it == m.end())
 		it = m.emplace(w, LinuxCtrlState()).first;
 	return it->second;
+}
+
+// M5-B: virtual control state (style/exstyle/enabled/checked, Combo/List
+// entries, Edit caret/selection, ListView rows) has no real X11 effect on
+// foreign windows.  Only windows created by this process may use the
+// process-local shadow (script-owned GUI semantics); everything else must
+// fail explicitly instead of pretending success.  A window is "ours" when its
+// top-level ancestor carries _NET_WM_PID equal to this process.
+static bool LinuxCtrlIsOwnProcess(Display *d, Window control)
+{
+	Window w = control;
+	Window root = DefaultRootWindow(d);
+	for (;;)
+	{
+		Window root_ret = 0, parent_ret = 0;
+		Window *children = nullptr;
+		unsigned int n = 0;
+		if (!XQueryTree(d, w, &root_ret, &parent_ret, &children, &n))
+			return false;
+		if (children)
+			XFree(children);
+		if (!parent_ret || parent_ret == root_ret)
+			break;
+		w = parent_ret;
+	}
+	Atom net_pid = XInternAtom(d, "_NET_WM_PID", False);
+	Atom type = None;
+	int fmt = 0;
+	unsigned long nitems = 0, after = 0;
+	unsigned char *data = nullptr;
+	if (net_pid == None
+		|| XGetWindowProperty(d, w, net_pid, 0, 1, False, XA_CARDINAL,
+			&type, &fmt, &nitems, &after, &data) != Success
+		|| fmt != 32 || nitems < 1 || !data)
+	{
+		if (data)
+			XFree(data);
+		return false;
+	}
+	long pid = *(long *)data;
+	XFree(data);
+	return pid == (long)getpid();
+}
+
+static bool LinuxCtrlRequireOwnProcess(ResultToken &aResultToken, Window control)
+{
+	Display *d = LinuxX11Display();
+	if (d && LinuxCtrlIsOwnProcess(d, control))
+		return true;
+	aResultToken.Error(_T("NotSupported on Linux for external windows: the operation needs Windows control messages which have no X11 equivalent; only windows created by this script can be modified this way."), _T(""), ErrorPrototype::OS);
+	return false;
 }
 
 // Docs: ControlAddItem/ChooseIndex/ChooseString/DeleteItem/FindItem/
@@ -718,6 +770,8 @@ BIF_DECL(BIF_Linux_ControlGetStyle)
 	Window target = 0, control = 0;
 	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
 		return;
+	if (!LinuxCtrlRequireOwnProcess(aResultToken, control))
+		return;
 	aResultToken.SetValue((__int64)(ULONG_PTR)LinuxCtrlStateOf(control).style);
 }
 
@@ -725,6 +779,8 @@ BIF_DECL(BIF_Linux_ControlGetExStyle)
 {
 	Window target = 0, control = 0;
 	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	if (!LinuxCtrlRequireOwnProcess(aResultToken, control))
 		return;
 	aResultToken.SetValue((__int64)(ULONG_PTR)LinuxCtrlStateOf(control).exstyle);
 }
@@ -758,6 +814,8 @@ BIF_DECL(BIF_Linux_ControlSetStyle)
 	Window target = 0, control = 0;
 	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 1, 2, target, control))
 		return;
+	if (!LinuxCtrlRequireOwnProcess(aResultToken, control))
+		return;
 	LinuxCtrlSetStyleBits(aResultToken, aParam, aParamCount, 0, control, false);
 }
 
@@ -765,6 +823,8 @@ BIF_DECL(BIF_Linux_ControlSetExStyle)
 {
 	Window target = 0, control = 0;
 	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 1, 2, target, control))
+		return;
+	if (!LinuxCtrlRequireOwnProcess(aResultToken, control))
 		return;
 	LinuxCtrlSetStyleBits(aResultToken, aParam, aParamCount, 0, control, true);
 }
@@ -774,6 +834,8 @@ BIF_DECL(BIF_Linux_ControlGetEnabled)
 	Window target = 0, control = 0;
 	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
 		return;
+	if (!LinuxCtrlRequireOwnProcess(aResultToken, control))
+		return;
 	aResultToken.SetValue((__int64)(LinuxCtrlStateOf(control).enabled ? 1 : 0));
 }
 
@@ -781,6 +843,8 @@ BIF_DECL(BIF_Linux_ControlSetEnabled)
 {
 	Window target = 0, control = 0;
 	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 1, 2, target, control))
+		return;
+	if (!LinuxCtrlRequireOwnProcess(aResultToken, control))
 		return;
 	LinuxCtrlState &s = LinuxCtrlStateOf(control);
 	__int64 v = TokenToInt64(*aParam[0]);
@@ -792,6 +856,8 @@ BIF_DECL(BIF_Linux_ControlGetChecked)
 	Window target = 0, control = 0;
 	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
 		return;
+	if (!LinuxCtrlRequireOwnProcess(aResultToken, control))
+		return;
 	aResultToken.SetValue((__int64)(LinuxCtrlStateOf(control).checked ? 1 : 0));
 }
 
@@ -799,6 +865,8 @@ BIF_DECL(BIF_Linux_ControlSetChecked)
 {
 	Window target = 0, control = 0;
 	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 1, 2, target, control))
+		return;
+	if (!LinuxCtrlRequireOwnProcess(aResultToken, control))
 		return;
 	LinuxCtrlState &s = LinuxCtrlStateOf(control);
 	__int64 v = TokenToInt64(*aParam[0]);
@@ -1092,6 +1160,8 @@ static bool LinuxCtrlListTarget(ResultToken &aResultToken, ExprTokenType *aParam
 		aResultToken.Error(_T("The specified control is not a ComboBox or ListBox."), _T(""), ErrorPrototype::Target);
 		return false;
 	}
+	if (!LinuxCtrlRequireOwnProcess(aResultToken, control))
+		return false;
 	aControl = control;
 	return true;
 }
@@ -1253,6 +1323,8 @@ BIF_DECL(BIF_Linux_ControlShowDropDown)
 	Window target = 0, control = 0;
 	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
 		return;
+	if (!LinuxCtrlRequireOwnProcess(aResultToken, control))
+		return;
 	LinuxCtrlStateOf(control).dropdown = true;
 }
 
@@ -1260,6 +1332,8 @@ BIF_DECL(BIF_Linux_ControlHideDropDown)
 {
 	Window target = 0, control = 0;
 	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	if (!LinuxCtrlRequireOwnProcess(aResultToken, control))
 		return;
 	LinuxCtrlStateOf(control).dropdown = false;
 }
@@ -1435,6 +1509,8 @@ BIF_DECL(BIF_Linux_EditGetCurrentLine)
 	Window target = 0, control = 0;
 	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
 		return;
+	if (!LinuxCtrlRequireOwnProcess(aResultToken, control))
+		return;
 	// Docs: "If there is text selected in the control, the return value is
 	// the line number where the selection begins."
 	LinuxCtrlState &s = LinuxCtrlStateOf(control);
@@ -1445,6 +1521,8 @@ BIF_DECL(BIF_Linux_EditGetCurrentCol)
 {
 	Window target = 0, control = 0;
 	if (!LinuxCtrlTarget(aResultToken, aParam, aParamCount, *g, 0, 1, target, control))
+		return;
+	if (!LinuxCtrlRequireOwnProcess(aResultToken, control))
 		return;
 	LinuxCtrlState &s = LinuxCtrlStateOf(control);
 	aResultToken.SetValue((__int64)LinuxCtrlColOf(LinuxCtrlTextOf(control), s.sel_start));

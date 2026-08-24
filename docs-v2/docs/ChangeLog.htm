@@ -28,7 +28,7 @@
     GNOME Xorg is no longer misclassified as Wayland; failed X11 grabs stay
     out of the installed set and automatically recover after their former
     owner exits. Current branch totals are 1148/1148 X11/headless, 17/17
-    Wayland and 255/255 XWayland assertions.</li>
+    Wayland and 230/230 XWayland assertions.</li>
   <li><b>M0-C honesty and provenance:</b> Windows DLL specifications and known
     Windows COM ProgIDs now raise migration-specific errors instead of being
     reinterpreted as Linux libraries/D-Bus names. Release-tag packages use
@@ -67,7 +67,7 @@
     and navigation/numpad variants, and an independent XGrabKey oracle proves
     exact scope and target visibility. InputHook EndReason/EndKey now follows
     the official v2 contract for both keycode and E-character modes. Current
-    branch totals: 1160/1160 X11/headless, 17/17 Wayland, 255/255 XWayland.</li>
+    branch totals: 1135/1135 X11/headless, 17/17 Wayland, 230/230 XWayland.</li>
   <li><b>M3-E normalized input events:</b> version-1 events carry physical
     evdev/set-1 SC, logical VK, Unicode text, phase/repeat, source, SendLevel,
     device and origin across X11, evdev, Portal and GNOME Shell entry points.
@@ -112,6 +112,13 @@
     no window manager is present, keeping unmanaged test windows visible. An
     independent oracle proves the EWMH list wins and the no-WM fallback stays
     unchanged.</li>
+  <li><b>M5-B Control* virtual-state retirement:</b> style/exstyle/enabled/
+    checked, the Combo/List family, the Edit virtual caret and ListView row
+    filling now throw a clear NotSupported (OSError) on external windows
+    instead of mutating a fake in-process store; text reads/writes stay real.
+    The gate keys off the top-level <code>_NET_WM_PID</code>, so windows this
+    script created can still use the semantics. Assertions moved to
+    NotSupported coverage (1135/17/230 totals).</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>

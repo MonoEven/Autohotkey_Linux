@@ -182,58 +182,73 @@ ControlSendText("{x}", "Edit1", "CtlMain")
 Sleep(80)
 Log("sendtext=" (downs(next_lines()) = "Shift_L,braceleft,x,Shift_L,braceright" ? 1 : 0))
 
-; --- ControlGet/SetStyle, Get/SetExStyle (+ - ^ operations). ---
-Log("style0=" (ControlGetStyle("Button1", "CtlMain") = 0 ? 1 : 0))
-ControlSetStyle("0x50000000", "Button1", "CtlMain")
-Log("style_set=" (ControlGetStyle("Button1", "CtlMain") = 0x50000000 ? 1 : 0))
-ControlSetStyle("+0x10", "Button1", "CtlMain")
-Log("style_add=" (ControlGetStyle("Button1", "CtlMain") = 0x50000010 ? 1 : 0))
-ControlSetStyle("-0x10", "Button1", "CtlMain")
-Log("style_sub=" (ControlGetStyle("Button1", "CtlMain") = 0x50000000 ? 1 : 0))
-ControlSetExStyle("^0x100", "Button1", "CtlMain")
-Log("exstyle_t1=" (ControlGetExStyle("Button1", "CtlMain") = 0x100 ? 1 : 0))
-ControlSetExStyle("^0x100", "Button1", "CtlMain")
-Log("exstyle_t2=" (ControlGetExStyle("Button1", "CtlMain") = 0 ? 1 : 0))
+; --- M5-B: virtual state (style/exstyle/enabled/checked and Combo/List
+; --- entries) has no real X11 effect on EXTERNAL windows; the port refuses
+; --- to pretend success and throws OSError instead. ---
+try ControlGetStyle("Button1", "CtlMain")
+catch OSError
+    Log("ns_style=1")
+try ControlSetStyle("0x10", "Button1", "CtlMain")
+catch OSError
+    Log("ns_setstyle=1")
+try ControlGetExStyle("Button1", "CtlMain")
+catch OSError
+    Log("ns_exstyle=1")
+try ControlSetExStyle("^0x100", "Button1", "CtlMain")
+catch OSError
+    Log("ns_setexstyle=1")
+try ControlGetEnabled("Button1", "CtlMain")
+catch OSError
+    Log("ns_enabled=1")
+try ControlSetEnabled(0, "Button1", "CtlMain")
+catch OSError
+    Log("ns_setenabled=1")
+try ControlGetChecked("Button1", "CtlMain")
+catch OSError
+    Log("ns_checked=1")
+try ControlSetChecked(1, "Button1", "CtlMain")
+catch OSError
+    Log("ns_setchecked=1")
+try ControlAddItem("A", "ComboBox1", "CtlMain")
+catch OSError
+    Log("ns_additem=1")
+try ControlDeleteItem(1, "ComboBox1", "CtlMain")
+catch OSError
+    Log("ns_deleteitem=1")
+try ControlFindItem("A", "ComboBox1", "CtlMain")
+catch OSError
+    Log("ns_finditem=1")
+try ControlChooseIndex(1, "ComboBox1", "CtlMain")
+catch OSError
+    Log("ns_chooseindex=1")
+try ControlChooseString("A", "ComboBox1", "CtlMain")
+catch OSError
+    Log("ns_choosestring=1")
+try ControlGetChoice("ComboBox1", "CtlMain")
+catch OSError
+    Log("ns_getchoice=1")
+try ControlGetIndex("ComboBox1", "CtlMain")
+catch OSError
+    Log("ns_getindex=1")
+try ControlGetItems("ComboBox1", "CtlMain")
+catch OSError
+    Log("ns_getitems=1")
+try ControlShowDropDown("ComboBox1", "CtlMain")
+catch OSError
+    Log("ns_showdd=1")
+try ControlHideDropDown("ComboBox1", "CtlMain")
+catch OSError
+    Log("ns_hidedd=1")
 
-; --- ControlGet/SetEnabled, Get/SetChecked (-1 toggles). ---
-Log("enabled0=" (ControlGetEnabled("Button1", "CtlMain") = 1 ? 1 : 0))
-ControlSetEnabled(0, "Button1", "CtlMain")
-Log("enabled_off=" (ControlGetEnabled("Button1", "CtlMain") = 0 ? 1 : 0))
-ControlSetEnabled(-1, "Button1", "CtlMain")
-Log("enabled_toggle=" (ControlGetEnabled("Button1", "CtlMain") = 1 ? 1 : 0))
-Log("checked0=" (ControlGetChecked("Button1", "CtlMain") = 0 ? 1 : 0))
-ControlSetChecked(1, "Button1", "CtlMain")
-Log("checked_on=" (ControlGetChecked("Button1", "CtlMain") = 1 ? 1 : 0))
-ControlSetChecked(-1, "Button1", "CtlMain")
-Log("checked_toggle=" (ControlGetChecked("Button1", "CtlMain") = 0 ? 1 : 0))
-
-; --- ControlGetVisible / ControlHide / ControlShow. ---
+; --- ControlGetVisible / ControlHide / ControlShow (REAL X11 operations). ---
 Log("visible0=" (ControlGetVisible("Hidden1", "CtlMain") = 1 ? 1 : 0))
 ControlHide("Hidden1", "CtlMain")
 Log("hidden=" (ControlGetVisible("Hidden1", "CtlMain") = 0 ? 1 : 0))
 ControlShow("Hidden1", "CtlMain")
 Log("shown=" (ControlGetVisible("Hidden1", "CtlMain") = 1 ? 1 : 0))
 
-; --- Combo/List virtual operations (docs: class must contain Combo/List). ---
-Log("list_add1=" (ControlAddItem("Alpha", "ComboBox1", "CtlMain") = 1 ? 1 : 0))
-Log("list_add2=" (ControlAddItem("Beta", "ComboBox1", "CtlMain") = 2 ? 1 : 0))
-Log("list_add3=" (ControlAddItem("Gamma", "ComboBox1", "CtlMain") = 3 ? 1 : 0))
-Log("list_items=" (Join(ControlGetItems("ComboBox1", "CtlMain")) = "Alpha,Beta,Gamma" ? 1 : 0))
-Log("list_find=" (ControlFindItem("alpha", "ComboBox1", "CtlMain") = 1 ? 1 : 0))
-ControlChooseIndex(2, "ComboBox1", "CtlMain")
-Log("list_choice=" (ControlGetChoice("ComboBox1", "CtlMain") = "Beta" ? 1 : 0))
-Log("list_index=" (ControlGetIndex("ComboBox1", "CtlMain") = 2 ? 1 : 0))
-Log("list_choosestr=" (ControlChooseString("gam", "ComboBox1", "CtlMain") = 3 ? 1 : 0))
-Log("list_choice2=" (ControlGetChoice("ComboBox1", "CtlMain") = "Gamma" ? 1 : 0))
-ControlDeleteItem(1, "ComboBox1", "CtlMain")
-Log("list_items2=" (Join(ControlGetItems("ComboBox1", "CtlMain")) = "Beta,Gamma" ? 1 : 0))
-ControlChooseIndex(0, "ComboBox1", "CtlMain")
-Log("list_deselect=" (ControlGetIndex("ComboBox1", "CtlMain") = 0 ? 1 : 0))
-ControlShowDropDown("ComboBox1", "CtlMain")
-ControlHideDropDown("ComboBox1", "CtlMain")
-Log("dropdown=1")
-
-; --- Error paths (docs: TargetError for window/control not found). ---
+; --- Error paths (docs: TargetError for window/control not found; the class
+; --- gate still precedes the M5-B own-process gate). ---
 try
     ControlGetText("Edit1", "NoSuchWindowPlease")
 catch TargetError
@@ -247,21 +262,9 @@ try
 catch TargetError
     Log("err_list_class=1")
 try
-    ControlFindItem("Nope", "ComboBox1", "CtlMain")
-catch Error
-    Log("err_find=1")
-try
     ControlGetFocus("NoSuchWindowPlease")
 catch TargetError
     Log("err_focus=1")
-try
-    ControlChooseIndex(9, "ComboBox1", "CtlMain")
-catch Error
-    Log("err_choose=1")
-try
-    ControlGetChoice("ComboBox1", "CtlMain")
-catch Error
-    Log("err_choice=1")
 
 ; --- Cleanup. ---
 Run("pkill -f xwin_helper")

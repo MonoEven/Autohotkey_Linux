@@ -599,6 +599,23 @@
 
 ### B. Control* 虚拟状态退场（P1-2）
 
+- **M5-B 已交付**：新增 `LinuxCtrlRequireOwnProcess`（沿顶层 `_NET_WM_PID`
+  判定本进程窗口）。对外部窗口：style/exstyle/enabled/checked、Combo/List
+  全套（Add/Delete/Find/Choose/GetChoice/GetIndex/GetItems/ShowHideDropDown）、
+  Edit 虚拟 caret（GetCurrentCol/Line）与 ListView 行填充（ControlAddItem/
+  DeleteItem）一律抛 **NotSupported(OSError)**，删除 shadow 假成功；
+  类名 gate（Combo/List）仍先于进程 gate。文本读写（GetText/SetText/
+  EditPaste 写入/EditGetLine/SelectedText/ListViewGetContent 读空 store）
+  保持真实。ControlSend 语义文档化（WinActivate+Send+恢复，规划
+  `A_ControlSendMode=atspi|focus`）。`assert_ctrl` 63→54、
+  `assert_edit` 47→31 迁移为 NotSupported 断言；XWayland 套件 255→230。
+- **落点文件**：`core_ctrl_linux.cpp`、`assert_ctrl.ahk`、
+  `assert_edit.ahk`、`CHECK_REPORT.md`、`ControlSend.htm`。
+- **验收**：外部窗口全部 NotSupported（新断言）；真实操作不回归；
+  verify_report_numbers 通过（x11=1135/wayland=17/xwayland=230）。
+- **剩余**：AT-SPI 真实操作（点击/设文本/读文本/选择列表项）对接与
+  `A_ControlSendMode` 实现留 M5-C。
+
 - 原则改为"**真实效果或明确报错**"：
   1. 能通过 AT-SPI action/text/value 接口真实完成的（点击、设文本、读文本、
      选择列表项）→ 走 AT-SPI；

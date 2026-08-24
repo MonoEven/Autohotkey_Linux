@@ -7,18 +7,17 @@
 ;     line, even if the control is empty" -> 1 for an empty control.
 ;   - EditGetLine: the text of line N; ValueError when N is out of range,
 ;     TargetError when the control is not found.
-;   - EditGetCurrentCol/Line: caret column/line (1-based); a fresh control
-;     (ControlSetText = WM_SETTEXT) has the caret at column 1 of line 1.
-;   - EditPaste: inserts at the caret / replaces the selection (EM_REPLACESEL),
-;     leaving the caret after the pasted text.
+;   - EditGetCurrentCol/Line: the caret column/line is VIRTUAL state (Windows
+;     EM_GETSEL); on an external window (M5-B) these throw OSError instead of
+;     pretending a caret position.
+;   - EditPaste: the TEXT insertion is a real X11 write (kept); the caret
+;     after the paste is virtual (not observable on external windows).
 ;   - EditGetSelectedText: "" when nothing is selected.
 ;   - Edit: opens the script in $EDITOR (Linux extension; run_check.sh writes
 ;     a marker script that records its arguments).
-;   - ListViewGetContent: options "Count"/"Count Col"/"Count Selected"/
-;     "Count Focused"/"ColN"/"Selected"/"Focused" (case-insensitive), rows
-;     delimited by `n and fields by `t, ValueError for an invalid ColN,
-;     TargetError for an unknown control.  The port has no Gui, so ListView
-;     rows come from the documented ControlAddItem Linux extension.
+;   - ListViewGetContent: rows come from ControlAddItem, which is virtual
+;     state and therefore OSError on external windows (M5-B); an unfilled
+;     ListView reports an undetermined column count and empty rows.
 #Requires AutoHotkey v2.0
 
 WINOUT := "/tmp/ahk_dc_edit_out.txt"
@@ -51,23 +50,25 @@ Log("ed_crlf_count=" (EditGetLineCount("Edit2", "EdMain") = 2 ? 1 : 0))
 Log("ed_crlf_line1=" (EditGetLine(1, "Edit2", "EdMain") = "one`r" ? 1 : 0))
 Log("ed_crlf_line2=" (EditGetLine(2, "Edit2", "EdMain") = "two" ? 1 : 0))
 
-; --- Caret: ControlSetText resets it to the start (WM_SETTEXT) ---
-Log("ed_col0=" (EditGetCurrentCol("Edit1", "EdMain") = 1 ? 1 : 0))
-Log("ed_row0=" (EditGetCurrentLine("Edit1", "EdMain") = 1 ? 1 : 0))
-Log("ed_col_empty=" (EditGetCurrentCol("Edit2", "EdMain") = 1 ? 1 : 0))
-Log("ed_row_empty=" (EditGetCurrentLine("Edit2", "EdMain") = 1 ? 1 : 0))
+; --- M5-B: the virtual caret position (EM_GETSEL) is NotSupported on
+; --- external windows. ---
+try EditGetCurrentCol("Edit1", "EdMain")
+catch OSError
+    Log("ns_col=1")
+try EditGetCurrentLine("Edit1", "EdMain")
+catch OSError
+    Log("ns_row=1")
 
-; --- EditPaste: inserts at the caret and moves it past the paste ---
+; --- EditPaste: the text insertion is REAL (WM_SETTEXT-style write); the
+; --- caret after the paste is virtual and refuses to be reported. ---
 EditPaste("X", "Edit1", "EdMain")
 Log("ed_paste_text=" (ControlGetText("Edit1", "EdMain") = "Xalpha`nbeta`ngamma" ? 1 : 0))
-Log("ed_paste_col=" (EditGetCurrentCol("Edit1", "EdMain") = 2 ? 1 : 0))
-Log("ed_paste_row=" (EditGetCurrentLine("Edit1", "EdMain") = 1 ? 1 : 0))
-; Multi-line paste: the caret ends up at the end of the pasted text.
 EditPaste("one`ntwo", "Edit1", "EdMain")
 Log("ed_paste2_text=" (ControlGetText("Edit1", "EdMain") = "Xone`ntwoalpha`nbeta`ngamma" ? 1 : 0))
-Log("ed_paste2_row=" (EditGetCurrentLine("Edit1", "EdMain") = 2 ? 1 : 0))
-Log("ed_paste2_col=" (EditGetCurrentCol("Edit1", "EdMain") = 4 ? 1 : 0))
 Log("ed_paste2_line2=" (EditGetLine(2, "Edit1", "EdMain") = "twoalpha" ? 1 : 0))
+try EditGetCurrentCol("Edit1", "EdMain")
+catch OSError
+    Log("ns_col_after=1")
 
 ; --- EditGetSelectedText: nothing is ever selected on the port (no way to
 ; create a selection without a real edit widget) -> empty string ---
@@ -115,7 +116,8 @@ if FileExist(MARKER) {
     Log("ed_editor_path=0")
 }
 
-; --- ListViewGetContent: empty control ---
+; --- ListViewGetContent: empty control (external ListView; filling rows via
+; ControlAddItem is virtual state and throws OSError, M5-B) ---
 Log("lv_count0=" (ListViewGetContent("Count", "LV1", "EdMain") = 0 ? 1 : 0))
 Log("lv_colcount0=" (ListViewGetContent("Count Col", "LV1", "EdMain") = -1 ? 1 : 0))
 Log("lv_sel0=" (ListViewGetContent("Count Selected", "LV1", "EdMain") = 0 ? 1 : 0))
@@ -124,38 +126,14 @@ Log("lv_empty=" (ListViewGetContent("", "LV1", "EdMain") = "" ? 1 : 0))
 ; With an undetermined column count any ColN is attempted (docs) -> "".
 Log("lv_col5_empty=" (ListViewGetContent("Col5", "LV1", "EdMain") = "" ? 1 : 0))
 
-; --- ListView rows via the documented ControlAddItem extension ---
-ControlAddItem("RowA", "LV1", "EdMain")
-ControlAddItem("RowB", "LV1", "EdMain")
-ControlAddItem("RowC", "LV1", "EdMain")
-Log("lv_addret=" (ControlAddItem("RowD", "LV1", "EdMain") = 4 ? 1 : 0))
-Log("lv_count=" (ListViewGetContent("Count", "LV1", "EdMain") = 4 ? 1 : 0))
-Log("lv_colcount=" (ListViewGetContent("Count Col", "LV1", "EdMain") = 1 ? 1 : 0))
-Log("lv_all=" (ListViewGetContent("", "LV1", "EdMain") = "RowA`nRowB`nRowC`nRowD" ? 1 : 0))
-Log("lv_col1=" (ListViewGetContent("Col1", "LV1", "EdMain") = "RowA`nRowB`nRowC`nRowD" ? 1 : 0))
-Log("lv_selected=" (ListViewGetContent("Selected", "LV1", "EdMain") = "" ? 1 : 0))
-Log("lv_focused=" (ListViewGetContent("Focused", "LV1", "EdMain") = "" ? 1 : 0))
-Log("lv_caseless=" (ListViewGetContent("count", "LV1", "EdMain") = 4 ? 1 : 0))
-
-; --- ValueError: invalid ColN (docs: throws a ValueError) ---
-try {
-    ListViewGetContent("Col2", "LV1", "EdMain") ; Only one column exists.
-    Log("lv_col2_bad=0")
-} catch ValueError {
-    Log("lv_col2_bad=1")
-}
-try {
-    ListViewGetContent("Col0", "LV1", "EdMain") ; Column numbers are 1-based.
-    Log("lv_col0_bad=0")
-} catch ValueError {
-    Log("lv_col0_bad=1")
-}
-try {
-    ListViewGetContent("Count Col9", "LV1", "EdMain") ; "Col" with a suffix in Count mode.
-    Log("lv_col9_bad=0")
-} catch ValueError {
-    Log("lv_col9_bad=1")
-}
+; --- M5-B: ControlAddItem/ControlDeleteItem on an external ListView throw
+; --- OSError instead of mutating a fake in-process store. ---
+try ControlAddItem("RowA", "LV1", "EdMain")
+catch OSError
+    Log("ns_lv_add=1")
+try ControlDeleteItem(1, "LV1", "EdMain")
+catch OSError
+    Log("ns_lv_del=1")
 
 ; --- TargetError: unknown control ---
 try {
@@ -164,11 +142,6 @@ try {
 } catch TargetError {
     Log("lv_nope=1")
 }
-
-; --- ControlDeleteItem extension: removes a row ---
-ControlDeleteItem(2, "LV1", "EdMain")
-Log("lv_afterdel=" (ListViewGetContent("", "LV1", "EdMain") = "RowA`nRowC`nRowD" ? 1 : 0))
-Log("lv_count2=" (ListViewGetContent("Count", "LV1", "EdMain") = 3 ? 1 : 0))
 
 ; --- Cleanup. ---
 ExitApp(0)
