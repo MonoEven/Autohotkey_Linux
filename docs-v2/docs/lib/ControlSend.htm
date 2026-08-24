@@ -13,6 +13,16 @@
 
 <h1>ControlSend / ControlSendText</h1>
 
+<div class="note" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b>
+<code>ControlSend</code>/<code>ControlSendText</code> move the input focus to the
+target control, send via the X11 engine, then restore the previous focus — the
+semantics of <code>WinActivate + Send + restore</code> (there is no X11
+equivalent of a windowless control key stream). An
+<code>A_ControlSendMode</code> variable is planned: <code>atspi</code> mode
+will target controls that expose AT-SPI <code>Action</code>/<code>Text</code>
+interfaces without stealing focus. On pure Wayland the X11 focus move is not
+available and ControlSend is not usable.</div>
+
 <p>Sends simulated keystrokes or text to a window or control.</p>
 
 <pre class="Syntax"><span class="func">ControlSend</span> Keys <span class="optional">, ControlID, WinTitle, WinText, ExcludeTitle, ExcludeText</span>
