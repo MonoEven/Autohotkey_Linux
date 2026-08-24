@@ -651,7 +651,12 @@
   （11 app/1935 item）和强制 fallback（11 app）并读取 `CacheText`。官方来源：
   [at-spi2-core Cache](https://gnome.pages.gitlab.gnome.org/at-spi2-core/devel-docs/doc-org.a11y.atspi.Cache.html)
   与 [toolkit 兼容说明](https://gnome.pages.gitlab.gnome.org/at-spi2-core/devel-docs/toolkits.html)。
-  **未完成**：pending-call 异步化+总预算、`A_ControlSendMode`、IME 集成。
+- **M5-C 第三项（总预算/部分结果）已交付**：每次 Refresh 默认总预算
+  2000ms（`AHK_ATSPI_TOTAL_BUDGET_MS` 可覆盖）；root、Cache、Name 与 fallback
+  调用都收敛到剩余预算，递归/缓存解析在 deadline 后返回已收集的部分表。
+  dump 标记 `budget_ms/budget_exceeded`；1ms 故障注入在 253ms 内返回并标记
+  exceeded，正常 GNOME 矩阵在 2s 内完整 2043 节点且未超预算。**未完成**：
+  pending-call + 主循环异步化、公开 A_LastError、`A_ControlSendMode`、IME 集成。
 - **落点文件**：`core_atspi_linux.cpp/.h`、`core_ctrl_linux.cpp`、
   `tests/oracle/gtk_ok.c`、`run_atspi_wintitle_oracle.sh`、
   `run_atspi_cache_oracle.sh`、`scenarios/atspi_matrix/run_matrix.sh`。

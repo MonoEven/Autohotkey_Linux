@@ -33,7 +33,8 @@ run_case() {
   GPID=$!
   sleep 4
   if [ "$mode" = fallback ]; then
-    AHK_ATSPI_DISABLE_CACHE=1 AHK_ATSPI_DUMP="/tmp/m5cache_${mode}.dump" \
+    AHK_ATSPI_DISABLE_CACHE=1 AHK_ATSPI_TOTAL_BUDGET_MS=120000 \
+      AHK_ATSPI_DUMP="/tmp/m5cache_${mode}.dump" \
       timeout -k 2 120 "$BIN" /tmp/m5cache.ahk >"/tmp/m5cache_${mode}.log" 2>&1
   else
     AHK_ATSPI_DUMP="/tmp/m5cache_${mode}.dump" \
@@ -61,8 +62,28 @@ fallback_apps="$(printf '%s' "$fallback_header" | sed -n 's/.*fallback_apps=\([0
 [ "$fallback_cache" = 0 ] && [ -n "$fallback_apps" ] && [ "$fallback_apps" -gt 0 ] \
   || { echo "ATSPI_FALLBACK_NOT_USED header=[$fallback_header]"; exit 1; }
 
+# Fault injection: a 1ms total refresh budget must terminate quickly and mark
+# the partial result instead of blocking on the desktop tree indefinitely.
+pkill -f 'gtk-ok --title CacheWin' 2>/dev/null
+rm -f /tmp/m5cache.out /tmp/m5cache_budget.dump /tmp/m5cache_budget.log
+"$OUT/gtk-ok" --title CacheWin --name CACHE-ENTRY --text CacheText \
+  >/tmp/m5cache_gtk.log 2>&1 &
+GPID=$!
+sleep 4
+start_ms="$(date +%s%3N)"
+AHK_ATSPI_TOTAL_BUDGET_MS=1 AHK_ATSPI_DUMP=/tmp/m5cache_budget.dump \
+  timeout -k 2 5 "$BIN" /tmp/m5cache.ahk >/tmp/m5cache_budget.log 2>&1
+budget_rc=$?
+end_ms="$(date +%s%3N)"
+kill "$GPID" 2>/dev/null; wait "$GPID" 2>/dev/null
+budget_elapsed=$((end_ms - start_ms))
+budget_header="$(head -1 /tmp/m5cache_budget.dump 2>/dev/null)"
+budget_exceeded="$(printf '%s' "$budget_header" | sed -n 's/.*budget_exceeded=\([0-9][0-9]*\).*/\1/p')"
+[ "$budget_rc" = 0 ] && [ "$budget_exceeded" = 1 ] && [ "$budget_elapsed" -lt 5000 ] \
+  || { echo "ATSPI_BUDGET_FAIL rc=$budget_rc elapsed=$budget_elapsed header=[$budget_header]"; exit 1; }
+
 pkill -f 'gtk-ok --title CacheWin' 2>/dev/null
 cat >"$OUT/atspi-cache-summary.json" <<EOF
-{"schema":1,"result":"pass","cache_apps":$cache_apps,"cache_items":$cache_items,"fallback_apps":$fallback_apps,"text":"CacheText"}
+{"schema":1,"result":"pass","cache_apps":$cache_apps,"cache_items":$cache_items,"fallback_apps":$fallback_apps,"budget_ms":1,"budget_exceeded":true,"budget_elapsed_ms":$budget_elapsed,"text":"CacheText"}
 EOF
-echo "ATSPI_CACHE_ORACLE_PASS cache_apps=$cache_apps cache_items=$cache_items fallback_apps=$fallback_apps"
+echo "ATSPI_CACHE_ORACLE_PASS cache_apps=$cache_apps cache_items=$cache_items fallback_apps=$fallback_apps budget_elapsed_ms=$budget_elapsed"

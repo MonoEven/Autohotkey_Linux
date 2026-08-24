@@ -41,9 +41,10 @@ they run on the VM rather than GitHub-hosted runners.
 
 `run_atspi_wintitle_oracle.sh` launches two independent GTK applications with
 same-named controls and proves WinTitle confines lookup to the owning app.
-`run_atspi_cache_oracle.sh` then proves both the Cache.GetItems bulk path and
-an explicitly forced per-application GetChildren fallback while preserving
-UTF-8 text. These require a real GNOME Wayland accessibility session and run on
+`run_atspi_cache_oracle.sh` then proves Cache.GetItems, an explicitly forced
+per-app GetChildren fallback and a 1ms total-budget fault injection (bounded
+partial return) while preserving UTF-8 text. These require a real GNOME
+Wayland accessibility session and run on
 the VM; the scenario `atspi_matrix` additionally requires a non-zero cache
 count before it may pass.
 

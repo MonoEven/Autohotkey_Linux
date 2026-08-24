@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <ctime>
 #include <string>
 #include <vector>
 
@@ -34,6 +35,43 @@ bool sTried = false;
 int sLastCacheApps = 0;
 int sLastFallbackApps = 0;
 int sLastCacheItems = 0;
+int sLastBudgetMs = 0;
+bool sLastBudgetExceeded = false;
+uint64_t sQueryDeadlineUs = 0;
+
+static uint64_t AtspiNowUs()
+{
+	struct timespec ts;
+	if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+		return 0;
+	return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
+}
+
+static bool AtspiBudgetExpired()
+{
+	if (!sQueryDeadlineUs)
+		return false;
+	if (AtspiNowUs() < sQueryDeadlineUs)
+		return false;
+	sLastBudgetExceeded = true;
+	return true;
+}
+
+static int AtspiBoundTimeout(int aRequestedMs)
+{
+	if (!sQueryDeadlineUs)
+		return aRequestedMs;
+	uint64_t now = AtspiNowUs();
+	if (now >= sQueryDeadlineUs)
+	{
+		sLastBudgetExceeded = true;
+		return 0;
+	}
+	uint64_t remain = (sQueryDeadlineUs - now + 999ULL) / 1000ULL;
+	if (remain < (uint64_t)aRequestedMs)
+		return (int)remain;
+	return aRequestedMs;
+}
 
 struct AtspiRef
 {
@@ -52,6 +90,9 @@ DBusMessage *AtspiCall(DBusConnection *bus, const char *aPath, const char *aIfac
 	const char *aMethod, int aTimeoutMs = 3000)
 {
 	if (!bus || !aPath || !*aPath)
+		return nullptr;
+	aTimeoutMs = AtspiBoundTimeout(aTimeoutMs);
+	if (aTimeoutMs <= 0)
 		return nullptr;
 	DBusMessage *msg = dbus_message_new_method_call(REG, aPath, aIface, aMethod);
 	if (!msg)
@@ -74,6 +115,9 @@ DBusMessage *AtspiCallTo(const char *aDest, const char *aPath, const char *aIfac
 	const char *aMethod, int aTimeoutMs = 3000)
 {
 	if (!sBus || !aDest || !*aDest || !aPath || !*aPath)
+		return nullptr;
+	aTimeoutMs = AtspiBoundTimeout(aTimeoutMs);
+	if (aTimeoutMs <= 0)
 		return nullptr;
 	DBusMessage *msg = dbus_message_new_method_call(aDest, aPath, aIface, aMethod);
 	if (!msg)
@@ -127,7 +171,14 @@ std::string GetNameProp(const char *aDest, const char *aPath)
 	}
 	DBusError err;
 	dbus_error_init(&err);
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(sBus, msg, 2000, &err);
+	int timeout = AtspiBoundTimeout(2000);
+	if (timeout <= 0)
+	{
+		dbus_message_unref(msg);
+		dbus_error_free(&err);
+		return std::string();
+	}
+	DBusMessage *rep = dbus_connection_send_with_reply_and_block(sBus, msg, timeout, &err);
 	dbus_message_unref(msg);
 	std::string out;
 	if (rep)
@@ -201,6 +252,8 @@ static bool LoadCacheForApp(const char *aDest)
 	bool valid = true;
 	while (dbus_message_iter_get_arg_type(&arr) != DBUS_TYPE_INVALID)
 	{
+		if (AtspiBudgetExpired())
+			break; // keep already parsed cache entries as a partial result
 		AtspiRef e;
 		if (!ReadCacheItemNew(&arr, aDest, e))
 		{
@@ -242,6 +295,8 @@ static bool RefreshApplications(int aMaxDepth)
 	dbus_message_iter_recurse(&it, &arr);
 	while (dbus_message_iter_get_arg_type(&arr) != DBUS_TYPE_INVALID)
 	{
+		if (AtspiBudgetExpired())
+			break;
 		std::string owner, path;
 		if (ReadRef(&arr, owner, path) && !owner.empty() && !path.empty())
 		{
@@ -255,6 +310,8 @@ static bool RefreshApplications(int aMaxDepth)
 			sTable.push_back(AtspiRef{disp, path, owner});
 			if (!LoadCacheForApp(owner.c_str()))
 			{
+				if (AtspiBudgetExpired())
+					break;
 				++sLastFallbackApps;
 				WalkChildren(owner.c_str(), path.c_str(), 1, aMaxDepth);
 			}
@@ -271,6 +328,8 @@ static bool RefreshApplications(int aMaxDepth)
 // hosts the app's objects (the path is shared with the registry).
 void WalkChildren(const char *aDest, const char *aPath, int aDepth, int aMaxDepth)
 {
+	if (AtspiBudgetExpired())
+		return;
 	if (aDepth > aMaxDepth || aDepth > 32)
 		return;
 	if (sTable.size() > 8192)
@@ -286,6 +345,8 @@ void WalkChildren(const char *aDest, const char *aPath, int aDepth, int aMaxDept
 		dbus_message_iter_recurse(&it, &arr);
 		while (dbus_message_iter_get_arg_type(&arr) != DBUS_TYPE_INVALID)
 		{
+			if (AtspiBudgetExpired())
+				break;
 			std::string name, path;
 			if (ReadRef(&arr, name, path) && !path.empty())
 			{
@@ -406,8 +467,16 @@ int LinuxAtspiRefresh()
 	sLastCacheApps = 0;
 	sLastFallbackApps = 0;
 	sLastCacheItems = 0;
+	sLastBudgetExceeded = false;
 	if (!LinuxAtspiAvailable())
 		return 0;
+	int budget_ms = 2000;
+	if (const char *budget = getenv("AHK_ATSPI_TOTAL_BUDGET_MS"))
+		budget_ms = atoi(budget);
+	if (budget_ms < 1)
+		budget_ms = 1;
+	sLastBudgetMs = budget_ms;
+	sQueryDeadlineUs = AtspiNowUs() + (uint64_t)budget_ms * 1000ULL;
 	int max = 6; // Fallback depth reaches app windows and common controls.
 	if (const char *extra = getenv("AHK_ATSPI_MAXDEPTH"))
 		max = atoi(extra);
@@ -415,6 +484,8 @@ int LinuxAtspiRefresh()
 		max = 1;
 	if (!RefreshApplications(max))
 		WalkChildren(REG, "/org/a11y/atspi/accessible/root", 1, max);
+	AtspiBudgetExpired();
+	sQueryDeadlineUs = 0; // Later GetText/Action calls have their own timeout.
 	// Diagnostics: AHK_ATSPI_DUMP=<path> writes cache/fallback counts and the
 	// flat table (name<TAB>path).  This is also the external bulk-cache oracle.
 	if (const char *dump = getenv("AHK_ATSPI_DUMP"))
@@ -422,8 +493,9 @@ int LinuxAtspiRefresh()
 		FILE *f = fopen(dump, "w");
 		if (f)
 		{
-			fprintf(f, "# cache_apps=%d fallback_apps=%d cache_items=%d nodes=%zu\n",
-				sLastCacheApps, sLastFallbackApps, sLastCacheItems, sTable.size());
+			fprintf(f, "# cache_apps=%d fallback_apps=%d cache_items=%d nodes=%zu budget_ms=%d budget_exceeded=%d\n",
+				sLastCacheApps, sLastFallbackApps, sLastCacheItems, sTable.size(),
+				sLastBudgetMs, sLastBudgetExceeded ? 1 : 0);
 			for (const auto &e : sTable)
 				fprintf(f, "%s\t%s\n", e.name.c_str(), e.path.c_str());
 			fclose(f);
