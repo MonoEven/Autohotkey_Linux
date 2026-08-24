@@ -23,7 +23,7 @@ A small, dependency-free VS Code extension for the native AutoHotkey v2 Linux po
 }
 ```
 
-For Remote SSH, Dev Containers or WSL, install the extension in the remote extension host and point `ahkLinux.runtime` to the runtime in that environment.
+For Remote SSH, Dev Containers or WSL, install the extension in the remote extension host and point `ahkLinux.runtime` to the runtime in that environment. The extension is declared `workspace`-host only and is disabled in untrusted or virtual workspaces because running AHK executes workspace code and requires a native filesystem/process.
 
 ## Task example
 

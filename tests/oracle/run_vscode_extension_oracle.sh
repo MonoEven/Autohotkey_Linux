@@ -17,6 +17,8 @@ USER_DATA=/tmp/ahk-vscode-user
 EXTENSIONS=/tmp/ahk-vscode-extensions
 EVIDENCE=/tmp/ahk-vscode-evidence.json
 RUN_MARKER=/tmp/ahk-vscode-run-marker
+pkill -f "$USER_DATA" 2>/dev/null
+sleep .5
 rm -rf "$WORK" "$USER_DATA" "$EXTENSIONS" "$EVIDENCE" "$RUN_MARKER" /tmp/ahk-vscode.log
 mkdir -p "$WORK/.vscode" "$USER_DATA" "$EXTENSIONS"
 cat >"$WORK/.vscode/settings.json" <<EOF

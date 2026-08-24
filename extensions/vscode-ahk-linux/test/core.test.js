@@ -31,6 +31,9 @@ test('manifest contributes all command handlers implemented by extension', () =>
   }
   assert.equal(manifest.contributes.languages[0].id, 'ahk2');
   assert.equal(manifest.contributes.taskDefinitions[0].type, 'ahk-linux');
+  assert.deepEqual(manifest.extensionKind, ['workspace']);
+  assert.equal(manifest.capabilities.untrustedWorkspaces.supported, false);
+  assert.equal(manifest.capabilities.virtualWorkspaces.supported, false);
 });
 
 test('variable expansion covers workspace and file tokens', () => {

@@ -19,6 +19,19 @@
     "wayland",
     "x11"
   ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Running AutoHotkey scripts executes workspace code. Trust the workspace first."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "A local filesystem and native ahk_core process are required."
+    }
+  },
   "activationEvents": [
     "onLanguage:ahk2",
     "onCommand:ahkLinux.runFile",
