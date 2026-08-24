@@ -32,6 +32,7 @@
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
 #include <cstdlib>
+#include <cerrno>
 #include <cstring>
 #include <cstdio>
 #include <cwchar>
@@ -108,6 +109,13 @@ static bool LinuxCtrlUtf8ToWide(const char *aText, size_t aLength, std::wstring 
 	return true;
 }
 
+static void LinuxCtrlSetLastError(int aError)
+{
+	if (g)
+		g->LastError = (DWORD)aError;
+	SetLastError((DWORD)aError);
+}
+
 static bool LinuxCtrlWideToUtf8(const wchar_t *aText, std::string &aOut)
 {
 	aOut.clear();
@@ -137,6 +145,7 @@ static bool LinuxCtrlAtspiResolveNamed(ResultToken &aResultToken, ExprTokenType 
 		? TokenToString(*aParam[aControlIdx], control_buf, nullptr) : nullptr;
 	if (!control || !*control)
 	{
+		LinuxCtrlSetLastError(EINVAL);
 		aResultToken.Error(_T("The specified AT-SPI control name is empty."), _T(""), ErrorPrototype::Target);
 		return false;
 	}
@@ -152,6 +161,7 @@ static bool LinuxCtrlAtspiResolveNamed(ResultToken &aResultToken, ExprTokenType 
 	if (!LinuxCtrlWideToUtf8(control, control_utf8)
 		|| (title && *title && !LinuxCtrlWideToUtf8(title, title_utf8)))
 	{
+		LinuxCtrlSetLastError(EILSEQ);
 		aResultToken.Error(_T("The AT-SPI control/title could not be encoded as UTF-8."), _T(""), ErrorPrototype::Value);
 		return false;
 	}
@@ -689,6 +699,7 @@ BIF_DECL(BIF_Linux_ControlSetText)
 					while (end && iswspace(*end)) ++end;
 					if (!end || end == text || *end)
 					{
+						LinuxCtrlSetLastError(EINVAL);
 						aResultToken.Error(_T("A numeric value is required for this AT-SPI Value control."), _T(""), ErrorPrototype::Value);
 						return;
 					}
@@ -1233,6 +1244,7 @@ BIF_DECL(BIF_Linux_ControlClick)
 			LinuxFakeButtonEvent(d, btn, true);
 			LinuxFakeButtonEvent(d, btn, false);
 		}
+	LinuxCtrlSetLastError(0);
 	LinuxCtrlDelay();
 }
 
@@ -1462,6 +1474,7 @@ BIF_DECL(BIF_Linux_ControlFindItem)
 				return;
 			}
 		}
+		LinuxCtrlSetLastError(ENOENT);
 		aResultToken.Error(_T("The entry could not be found."), _T(""), ErrorPrototype::Error);
 		return;
 	}
@@ -1491,9 +1504,14 @@ BIF_DECL(BIF_Linux_ControlChooseIndex)
 			return;
 		int idx = (int)TokenToInt64(*aParam[0]);
 		std::vector<std::string> items;
-		if (!LinuxAtspiSelectionGetItems(path.c_str(), items)
-			|| idx < 0 || (size_t)idx > items.size())
+		if (!LinuxAtspiSelectionGetItems(path.c_str(), items))
 		{
+			aResultToken.Error(_T("The AT-SPI control does not expose Selection children."), _T(""), ErrorPrototype::OS);
+			return;
+		}
+		if (idx < 0 || (size_t)idx > items.size())
+		{
+			LinuxCtrlSetLastError(EINVAL);
 			aResultToken.Error(_T("The selection index could not be applied."), _T(""), ErrorPrototype::Error);
 			return;
 		}
@@ -1550,6 +1568,7 @@ BIF_DECL(BIF_Linux_ControlChooseString)
 				return;
 			}
 		}
+		LinuxCtrlSetLastError(ENOENT);
 		aResultToken.Error(_T("The entry could not be found."), _T(""), ErrorPrototype::Error);
 		return;
 	}
@@ -1581,14 +1600,21 @@ BIF_DECL(BIF_Linux_ControlGetChoice)
 			return;
 		int index = -1;
 		std::string name;
-		if (!LinuxAtspiSelectionGetSelected(path.c_str(), index, name) || index < 0)
+		if (!LinuxAtspiSelectionGetSelected(path.c_str(), index, name))
 		{
+			aResultToken.Error(_T("The AT-SPI control does not expose Selection."), _T(""), ErrorPrototype::OS);
+			return;
+		}
+		if (index < 0)
+		{
+			LinuxCtrlSetLastError(ENODATA);
 			aResultToken.Error(_T("No AT-SPI entry is selected."), _T(""), ErrorPrototype::Error);
 			return;
 		}
 		std::wstring wide;
 		if (!LinuxCtrlUtf8ToWide(name.data(), name.size(), wide))
 		{
+			LinuxCtrlSetLastError(EILSEQ);
 			aResultToken.Error(_T("AT-SPI returned invalid UTF-8."));
 			return;
 		}
@@ -1646,6 +1672,7 @@ BIF_DECL(BIF_Linux_ControlGetItems)
 		Array *array = Array::Create();
 		if (!array)
 		{
+			LinuxCtrlSetLastError(ENOMEM);
 			aResultToken.SetValue(_T(""));
 			return;
 		}
@@ -1655,6 +1682,7 @@ BIF_DECL(BIF_Linux_ControlGetItems)
 			if (!LinuxCtrlUtf8ToWide(item.data(), item.size(), wide))
 			{
 				array->Release();
+				LinuxCtrlSetLastError(EILSEQ);
 				aResultToken.Error(_T("AT-SPI returned invalid UTF-8."));
 				return;
 			}

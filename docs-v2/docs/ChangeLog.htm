@@ -141,6 +141,10 @@
     valueChanged; invalid/unsupported controls error explicitly. Also fixed the
     Wayland-only reversed ControlSetText arguments and D-Bus error-reply false
     success.</li>
+  <li><b>M5-C A_LastError bridge:</b> AT-SPI operations now publish per-thread
+    Linux errno values. Real/fault-injected oracles cover success 0, ENOENT 2,
+    EINVAL 22, ENODATA 61, ENOTSUP 95, ENOTCONN 107 and ETIMEDOUT 110, including
+    reading the value inside catch blocks.</li>
   <li><b>M5-C A_ControlSendMode:</b> the writable Linux variable accepts
     <code>focus</code> (existing X11 focus/send/restore behavior) or
     <code>atspi</code>. AT-SPI mode appends plain Unicode text to EditableText

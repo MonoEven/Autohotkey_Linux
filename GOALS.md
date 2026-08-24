@@ -89,6 +89,8 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - M5-C AT-SPI Selection/Value: Wayland ControlChoose/Find/Get* use real Selection
   children; ControlGet/SetText maps scalar widgets to CurrentValue. Qt 6.9.2
   callbacks prove list/slider effects and unsupported/invalid cases error.
+- M5-C A_LastError bridge: AT-SPI operations update per-thread Linux errno codes;
+  Qt/fault oracles prove 0, ENOENT, EINVAL, ENODATA, ENOTSUP, ENOTCONN and ETIMEDOUT.
 - VSC-1/VSC-2 VS Code 0.2.0: syntax/run/tasks/diagnostics/capabilities plus
   Linux DBGp and inline DAP breakpoint/stack/scopes/scalars/stepping; independent
   protocol/DAP oracles and a real VS Code 1.134 extension-host tracker pass.

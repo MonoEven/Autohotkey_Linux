@@ -56,37 +56,78 @@ index3 := ControlGetIndex("QT6-LIST", "AHK Qt6 Probe")
 ControlChooseIndex(0, "QT6-LIST", "AHK Qt6 Probe")
 index0 := ControlGetIndex("QT6-LIST", "AHK Qt6 Probe")
 noChoice := 0
+emptyChoiceError := 0
 try ControlGetChoice("QT6-LIST", "AHK Qt6 Probe")
 catch Error
+{
     noChoice := 1
+    emptyChoiceError := A_LastError
+}
 chooseBra := ControlChooseString("Bra", "QT6-LIST", "AHK Qt6 Probe")
 choiceBra := ControlGetChoice("QT6-LIST", "AHK Qt6 Probe")
 valueBefore := ControlGetText("QT6-SLIDER", "AHK Qt6 Probe")
 ControlSetText("64", "QT6-SLIDER", "AHK Qt6 Probe")
 valueAfter := ControlGetText("QT6-SLIDER", "AHK Qt6 Probe")
+successError := A_LastError
 invalidValue := 0
+invalidValueError := 0
 try ControlSetText("not-a-number", "QT6-SLIDER", "AHK Qt6 Probe")
 catch ValueError
+{
     invalidValue := 1
+    invalidValueError := A_LastError
+}
 unsupportedSelection := 0
+unsupportedSelectionError := 0
 try ControlGetItems("QT6-ENTRY", "AHK Qt6 Probe")
 catch OSError
+{
     unsupportedSelection := 1
+    unsupportedSelectionError := A_LastError
+}
+missingControl := 0
+missingControlError := 0
+try ControlGetItems("QT6-NOT-THERE", "AHK Qt6 Probe")
+catch
+{
+    missingControl := 1
+    missingControlError := A_LastError
+}
 Sleep(400)
 FileAppend("before=" before "`nafter=" after "`nclicked=" clicked
     "`nitems=" items.Length ":" items[1] ":" items[2] ":" items[3]
     "`nfind=" findBravo "`nchoice3=" choice3 "`nindex3=" index3
-    "`nindex0=" index0 "`nnoChoice=" noChoice
+    "`nindex0=" index0 "`nnoChoice=" noChoice ":" emptyChoiceError
     "`nchooseBra=" chooseBra "`nchoiceBra=" choiceBra
-    "`nvalue=" valueBefore ":" valueAfter
-    "`ninvalidValue=" invalidValue "`nunsupportedSelection=" unsupportedSelection "`n", "/tmp/qt6_wayland.out")
+    "`nvalue=" valueBefore ":" valueAfter ":" successError
+    "`ninvalidValue=" invalidValue ":" invalidValueError
+    "`nunsupportedSelection=" unsupportedSelection ":" unsupportedSelectionError
+    "`nmissingControl=" missingControl ":" missingControlError "`n", "/tmp/qt6_wayland.out")
 ExitApp
 EOF
 AHK_ATSPI_DUMP=/tmp/qt6_wayland.dump timeout -k 2 30 "$BIN" /tmp/qt6_wayland.ahk \
   >/tmp/qt6_wayland_ahk.log 2>&1
 rc=$?
+cat >/tmp/qt6_budget_error.ahk <<'EOF'
+#Requires AutoHotkey v2.0
+caught := 0, code := 0
+try ControlGetItems("QT6-NOT-THERE", "AHK Qt6 Probe")
+catch
+{
+    caught := 1
+    code := A_LastError
+}
+FileAppend("caught=" caught " code=" code "`n", "/tmp/qt6_budget_error.out")
+ExitApp
+EOF
+rm -f /tmp/qt6_budget_error.out
+AHK_ATSPI_TOTAL_BUDGET_MS=1 timeout -k 2 20 "$BIN" /tmp/qt6_budget_error.ahk \
+  >/tmp/qt6_budget_error.log 2>&1
+budget_rc=$?
 kill "$QPID" 2>/dev/null; wait "$QPID" 2>/dev/null
 [ "$rc" = 0 ] || { echo QT6_WAYLAND_AHK_FAIL; cat /tmp/qt6_wayland_ahk.log; exit 1; }
+[ "$budget_rc" = 0 ] && grep -q '^caught=1 code=110$' /tmp/qt6_budget_error.out \
+  || { echo QT6_BUDGET_LASTERROR_FAIL; cat /tmp/qt6_budget_error.out /tmp/qt6_budget_error.log; exit 1; }
 grep -q '^before=你好-Qt6$' /tmp/qt6_wayland.out \
   || { echo QT6_TEXT_READ_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
 grep -q '^after=你好-Qt6-追加$' /tmp/qt6_wayland.out \
@@ -105,7 +146,7 @@ grep -q '^index3=3$' /tmp/qt6_wayland.out \
   || { echo QT6_SELECTION_INDEX_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
 grep -q '^index0=0$' /tmp/qt6_wayland.out \
   || { echo QT6_SELECTION_CLEAR_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
-grep -q '^noChoice=1$' /tmp/qt6_wayland.out \
+grep -q '^noChoice=1:61$' /tmp/qt6_wayland.out \
   || { echo QT6_SELECTION_EMPTY_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
 grep -q '^chooseBra=2$' /tmp/qt6_wayland.out \
   || { echo QT6_SELECTION_STRING_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
@@ -113,16 +154,37 @@ grep -q '^choiceBra=Bravo$' /tmp/qt6_wayland.out \
   || { echo QT6_SELECTION_FINAL_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
 grep -q '^Bravo$' /tmp/qt6-probe-selection \
   || { echo QT6_SELECTION_MARKER_FAIL; cat /tmp/qt6-probe-selection; exit 1; }
-grep -q '^value=25:64$' /tmp/qt6_wayland.out \
+grep -q '^value=25:64:0$' /tmp/qt6_wayland.out \
   || { echo QT6_VALUE_API_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
 grep -q '^64$' /tmp/qt6-probe-value \
   || { echo QT6_VALUE_MARKER_FAIL; cat /tmp/qt6-probe-value; exit 1; }
-grep -q '^invalidValue=1$' /tmp/qt6_wayland.out \
+grep -q '^invalidValue=1:22$' /tmp/qt6_wayland.out \
   || { echo QT6_VALUE_ERROR_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
-grep -q '^unsupportedSelection=1$' /tmp/qt6_wayland.out \
+grep -q '^unsupportedSelection=1:95$' /tmp/qt6_wayland.out \
   || { echo QT6_SELECTION_UNSUPPORTED_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
+grep -q '^missingControl=1:2$' /tmp/qt6_wayland.out \
+  || { echo QT6_MISSING_CONTROL_ERROR_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
+cat >/tmp/qt6_bus_error.ahk <<'EOF'
+#Requires AutoHotkey v2.0
+caught := 0, code := 0
+try ControlGetItems("ANY", "ANY")
+catch OSError
+{
+    caught := 1
+    code := A_LastError
+}
+FileAppend("caught=" caught " code=" code "`n", "/tmp/qt6_bus_error.out")
+ExitApp
+EOF
+rm -f /tmp/qt6_bus_error.out /tmp/ahk-no-session-bus
+DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/ahk-no-session-bus \
+  XDG_SESSION_TYPE=wayland timeout -k 2 20 "$BIN" /tmp/qt6_bus_error.ahk \
+  >/tmp/qt6_bus_error.log 2>&1
+bus_rc=$?
+[ "$bus_rc" = 0 ] && grep -q '^caught=1 code=107$' /tmp/qt6_bus_error.out \
+  || { echo QT6_BUS_LASTERROR_FAIL; cat /tmp/qt6_bus_error.out /tmp/qt6_bus_error.log; exit 1; }
 header="$(head -1 /tmp/qt6_wayland.dump 2>/dev/null)"
 cat >"$OUT/qt6-capture-summary.json" <<EOF
-{"schema":1,"result":"pass","qt_version":"$(pkg-config --modversion Qt6Widgets)","x11_window_count":1,"wayland_before":"你好-Qt6","wayland_after":"你好-Qt6-追加","action_text":"clicked-Qt6","selection_items":["Alpha","Bravo","世界"],"selection_final":"Bravo","value_before":25,"value_after":64,"atspi_header":"$header"}
+{"schema":1,"result":"pass","qt_version":"$(pkg-config --modversion Qt6Widgets)","x11_window_count":1,"wayland_before":"你好-Qt6","wayland_after":"你好-Qt6-追加","action_text":"clicked-Qt6","selection_items":["Alpha","Bravo","世界"],"selection_final":"Bravo","value_before":25,"value_after":64,"last_error":{"success":0,"enoent":2,"einval":22,"enodata":61,"enotsup":95,"enotconn":107,"etimedout":110},"atspi_header":"$header"}
 EOF
-echo "QT6_CAPTURE_ORACLE_PASS version=$(pkg-config --modversion Qt6Widgets) x11=1 atspi=text+action+selection+value"
+echo "QT6_CAPTURE_ORACLE_PASS version=$(pkg-config --modversion Qt6Widgets) x11=1 atspi=text+action+selection+value last_error=0,2,22,61,95,107,110"

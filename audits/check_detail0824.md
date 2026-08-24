@@ -674,8 +674,11 @@
   抢焦点。GNOME oracle 写出 `Base-世界`，同时验证默认/非法值/复杂语法/focus
   无 X 路径；CI 增 4 个 BIV 契约断言。
 - **M5-C 第五项（Selection/Value）已交付**：见§B；Qt真实控件与进程外
-  callback markers双重证明。**未完成**：pending-call + 主循环异步化、公开
-  A_LastError、IME 集成。
+  callback markers双重证明。
+- **M5-C 第六项（A_LastError bridge）已交付**：公开BIV原本已存在且可写；
+  本批让AT-SPI每个公共操作更新当前线程Linux errno。Qt/故障注入断言成功0、
+  ENOENT=2、EINVAL=22、ENODATA=61、ENOTSUP=95、ENOTCONN=107、
+  ETIMEDOUT=110，catch块内可读。**未完成**：pending-call + 主循环异步化、IME。
 - **落点文件**：`core_atspi_linux.cpp/.h`、`core_ctrl_linux.cpp`、
   `tests/oracle/gtk_ok.c`、`run_atspi_wintitle_oracle.sh`、
   `run_atspi_cache_oracle.sh`、`scenarios/atspi_matrix/run_matrix.sh`。
@@ -689,7 +692,8 @@
    [waydriver 实测同一结论](https://docs.rs/waydriver/latest/waydriver/atspi/fn.snapshot_tree_from_cache.html)）；
    需要 bounds 时对命中节点单独补 `Component.GetExtents`；
 3. **异步化 + 预算**：所有 AT-SPI D-Bus 调用改 pending-call + 主循环集成，
-   单调用 500ms、单查询总 2s 预算，超时返回部分结果 + `A_LastError`；
+   单调用 500ms、单查询总 2s 预算，超时返回部分结果；`A_LastError`
+   errno桥接已先行交付；
    防御 LibreOffice Calc 式 2^31 children（[上游已知脚枪](https://lists.freedesktop.org/archives/libreoffice/2024-June/092049.html)）
    ——子节点数超阈值即剪枝；
 4. **WinTitle 限定**：先解析 WinTitle→PID/frame，再在对应 application

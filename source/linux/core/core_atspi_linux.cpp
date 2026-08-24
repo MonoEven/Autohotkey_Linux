@@ -14,8 +14,10 @@
 //   - Text.GetText(0, -1) -> s ; EditableText.SetTextContents(s)
 //   - Action.GetNactions/GetName(i)/DoAction(i)
 #include "../../stdafx.h"
+#include "../../globaldata.h"
 #include "core_atspi_linux.h"
 #include <dbus/dbus.h>
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -38,6 +40,58 @@ int sLastCacheItems = 0;
 int sLastBudgetMs = 0;
 bool sLastBudgetExceeded = false;
 uint64_t sQueryDeadlineUs = 0;
+
+static uint64_t AtspiNowUs();
+
+static void AtspiSetLastError(int aError)
+{
+	if (g)
+		g->LastError = (DWORD)aError;
+	SetLastError((DWORD)aError);
+}
+
+static int AtspiFailureCode(int aFallback = EIO)
+{
+	if (sLastBudgetExceeded)
+		return ETIMEDOUT;
+	if (sQueryDeadlineUs)
+	{
+		uint64_t now = AtspiNowUs();
+		if (now && now >= sQueryDeadlineUs)
+			return ETIMEDOUT;
+	}
+	return aFallback;
+}
+
+static bool AtspiFail(int aError)
+{
+	AtspiSetLastError(aError);
+	return false;
+}
+
+static bool AtspiSucceed()
+{
+	AtspiSetLastError(0);
+	return true;
+}
+
+static int AtspiDbusErrorCode(const DBusError &aError, int aFallback = EIO)
+{
+	if (!dbus_error_is_set(&aError) || !aError.name)
+		return AtspiFailureCode(aFallback);
+	if (!strcmp(aError.name, DBUS_ERROR_NO_REPLY)
+		|| !strcmp(aError.name, DBUS_ERROR_TIMEOUT))
+		return ETIMEDOUT;
+	if (!strcmp(aError.name, DBUS_ERROR_DISCONNECTED)
+		|| !strcmp(aError.name, DBUS_ERROR_SERVICE_UNKNOWN)
+		|| !strcmp(aError.name, DBUS_ERROR_NAME_HAS_NO_OWNER))
+		return ENOTCONN;
+	if (!strcmp(aError.name, DBUS_ERROR_UNKNOWN_INTERFACE)
+		|| !strcmp(aError.name, DBUS_ERROR_UNKNOWN_METHOD)
+		|| !strcmp(aError.name, DBUS_ERROR_UNKNOWN_PROPERTY))
+		return ENOTSUP;
+	return aFallback;
+}
 
 static uint64_t AtspiNowUs()
 {
@@ -487,11 +541,14 @@ bool InitOnce()
 
 bool LinuxAtspiAvailable()
 {
-	return InitOnce() && sBus != nullptr;
+	bool available = InitOnce() && sBus != nullptr;
+	AtspiSetLastError(available ? 0 : ENOTCONN);
+	return available;
 }
 
 int LinuxAtspiRefresh()
 {
+	AtspiSetLastError(0);
 	sTable.clear();
 	sLastCacheApps = 0;
 	sLastFallbackApps = 0;
@@ -532,6 +589,7 @@ int LinuxAtspiRefresh()
 			fclose(f);
 		}
 	}
+	AtspiSetLastError(sLastBudgetExceeded ? ETIMEDOUT : 0);
 	return (int)sTable.size();
 }
 
@@ -619,22 +677,22 @@ static bool AtspiIsAppRoot(const AtspiRef &e)
 bool LinuxAtspiFindByName(const char *aName, std::string &aOutPath, const char *aWindowTitle)
 {
 	if (!aName || !*aName)
-		return false;
+		return AtspiFail(EINVAL);
 	aOutPath.clear();
 	std::string n(aName);
 	std::string scope_dest;
 	AtspiDumpMatches(aWindowTitle, aName);
 	if (aWindowTitle && *aWindowTitle)
 		if (!AtspiScopeForWindowTitle(aWindowTitle, scope_dest))
-			return false; // the named window is not on the a11y tree
+			return AtspiFail(sLastBudgetExceeded ? ETIMEDOUT : ENOENT); // named window absent
 	auto in_scope = [&](const AtspiRef &e) {
 		return scope_dest.empty() || e.dest == scope_dest;
 	};
 	for (const auto &e : sTable)
-		if (!AtspiIsAppRoot(e) && in_scope(e) && e.name == n) { aOutPath = e.dest + "|" + e.path; return true; }
+		if (!AtspiIsAppRoot(e) && in_scope(e) && e.name == n) { aOutPath = e.dest + "|" + e.path; return AtspiSucceed(); }
 	for (const auto &e : sTable)
-		if (!AtspiIsAppRoot(e) && in_scope(e) && e.name.find(n) != std::string::npos) { aOutPath = e.dest + "|" + e.path; return true; }
-	return false;
+		if (!AtspiIsAppRoot(e) && in_scope(e) && e.name.find(n) != std::string::npos) { aOutPath = e.dest + "|" + e.path; return AtspiSucceed(); }
+	return AtspiFail(sLastBudgetExceeded ? ETIMEDOUT : ENOENT);
 }
 
 // Split a "dest|path" handle produced by LinuxAtspiFindByName.
@@ -661,12 +719,14 @@ static bool AtspiGetProperty(const std::string &aDest, const std::string &aPath,
 
 bool LinuxAtspiGetText(const char *aPath, std::string &aText)
 {
-	if (!aPath || !*aPath || !LinuxAtspiAvailable())
+	if (!aPath || !*aPath)
+		return AtspiFail(EINVAL);
+	if (!LinuxAtspiAvailable())
 		return false;
 	std::string dest, path;
 	SplitHandle(aPath, dest, path);
 	if (AtspiKnownWithoutInterface(dest, path, "org.a11y.atspi.Text"))
-		return false;
+		return AtspiFail(ENOTSUP);
 	// Text.GetText(start, end) with start=0, end=-1 (0x7fffffff).
 	DBusMessage *msg = dbus_message_new_method_call(dest.c_str(), path.c_str(), "org.a11y.atspi.Text", "GetText");
 	if (!msg)
@@ -683,8 +743,9 @@ bool LinuxAtspiGetText(const char *aPath, std::string &aText)
 	dbus_message_unref(msg);
 	if (!rep)
 	{
+		int code = AtspiDbusErrorCode(err);
 		dbus_error_free(&err);
-		return false;
+		return AtspiFail(code);
 	}
 	const char *s = nullptr;
 	bool ok = false;
@@ -695,17 +756,20 @@ bool LinuxAtspiGetText(const char *aPath, std::string &aText)
 	}
 	dbus_message_unref(rep);
 	dbus_error_free(&err);
+	AtspiSetLastError(ok ? 0 : EPROTO);
 	return ok;
 }
 
 bool LinuxAtspiSetText(const char *aPath, const char *aText)
 {
-	if (!aPath || !*aPath || !LinuxAtspiAvailable())
+	if (!aPath || !*aPath || !aText)
+		return AtspiFail(EINVAL);
+	if (!LinuxAtspiAvailable())
 		return false;
 	std::string dest, path;
 	SplitHandle(aPath, dest, path);
 	if (AtspiKnownWithoutInterface(dest, path, "org.a11y.atspi.EditableText"))
-		return false;
+		return AtspiFail(ENOTSUP);
 	DBusMessage *msg = dbus_message_new_method_call(dest.c_str(), path.c_str(), "org.a11y.atspi.EditableText", "SetTextContents");
 	if (!msg)
 		return false;
@@ -730,13 +794,17 @@ bool LinuxAtspiSetText(const char *aPath, const char *aText)
 		}
 		dbus_message_unref(rep);
 	}
+	int code = ok ? 0 : AtspiDbusErrorCode(err, EIO);
 	dbus_error_free(&err);
+	AtspiSetLastError(code);
 	return ok;
 }
 
 bool LinuxAtspiDoAction(const char *aPath, int aIndex, const char *aNameOrNull)
 {
-	if (!aPath || !*aPath || !LinuxAtspiAvailable())
+	if (!aPath || !*aPath)
+		return AtspiFail(EINVAL);
+	if (!LinuxAtspiAvailable())
 		return false;
 	std::string dest, path;
 	SplitHandle(aPath, dest, path);
@@ -775,7 +843,7 @@ bool LinuxAtspiDoAction(const char *aPath, int aIndex, const char *aNameOrNull)
 			dbus_message_unref(m);
 		}
 		if (!found)
-			return false;
+			return AtspiFail(n > 0 ? ENOENT : ENOTSUP);
 	}
 	DBusMessage *m = dbus_message_new_method_call(dest.c_str(), path.c_str(), "org.a11y.atspi.Action", "DoAction");
 	if (!m)
@@ -792,7 +860,9 @@ bool LinuxAtspiDoAction(const char *aPath, int aIndex, const char *aNameOrNull)
 		dbus_message_get_args(rep, nullptr, DBUS_TYPE_BOOLEAN, &result, DBUS_TYPE_INVALID);
 		dbus_message_unref(rep);
 	}
+	int code = result != FALSE ? 0 : AtspiDbusErrorCode(err, EIO);
 	dbus_error_free(&err);
+	AtspiSetLastError(code);
 	return result != FALSE;
 }
 
@@ -905,26 +975,30 @@ static bool AtspiSelectionCount(const std::string &aHandle, int &aCount)
 bool LinuxAtspiSelectionGetItems(const char *aPath, std::vector<std::string> &aItems)
 {
 	aItems.clear();
-	if (!aPath || !*aPath || !LinuxAtspiAvailable())
+	if (!aPath || !*aPath)
+		return AtspiFail(EINVAL);
+	if (!LinuxAtspiAvailable())
 		return false;
 	int selected_count = 0;
 	if (!AtspiSelectionCount(aPath, selected_count))
-		return false;
+		return AtspiFail(ENOTSUP);
 	std::vector<AtspiRef> children;
 	if (!AtspiGetChildren(aPath, children))
-		return false;
+		return AtspiFail(AtspiFailureCode(EIO));
 	for (const auto &child : children)
 		aItems.push_back(child.name);
-	return true;
+	return AtspiSucceed();
 }
 
 bool LinuxAtspiSelectionSelect(const char *aPath, int aZeroBasedIndex)
 {
-	if (!aPath || !*aPath || !LinuxAtspiAvailable() || aZeroBasedIndex < -1)
+	if (!aPath || !*aPath || aZeroBasedIndex < -1)
+		return AtspiFail(EINVAL);
+	if (!LinuxAtspiAvailable())
 		return false;
 	int selected_count = 0;
 	if (!AtspiSelectionCount(aPath, selected_count))
-		return false;
+		return AtspiFail(ENOTSUP);
 	std::string dest, path;
 	SplitHandle(aPath, dest, path);
 	const char *method = aZeroBasedIndex < 0 ? "ClearSelection" : "SelectChild";
@@ -950,7 +1024,9 @@ bool LinuxAtspiSelectionSelect(const char *aPath, int aZeroBasedIndex)
 		dbus_message_get_args(reply, nullptr, DBUS_TYPE_BOOLEAN, &result, DBUS_TYPE_INVALID);
 		dbus_message_unref(reply);
 	}
+	int code = result != FALSE ? 0 : AtspiDbusErrorCode(err, EIO);
 	dbus_error_free(&err);
+	AtspiSetLastError(code);
 	return result != FALSE;
 }
 
@@ -958,24 +1034,26 @@ bool LinuxAtspiSelectionGetSelected(const char *aPath, int &aZeroBasedIndex, std
 {
 	aZeroBasedIndex = -1;
 	aName.clear();
-	if (!aPath || !*aPath || !LinuxAtspiAvailable())
+	if (!aPath || !*aPath)
+		return AtspiFail(EINVAL);
+	if (!LinuxAtspiAvailable())
 		return false;
 	int selected_count = 0;
 	if (!AtspiSelectionCount(aPath, selected_count))
-		return false;
+		return AtspiFail(ENOTSUP);
 	if (!selected_count)
-		return true;
+		return AtspiSucceed();
 	std::string dest, path;
 	SplitHandle(aPath, dest, path);
 	DBusMessage *message = dbus_message_new_method_call(dest.c_str(), path.c_str(),
 		"org.a11y.atspi.Selection", "GetSelectedChild");
 	if (!message)
-		return false;
+		return AtspiFail(ENOMEM);
 	int selected_index = 0;
 	if (!dbus_message_append_args(message, DBUS_TYPE_INT32, &selected_index, DBUS_TYPE_INVALID))
 	{
 		dbus_message_unref(message);
-		return false;
+		return AtspiFail(EINVAL);
 	}
 	DBusError err;
 	dbus_error_init(&err);
@@ -985,9 +1063,9 @@ bool LinuxAtspiSelectionGetSelected(const char *aPath, int &aZeroBasedIndex, std
 	dbus_message_unref(message);
 	if (!reply)
 	{
+		int code = AtspiDbusErrorCode(err, EIO);
 		dbus_error_free(&err);
-		std::vector<AtspiRef> children;
-		return AtspiGetChildren(aPath, children); // supported but currently empty
+		return AtspiFail(code);
 	}
 	DBusMessageIter it;
 	std::string child_dest, child_path;
@@ -995,9 +1073,9 @@ bool LinuxAtspiSelectionGetSelected(const char *aPath, int &aZeroBasedIndex, std
 	dbus_message_unref(reply);
 	dbus_error_free(&err);
 	if (!ok)
-		return false;
+		return AtspiFail(EPROTO);
 	if (child_path.empty() || child_path == "/org/a11y/atspi/null")
-		return true;
+		return AtspiSucceed();
 	if (child_dest.empty()) child_dest = dest;
 	if (const AtspiRef *cached = AtspiFindRef(child_dest, child_path))
 		aName = cached->name;
@@ -1022,6 +1100,7 @@ bool LinuxAtspiSelectionGetSelected(const char *aPath, int &aZeroBasedIndex, std
 					break;
 				}
 	}
+	AtspiSetLastError(aZeroBasedIndex >= 0 ? 0 : EPROTO);
 	return aZeroBasedIndex >= 0;
 }
 
@@ -1051,15 +1130,17 @@ static bool AtspiGetProperty(const std::string &aDest, const std::string &aPath,
 
 bool LinuxAtspiGetValue(const char *aPath, double &aValue, std::string *aText)
 {
-	if (!aPath || !*aPath || !LinuxAtspiAvailable())
+	if (!aPath || !*aPath)
+		return AtspiFail(EINVAL);
+	if (!LinuxAtspiAvailable())
 		return false;
 	std::string dest, path;
 	SplitHandle(aPath, dest, path);
 	if (AtspiKnownWithoutInterface(dest, path, "org.a11y.atspi.Value"))
-		return false;
+		return AtspiFail(ENOTSUP);
 	DBusMessage *reply = nullptr;
 	if (!AtspiGetProperty(dest, path, "org.a11y.atspi.Value", "CurrentValue", &reply))
-		return false;
+		return AtspiFail(AtspiFailureCode(ENOTSUP));
 	DBusMessageIter it, variant;
 	bool ok = dbus_message_iter_init(reply, &it)
 		&& dbus_message_iter_get_arg_type(&it) == DBUS_TYPE_VARIANT;
@@ -1071,7 +1152,7 @@ bool LinuxAtspiGetValue(const char *aPath, double &aValue, std::string *aText)
 	}
 	dbus_message_unref(reply);
 	if (!ok)
-		return false;
+		return AtspiFail(EPROTO);
 	if (aText)
 	{
 		aText->clear();
@@ -1097,17 +1178,19 @@ bool LinuxAtspiGetValue(const char *aPath, double &aValue, std::string *aText)
 			*aText = number;
 		}
 	}
-	return true;
+	return AtspiSucceed();
 }
 
 bool LinuxAtspiSetValue(const char *aPath, double aValue)
 {
-	if (!aPath || !*aPath || !LinuxAtspiAvailable())
+	if (!aPath || !*aPath)
+		return AtspiFail(EINVAL);
+	if (!LinuxAtspiAvailable())
 		return false;
 	std::string dest, path;
 	SplitHandle(aPath, dest, path);
 	if (AtspiKnownWithoutInterface(dest, path, "org.a11y.atspi.Value"))
-		return false;
+		return AtspiFail(ENOTSUP);
 	DBusMessage *message = dbus_message_new_method_call(dest.c_str(), path.c_str(),
 		"org.freedesktop.DBus.Properties", "Set");
 	if (!message)
@@ -1134,6 +1217,8 @@ bool LinuxAtspiSetValue(const char *aPath, double aValue)
 	dbus_message_unref(message);
 	ok = reply && dbus_message_get_type(reply) == DBUS_MESSAGE_TYPE_METHOD_RETURN;
 	if (reply) dbus_message_unref(reply);
+	int code = ok ? 0 : AtspiDbusErrorCode(err, EIO);
 	dbus_error_free(&err);
+	AtspiSetLastError(code);
 	return ok;
 }

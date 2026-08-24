@@ -962,7 +962,8 @@ VirtualHeight := <a href="lib/SysGet.htm">SysGet</a>(79)
   <tr id="LastError">
     <td>A_LastError</td>
     <td><p>This is usually the result from the OS's GetLastError() function after the script calls certain functions, including <a href="lib/DllCall.htm">DllCall</a>, <a href="lib/Run.htm">Run/RunWait</a>, File/Ini/Reg functions (where documented) and possibly others. A_LastError is a number between 0 and 4294967295 (always formatted as decimal, not hexadecimal). Zero (0) means success, but any other number means the call failed. Each number corresponds to a specific error condition. See <a href="lib/Error.htm#OSError">OSError</a> for how to get the localized error description text, or search <a href="https://www.microsoft.com">www.microsoft.com</a> for "system error codes" to get a list. A_LastError is a per-thread setting; that is, interruptions by other <a href="misc/Threads.htm">threads</a> cannot change it.</p>
-    <p>Assigning a value to A_LastError also causes the OS's SetLastError() function to be called.</p></td>
+    <p>Assigning a value to A_LastError also causes the OS's SetLastError() function to be called.</p>
+    <p><b>Linux port:</b> native operations use Linux <code>errno</code> values. AT-SPI Control operations set 0 on success; common failures include ENOENT=2 (no match), EINVAL=22 (invalid value/index), ENODATA=61 (no selection), ENOTSUP=95 (missing interface), ENOTCONN=107 (accessibility bus unavailable), and ETIMEDOUT=110 (refresh/call budget expired). These values remain per-thread and are available inside the corresponding catch block.</p></td>
   </tr>
   <tr id="TrueFalse">
     <td>True<br />False</td>

@@ -375,7 +375,8 @@ Highlights of this release:</p>
     application-scoped WinTitle matching and a 2s total budget are active.
     Selection-backed list APIs and Value-backed scalar Get/Set are real (Qt
     QListWidget/QSlider callbacks prove effects and clear/error semantics).
-    Real-host tests cover GTK 3.24 and Qt 6.9. VS Code/Electron 1.134 exposes
+    Each operation updates <code>A_LastError</code> with Linux errno (0 success;
+    match/interface/bus/timeout failures have stable codes). Real-host tests cover GTK 3.24 and Qt 6.9. VS Code/Electron 1.134 exposes
     its window/Document but not Monaco source content (window-only support).</li>
   <li><b>VS Code extension product</b>: <code>extensions/vscode-ahk-linux/</code>
     packages syntax, run/stop/tasks, diagnostics and a backend capability tree

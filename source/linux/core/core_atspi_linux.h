@@ -20,6 +20,9 @@
 
 #pragma once
 
+// Public operations update A_LastError with Linux errno values: 0 success,
+// ENOENT no match, ENOTSUP missing interface, ETIMEDOUT budget/call timeout,
+// ENOTCONN unavailable bus, EINVAL invalid input, EIO/EPROTO transport/protocol.
 // True when the at-spi bus is reachable and the registry replied.
 bool LinuxAtspiAvailable();
 
