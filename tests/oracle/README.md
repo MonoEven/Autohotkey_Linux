@@ -63,9 +63,10 @@ packaged 0.2.0 VSIX into VS Code
 and proves extension-host activation, language/command registration, `--diag`
 parsing and real script execution, then observes breakpoint/step/scalar variables
 and termination through VS Code's DebugAdapterTracker. `run_gui_host_matrix.sh` then aggregates
-independent GTK3, Qt6 and VS Code/Electron capture oracles; see
-`GUI_HOST_MATRIX.md` for the exact versions and the explicit Monaco-content
-limitation.
+independent GTK3, Qt6 and VS Code/Electron capture oracles. The Qt lane also
+uses QListWidget/QSlider callbacks to prove AT-SPI Selection and Value produce
+real toolkit changes; see `GUI_HOST_MATRIX.md` for versions and the explicit
+Monaco-content limitation.
 
 The physical-layer VM lane uses `tools/linux/uinput-inject.c`: its virtual
 keyboard deliberately has no AHK identity, so evdev sees an independent input

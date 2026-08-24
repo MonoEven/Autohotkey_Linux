@@ -48,3 +48,15 @@ bool LinuxAtspiSetText(const char *aPath, const char *aText);
 // Invoke an Action by index (0-based) or by name (Action.GetName(i));
 // returns the DoAction result.
 bool LinuxAtspiDoAction(const char *aPath, int aIndex, const char *aNameOrNull);
+
+// Selection interface. Items are returned in Accessible child order;
+// SelectChild uses a zero-based index, or -1 to ClearSelection. GetSelected
+// returns true for a supported Selection object and sets aIndex=-1 when empty.
+bool LinuxAtspiSelectionGetItems(const char *aPath, std::vector<std::string> &aItems);
+bool LinuxAtspiSelectionSelect(const char *aPath, int aZeroBasedIndex);
+bool LinuxAtspiSelectionGetSelected(const char *aPath, int &aZeroBasedIndex, std::string &aName);
+
+// Value interface (org.a11y.atspi.Value CurrentValue readwrite double). The
+// optional text is Value.Text when available, otherwise a stable numeric form.
+bool LinuxAtspiGetValue(const char *aPath, double &aValue, std::string *aText = nullptr);
+bool LinuxAtspiSetValue(const char *aPath, double aValue);

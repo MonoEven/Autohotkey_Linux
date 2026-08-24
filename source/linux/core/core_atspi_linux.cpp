@@ -653,12 +653,20 @@ static void SplitHandle(const std::string &aHandle, std::string &aDest, std::str
 	}
 }
 
+static const AtspiRef *AtspiFindRef(const std::string &aDest, const std::string &aPath);
+static bool AtspiKnownWithoutInterface(const std::string &aDest, const std::string &aPath,
+	const char *aInterface);
+static bool AtspiGetProperty(const std::string &aDest, const std::string &aPath,
+	const char *aIface, const char *aProperty, DBusMessage **aReply);
+
 bool LinuxAtspiGetText(const char *aPath, std::string &aText)
 {
 	if (!aPath || !*aPath || !LinuxAtspiAvailable())
 		return false;
 	std::string dest, path;
 	SplitHandle(aPath, dest, path);
+	if (AtspiKnownWithoutInterface(dest, path, "org.a11y.atspi.Text"))
+		return false;
 	// Text.GetText(start, end) with start=0, end=-1 (0x7fffffff).
 	DBusMessage *msg = dbus_message_new_method_call(dest.c_str(), path.c_str(), "org.a11y.atspi.Text", "GetText");
 	if (!msg)
@@ -696,6 +704,8 @@ bool LinuxAtspiSetText(const char *aPath, const char *aText)
 		return false;
 	std::string dest, path;
 	SplitHandle(aPath, dest, path);
+	if (AtspiKnownWithoutInterface(dest, path, "org.a11y.atspi.EditableText"))
+		return false;
 	DBusMessage *msg = dbus_message_new_method_call(dest.c_str(), path.c_str(), "org.a11y.atspi.EditableText", "SetTextContents");
 	if (!msg)
 		return false;
@@ -708,9 +718,18 @@ bool LinuxAtspiSetText(const char *aPath, const char *aText)
 	dbus_error_init(&err);
 	DBusMessage *rep = dbus_connection_send_with_reply_and_block(sBus, msg, 3000, &err);
 	dbus_message_unref(msg);
-	bool ok = rep != nullptr;
+	bool ok = rep && dbus_message_get_type(rep) == DBUS_MESSAGE_TYPE_METHOD_RETURN;
 	if (rep)
+	{
+		if (ok)
+		{
+			dbus_bool_t result = TRUE; // Some toolkit versions return void, others bool.
+			if (dbus_message_has_signature(rep, "b"))
+				dbus_message_get_args(rep, nullptr, DBUS_TYPE_BOOLEAN, &result, DBUS_TYPE_INVALID);
+			ok = result != FALSE;
+		}
 		dbus_message_unref(rep);
+	}
 	dbus_error_free(&err);
 	return ok;
 }
@@ -767,12 +786,354 @@ bool LinuxAtspiDoAction(const char *aPath, int aIndex, const char *aNameOrNull)
 	dbus_error_init(&err);
 	DBusMessage *rep = dbus_connection_send_with_reply_and_block(sBus, m, 5000, &err);
 	dbus_message_unref(m);
-	bool ok = false;
+	dbus_bool_t result = FALSE;
 	if (rep)
 	{
-		dbus_message_get_args(rep, nullptr, DBUS_TYPE_BOOLEAN, &ok, DBUS_TYPE_INVALID);
+		dbus_message_get_args(rep, nullptr, DBUS_TYPE_BOOLEAN, &result, DBUS_TYPE_INVALID);
 		dbus_message_unref(rep);
 	}
+	dbus_error_free(&err);
+	return result != FALSE;
+}
+
+static const AtspiRef *AtspiFindRef(const std::string &aDest, const std::string &aPath)
+{
+	for (const auto &entry : sTable)
+		if (entry.dest == aDest && entry.path == aPath)
+			return &entry;
+	return nullptr;
+}
+
+static bool AtspiKnownWithoutInterface(const std::string &aDest, const std::string &aPath,
+	const char *aInterface)
+{
+	const AtspiRef *entry = AtspiFindRef(aDest, aPath);
+	if (!entry || entry->interfaces.empty())
+		return false; // fallback tree has no interface metadata: probe normally.
+	std::string wanted(aInterface ? aInterface : "");
+	size_t start = 0;
+	while (start <= entry->interfaces.size())
+	{
+		size_t end = entry->interfaces.find(',', start);
+		if (entry->interfaces.compare(start, end == std::string::npos
+			? std::string::npos : end - start, wanted) == 0)
+			return false;
+		if (end == std::string::npos) break;
+		start = end + 1;
+	}
+	return true;
+}
+
+static bool AtspiGetChildren(const std::string &aHandle, std::vector<AtspiRef> &aChildren)
+{
+	aChildren.clear();
+	std::string dest, path;
+	SplitHandle(aHandle, dest, path);
+	DBusMessage *reply = AtspiCallTo(dest.c_str(), path.c_str(), IFACE, "GetChildren");
+	if (!reply)
+		return false;
+	DBusMessageIter it;
+	bool ok = dbus_message_iter_init(reply, &it)
+		&& dbus_message_iter_get_arg_type(&it) == DBUS_TYPE_ARRAY;
+	if (ok)
+	{
+		DBusMessageIter array;
+		dbus_message_iter_recurse(&it, &array);
+		while (dbus_message_iter_get_arg_type(&array) == DBUS_TYPE_STRUCT)
+		{
+			std::string child_dest, child_path;
+			if (ReadRef(&array, child_dest, child_path) && !child_path.empty()
+				&& child_path != "/org/a11y/atspi/null")
+			{
+				if (child_dest.empty()) child_dest = dest;
+				AtspiRef child;
+				child.dest = child_dest;
+				child.path = child_path;
+				if (const AtspiRef *cached = AtspiFindRef(child_dest, child_path))
+					child.name = cached->name;
+				else
+					child.name = GetNameProp(child_dest.c_str(), child_path.c_str());
+				aChildren.push_back(std::move(child));
+			}
+			dbus_message_iter_next(&array);
+		}
+	}
+	dbus_message_unref(reply);
+	return ok;
+}
+
+static bool AtspiReadIntReply(DBusMessage *aReply, int &aValue)
+{
+	if (!aReply)
+		return false;
+	DBusMessageIter it, value;
+	if (!dbus_message_iter_init(aReply, &it))
+		return false;
+	if (dbus_message_iter_get_arg_type(&it) == DBUS_TYPE_VARIANT)
+	{
+		dbus_message_iter_recurse(&it, &value);
+		if (dbus_message_iter_get_arg_type(&value) != DBUS_TYPE_INT32)
+			return false;
+		dbus_message_iter_get_basic(&value, &aValue);
+		return true;
+	}
+	if (dbus_message_iter_get_arg_type(&it) != DBUS_TYPE_INT32)
+		return false;
+	dbus_message_iter_get_basic(&it, &aValue);
+	return true;
+}
+
+static bool AtspiSelectionCount(const std::string &aHandle, int &aCount)
+{
+	aCount = 0;
+	std::string dest, path;
+	SplitHandle(aHandle, dest, path);
+	DBusMessage *reply = nullptr;
+	bool ok = AtspiGetProperty(dest, path, "org.a11y.atspi.Selection",
+		"NSelectedChildren", &reply) && AtspiReadIntReply(reply, aCount);
+	if (reply) dbus_message_unref(reply);
+	if (!ok)
+	{
+		reply = AtspiCallTo(dest.c_str(), path.c_str(),
+			"org.a11y.atspi.Selection", "GetNSelectedChildren");
+		ok = AtspiReadIntReply(reply, aCount);
+		if (reply) dbus_message_unref(reply);
+	}
+	return ok && aCount >= 0;
+}
+
+bool LinuxAtspiSelectionGetItems(const char *aPath, std::vector<std::string> &aItems)
+{
+	aItems.clear();
+	if (!aPath || !*aPath || !LinuxAtspiAvailable())
+		return false;
+	int selected_count = 0;
+	if (!AtspiSelectionCount(aPath, selected_count))
+		return false;
+	std::vector<AtspiRef> children;
+	if (!AtspiGetChildren(aPath, children))
+		return false;
+	for (const auto &child : children)
+		aItems.push_back(child.name);
+	return true;
+}
+
+bool LinuxAtspiSelectionSelect(const char *aPath, int aZeroBasedIndex)
+{
+	if (!aPath || !*aPath || !LinuxAtspiAvailable() || aZeroBasedIndex < -1)
+		return false;
+	int selected_count = 0;
+	if (!AtspiSelectionCount(aPath, selected_count))
+		return false;
+	std::string dest, path;
+	SplitHandle(aPath, dest, path);
+	const char *method = aZeroBasedIndex < 0 ? "ClearSelection" : "SelectChild";
+	DBusMessage *message = dbus_message_new_method_call(dest.c_str(), path.c_str(),
+		"org.a11y.atspi.Selection", method);
+	if (!message)
+		return false;
+	if (aZeroBasedIndex >= 0 && !dbus_message_append_args(message,
+		DBUS_TYPE_INT32, &aZeroBasedIndex, DBUS_TYPE_INVALID))
+	{
+		dbus_message_unref(message);
+		return false;
+	}
+	DBusError err;
+	dbus_error_init(&err);
+	int timeout = AtspiBoundTimeout(3000);
+	DBusMessage *reply = timeout > 0
+		? dbus_connection_send_with_reply_and_block(sBus, message, timeout, &err) : nullptr;
+	dbus_message_unref(message);
+	dbus_bool_t result = FALSE;
+	if (reply)
+	{
+		dbus_message_get_args(reply, nullptr, DBUS_TYPE_BOOLEAN, &result, DBUS_TYPE_INVALID);
+		dbus_message_unref(reply);
+	}
+	dbus_error_free(&err);
+	return result != FALSE;
+}
+
+bool LinuxAtspiSelectionGetSelected(const char *aPath, int &aZeroBasedIndex, std::string &aName)
+{
+	aZeroBasedIndex = -1;
+	aName.clear();
+	if (!aPath || !*aPath || !LinuxAtspiAvailable())
+		return false;
+	int selected_count = 0;
+	if (!AtspiSelectionCount(aPath, selected_count))
+		return false;
+	if (!selected_count)
+		return true;
+	std::string dest, path;
+	SplitHandle(aPath, dest, path);
+	DBusMessage *message = dbus_message_new_method_call(dest.c_str(), path.c_str(),
+		"org.a11y.atspi.Selection", "GetSelectedChild");
+	if (!message)
+		return false;
+	int selected_index = 0;
+	if (!dbus_message_append_args(message, DBUS_TYPE_INT32, &selected_index, DBUS_TYPE_INVALID))
+	{
+		dbus_message_unref(message);
+		return false;
+	}
+	DBusError err;
+	dbus_error_init(&err);
+	int timeout = AtspiBoundTimeout(3000);
+	DBusMessage *reply = timeout > 0
+		? dbus_connection_send_with_reply_and_block(sBus, message, timeout, &err) : nullptr;
+	dbus_message_unref(message);
+	if (!reply)
+	{
+		dbus_error_free(&err);
+		std::vector<AtspiRef> children;
+		return AtspiGetChildren(aPath, children); // supported but currently empty
+	}
+	DBusMessageIter it;
+	std::string child_dest, child_path;
+	bool ok = dbus_message_iter_init(reply, &it) && ReadRef(&it, child_dest, child_path);
+	dbus_message_unref(reply);
+	dbus_error_free(&err);
+	if (!ok)
+		return false;
+	if (child_path.empty() || child_path == "/org/a11y/atspi/null")
+		return true;
+	if (child_dest.empty()) child_dest = dest;
+	if (const AtspiRef *cached = AtspiFindRef(child_dest, child_path))
+		aName = cached->name;
+	else
+		aName = GetNameProp(child_dest.c_str(), child_path.c_str());
+	DBusMessage *index_reply = AtspiCallTo(child_dest.c_str(), child_path.c_str(),
+		IFACE, "GetIndexInParent");
+	if (index_reply)
+	{
+		dbus_message_get_args(index_reply, nullptr, DBUS_TYPE_INT32,
+			&aZeroBasedIndex, DBUS_TYPE_INVALID);
+		dbus_message_unref(index_reply);
+	}
+	if (aZeroBasedIndex < 0)
+	{
+		std::vector<AtspiRef> children;
+		if (AtspiGetChildren(aPath, children))
+			for (size_t i = 0; i < children.size(); ++i)
+				if (children[i].dest == child_dest && children[i].path == child_path)
+				{
+					aZeroBasedIndex = (int)i;
+					break;
+				}
+	}
+	return aZeroBasedIndex >= 0;
+}
+
+static bool AtspiGetProperty(const std::string &aDest, const std::string &aPath,
+	const char *aIface, const char *aProperty, DBusMessage **aReply)
+{
+	*aReply = nullptr;
+	DBusMessage *message = dbus_message_new_method_call(aDest.c_str(), aPath.c_str(),
+		"org.freedesktop.DBus.Properties", "Get");
+	if (!message)
+		return false;
+	if (!dbus_message_append_args(message, DBUS_TYPE_STRING, &aIface,
+		DBUS_TYPE_STRING, &aProperty, DBUS_TYPE_INVALID))
+	{
+		dbus_message_unref(message);
+		return false;
+	}
+	DBusError err;
+	dbus_error_init(&err);
+	int timeout = AtspiBoundTimeout(3000);
+	*aReply = timeout > 0
+		? dbus_connection_send_with_reply_and_block(sBus, message, timeout, &err) : nullptr;
+	dbus_message_unref(message);
+	dbus_error_free(&err);
+	return *aReply != nullptr;
+}
+
+bool LinuxAtspiGetValue(const char *aPath, double &aValue, std::string *aText)
+{
+	if (!aPath || !*aPath || !LinuxAtspiAvailable())
+		return false;
+	std::string dest, path;
+	SplitHandle(aPath, dest, path);
+	if (AtspiKnownWithoutInterface(dest, path, "org.a11y.atspi.Value"))
+		return false;
+	DBusMessage *reply = nullptr;
+	if (!AtspiGetProperty(dest, path, "org.a11y.atspi.Value", "CurrentValue", &reply))
+		return false;
+	DBusMessageIter it, variant;
+	bool ok = dbus_message_iter_init(reply, &it)
+		&& dbus_message_iter_get_arg_type(&it) == DBUS_TYPE_VARIANT;
+	if (ok)
+	{
+		dbus_message_iter_recurse(&it, &variant);
+		ok = dbus_message_iter_get_arg_type(&variant) == DBUS_TYPE_DOUBLE;
+		if (ok) dbus_message_iter_get_basic(&variant, &aValue);
+	}
+	dbus_message_unref(reply);
+	if (!ok)
+		return false;
+	if (aText)
+	{
+		aText->clear();
+		if (AtspiGetProperty(dest, path, "org.a11y.atspi.Value", "Text", &reply))
+		{
+			if (dbus_message_iter_init(reply, &it)
+				&& dbus_message_iter_get_arg_type(&it) == DBUS_TYPE_VARIANT)
+			{
+				dbus_message_iter_recurse(&it, &variant);
+				if (dbus_message_iter_get_arg_type(&variant) == DBUS_TYPE_STRING)
+				{
+					const char *text = nullptr;
+					dbus_message_iter_get_basic(&variant, &text);
+					*aText = text ? text : "";
+				}
+			}
+			dbus_message_unref(reply);
+		}
+		if (aText->empty())
+		{
+			char number[64];
+			snprintf(number, sizeof(number), "%.15g", aValue);
+			*aText = number;
+		}
+	}
+	return true;
+}
+
+bool LinuxAtspiSetValue(const char *aPath, double aValue)
+{
+	if (!aPath || !*aPath || !LinuxAtspiAvailable())
+		return false;
+	std::string dest, path;
+	SplitHandle(aPath, dest, path);
+	if (AtspiKnownWithoutInterface(dest, path, "org.a11y.atspi.Value"))
+		return false;
+	DBusMessage *message = dbus_message_new_method_call(dest.c_str(), path.c_str(),
+		"org.freedesktop.DBus.Properties", "Set");
+	if (!message)
+		return false;
+	const char *iface = "org.a11y.atspi.Value";
+	const char *property = "CurrentValue";
+	DBusMessageIter it, variant;
+	dbus_message_iter_init_append(message, &it);
+	bool ok = dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &iface)
+		&& dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &property)
+		&& dbus_message_iter_open_container(&it, DBUS_TYPE_VARIANT, "d", &variant)
+		&& dbus_message_iter_append_basic(&variant, DBUS_TYPE_DOUBLE, &aValue)
+		&& dbus_message_iter_close_container(&it, &variant);
+	if (!ok)
+	{
+		dbus_message_unref(message);
+		return false;
+	}
+	DBusError err;
+	dbus_error_init(&err);
+	int timeout = AtspiBoundTimeout(3000);
+	DBusMessage *reply = timeout > 0
+		? dbus_connection_send_with_reply_and_block(sBus, message, timeout, &err) : nullptr;
+	dbus_message_unref(message);
+	ok = reply && dbus_message_get_type(reply) == DBUS_MESSAGE_TYPE_METHOD_RETURN;
+	if (reply) dbus_message_unref(reply);
 	dbus_error_free(&err);
 	return ok;
 }

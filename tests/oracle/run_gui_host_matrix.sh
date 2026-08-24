@@ -34,7 +34,9 @@ out = {
         "qt6": {
             "version": sys.argv[5],
             "x11_window_count": qt["x11_window_count"],
-            "wayland_atspi": "text-read-write-action",
+            "wayland_atspi": "text-read-write-action-selection-value",
+            "selection_final": qt["selection_final"],
+            "value_after": qt["value_after"],
             "level": "full-for-tested-controls",
         },
         "vscode_electron": {

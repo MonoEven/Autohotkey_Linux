@@ -14,6 +14,8 @@
 
 <h1>ControlFindItem</h1>
 
+<div class="note"><b>Linux Wayland:</b> searches the real AT-SPI Selection children in accessible child order. A control without Selection is explicitly unsupported.</div>
+
 <p>Searches for an entry in a list box, combo box, or drop-down list by string, and returns its index.</p>
 
 <pre class="Syntax">Index := <span class="func">ControlFindItem</span>(String, ControlID <span class="optional">, WinTitle, WinText, ExcludeTitle, ExcludeText</span>)</pre>

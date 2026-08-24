@@ -14,6 +14,8 @@
 
 <h1>ControlChooseString</h1>
 
+<div class="note"><b>Linux Wayland:</b> entries come from the real AT-SPI Selection children; the first case-insensitive prefix match is selected with <code>SelectChild</code>. Unsupported controls throw instead of storing shadow state.</div>
+
 <p>Selects an entry in a list box, combo box, or drop-down list, or a tab control page, by string.</p>
 
 <pre class="Syntax">Index := <span class="func">ControlChooseString</span>(String, ControlID <span class="optional">, WinTitle, WinText, ExcludeTitle, ExcludeText</span>)</pre>

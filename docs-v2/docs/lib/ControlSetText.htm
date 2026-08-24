@@ -13,6 +13,8 @@
 
 <h1>ControlSetText</h1>
 
+<div class="note"><b>Linux Wayland:</b> uses EditableText for text controls or sets AT-SPI <code>Value.CurrentValue</code> for scalar controls. Value controls require numeric NewText and report failure explicitly. The standard parameter order is NewText, ControlID (an earlier port build reversed these two only on Wayland).</div>
+
 <p>Changes the text of a control.</p>
 
 <pre class="Syntax"><span class="func">ControlSetText</span> NewText, ControlID <span class="optional">, WinTitle, WinText, ExcludeTitle, ExcludeText</span></pre>

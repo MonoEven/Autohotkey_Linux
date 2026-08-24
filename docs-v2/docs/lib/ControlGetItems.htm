@@ -14,6 +14,8 @@
 
 <h1>ControlGetItems</h1>
 
+<div class="note"><b>Linux Wayland:</b> returns the accessible names of the real AT-SPI Selection children. A control which does not expose Selection raises an explicit error.</div>
+
 <p>Returns an array of entries from a list box, combo box, or drop-down list.</p>
 
 <pre class="Syntax">Items := <span class="func">ControlGetItems</span>(ControlID <span class="optional">, WinTitle, WinText, ExcludeTitle, ExcludeText</span>)</pre>

@@ -5,7 +5,7 @@ These are real independent applications on the GNOME Wayland VM, not in-process 
 | Host | Tested version | X11 window capture | Wayland AT-SPI controls | Result / limit |
 |---|---:|---|---|---|
 | GTK3 probe | 3.24.50 | Covered by X11 doc-check helpers | UTF-8 text read/write, Action, WinTitle application scope | Full for tested Entry/Button semantics |
-| Qt6 probe | 6.9.2 | `WinGetList` finds the native Qt window | Entry read, Unicode append, Button Action changes text + external marker | Full for tested Entry/Button semantics |
+| Qt6 probe | 6.9.2 | `WinGetList` finds the native Qt window | Entry read/Unicode append, Button Action, QListWidget Selection and QSlider Value 25&rarr;64, all with toolkit callback markers | Full for tested Entry/Button/List/Slider semantics |
 | VS Code / Electron | 1.134.0 | EWMH/X11 finds the editor window | Window and Document node are visible with Text/Hypertext/Document interfaces | **Window-only**: Monaco source content is not exposed; Document.Text is U+FFFC |
 
 VS Code was launched with both:

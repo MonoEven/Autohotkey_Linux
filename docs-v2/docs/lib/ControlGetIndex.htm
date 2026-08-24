@@ -14,6 +14,8 @@
 
 <h1>ControlGetIndex</h1>
 
+<div class="note"><b>Linux Wayland:</b> maps the selected AT-SPI child back to its accessible child index (1-based); 0 means no selection. Unsupported Selection raises an error.</div>
+
 <p>Returns the index of the currently selected entry in a list box, combo box, or drop-down list, or the index of the active page in a tab control.</p>
 
 <pre class="Syntax">Index := <span class="func">ControlGetIndex</span>(ControlID <span class="optional">, WinTitle, WinText, ExcludeTitle, ExcludeText</span>)</pre>

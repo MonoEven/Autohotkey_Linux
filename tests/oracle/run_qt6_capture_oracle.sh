@@ -33,7 +33,8 @@ export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
 export WAYLAND_DISPLAY=wayland-0
 unset DISPLAY
-rm -f /tmp/qt6_wayland.out /tmp/qt6-probe-click /tmp/qt6_wayland.dump
+rm -f /tmp/qt6_wayland.out /tmp/qt6-probe-click /tmp/qt6-probe-selection \
+  /tmp/qt6-probe-value /tmp/qt6_wayland.dump
 QT_QPA_PLATFORM=wayland QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1 \
   "$OUT/qt6-probe" >/tmp/qt6_wayland_probe.log 2>&1 &
 QPID=$!
@@ -47,7 +48,38 @@ after := ControlGetText("QT6-ENTRY", "AHK Qt6 Probe")
 ControlClick("QT6-BUTTON", "AHK Qt6 Probe")
 Sleep(400)
 clicked := ControlGetText("QT6-ENTRY", "AHK Qt6 Probe")
-FileAppend("before=" before "`nafter=" after "`nclicked=" clicked "`n", "/tmp/qt6_wayland.out")
+items := ControlGetItems("QT6-LIST", "AHK Qt6 Probe")
+findBravo := ControlFindItem("Bravo", "QT6-LIST", "AHK Qt6 Probe")
+ControlChooseIndex(3, "QT6-LIST", "AHK Qt6 Probe")
+choice3 := ControlGetChoice("QT6-LIST", "AHK Qt6 Probe")
+index3 := ControlGetIndex("QT6-LIST", "AHK Qt6 Probe")
+ControlChooseIndex(0, "QT6-LIST", "AHK Qt6 Probe")
+index0 := ControlGetIndex("QT6-LIST", "AHK Qt6 Probe")
+noChoice := 0
+try ControlGetChoice("QT6-LIST", "AHK Qt6 Probe")
+catch Error
+    noChoice := 1
+chooseBra := ControlChooseString("Bra", "QT6-LIST", "AHK Qt6 Probe")
+choiceBra := ControlGetChoice("QT6-LIST", "AHK Qt6 Probe")
+valueBefore := ControlGetText("QT6-SLIDER", "AHK Qt6 Probe")
+ControlSetText("64", "QT6-SLIDER", "AHK Qt6 Probe")
+valueAfter := ControlGetText("QT6-SLIDER", "AHK Qt6 Probe")
+invalidValue := 0
+try ControlSetText("not-a-number", "QT6-SLIDER", "AHK Qt6 Probe")
+catch ValueError
+    invalidValue := 1
+unsupportedSelection := 0
+try ControlGetItems("QT6-ENTRY", "AHK Qt6 Probe")
+catch OSError
+    unsupportedSelection := 1
+Sleep(400)
+FileAppend("before=" before "`nafter=" after "`nclicked=" clicked
+    "`nitems=" items.Length ":" items[1] ":" items[2] ":" items[3]
+    "`nfind=" findBravo "`nchoice3=" choice3 "`nindex3=" index3
+    "`nindex0=" index0 "`nnoChoice=" noChoice
+    "`nchooseBra=" chooseBra "`nchoiceBra=" choiceBra
+    "`nvalue=" valueBefore ":" valueAfter
+    "`ninvalidValue=" invalidValue "`nunsupportedSelection=" unsupportedSelection "`n", "/tmp/qt6_wayland.out")
 ExitApp
 EOF
 AHK_ATSPI_DUMP=/tmp/qt6_wayland.dump timeout -k 2 30 "$BIN" /tmp/qt6_wayland.ahk \
@@ -63,8 +95,34 @@ grep -q '^clicked=clicked-Qt6$' /tmp/qt6_wayland.out \
   || { echo QT6_ACTION_TEXT_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
 grep -q '^clicked$' /tmp/qt6-probe-click \
   || { echo QT6_ACTION_MARKER_FAIL; cat /tmp/qt6_wayland_probe.log; exit 1; }
+grep -q '^items=3:Alpha:Bravo:世界$' /tmp/qt6_wayland.out \
+  || { echo QT6_SELECTION_ITEMS_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
+grep -q '^find=2$' /tmp/qt6_wayland.out \
+  || { echo QT6_SELECTION_FIND_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
+grep -q '^choice3=世界$' /tmp/qt6_wayland.out \
+  || { echo QT6_SELECTION_CHOICE_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
+grep -q '^index3=3$' /tmp/qt6_wayland.out \
+  || { echo QT6_SELECTION_INDEX_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
+grep -q '^index0=0$' /tmp/qt6_wayland.out \
+  || { echo QT6_SELECTION_CLEAR_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
+grep -q '^noChoice=1$' /tmp/qt6_wayland.out \
+  || { echo QT6_SELECTION_EMPTY_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
+grep -q '^chooseBra=2$' /tmp/qt6_wayland.out \
+  || { echo QT6_SELECTION_STRING_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
+grep -q '^choiceBra=Bravo$' /tmp/qt6_wayland.out \
+  || { echo QT6_SELECTION_FINAL_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
+grep -q '^Bravo$' /tmp/qt6-probe-selection \
+  || { echo QT6_SELECTION_MARKER_FAIL; cat /tmp/qt6-probe-selection; exit 1; }
+grep -q '^value=25:64$' /tmp/qt6_wayland.out \
+  || { echo QT6_VALUE_API_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
+grep -q '^64$' /tmp/qt6-probe-value \
+  || { echo QT6_VALUE_MARKER_FAIL; cat /tmp/qt6-probe-value; exit 1; }
+grep -q '^invalidValue=1$' /tmp/qt6_wayland.out \
+  || { echo QT6_VALUE_ERROR_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
+grep -q '^unsupportedSelection=1$' /tmp/qt6_wayland.out \
+  || { echo QT6_SELECTION_UNSUPPORTED_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
 header="$(head -1 /tmp/qt6_wayland.dump 2>/dev/null)"
 cat >"$OUT/qt6-capture-summary.json" <<EOF
-{"schema":1,"result":"pass","qt_version":"$(pkg-config --modversion Qt6Widgets)","x11_window_count":1,"wayland_before":"你好-Qt6","wayland_after":"你好-Qt6-追加","action_text":"clicked-Qt6","atspi_header":"$header"}
+{"schema":1,"result":"pass","qt_version":"$(pkg-config --modversion Qt6Widgets)","x11_window_count":1,"wayland_before":"你好-Qt6","wayland_after":"你好-Qt6-追加","action_text":"clicked-Qt6","selection_items":["Alpha","Bravo","世界"],"selection_final":"Bravo","value_before":25,"value_after":64,"atspi_header":"$header"}
 EOF
-echo "QT6_CAPTURE_ORACLE_PASS version=$(pkg-config --modversion Qt6Widgets) x11=1 atspi=read+write+action"
+echo "QT6_CAPTURE_ORACLE_PASS version=$(pkg-config --modversion Qt6Widgets) x11=1 atspi=text+action+selection+value"

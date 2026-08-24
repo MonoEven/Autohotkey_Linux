@@ -617,7 +617,15 @@
   `assert_edit.ahk`、`CHECK_REPORT.md`、`ControlSend.htm`。
 - **验收**：外部窗口全部 NotSupported（新断言）；真实操作不回归；
   verify_report_numbers 通过（当前 x11=1139/wayland=17/xwayland=234）。
-- **剩余**：AT-SPI 选择列表项/Value 等真实操作留 M5-C。
+- **M5-C Selection/Value 已交付**：Wayland的ControlFindItem/ChooseIndex/
+  ChooseString/GetChoice/GetIndex/GetItems走AT-SPI Selection（SelectChild、
+  ClearSelection、GetSelectedChild），ControlGetText/SetText对标量控件读写
+  Value.CurrentValue。Qt6.9.2真实QListWidget/QSlider oracle验证Alpha/Bravo/世界、
+  clear→index0、callback marker、25→64 valueChanged；非Selection与非数字Value
+  明确报错。并修复Wayland ControlSetText前两参数颠倒及D-Bus error reply假成功。
+  官方签名：[Selection](https://gnome.pages.gitlab.gnome.org/at-spi2-core/devel-docs/doc-org.a11y.atspi.Selection.html)、
+  [Value](https://gnome.pages.gitlab.gnome.org/at-spi2-core/devel-docs/doc-org.a11y.atspi.Value.html)；
+  Qt兼容依据：[AtSpiAdaptor](https://github.com/qt/qtbase/blob/85949d70/src/gui/accessible/linux/atspiadaptor.cpp)。
 
 - 原则改为"**真实效果或明确报错**"：
   1. 能通过 AT-SPI action/text/value 接口真实完成的（点击、设文本、读文本、
@@ -664,8 +672,10 @@
   对 EditableText 在末尾追加纯 Unicode 文本，`{Enter}/{Space}` 映射 Action；
   复杂 Send 语法、无 Action/EditableText 与无名控件明确 NotSupported，不回退
   抢焦点。GNOME oracle 写出 `Base-世界`，同时验证默认/非法值/复杂语法/focus
-  无 X 路径；CI 增 4 个 BIV 契约断言。**未完成**：pending-call + 主循环
-  异步化、公开 A_LastError、AT-SPI Selection/Value、IME 集成。
+  无 X 路径；CI 增 4 个 BIV 契约断言。
+- **M5-C 第五项（Selection/Value）已交付**：见§B；Qt真实控件与进程外
+  callback markers双重证明。**未完成**：pending-call + 主循环异步化、公开
+  A_LastError、IME 集成。
 - **落点文件**：`core_atspi_linux.cpp/.h`、`core_ctrl_linux.cpp`、
   `tests/oracle/gtk_ok.c`、`run_atspi_wintitle_oracle.sh`、
   `run_atspi_cache_oracle.sh`、`scenarios/atspi_matrix/run_matrix.sh`。

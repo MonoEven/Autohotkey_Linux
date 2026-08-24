@@ -134,6 +134,13 @@
     returns its partial table on expiry; diagnostics expose cache/fallback/item
     and budget state. VM oracles prove cache, fallback and a 1ms fault-injected
     timeout while preserving UTF-8 text results.</li>
+  <li><b>M5-C Selection/Value:</b> Wayland ControlChoose/Find/Get list APIs now
+    operate real AT-SPI Selection children, while ControlGetText/SetText reads or
+    writes Value.CurrentValue for scalar widgets. A Qt 6.9.2 QListWidget/QSlider
+    oracle proves selection callbacks, clear/index semantics and 25&rarr;64
+    valueChanged; invalid/unsupported controls error explicitly. Also fixed the
+    Wayland-only reversed ControlSetText arguments and D-Bus error-reply false
+    success.</li>
   <li><b>M5-C A_ControlSendMode:</b> the writable Linux variable accepts
     <code>focus</code> (existing X11 focus/send/restore behavior) or
     <code>atspi</code>. AT-SPI mode appends plain Unicode text to EditableText

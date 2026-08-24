@@ -14,6 +14,8 @@
 
 <h1>ControlGetChoice</h1>
 
+<div class="note"><b>Linux Wayland:</b> returns the accessible name of AT-SPI <code>Selection.GetSelectedChild(0)</code>. No selection raises an error; no process-local shadow is used.</div>
+
 <p>Returns the text of the currently selected entry in a list box, combo box, or drop-down list.</p>
 
 <pre class="Syntax">Choice := <span class="func">ControlGetChoice</span>(ControlID <span class="optional">, WinTitle, WinText, ExcludeTitle, ExcludeText</span>)</pre>

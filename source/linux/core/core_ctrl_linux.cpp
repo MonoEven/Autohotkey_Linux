@@ -108,6 +108,63 @@ static bool LinuxCtrlUtf8ToWide(const char *aText, size_t aLength, std::wstring 
 	return true;
 }
 
+static bool LinuxCtrlWideToUtf8(const wchar_t *aText, std::string &aOut)
+{
+	aOut.clear();
+	if (!aText)
+		return false;
+	int bytes = WideCharToMultiByte(CP_UTF8, 0, aText, -1, nullptr, 0, nullptr, nullptr);
+	if (bytes <= 0)
+		return false;
+	aOut.resize((size_t)bytes);
+	int written = WideCharToMultiByte(CP_UTF8, 0, aText, -1, &aOut[0], bytes, nullptr, nullptr);
+	if (written != bytes)
+	{
+		aOut.clear();
+		return false;
+	}
+	if (!aOut.empty() && aOut.back() == '\0')
+		aOut.pop_back();
+	return true;
+}
+
+static bool LinuxCtrlAtspiResolveNamed(ResultToken &aResultToken, ExprTokenType *aParam[]
+	, int aParamCount, int aControlIdx, int aTitleIdx, std::string &aPath)
+{
+	TCHAR control_buf[1024], title_buf[1024];
+	LPTSTR control = aControlIdx >= 0 && aControlIdx < aParamCount
+		&& !ParamIndexIsOmitted(aControlIdx)
+		? TokenToString(*aParam[aControlIdx], control_buf, nullptr) : nullptr;
+	if (!control || !*control)
+	{
+		aResultToken.Error(_T("The specified AT-SPI control name is empty."), _T(""), ErrorPrototype::Target);
+		return false;
+	}
+	if (!LinuxAtspiAvailable())
+	{
+		aResultToken.Error(_T("The AT-SPI accessibility bus is unavailable."), _T(""), ErrorPrototype::OS);
+		return false;
+	}
+	LPTSTR title = aTitleIdx >= 0 && aTitleIdx < aParamCount
+		&& !ParamIndexIsOmitted(aTitleIdx)
+		? TokenToString(*aParam[aTitleIdx], title_buf, nullptr) : nullptr;
+	std::string control_utf8, title_utf8;
+	if (!LinuxCtrlWideToUtf8(control, control_utf8)
+		|| (title && *title && !LinuxCtrlWideToUtf8(title, title_utf8)))
+	{
+		aResultToken.Error(_T("The AT-SPI control/title could not be encoded as UTF-8."), _T(""), ErrorPrototype::Value);
+		return false;
+	}
+	LinuxAtspiRefresh();
+	if (!LinuxAtspiFindByName(control_utf8.c_str(), aPath,
+		title_utf8.empty() ? nullptr : title_utf8.c_str()))
+	{
+		aResultToken.Error(_T("The specified AT-SPI control could not be found."), _T(""), ErrorPrototype::Target);
+		return false;
+	}
+	return true;
+}
+
 // ---------------------------------------------------------------------------
 // Child-window ("control") enumeration and identification
 // ---------------------------------------------------------------------------
@@ -542,7 +599,17 @@ BIF_DECL(BIF_Linux_ControlGetText)
 				wcstombs(wt, wintitle, sizeof(wt) - 1);
 			LinuxAtspiRefresh();
 			std::string path, t;
-			if (LinuxAtspiFindByName(nb, path, wt) && LinuxAtspiGetText(path.c_str(), t))
+			bool read = false;
+			if (LinuxAtspiFindByName(nb, path, wt))
+			{
+				read = LinuxAtspiGetText(path.c_str(), t);
+				if (!read)
+				{
+					double value = 0.0;
+					read = LinuxAtspiGetValue(path.c_str(), value, &t);
+				}
+			}
+			if (read)
 			{
 				std::wstring w;
 				if (!LinuxCtrlUtf8ToWide(t.data(), t.size(), w))
@@ -591,11 +658,12 @@ BIF_DECL(BIF_Linux_ControlSetText)
 	// there is no other control path on a pure-Wayland session.
 	if (LinuxCtrlSessionIsWayland())
 	{
-		// ControlSetText(Control, NewText, WinTitle,...) - param 0 is the
-		// CONTROL (the accessible name), param 1 is NewText.
+		// Standard v2 signature: ControlSetText(NewText, Control, WinTitle,...).
+		// The former Wayland branch had these first two parameters reversed,
+		// silently targeting the new text as an accessible name.
 		TCHAR tb[65536], cb[1024];
-		LPTSTR ctrl = aParamCount > 0 ? TokenToString(*aParam[0], cb, nullptr) : nullptr;
-		LPTSTR text = aParamCount > 1 ? TokenToString(*aParam[1], tb, nullptr) : nullptr;
+		LPTSTR text = aParamCount > 0 ? TokenToString(*aParam[0], tb, nullptr) : nullptr;
+		LPTSTR ctrl = aParamCount > 1 ? TokenToString(*aParam[1], cb, nullptr) : nullptr;
 		if (ctrl && *ctrl && text && LinuxAtspiAvailable())
 		{
 			char nb[1024], nb2[65536];
@@ -611,10 +679,32 @@ BIF_DECL(BIF_Linux_ControlSetText)
 			char wt[1024] = { 0 };
 			if (wintitle && *wintitle)
 				wcstombs(wt, wintitle, sizeof(wt) - 1);
-			if (LinuxAtspiFindByName(nb, path, wt) && LinuxAtspiSetText(path.c_str(), nb2))
+			if (LinuxAtspiFindByName(nb, path, wt))
 			{
-				LinuxCtrlDelay();
-				return;
+				double current_value = 0.0;
+				if (LinuxAtspiGetValue(path.c_str(), current_value, nullptr))
+				{
+					wchar_t *end = nullptr;
+					double value = wcstod(text, &end);
+					while (end && iswspace(*end)) ++end;
+					if (!end || end == text || *end)
+					{
+						aResultToken.Error(_T("A numeric value is required for this AT-SPI Value control."), _T(""), ErrorPrototype::Value);
+						return;
+					}
+					if (!LinuxAtspiSetValue(path.c_str(), value))
+					{
+						aResultToken.Error(_T("The AT-SPI CurrentValue property could not be changed."), _T(""), ErrorPrototype::OS);
+						return;
+					}
+					LinuxCtrlDelay();
+					return;
+				}
+				if (LinuxAtspiSetText(path.c_str(), nb2))
+				{
+					LinuxCtrlDelay();
+					return;
+				}
 			}
 		}
 		LinuxCtrlDelay();
@@ -997,8 +1087,13 @@ BIF_DECL(BIF_Linux_ControlClick)
 				}
 			}
 		}
-		aResultToken.Error(_T("No X display is available."), _T(""), ErrorPrototype::Target);
-		return;
+		if (!d)
+		{
+			aResultToken.Error(_T("No X display is available."), _T(""), ErrorPrototype::Target);
+			return;
+		}
+		// XWayland target not present on the AT-SPI tree (or Action returned
+		// false): continue to the real X11/XTEST path below.
 	}
 	// Parse Options (param 5): "NA", "D", "U", "xN yN" (relative to the
 	// control).  The X/Y option letters are ignored in position mode.
@@ -1344,6 +1439,32 @@ BIF_DECL(BIF_Linux_ControlDeleteItem)
 
 BIF_DECL(BIF_Linux_ControlFindItem)
 {
+	if (LinuxCtrlSessionIsWayland())
+	{
+		std::string path;
+		if (!LinuxCtrlAtspiResolveNamed(aResultToken, aParam, aParamCount, 1, 2, path))
+			return;
+		std::vector<std::string> items;
+		if (!LinuxAtspiSelectionGetItems(path.c_str(), items))
+		{
+			aResultToken.Error(_T("The AT-SPI control does not expose Selection children."), _T(""), ErrorPrototype::OS);
+			return;
+		}
+		TCHAR item_buf[65536];
+		LPTSTR wanted = TokenToString(*aParam[0], item_buf, nullptr);
+		for (size_t i = 0; i < items.size(); ++i)
+		{
+			std::wstring item;
+			if (LinuxCtrlUtf8ToWide(items[i].data(), items[i].size(), item)
+				&& !_tcsicmp(item.c_str(), wanted))
+			{
+				aResultToken.SetValue((__int64)(i + 1));
+				return;
+			}
+		}
+		aResultToken.Error(_T("The entry could not be found."), _T(""), ErrorPrototype::Error);
+		return;
+	}
 	Window control = 0;
 	if (!LinuxCtrlListTarget(aResultToken, aParam, aParamCount, false, control))
 		return;
@@ -1363,6 +1484,27 @@ BIF_DECL(BIF_Linux_ControlFindItem)
 
 BIF_DECL(BIF_Linux_ControlChooseIndex)
 {
+	if (LinuxCtrlSessionIsWayland())
+	{
+		std::string path;
+		if (!LinuxCtrlAtspiResolveNamed(aResultToken, aParam, aParamCount, 1, 2, path))
+			return;
+		int idx = (int)TokenToInt64(*aParam[0]);
+		std::vector<std::string> items;
+		if (!LinuxAtspiSelectionGetItems(path.c_str(), items)
+			|| idx < 0 || (size_t)idx > items.size())
+		{
+			aResultToken.Error(_T("The selection index could not be applied."), _T(""), ErrorPrototype::Error);
+			return;
+		}
+		if (!LinuxAtspiSelectionSelect(path.c_str(), idx ? idx - 1 : -1))
+		{
+			aResultToken.Error(_T("The AT-SPI Selection operation failed."), _T(""), ErrorPrototype::OS);
+			return;
+		}
+		LinuxCtrlDelay();
+		return;
+	}
 	Window control = 0;
 	if (!LinuxCtrlListTarget(aResultToken, aParam, aParamCount, true, control))
 		return;
@@ -1378,6 +1520,39 @@ BIF_DECL(BIF_Linux_ControlChooseIndex)
 
 BIF_DECL(BIF_Linux_ControlChooseString)
 {
+	if (LinuxCtrlSessionIsWayland())
+	{
+		std::string path;
+		if (!LinuxCtrlAtspiResolveNamed(aResultToken, aParam, aParamCount, 1, 2, path))
+			return;
+		std::vector<std::string> items;
+		if (!LinuxAtspiSelectionGetItems(path.c_str(), items))
+		{
+			aResultToken.Error(_T("The AT-SPI control does not expose Selection children."), _T(""), ErrorPrototype::OS);
+			return;
+		}
+		TCHAR item_buf[65536];
+		LPTSTR wanted = TokenToString(*aParam[0], item_buf, nullptr);
+		size_t wanted_length = _tcslen(wanted);
+		for (size_t i = 0; i < items.size(); ++i)
+		{
+			std::wstring item;
+			if (LinuxCtrlUtf8ToWide(items[i].data(), items[i].size(), item)
+				&& !_tcsnicmp(item.c_str(), wanted, wanted_length))
+			{
+				if (!LinuxAtspiSelectionSelect(path.c_str(), (int)i))
+				{
+					aResultToken.Error(_T("The AT-SPI Selection operation failed."), _T(""), ErrorPrototype::OS);
+					return;
+				}
+				aResultToken.SetValue((__int64)(i + 1));
+				LinuxCtrlDelay();
+				return;
+			}
+		}
+		aResultToken.Error(_T("The entry could not be found."), _T(""), ErrorPrototype::Error);
+		return;
+	}
 	Window control = 0;
 	if (!LinuxCtrlListTarget(aResultToken, aParam, aParamCount, false, control))
 		return;
@@ -1399,6 +1574,27 @@ BIF_DECL(BIF_Linux_ControlChooseString)
 
 BIF_DECL(BIF_Linux_ControlGetChoice)
 {
+	if (LinuxCtrlSessionIsWayland())
+	{
+		std::string path;
+		if (!LinuxCtrlAtspiResolveNamed(aResultToken, aParam, aParamCount, 0, 1, path))
+			return;
+		int index = -1;
+		std::string name;
+		if (!LinuxAtspiSelectionGetSelected(path.c_str(), index, name) || index < 0)
+		{
+			aResultToken.Error(_T("No AT-SPI entry is selected."), _T(""), ErrorPrototype::Error);
+			return;
+		}
+		std::wstring wide;
+		if (!LinuxCtrlUtf8ToWide(name.data(), name.size(), wide))
+		{
+			aResultToken.Error(_T("AT-SPI returned invalid UTF-8."));
+			return;
+		}
+		LinuxWinSetPersistentEx(aResultToken, wide);
+		return;
+	}
 	Window control = 0;
 	if (!LinuxCtrlListTarget(aResultToken, aParam, aParamCount, false, control, 0, 1))
 		return;
@@ -1413,6 +1609,21 @@ BIF_DECL(BIF_Linux_ControlGetChoice)
 
 BIF_DECL(BIF_Linux_ControlGetIndex)
 {
+	if (LinuxCtrlSessionIsWayland())
+	{
+		std::string path;
+		if (!LinuxCtrlAtspiResolveNamed(aResultToken, aParam, aParamCount, 0, 1, path))
+			return;
+		int index = -1;
+		std::string name;
+		if (!LinuxAtspiSelectionGetSelected(path.c_str(), index, name))
+		{
+			aResultToken.Error(_T("The AT-SPI control does not expose Selection."), _T(""), ErrorPrototype::OS);
+			return;
+		}
+		aResultToken.SetValue((__int64)(index + 1)); // 0 when no selection.
+		return;
+	}
 	Window control = 0;
 	if (!LinuxCtrlListTarget(aResultToken, aParam, aParamCount, true, control, 0, 1))
 		return;
@@ -1421,6 +1632,37 @@ BIF_DECL(BIF_Linux_ControlGetIndex)
 
 BIF_DECL(BIF_Linux_ControlGetItems)
 {
+	if (LinuxCtrlSessionIsWayland())
+	{
+		std::string path;
+		if (!LinuxCtrlAtspiResolveNamed(aResultToken, aParam, aParamCount, 0, 1, path))
+			return;
+		std::vector<std::string> items;
+		if (!LinuxAtspiSelectionGetItems(path.c_str(), items))
+		{
+			aResultToken.Error(_T("The AT-SPI control does not expose Selection children."), _T(""), ErrorPrototype::OS);
+			return;
+		}
+		Array *array = Array::Create();
+		if (!array)
+		{
+			aResultToken.SetValue(_T(""));
+			return;
+		}
+		for (const auto &item : items)
+		{
+			std::wstring wide;
+			if (!LinuxCtrlUtf8ToWide(item.data(), item.size(), wide))
+			{
+				array->Release();
+				aResultToken.Error(_T("AT-SPI returned invalid UTF-8."));
+				return;
+			}
+			array->Append(wide.c_str());
+		}
+		aResultToken.SetValue(array);
+		return;
+	}
 	Window control = 0;
 	if (!LinuxCtrlListTarget(aResultToken, aParam, aParamCount, false, control, 0, 1))
 		return;

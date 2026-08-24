@@ -14,6 +14,8 @@
 
 <h1>ControlChooseIndex</h1>
 
+<div class="note"><b>Linux Wayland:</b> this calls AT-SPI <code>Selection.SelectChild</code> on the named accessible control (0 calls <code>ClearSelection</code>). It changes the real toolkit selection and throws when Selection is unavailable; WinTitle limits the application.</div>
+
 <p>Selects an entry in a list box, combo box, or drop-down list, or a tab control page, by index.</p>
 
 <pre class="Syntax"><span class="func">ControlChooseIndex</span> N, ControlID <span class="optional">, WinTitle, WinText, ExcludeTitle, ExcludeText</span></pre>
