@@ -88,6 +88,7 @@
 | 函数 | 状态 | 说明 |
 |---|---|---|
 | WinExist/WinActive/WinGet*/WinSet*/WinMove/WinClose/WinKill/WinWait*/Group* | ✅ | X11/XWayland(67 断言,以 xwin_helper 实测) |
+| 窗口枚举 (M5-A) | ✅ | EWMH `_NET_CLIENT_LIST` 优先，无 WM 回退 ICCCM WM_STATE 探测（保留未管理窗口）；双路径 oracle |
 | 标题/类/exe/pid/id/RegEx 匹配、隐藏窗口联动、透明度/置顶 | ✅ | 全绿 |
 | 纯 Wayland 下窗口枚举 | ❌ | Wayland 客户端无法枚举窗口;用 XWayland |
 
