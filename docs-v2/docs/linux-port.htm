@@ -386,7 +386,9 @@ Highlights of this release:</p>
     trees support nested handles and paging (20-item/two-page oracle). Exception
     filters stop caught errors at throw, expose Message and continue into catch.
     Persistent idle Pause is bounded below 500 ms and exposes an explicit
-    no-active-frame Global scope. Reconnect and D-Bus object projection remain.</li>
+    no-active-frame Global scope. D-Bus compatibility objects expose only local
+    adapter metadata and typed values without remote calls. Reconnect/crash
+    cleanup remains.</li>
   <li><b>IME active-state detection</b>: <code>ImeGetState()</code>
     (framework by session-bus owner + current XKB group).  wlroots
     input-method-v2 text delivery is recorded as out of scope with the

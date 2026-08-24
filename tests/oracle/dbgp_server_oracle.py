@@ -230,6 +230,29 @@ def main() -> int:
             }
             assert map_values == {'["first"]': "101", '["second"]': "202"}, (map_values, text)
 
+            proxy_prop, text = command_response(conn, "property_get -n comProxy -c 1 -d 0 -p 0", 26)
+            transcript.append(text)
+            proxy_values = {
+                name: decoded_property(child)
+                for name, child in direct_properties(first_property(proxy_prop)).items()
+            }
+            assert proxy_values == {
+                "VarType": "9", "Flags": "0", "IsProxy": "1",
+                "Service": "org.freedesktop.DBus", "Path": "/",
+                "Interface": "org.freedesktop.DBus", "Value": "0",
+            }, (proxy_values, text)
+
+            scalar_prop, text = command_response(conn, "property_get -n typedScalar -c 1 -d 0 -p 0", 27)
+            transcript.append(text)
+            scalar_values = {
+                name: decoded_property(child)
+                for name, child in direct_properties(first_property(scalar_prop)).items()
+            }
+            assert scalar_values == {
+                "VarType": "3", "Flags": "0", "IsProxy": "0",
+                "Service": "", "Path": "", "Interface": "", "Value": "42",
+            }, (scalar_values, text)
+
             send_command(conn, "step_into -i 8")
             stepped, text = recv_packet(conn)
             transcript.append(text)
@@ -318,6 +341,8 @@ def main() -> int:
             "object_alpha": "A",
             "nested_beta": 42,
             "map_values": {"first": 101, "second": 202},
+            "dbus_proxy": {"service": "org.freedesktop.DBus", "path": "/", "vartype": 9},
+            "typed_scalar": {"value": 42, "vartype": 3},
             "array_count": 20,
             "array_pages": 2,
             "array_edges": [1, 20],

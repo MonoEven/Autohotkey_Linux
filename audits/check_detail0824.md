@@ -816,7 +816,10 @@
   上界内泵 DBGp；DAP Pause 只发一个 stopped。auto-exec结束后runtime真实stack=0，
   UI明确显示 `Idle (no active script frame)` 合成frame，仅提供Global scope。
   raw/DAP约72ms、VS Code 318ms内暂停并读 `idleValue=77`，均低于500ms gate。
-  **D3 剩余**：detach后reconnect、D-Bus 对象真实投影。
+- **VSC-2 D3 第四项（D-Bus投影）已交付**：ComObject仅暴露本地VarType/
+  Flags/IsProxy/Service/Path/Interface/Value，不因IDE展开触发远端D-Bus调用；
+  `org.freedesktop.DBus` proxy与`ComValue(3,42)`三层oracle通过。
+  **D3 剩余**：detach后reconnect/crash cleanup。
 
 ### B. GUI-1 真实宿主捕获矩阵（已交付）
 

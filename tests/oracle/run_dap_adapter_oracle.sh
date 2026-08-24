@@ -10,4 +10,4 @@ command -v node >/dev/null || { echo DAP_ADAPTER_ORACLE_SKIP node-missing; exit 
 node "$ROOT/tests/oracle/dap_adapter_oracle.js" \
   "$BIN" "$ROOT/tests/oracle/dbgp_fixture.ahk" \
   "$OUT/dap-adapter-summary.json" || exit 1
-echo "DAP_ADAPTER_ORACLE_PASS breakpoint=3 step=4 x=10 array_pages=2 array_count=20 alpha=A beta=42 map=101,202 y=15 exception=6:D3-boom idle_pause_lt500ms=1 idle_value=77 terminated=1"
+echo "DAP_ADAPTER_ORACLE_PASS breakpoint=3 step=4 x=10 array_pages=2 array_count=20 alpha=A beta=42 map=101,202 dbus_proxy=1 typed_scalar=42 y=15 exception=6:D3-boom idle_pause_lt500ms=1 idle_value=77 terminated=1"

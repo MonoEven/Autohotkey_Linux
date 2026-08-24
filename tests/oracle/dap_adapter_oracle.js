@@ -111,10 +111,14 @@ async function main() {
     const arr = reply.body.variables.find((variable) => variable.name === 'arr');
     const obj = reply.body.variables.find((variable) => variable.name === 'obj');
     const mapv = reply.body.variables.find((variable) => variable.name === 'mapv');
+    const comProxy = reply.body.variables.find((variable) => variable.name === 'comProxy');
+    const typedScalar = reply.body.variables.find((variable) => variable.name === 'typedScalar');
     if (!x || x.value !== '10') throw new Error(`x variable mismatch: ${JSON.stringify(x)}`);
     if (!arr || !arr.variablesReference) throw new Error(`arr is not expandable: ${JSON.stringify(arr)}`);
     if (!obj || !obj.variablesReference) throw new Error(`obj is not expandable: ${JSON.stringify(obj)}`);
     if (!mapv || !mapv.variablesReference) throw new Error(`mapv is not expandable: ${JSON.stringify(mapv)}`);
+    if (!comProxy || !comProxy.variablesReference) throw new Error(`comProxy is not expandable: ${JSON.stringify(comProxy)}`);
+    if (!typedScalar || !typedScalar.variablesReference) throw new Error(`typedScalar is not expandable: ${JSON.stringify(typedScalar)}`);
 
     request = send('variables', { variablesReference: arr.variablesReference, start: 0, count: 16 });
     reply = await response(request);
@@ -150,6 +154,21 @@ async function main() {
     );
     if (mapValues['["first"]'] !== '101' || mapValues['["second"]'] !== '202') {
       throw new Error(`map mismatch: ${JSON.stringify(mapValues)}`);
+    }
+
+    request = send('variables', { variablesReference: comProxy.variablesReference, start: 0, count: 16 });
+    reply = await response(request);
+    const proxyValues = Object.fromEntries(reply.body.variables.map((variable) => [variable.name, variable.value]));
+    if (proxyValues.VarType !== '9' || proxyValues.IsProxy !== '1'
+      || proxyValues.Service !== 'org.freedesktop.DBus' || proxyValues.Path !== '/') {
+      throw new Error(`D-Bus proxy projection mismatch: ${JSON.stringify(proxyValues)}`);
+    }
+
+    request = send('variables', { variablesReference: typedScalar.variablesReference, start: 0, count: 16 });
+    reply = await response(request);
+    const scalarValues = Object.fromEntries(reply.body.variables.map((variable) => [variable.name, variable.value]));
+    if (scalarValues.VarType !== '3' || scalarValues.IsProxy !== '0' || scalarValues.Value !== '42') {
+      throw new Error(`typed scalar projection mismatch: ${JSON.stringify(scalarValues)}`);
     }
 
     request = send('evaluate', { expression: 'x', frameId: frame1.id, context: 'watch' });
@@ -245,6 +264,8 @@ async function main() {
       objectAlpha: alpha.value,
       nestedBeta: Number(beta.value),
       mapValues: { first: Number(mapValues['["first"]']), second: Number(mapValues['["second"]']) },
+      dbusProxy: { service: proxyValues.Service, path: proxyValues.Path, varType: Number(proxyValues.VarType) },
+      typedScalar: { value: Number(scalarValues.Value), varType: Number(scalarValues.VarType) },
       globalY: Number(y.value),
       exceptionLine: exceptionFrame.line,
       exceptionMessage,

@@ -4,6 +4,7 @@
 
 #include "../../globaldata.h"
 #include "../../script_func_impl.h"
+#include "../../StringConv.h"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -31,6 +32,48 @@ ComObject *LinuxComNewValue(__int64 aVal, int aVarType, USHORT aFlags)
 	obj->mFlags = aFlags;
 	return obj;
 }
+
+#ifdef CONFIG_DEBUGGER
+void ComObject::DebugWriteProperty(IDebugProperties *aDebugger, int aPage, int aPageSize, int aMaxDepth)
+{
+	constexpr int kChildCount = 7;
+	DebugCookie cookie;
+	aDebugger->BeginProperty(nullptr, "object", kChildCount, cookie);
+	if (aMaxDepth > 0)
+	{
+		int first = max(0, aPage * aPageSize);
+		int last = min(kChildCount, first + aPageSize);
+		for (int index = first; index < last; ++index)
+		{
+			ExprTokenType value;
+			CStringTCharFromUTF8 text("");
+			switch (index)
+			{
+			case 0: value.SetValue((__int64)mVarType); aDebugger->WriteProperty("VarType", value); break;
+			case 1: value.SetValue((__int64)mFlags); aDebugger->WriteProperty("Flags", value); break;
+			case 2: value.SetValue((__int64)(mIsProxy ? 1 : 0)); aDebugger->WriteProperty("IsProxy", value); break;
+			case 3:
+				text = CStringTCharFromUTF8(mService ? mService : "");
+				value.SetValue((LPTSTR)text.GetString(), text.GetLength());
+				aDebugger->WriteProperty("Service", value);
+				break;
+			case 4:
+				text = CStringTCharFromUTF8(mPath ? mPath : "");
+				value.SetValue((LPTSTR)text.GetString(), text.GetLength());
+				aDebugger->WriteProperty("Path", value);
+				break;
+			case 5:
+				text = CStringTCharFromUTF8(mIface ? mIface : "");
+				value.SetValue((LPTSTR)text.GetString(), text.GetLength());
+				aDebugger->WriteProperty("Interface", value);
+				break;
+			case 6: value.SetValue(mVal64); aDebugger->WriteProperty("Value", value); break;
+			}
+		}
+	}
+	aDebugger->EndProperty(cookie);
+}
+#endif
 
 // Parse a proxy spec: "service", "service/path", "service/path/interface".
 // The service part is the first component before any '/'; everything after

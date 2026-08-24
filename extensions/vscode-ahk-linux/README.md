@@ -63,8 +63,9 @@ independently exercised, including a real VS Code 1.134 extension-host run.
 D3 object trees and exception breakpoints are implemented: Array/Map/Object
 expansion supports paging/nested handles, and caught exceptions expose their
 message before continuing. Persistent idle scripts can also be paused within a 500 ms gate and expose an
-explicitly labelled no-active-frame Global scope. Reconnect after detach and a
-D-Bus object projection remain; see [VSC2_DEBUGGER_PORT.md](VSC2_DEBUGGER_PORT.md).
+explicitly labelled no-active-frame Global scope. Linux D-Bus compatibility
+objects expose side-effect-free adapter metadata. Reconnect after detach/crash
+cleanup remains; see [VSC2_DEBUGGER_PORT.md](VSC2_DEBUGGER_PORT.md).
 
 ## Package and test
 

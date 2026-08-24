@@ -72,10 +72,9 @@ public:
 	}
 	bool IsOfType(Object *aPrototype);
 #ifdef CONFIG_DEBUGGER
-	// D1 boundary: the Linux D-Bus compatibility object has no Windows COM
-	// IDispatch/SAFEARRAY debugger projection yet.  Emit no child properties;
-	// the top-level object remains visible as an explicit ComObject value.
-	IObject_DebugWriteProperty_Def { (void)aPage; (void)aPageSize; (void)aMaxDepth; }
+	// Projects only locally held adapter metadata; it never performs remote
+	// D-Bus calls merely because the IDE expanded a variable.
+	IObject_DebugWriteProperty_Def;
 #endif
 
 	// SafeArray-ish members (limited support on Linux).

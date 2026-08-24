@@ -315,6 +315,8 @@ async function runDebugSelfTest(context, script, runtimePath) {
     alpha: null,
     beta: null,
     mapValues: {},
+    dbusProxy: {},
+    typedScalar: {},
     exceptionLine: 0,
     exceptionMessage: null,
     idlePauseMs: null,
@@ -354,6 +356,8 @@ async function runDebugSelfTest(context, script, runtimePath) {
               const arr = snapshot.variables.find((item) => item.name === 'arr');
               const obj = snapshot.variables.find((item) => item.name === 'obj');
               const mapv = snapshot.variables.find((item) => item.name === 'mapv');
+              const comProxy = snapshot.variables.find((item) => item.name === 'comProxy');
+              const typedScalar = snapshot.variables.find((item) => item.name === 'typedScalar');
               const arrPage0 = await debugSession.customRequest('variables', {
                 variablesReference: arr.variablesReference, start: 0, count: 16,
               });
@@ -379,6 +383,18 @@ async function runDebugSelfTest(context, script, runtimePath) {
                 mapChildren.variables
                   .filter((item) => item.name !== '<base>')
                   .map((item) => [item.name, item.value]),
+              );
+              const proxyChildren = await debugSession.customRequest('variables', {
+                variablesReference: comProxy.variablesReference, start: 0, count: 16,
+              });
+              evidence.dbusProxy = Object.fromEntries(
+                proxyChildren.variables.map((item) => [item.name, item.value]),
+              );
+              const scalarChildren = await debugSession.customRequest('variables', {
+                variablesReference: typedScalar.variablesReference, start: 0, count: 16,
+              });
+              evidence.typedScalar = Object.fromEntries(
+                scalarChildren.variables.map((item) => [item.name, item.value]),
               );
               await debugSession.customRequest('setExceptionBreakpoints', { filters: ['all'] });
               phase = 1;

@@ -88,9 +88,17 @@ before clean termination.
 - Raw DBGp and external DAP pause in ~72 ms; real VS Code 1.134 pauses in 318 ms,
   reads global `idleValue=77`, then terminates cleanly (all gated below 500 ms).
 
+### Delivered: Linux D-Bus compatibility-object projection
+
+- Expanding a `ComObject` projects only locally held adapter metadata:
+  `VarType`, `Flags`, `IsProxy`, `Service`, `Path`, `Interface` and `Value`.
+- Expansion never invokes a remote D-Bus method/property, so debugger UI cannot
+  create hidden IPC side effects.
+- Proxy `org.freedesktop.DBus` (`VT_DISPATCH=9`) and typed scalar `ComValue(3,42)`
+  pass raw DBGp, external DAP and real VS Code variable-tree tests.
+
 Remaining D3 work:
 
-- an explicit debugger projection for Linux D-Bus compatibility objects;
 - reconnect after detach and crash cleanup.
 
 ## Non-goals

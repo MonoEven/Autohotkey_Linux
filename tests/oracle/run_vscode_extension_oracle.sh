@@ -82,6 +82,12 @@ assert debug["arrayValues"] == list(range(1, 21)), data
 assert debug["alpha"] == "A", data
 assert debug["beta"] == "42", data
 assert debug["mapValues"] == {'["first"]': "101", '["second"]': "202"}, data
+assert debug["dbusProxy"]["VarType"] == "9", data
+assert debug["dbusProxy"]["IsProxy"] == "1", data
+assert debug["dbusProxy"]["Service"] == "org.freedesktop.DBus", data
+assert debug["dbusProxy"]["Path"] == "/", data
+assert debug["typedScalar"]["VarType"] == "3", data
+assert debug["typedScalar"]["Value"] == "42", data
 assert debug["y"] == "15", data
 assert debug["exceptionLine"] == 6, data
 assert debug["exceptionMessage"] == "D3-boom", data
