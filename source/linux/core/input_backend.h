@@ -123,7 +123,8 @@ const char *LinuxInputBackendNameFor(AhkInputBackendKind aKind);
 // key-up, bare key, wildcard).  Starts from the effective backend; falls back
 // through the other lanes in priority order when the effective one cannot
 // satisfy the flags.
-AhkInputBackendKind LinuxInputBackendRoute(bool aPassthrough, bool aKeyUp, bool aBare, bool aWildcard);
+AhkInputBackendKind LinuxInputBackendRoute(bool aPassthrough, bool aKeyUp, bool aBare,
+	bool aWildcard, bool aScanCode = false, bool aCustomCombo = false);
 
 // Hotkey set changed (called from LinuxHotkeyStateChanged): let the active
 // backend reconcile its registrations.  No-op for X11/EVDEV.

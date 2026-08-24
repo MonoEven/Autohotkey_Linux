@@ -27,6 +27,7 @@
 #include "core_hotkey_linux.h"
 #include "core_capture_linux.h"
 #include "core_input_linux.h"
+#include "core_keymodel_linux.h"
 #include "../../application.h"
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
@@ -36,6 +37,9 @@
 #include <cstring>
 #include <cwctype>
 #include "../../hook.h"
+
+wchar_t LinuxCharFromKeySym(KeySym aKs);
+vk_type LinuxKeysymToVk(KeySym aKs);
 
 namespace {
 
@@ -66,44 +70,40 @@ bool LinuxIsModifierKey(KeySym ks)
 	return false;
 }
 
-// Layout-aware keysym for a key event, with a live core-map fallback: the
-// layout-aware lookup (XKB) is tried first; a transient borrowed keycode
-// (SendText's Unicode transmission) changes only the CORE map, so when XKB
-// yields NoSymbol the server's current core mapping is queried directly.
-// The process-local borrow log is consulted BEFORE the server queries: this
-// engine may process the key event after the borrow was already reverted,
-// and the log (consumed FIFO, in the same order the events were generated)
-// is the only race-free answer for those late events.
-KeySym LinuxEventKeySym(Display *d, XEvent &ev)
+// One normalization point for capture consumers: physical evdev/sc, logical
+// VK/keysym and text from the live xkbcommon state. The process-local borrow
+// log remains first because a transient Unicode CORE mapping may already have
+// been restored when this queued event is consumed.
+bool LinuxEventKeyIdentity(Display *d, XEvent &ev, AhkLinuxKeyIdentity &aOut)
 {
-	if (KeySym ks = LinuxConsumeBorrowedKeySym(ev.xkey.keycode))
-		return ks;
-	bool shift = (ev.xkey.state & ShiftMask) != 0;
-	KeySym ks = XkbKeycodeToKeysym(d, ev.xkey.keycode, shift ? 1 : 0, 0);
-	if (ks != NoSymbol)
-		return ks;
-	int kspk = 0;
-	KeySym *row = XGetKeyboardMapping(d, ev.xkey.keycode, 1, &kspk);
-	if (row && kspk > 0)
-		ks = row[(shift && kspk > 1) ? 1 : 0];
-	if (row)
-		XFree(row);
-	return ks;
-}
-
-// The character a key press produces.  Shift selects the shifted keysym;
-// CapsLock toggles the case of ASCII letters (X11 keysyms do not apply caps
-// themselves); non-ASCII characters (Unicode keysyms from IME-composed keys
-// or the Send engine's borrowed keycodes) are returned as-is.  0 = not text.
-wchar_t LinuxCaptureChar(Display *d, XEvent &ev)
-{
+	memset(&aOut, 0, sizeof(aOut));
+	// One borrow-log entry represents one typed character, not both phases.
+	// Consuming on KeyRelease steals the next character's entry in a rapid
+	// Unicode run ("你好" became only "你").
+	if (ev.type == KeyPress)
+		if (KeySym borrowed = LinuxConsumeBorrowedKeySym(ev.xkey.keycode))
+		{
+			aOut.evdev_code = ev.xkey.keycode >= 8 ? ev.xkey.keycode - 8 : 0;
+			aOut.sc = LinuxScanCodeForEvdev(aOut.evdev_code);
+			aOut.keysym = borrowed;
+			aOut.vk = LinuxKeysymToVk(borrowed);
+			aOut.text = (uint32_t)LinuxCharFromKeySym(borrowed);
+			return true;
+		}
+	if (LinuxKeyModelX11Decode(d, ev.xkey.keycode, ev.xkey.state, aOut))
+		return true;
+	// Defensive fallback for X servers without xkbcommon-x11 support.
 	bool shift = (ev.xkey.state & ShiftMask) != 0;
 	bool caps = (ev.xkey.state & LockMask) != 0;
-	KeySym ks = LinuxEventKeySym(d, ev);
-	wchar_t c = LinuxCharFromKeySym(ks);
+	aOut.evdev_code = ev.xkey.keycode >= 8 ? ev.xkey.keycode - 8 : 0;
+	aOut.sc = LinuxScanCodeForEvdev(aOut.evdev_code);
+	aOut.keysym = XkbKeycodeToKeysym(d, ev.xkey.keycode, shift ? 1 : 0, 0);
+	aOut.vk = LinuxKeysymToVk(aOut.keysym);
+	wchar_t c = LinuxCharFromKeySym(aOut.keysym);
 	if (c >= 0x20 && c <= 0x7e && iswalpha(c))
-		return (shift ^ caps) ? (wchar_t)towupper(c) : (wchar_t)towlower(c);
-	return c;
+		c = (shift ^ caps) ? (wchar_t)towupper(c) : (wchar_t)towlower(c);
+	aOut.text = (uint32_t)c;
+	return aOut.keysym != NoSymbol;
 }
 
 // ---------------------------------------------------------------------------
@@ -445,10 +445,9 @@ vk_type LinuxKeysymToVk(KeySym ks)
 // IME-composed keys and the Send engine's borrowed keycodes are converted
 // by LinuxCharFromKeySym), plus the control characters for the named keys
 // (Return collects CR, matching Windows).
-wchar_t LinuxInputHookChar(Display *d, XEvent &ev)
+wchar_t LinuxInputHookChar(const AhkLinuxKeyIdentity &aKey)
 {
-	KeySym ks = LinuxEventKeySym(d, ev);
-	wchar_t c = LinuxCharFromKeySym(ks);
+	wchar_t c = (wchar_t)aKey.text;
 	if (c == L'\n') // Enter: Windows InputHook collects CR.
 		return L'\r';
 	return c;
@@ -466,29 +465,20 @@ bool LinuxCaptureFeedInput(Display *d, XEvent &ev)
 	input_type *active = g_input;
 	if (!active || !active->InProgress())
 		return false;
+	AhkLinuxKeyIdentity key;
+	LinuxEventKeyIdentity(d, ev, key);
 	if (ev.type != KeyPress)
 	{
-		// KeyRelease: notify OnKeyUp (queued, fired from the main-loop
-		// dispatch) and consume the release while the input is active.
+		// KeyRelease: notify canonical logical VK + set-1 scan code.
 		if (ev.type == KeyRelease && active->ScriptObject && active->ScriptObject->onKeyUp)
-		{
-			KeySym ks0 = XkbKeycodeToKeysym(d, ev.xkey.keycode, 0, 0);
-			LinuxInputNotifyQueue(active, NOTIFY_KEYUP, LinuxKeysymToVk(ks0)
-				, (sc_type)ev.xkey.keycode, 0);
-		}
+			LinuxInputNotifyQueue(active, NOTIFY_KEYUP, key.vk, key.sc, 0);
 		return true; // Releases are consumed while the input is active.
 	}
-	KeySym ks0 = XkbKeycodeToKeysym(d, ev.xkey.keycode, 0, 0);
-	if (LinuxIsModifierKey(ks0))
+	if (LinuxIsModifierKey(key.keysym))
 		return true;
-	// OnKeyDown notification (queued; fired from the main-loop dispatch).
-	// SC is the X11 keycode (there is no Windows scancode on Linux;
-	// documented).  VK is 0 for keys with no Win32-VK equivalent (e.g.
-	// Unicode keysyms).
 	if (active->ScriptObject && active->ScriptObject->onKeyDown)
-		LinuxInputNotifyQueue(active, NOTIFY_KEYDOWN, LinuxKeysymToVk(ks0)
-			, (sc_type)ev.xkey.keycode, 0);
-	wchar_t ch = LinuxInputHookChar(d, ev);
+		LinuxInputNotifyQueue(active, NOTIFY_KEYDOWN, key.vk, key.sc, 0);
+	wchar_t ch = LinuxInputHookChar(key);
 	if (ch == L'\b' && active->BackspaceIsUndo)
 	{
 		if (active->BufferLength > 0)
@@ -502,7 +492,7 @@ bool LinuxCaptureFeedInput(Display *d, XEvent &ev)
 	// VK flags (KeyVK).  Check the pressed key's VK against them before
 	// collecting text: a single-char key ends with EndChar, a named key with
 	// EndKey (matching Windows semantics).
-	if (vk_type vk = LinuxKeysymToVk(ks0))
+	if (vk_type vk = key.vk)
 	{
 		bool with_shift = (ev.xkey.state & ShiftMask) != 0;
 		UCHAR flag = with_shift ? END_KEY_WITH_SHIFT : END_KEY_WITHOUT_SHIFT;
@@ -511,7 +501,7 @@ bool LinuxCaptureFeedInput(Display *d, XEvent &ev)
 			if (ch)
 				active->EndByChar((TCHAR)ch);
 			else
-				active->EndByKey(vk, (sc_type)0, false, with_shift);
+				active->EndByKey(vk, key.sc, false, with_shift);
 			return true;
 		}
 	}
@@ -567,12 +557,13 @@ bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel)
 		return false;
 	}
 
-	// KeyPress.
-	KeySym ks = XkbKeycodeToKeysym(d, ev.xkey.keycode, 0, 0);
-	if (LinuxIsModifierKey(ks))
+	// KeyPress: one normalized physical/logical/text decode for every consumer.
+	AhkLinuxKeyIdentity key;
+	LinuxEventKeyIdentity(d, ev, key);
+	if (LinuxIsModifierKey(key.keysym))
 		return false; // Modifiers flow through; they do not break matching.
 
-	wchar_t ch = LinuxCaptureChar(d, ev);
+	wchar_t ch = (wchar_t)key.text;
 	if (!ch)
 	{
 		// Navigation/function key: the text stream ends here.

@@ -22,6 +22,7 @@
 #include "core_clipboard_linux.h" // LinuxClipboardGetText/SetText (paste path)
 #include "core_uinput_linux.h" // uinput injection lane (check0820)
 #include "core_hotkey_linux.h" // LinuxSendInputTrack/Clear (SendInput self-suppression)
+#include "core_keymodel_linux.h"
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
@@ -926,6 +927,10 @@ static bool LinuxSendLiteralRun(Display *d, const wchar_t *aStart, const wchar_t
 	, LinuxHeldMods &aHeld)
 {
 	sLastUnsendable = 0;
+	// Capture the active XKB map once per literal run; MappingNotify can occur
+	// between Send calls even when no hotkey connection is pumping events.
+	if (d)
+		LinuxKeyModelX11Refresh(d);
 	bool has_non_ascii = false;
 	for (const wchar_t *q = aStart; q < aEnd; ++q)
 		if (*q > 0x7E) { has_non_ascii = true; break; }
@@ -966,65 +971,94 @@ static void LinuxSendChar(Display *d, wchar_t aChar, LinuxHeldMods &aHeld)
 		LinuxSendVk(d, 0x09, 1);
 		return;
 	}
-	KeySym ks = (KeySym)(unsigned int)aChar;
-	if (ks > 0x7E)
+	// X11: resolve every character against the server's active XKB layout.
+	// This handles shifted and AltGr levels (for example '@' on French) and
+	// replaces the old US-only punctuation table. If the layout has no direct
+	// binding, retain the serialized spare-keycode Unicode fallback.
+	if (d)
 	{
-		// Non-ASCII: Unicode keysym transmission on X11; on a pure-Wayland
-		// session, inject via a custom xkb keymap (wtype model, R3 §6-U3);
-		// only if that fails fall back to the run-level clipboard-paste.
-		if (d)
+		AhkLinuxKeyStroke stroke;
+		if (!LinuxKeyModelX11FindUtf32(d, (uint32_t)aChar, stroke))
+		{
 			LinuxSendCharUnicode(d, aChar);
-		else if (LinuxWaylandSendCharW(aChar))
 			return;
-		else
-			sLastUnsendable = aChar;
+		}
+		bool added_shift = stroke.shift && !aHeld.shift;
+		bool added_altgr = stroke.altgr && !LinuxKeyIsDown(d, 0xA5);
+		KeyCode altgr_kc = 0;
+		if (added_shift)
+		{
+			LinuxFakeKey(d, 0x10, true);
+			aHeld.shift = true;
+		}
+		if (added_altgr)
+		{
+			// Layouts commonly expose AltGr as ISO_Level3_Shift, not Alt_R.
+			altgr_kc = XKeysymToKeycode(d, XK_ISO_Level3_Shift);
+			if (!altgr_kc)
+				altgr_kc = XKeysymToKeycode(d, XK_Alt_R);
+			if (altgr_kc)
+			{
+				XTestFakeKeyEvent(d, altgr_kc, True, CurrentTime);
+				XFlush(d);
+			}
+			else
+				added_altgr = false;
+		}
+		XTestFakeKeyEvent(d, stroke.keycode, True, CurrentTime);
+		LinuxSelfTrack((unsigned int)stroke.keycode, true, g->SendLevel, LinuxModeSuppressSelf());
+		XFlush(d);
+		int press_ms = LinuxModePressDurationMs();
+		int gap_ms = LinuxModeKeyDelayMs();
+		if (press_ms > 0)
+			usleep((useconds_t)press_ms * 1000);
+		XTestFakeKeyEvent(d, stroke.keycode, False, CurrentTime);
+		LinuxSelfTrack((unsigned int)stroke.keycode, false, g->SendLevel, LinuxModeSuppressSelf());
+		XFlush(d);
+		if (added_altgr)
+		{
+			XTestFakeKeyEvent(d, altgr_kc, False, CurrentTime);
+			XFlush(d);
+		}
+		if (added_shift)
+		{
+			LinuxFakeKey(d, 0x10, false);
+			aHeld.shift = false;
+		}
+		if (gap_ms > 0)
+			usleep((useconds_t)gap_ms * 1000);
 		return;
 	}
-	// Shifted characters are not directly mapped; use the base keycode.
+
+	if ((unsigned int)aChar > 0x7E)
+	{
+		if (LinuxWaylandSendCharW(aChar))
+			return;
+		sLastUnsendable = aChar;
+		return;
+	}
+	// Pure Wayland still uses its private keymap's VK-compatible ASCII table.
 	wchar_t base = LinuxCharBase(aChar);
 	bool need_shift = LinuxCharNeedsShift(aChar);
 	bool added_shift = false;
 	if (need_shift && !aHeld.shift)
 	{
-		LinuxFakeKey(d, 0x10, true);
+		LinuxFakeKey(nullptr, 0x10, true);
 		aHeld.shift = true;
 		added_shift = true;
 	}
-	if (!d)
-	{
-		// Wayland virtual keyboard (no X display).
-		vk_type vk = LinuxCharVk(base);
-		LinuxFakeKey(nullptr, vk, true);
-		int press_ms = LinuxModePressDurationMs();
-		int gap_ms = LinuxModeKeyDelayMs();
-		if (press_ms > 0)
-			usleep((useconds_t)press_ms * 1000);
-		LinuxFakeKey(nullptr, vk, false);
-		if (gap_ms > 0)
-			usleep((useconds_t)gap_ms * 1000);
-	}
-	else
-	{
-		KeyCode kc = XKeysymToKeycode(d, (KeySym)(unsigned int)base);
-		if (kc)
-		{
-			XTestFakeKeyEvent(d, kc, True, CurrentTime);
-			LinuxSelfTrack((unsigned int)kc, true, g->SendLevel, LinuxModeSuppressSelf());
-			XFlush(d);
-			int press_ms = LinuxModePressDurationMs();
-			int gap_ms = LinuxModeKeyDelayMs();
-			if (press_ms > 0)
-				usleep((useconds_t)press_ms * 1000);
-			XTestFakeKeyEvent(d, kc, False, CurrentTime);
-			LinuxSelfTrack((unsigned int)kc, false, g->SendLevel, LinuxModeSuppressSelf());
-			XFlush(d);
-			if (gap_ms > 0)
-				usleep((useconds_t)gap_ms * 1000);
-		}
-	}
+	vk_type vk = LinuxCharVk(base);
+	LinuxFakeKey(nullptr, vk, true);
+	int press_ms = LinuxModePressDurationMs();
+	int gap_ms = LinuxModeKeyDelayMs();
+	if (press_ms > 0)
+		usleep((useconds_t)press_ms * 1000);
+	LinuxFakeKey(nullptr, vk, false);
+	if (gap_ms > 0)
+		usleep((useconds_t)gap_ms * 1000);
 	if (added_shift)
 	{
-		LinuxFakeKey(d, 0x10, false);
+		LinuxFakeKey(nullptr, 0x10, false);
 		aHeld.shift = false;
 	}
 }

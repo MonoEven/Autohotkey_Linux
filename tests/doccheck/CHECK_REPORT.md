@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **1152 / 1152 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 53 项(含 Unicode 文本发送 3 项,round-34;**SendEvent/SendInput 模式拆分与键延迟 6 项** R2 §2-B 与 **SendLevel/#InputLevel 门控与 InputHook MinSendLevel 4 项** R2 §2-C)、控件模块 63 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 17 项、**热键透传/解除抓取模块 10 项**(round-29+round-36)、**Unicode 备用键码并发模块 5 项**(round-36)、**剪贴板回归模块 13 项**、**慢所有者剪贴板超时模块 4 项**、**剪贴板变更通知模块 4 项**(round-38)、**键盘布局切换模块 6 项**、**按键重复/长按模块 4 项**与**IME 激活状态模块 2 项**(check0820)、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 44 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 5 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 31 项** 与 **D-Bus COM 20 项**;round-34 增 **热字串 Unicode 触发词 2 项** 与 **InputHook OnChar/OnKeyDown/OnKeyUp 通知 4 项**;**--diag 诊断模块 10 项**(check_detail0821 §12/R1-3 + §1.2-C/R1-6 + §2.2-A/§3);**parity 分类模块 9 项**(check_detail0821 §13/R2)与**严格 parity 模式模块 3 项**(R2);**A_IconFile/A_IconNumber 4 项**(R2 §5-M5)、**A_ThisHotkey/A_PriorHotkey 1 项**(R2 §5)与 **caps API + 逐键路由/版本化 schema 6 项**(R3 §1);27 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 17 项** 与 **XWayland 回退 255 项** 独立套件通过(见第 10 节)
+- **结果**: **1152 / 1152 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 53 项(含 Unicode 文本发送 3 项,round-34;**SendEvent/SendInput 模式拆分与键延迟 6 项** R2 §2-B 与 **SendLevel/#InputLevel 门控与 InputHook MinSendLevel 4 项** R2 §2-C)、控件模块 63 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 17 项、**热键透传/解除抓取模块 10 项**(round-29+round-36)、**Unicode 备用键码并发模块 5 项**(round-36)、**剪贴板回归模块 13 项**、**慢所有者剪贴板超时模块 4 项**、**剪贴板变更通知模块 4 项**(round-38)、**三层键模型/布局切换模块 6 项**、**按键重复/长按模块 4 项**与**IME 激活状态模块 2 项**(check0820)、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 44 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 5 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 31 项** 与 **D-Bus COM 20 项**;round-34 增 **热字串 Unicode 触发词 2 项** 与 **InputHook OnChar/OnKeyDown/OnKeyUp 通知 4 项**;**--diag 诊断模块 10 项**(check_detail0821 §12/R1-3 + §1.2-C/R1-6 + §2.2-A/§3);**parity 分类模块 9 项**(check_detail0821 §13/R2)与**严格 parity 模式模块 3 项**(R2);**A_IconFile/A_IconNumber 4 项**(R2 §5-M5)、**A_ThisHotkey/A_PriorHotkey 1 项**(R2 §5)与 **caps API + 逐键路由/版本化 schema 6 项**(R3 §1);27 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 17 项** 与 **XWayland 回退 255 项** 独立套件通过(见第 10 节)
 
 ---
 
@@ -59,7 +59,7 @@
 | 语句/指令/类别/索引页代码形式 (If/Else/For/While/Switch/Try/Catch/Throw/Loop/Until/Break/Continue/Return/Block + Array/Map/Object/Buffer/Error/Number/String 类别 + `#Requires`/`#Warn` 等) | `assert_statements.ahk` | 19 |
 | 覆盖补全 (round-27:54 个未直引用函数中的 51 个 + String/Class/Menu/ObjBindMethod/Persistent/WinWaitNotActive 名称引用;含 Exit/Reload/Shutdown/InputBox 的"不可自动化"文档块) | `assert_misc_cov.ahk` | 75 |
 | 剪贴板回归 (check0820:多 MIME TARGETS 广告与图片/HTML 拒绝、慢消费者延迟读取、252KB 大文本往返、外部 slow owner、空剪贴板、ClipWait;经独立 xclip_probe X11 客户端验证,owner 与 consumer 分属不同进程) | `assert_clipboard.ahk` | 13 |
-| 键盘布局动态切换 (check0820:setxkbmap us→de→us 广播 MappingNotify 期间,XGrabKey 键码抓取的热键保持触发、Send 字符解析不受影响;xkeycap 独立客户端验证) | `assert_layout.ahk` | 6 |
+| 三层键模型/布局切换 (M1-K:确定性 AZERTY/AltGr XKB fixture；热键跨 MappingNotify、Send 字符按 live layout；外部 oracle 另验 sc01E + EuroSign/Mod5) | `assert_layout.ahk` | 6 |
 | 按键重复/长按/aaaa (check0820:SendText "aaaa" 四个字符不吞、30ms 连发 5 次每次触发热键、单发 `~` 透传回调+键到达前台;透传 down-copy 被 active passive grab 吸纳的背离与 pt 断言同理,见 check0818 P0-3) | `assert_repeat.ahk` | 4 |
 | IME 激活状态 (check0820:ibus/fcitx 框架检测(会话总线 owner)+ X11 XKB 组读,格式断言使无 IME/无显示的 CI 环境也可跑) | `assert_ime.ahk` | 2 |
 | 慢所有者剪贴板超时 (check0820:AHK_CLIPBOARD_TIMEOUT_MS 环境变量;默认 2s 对 2.5s 才应答的慢 owner 干净超时(空读,~1.8s),提升到 5s 后等待应答成功(读得数据);xclip_probe --serve-delay 模拟慢应用) | `assert_clipboard_slow.ahk` | 4 |
@@ -282,7 +282,7 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 - **实现**: 新增 `core_hotkey_linux.cpp`(Hotkey 函数接入 + X 热键激活),按 docs-v2 与上游语义:
   - **Hotkey 函数**:接入上游 `BIF_Hotkey`(script2.cpp,完整支持:函数对象/On/Off/Toggle/AltTab 动作、B0/S0/Pn/Tn/In 等选项、更新既有热键、HotIf 变体)——上游解析与注册逻辑全部复用,仅激活机制改为 Linux;
   - **激活**:每个热键经 `XGrabKey` 在根窗口上注册(键码由 vk 经键表换算;MOD_CONTROL/SHIFT/ALT/WIN → Control/Shift/Mod1/Mod4 掩码;同时注册带/不带 CapsLock、NumLock 的组合,避免锁定键阻碍触发);事件在**主循环**(poll 等待 X 连接,超时=下一定时器到期)与 **MsgSleep 等待期间**(10ms 切片)派发——与文档"热键在脚本等待时也可触发"一致;
-  - **匹配与执行**:KeyPress 触发按下型热键、KeyRelease 触发 `Key up` 热键(文档);修饰键状态须与热键完全一致(文档:默认不允许多余修饰键);命中变体经上游 `FindVariant`(HotIf 准则)+ `PerformInNewThreadMadeByCaller`(节流保护 + 以热键名作参数执行回调,`A_ThisHotkey` 语义);鼠标键/扫描码/前缀(`A & B`)热键在 X11 无对应,不注册(文档化限制)。
+  - **匹配与执行**:KeyPress 触发按下型热键、KeyRelease 触发 `Key up` 热键(文档);修饰键状态须与热键完全一致(文档:默认不允许多余修饰键);命中变体经上游 `FindVariant`(HotIf 准则)+ `PerformInNewThreadMadeByCaller`(节流保护 + 以热键名作参数执行回调,`A_ThisHotkey` 语义);鼠标键与 set-1 `scXXX` 均有 X11 抓取；前缀(`A & B`)仍无状态机并明确拒绝。
 - **测试设施**: `assert_hotkey.ahk`/`assert_hotkey_expect.txt`(新增,10 断言:单键触发、Ctrl/Shift/Alt 组合、多余修饰键不触发(文档)、On/Off 动作、Key up 热键、非法键名 ValueError、热键使脚本保持运行且与定时器共存——组合以 Send 的 `^{F8}` 形式发送,XTEST 事件经抓取回到脚本并被派发);`run_check.sh --xvfb` 运行。
 - **本轮修复的真实缺陷**: ① `HookAdjustMaxHotkeys` 桩返回 false → `Hotkey::AddHotkey` 报伪"Out of memory"——改为真实 realloc(上游钩子代码经此函数扩容热键数组);② 测试脚本变量与回调函数同名(`h1` 与 `H1`,v2 名称大小写不敏感 → 函数名保留,变量冲突报错)——改名,属测试脚本问题非移植缺陷;③ `Send("^F8")` 按文档语义是 Ctrl+文本"F8"(修饰符只作用于下一个键),组合键应写 `Send("^{F8}")`——测试脚本修正。
 

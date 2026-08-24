@@ -48,6 +48,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - External input oracle: independent XI2.1 JSONL recorder and XTEST injector
   gate both Send output and hotkey input directions; uinput covers the VM
   physical-device lane.
+- Layout-aware three-layer key model: active X11 keymap/state from
+  xkbcommon-x11, canonical evdev/set-1 SC + VK/keysym + UTF-32, explicit scan
+  code hotkeys on X11/evdev, and live-layout Shift/AltGr Send lookup.
 - Machine totals: 1152/1152 X11/headless, 17/17 Wayland and 255/255
   XWayland assertions; 27/27 headless regression tests.
 

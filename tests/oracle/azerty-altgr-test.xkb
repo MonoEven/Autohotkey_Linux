@@ -1,0 +1,25 @@
+// Deterministic X11 test keymap constrained to keycodes <=255.
+// Models the properties M1-K needs to prove: AZERTY A/Q physical positions
+// and EuroSign on the AltGr level of AE10. Not installed as a user layout.
+xkb_keymap {
+    xkb_keycodes "oracle" {
+        include "xfree86+aliases(azerty)"
+    };
+    xkb_types "oracle" {
+        include "complete"
+    };
+    xkb_compatibility "oracle" {
+        include "complete"
+    };
+    xkb_symbols "oracle" {
+        include "pc+us"
+        replace key <AD01> { type="ALPHABETIC", [ a, A ] };
+        replace key <AC01> { type="ALPHABETIC", [ q, Q ] };
+        replace key <AE10> { type="FOUR_LEVEL", [ agrave, 0, EuroSign, EuroSign ] };
+        replace key <RALT> { type="ONE_LEVEL", [ ISO_Level3_Shift ] };
+        modifier_map Mod5 { <RALT> };
+    };
+    xkb_geometry "oracle" {
+        include "pc(pc105)"
+    };
+};

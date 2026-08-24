@@ -71,7 +71,7 @@ License:        GPL-2.0-only
 URL:            https://github.com/MonoEven/Autohotkey_Linux
 Source0:        $SRC
 BuildArch:      $RPM_ARCH
-Requires:       libX11, libXext, libXrandr, libXinerama, libXtst, gtk3, dbus-libs, libffi
+Requires:       libX11, libXext, libXrandr, libXinerama, libXtst, libxkbcommon-x11, gtk3, dbus-libs, libffi
 
 # No debuginfo: stripping needs eu-strip (elfutils) which CI containers may
 # not have; the shipped binary is intentionally as-is (check0820).

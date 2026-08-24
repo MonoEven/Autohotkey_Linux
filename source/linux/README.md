@@ -14,6 +14,10 @@ files do not include these sources.
 The input capability contract is generated from `core/input_caps.def`.
 `HotkeyBackendGet()` and `ahk_core --diag` expose schema version 2; generated
 documentation is checked by `tools/gen_input_caps.py --check`.
+`core/core_keymodel_linux.*` is the canonical physical evdev/set-1 SC → logical
+VK/keysym → Unicode-text model. X11 loads the active server map through
+xkbcommon-x11; Send character lookup prefers the least-modified live-layout
+binding before the Unicode borrow fallback.
 
 Key runtime controls:
 

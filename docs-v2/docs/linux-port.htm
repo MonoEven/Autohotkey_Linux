@@ -161,13 +161,20 @@ and 20 for the D-Bus COM layer). The port has two display backends:</p>
 <p>Capability schema: <code>caps_version=2</code>. The values below are runtime declarations, not inferred marketing labels.</p>
 <table>
   <tr><th>Backend</th><th>Global</th><th>Suppress</th><th>~ pass</th><th>Key-up</th><th>Wildcard</th><th>Bare</th><th>Zero-confirm</th><th>Dynamic</th><th>Multi-owner</th><th>Scan code</th><th>Custom combo</th><th>Character stream</th><th>Provenance</th><th>SendLevel gate</th><th>Direct Unicode</th></tr>
-  <tr><td>x11</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>no</td><td>no</td><td>yes</td><td>heuristic</td><td>yes</td><td>yes</td></tr>
+  <tr><td>x11</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>no</td><td>yes</td><td>heuristic</td><td>yes</td><td>yes</td></tr>
   <tr><td>portal</td><td>yes</td><td>yes</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td><td>yes</td><td>no</td><td>no</td><td>no</td><td>no</td><td>none</td><td>no</td><td>no</td></tr>
   <tr><td>gnome-shell</td><td>yes</td><td>yes</td><td>no</td><td>no</td><td>no</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>no</td><td>no</td><td>no</td><td>none</td><td>no</td><td>no</td></tr>
-  <tr><td>evdev</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td><td>heuristic</td><td>no</td><td>no</td></tr>
+  <tr><td>evdev</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>no</td><td>no</td><td>yes</td><td>no</td><td>no</td><td>heuristic</td><td>no</td><td>no</td></tr>
 </table>
 <p><code>heuristic</code> provenance means process-local/device heuristics; only a future broker/compositor-stamped origin may claim <code>authoritative</code>. A <code>no</code> value remains no until a matching behavior test is added.</p>
 <!-- INPUT_CAPS:END -->
+    X11 and evdev now share a three-layer key model: Linux evdev physical code
+    ↔ AutoHotkey/Windows set-1 <code>scXXX</code>, logical VK/keysym, and
+    Unicode text. X11 keymap/state comes from xkbcommon-x11 and refreshes on
+    MappingNotify. Character Send searches the live layout for the least
+    modified key (none, Shift, AltGr, Shift+AltGr) before using the serialized
+    temporary-Unicode mapping fallback. Custom <code>A &amp; B</code> combinations
+    remain false in the capability table until their state machine ships.
   </li>
   <li><b>Unicode text input</b> (round-34 + check0820 + R3 §6-U3): <code>SendText</code>/
     <code>Send</code> and hotstring replacements now deliver non-ASCII

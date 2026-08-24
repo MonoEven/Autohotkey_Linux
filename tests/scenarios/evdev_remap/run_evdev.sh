@@ -13,8 +13,8 @@ gcc -o /tmp/uinput-inject "$TOOLS/uinput-inject.c" 2>/dev/null || exit 0
 rm -f /tmp/scn_evdev_remap /tmp/scn_ev_marker /tmp/scn_uinj_cmd
 cat > /tmp/scn_evrem.ahk <<'EOF'
 #Requires AutoHotkey v2.0
-a::{
-    FileAppend("fired`n", "/tmp/scn_ev_marker")
+sc01E::{
+    FileAppend("fired-sc01E`n", "/tmp/scn_ev_marker")
     Send("b")
 }
 SetTimer(() => ExitApp(), 12000)
@@ -28,7 +28,7 @@ sleep 4
 echo "30 tap" > /tmp/scn_uinj_cmd   # KEY_A
 sleep 3
 kill "$APID" "$IPID" 2>/dev/null
-if [ -f /tmp/scn_ev_marker ]; then
+if grep -q '^fired-sc01E$' /tmp/scn_ev_marker 2>/dev/null; then
   touch /tmp/scn_evdev_remap
 fi
 exit 0

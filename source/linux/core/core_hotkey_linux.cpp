@@ -30,9 +30,10 @@
 //         key-up hotkeys fire once per physical release (with a fallback
 //         filter for synthetic repeats when the server lacks XKB support).
 //
-// The upstream Hotkey() parse/variant machinery is unchanged.  Features the
-// X11 backend cannot express (scan codes, "A & B" prefixes) are NOT grabbed
-// and are documented as unsupported rather than silently misbehaving.
+// The upstream Hotkey() parse/variant machinery is unchanged. Explicit set-1
+// scan codes are normalized to evdev and X keycodes by core_keymodel_linux;
+// custom "A & B" prefix combos still require their dedicated state machine
+// and are rejected rather than silently misbehaving.
 //
 // Left/right modifiers and wildcard modifiers (round 31): X11 passive grabs
 // match modifier masks only, so the grab uses the combined mask of the
@@ -60,6 +61,7 @@
 #include "core_win_linux.h"
 #include "core_wayland_linux.h"
 #include "core_input_linux.h"
+#include "core_keymodel_linux.h"
 #include "core_capture_linux.h"
 #include "core_gshortcut_linux.h"
 #include "input_backend.h"
@@ -419,7 +421,9 @@ KeyCode LinuxHotkeyKeycode(Display *d, Hotkey *aHotkey)
 {
 	if (aHotkey->mVK)
 		return LinuxKeycodeForVkEx(d, aHotkey->mVK);
-	return 0; // Scan-code or other hotkeys are not supported.
+	if (aHotkey->mSC)
+		return LinuxX11KeycodeForScanCode(aHotkey->mSC);
+	return 0;
 }
 
 // X11 button number used to grab/fire this mouse hotkey (0 = not a mouse
@@ -1384,6 +1388,7 @@ void LinuxDispatchHotkeys()
 				break;
 			LinuxUpdateModifierMap(d);
 			LinuxUpdateModifierKeycodes(d);
+			LinuxKeyModelX11Refresh(d);
 			sIndexDirty = true;
 			sReconcileDirty = true;
 			LinuxCaptureMappingNotify();
@@ -1438,22 +1443,32 @@ BIF_DECL(BIF_Linux_Hotkey)
 	// availability and errors.
 	TCHAR name_buf[1024];
 	LPTSTR name = TokenToString(*aParam[0], name_buf, nullptr);
-	// "A & B" custom combos need key-down tracking the X11/portal/gnome-shell
-	// lanes cannot express (they used to register silently and never fire --
-	// the "no silent weakening" invariant, check_detail0821 §1-A / R3).
-	// The evdev lane can express them.
+	auto is_hex = [](wchar_t c) {
+		return (c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'f')
+			|| (c >= L'A' && c <= L'F');
+	};
+	bool explicit_scan = false;
+	for (const wchar_t *p = name; p && p[0] && p[1]; ++p)
+		if ((p[0] == L's' || p[0] == L'S') && (p[1] == L'c' || p[1] == L'C')
+			&& is_hex(p[2]))
+		{
+			explicit_scan = true;
+			break;
+		}
+	const AhkInputBackendCaps *backend_caps = LinuxInputBackendCapsFor(backend_kind);
+	if (explicit_scan && (!backend_caps || !backend_caps->scan_code))
+	{
+		aResultToken.Error(_T("Explicit scXXX hotkeys are not supported by the active Linux input backend; use X11 or evdev."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	// "A & B" needs a prefix-key state machine. No current lane implements it
+	// (including evdev), matching custom_combo=false in the versioned caps.
+	// Reject before mutating the upstream hotkey table: never accept a binding
+	// which cannot fire.
 	if (wcsstr(name, L" & "))
 	{
-		switch (backend_kind)
-		{
-		case AhkInputBackendKind::X11:
-		case AhkInputBackendKind::PORTAL:
-		case AhkInputBackendKind::GNOME_SHELL:
-			aResultToken.Error(_T("Hotkey \"A & B\" combos are not supported by the active input backend (they need the evdev lane); use AHK_INPUT_BACKEND=evdev."), _T(""), ErrorPrototype::OS);
-			return;
-		default:
-			break; // evdev (and auto falling through to it): allowed.
-		}
+		aResultToken.Error(_T("Hotkey \"A & B\" custom combinations are not implemented by the active Linux input backend."), _T(""), ErrorPrototype::OS);
+		return;
 	}
 	TCHAR opt_buf[256];
 	opt_buf[0] = _T('\0');

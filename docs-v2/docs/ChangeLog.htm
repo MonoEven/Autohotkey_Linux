@@ -41,6 +41,13 @@
     device/source IDs and XTEST provenance), while a separate XTEST process
     injects a key which AHK must capture. CI uploads the trace and summary;
     the permission-gated VM lane retains a separate uinput device oracle.</li>
+  <li><b>M1-K three-layer key model:</b> xkbcommon-x11 now supplies the active
+    physical evdev/set-1 scan code, logical VK/keysym and Unicode-text layers.
+    Explicit <code>scXXX</code> hotkeys work on X11 and evdev; InputHook reports
+    canonical VK/SC values; Send resolves Shift/AltGr bindings from the live
+    layout before borrowing a Unicode keycode. A deterministic external oracle
+    verifies physical <code>sc01E</code> across US/AZERTY and EuroSign on an
+    AltGr-only level.</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>

@@ -152,15 +152,16 @@ static int record_x11(const char *out_path, const char *keysym_name,
     return 0;
 }
 
-static int inject_x11(const char *keysym_name, int hold_ms)
+static int inject_keycode_x11(unsigned int raw_code, int hold_ms)
 {
     Display *d = XOpenDisplay(NULL);
     if (!d) {
         fprintf(stderr, "input-oracle: cannot open DISPLAY\n");
         return 2;
     }
-    KeyCode code = resolve_key(d, keysym_name);
+    KeyCode code = raw_code > 0 && raw_code <= 255 ? (KeyCode)raw_code : 0;
     if (!code) {
+        fprintf(stderr, "input-oracle: invalid X keycode: %u\n", raw_code);
         XCloseDisplay(d);
         return 2;
     }
@@ -176,11 +177,24 @@ static int inject_x11(const char *keysym_name, int hold_ms)
     return 0;
 }
 
+static int inject_x11(const char *keysym_name, int hold_ms)
+{
+    Display *d = XOpenDisplay(NULL);
+    if (!d) {
+        fprintf(stderr, "input-oracle: cannot open DISPLAY\n");
+        return 2;
+    }
+    KeyCode code = resolve_key(d, keysym_name);
+    XCloseDisplay(d);
+    return code ? inject_keycode_x11((unsigned int)code, hold_ms) : 2;
+}
+
 static void usage(const char *argv0)
 {
     fprintf(stderr, "usage:\n"
         "  %s record-x11 OUT KEYSYM COUNT TIMEOUT_MS\n"
-        "  %s inject-x11 KEYSYM HOLD_MS\n", argv0, argv0);
+        "  %s inject-x11 KEYSYM HOLD_MS\n"
+        "  %s inject-keycode-x11 X_KEYCODE HOLD_MS\n", argv0, argv0, argv0);
 }
 
 int main(int argc, char **argv)
@@ -189,6 +203,8 @@ int main(int argc, char **argv)
         return record_x11(argv[2], argv[3], atoi(argv[4]), atoi(argv[5]));
     if (argc == 4 && !strcmp(argv[1], "inject-x11"))
         return inject_x11(argv[2], atoi(argv[3]));
+    if (argc == 4 && !strcmp(argv[1], "inject-keycode-x11"))
+        return inject_keycode_x11((unsigned int)strtoul(argv[2], NULL, 0), atoi(argv[3]));
     usage(argv[0]);
     return 2;
 }

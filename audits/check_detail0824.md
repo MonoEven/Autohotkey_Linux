@@ -268,9 +268,19 @@
   3. `LinuxHotkeyKeycode()` 增加分支：`mSC` 存在时 `evdev = set1_to_evdev(mSC)`，
      X11 keycode = evdev+8，evdev lane 直接用（K1）；
   4. capability `scan_code` 翻 true（X11/evdev），portal/GNOME 保持 false。
+- **M1-K 已交付（键模型与 scan code 地基）**：新增
+  `core_keymodel_linux.*`，通过 xkbcommon-x11 读取服务器 active keymap/state，
+  统一 evdev/set-1 SC、VK/keysym、UTF-32；X11/evdev explicit `scXXX` 已接入，
+  InputHook callback 返回 canonical VK/SC，Send 对当前 layout 反查 none/Shift/
+  AltGr/Shift+AltGr 的最小组合。外部 oracle 在受版本控制的 <=255-keycode
+  AZERTY/AltGr fixture 上证明 `sc01E` 跨 layout 仍跟物理键、`SendText("€")`
+  被独立 X11 client 读为 EuroSign + Mod5；GNOME VM uinput 也以 `sc01E` 触发。
+  **未冒充完成**：custom combo 仍 false；Hotstring 改 raw XI2 属 M2。另发现并
+  消除旧 `setxkbmap` 测试假阳性：现代 xkeyboard-config 最大 keycode 708，
+  X11 仅支持 255，xkbcomp 会 clipping 后留下 US map。
 - **验收标准**：差分断言（见 §8）——`sc01E::` 在 US 与 AZERTY 布局下都触发
-  物理 A 键位；`Send "@"` 在 AZERTY（@ 在 é 键 AltGr 层）正确产生 @；
-  `setxkbmap fr` 后 Hotstring 识别 é。
+  同一物理键位；AltGr-only Unicode 由外部 client 读回；后续 M2 再补
+  Hotstring layout 字符流。
 - **风险**：xkbcommon 反查存在多解（同一字符多个键位/层级），需固定
   "最少修饰键优先"策略并与 Windows `VkKeyScan` 行为对照。
 

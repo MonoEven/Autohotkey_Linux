@@ -62,6 +62,8 @@ target_compile_options(ahk_core_objects PRIVATE -fpermissive -Wno-jump-misses-in
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
 pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
+pkg_check_modules(XKBCOMMON_X11 REQUIRED IMPORTED_TARGET xkbcommon-x11)
+pkg_check_modules(XCB REQUIRED IMPORTED_TARGET xcb)
 find_program(WAYLAND_SCANNER_EXE wayland-scanner REQUIRED)
 set(WL_PROTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../wayland/protocols")
 set(WL_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/wl_gen")
@@ -97,6 +99,7 @@ add_executable(ahk_core
     core_file_linux.cpp
     core_win_linux.cpp
     core_input_linux.cpp
+    core_keymodel_linux.cpp
     core_ctrl_linux.cpp
     core_screen_linux.cpp
     core_image_linux.cpp
@@ -164,4 +167,4 @@ pkg_check_modules(LIBFFI REQUIRED IMPORTED_TARGET libffi)
 pkg_check_modules(DBUS REQUIRED IMPORTED_TARGET dbus-1)
 # GTK3 GUI backend (GuiType/GuiControlType/UserMenu).
 pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
-target_link_libraries(ahk_core PRIVATE X11::X11 ahk_pcre16 ${XTST_LIBRARY} ${XRANDR_LIBRARY} ${XINERAMA_LIBRARY} ${XEXT_LIBRARY} ${XFIXES_LIBRARY} PkgConfig::WAYLAND_CLIENT PkgConfig::XKBCOMMON ${DL_LIBRARY} PkgConfig::LIBFFI PkgConfig::DBUS PkgConfig::GTK3 ${ZLIB_LIBRARY} ${JPEG_LIBRARY} ${XI_LIBRARY})
+target_link_libraries(ahk_core PRIVATE X11::X11 ahk_pcre16 ${XTST_LIBRARY} ${XRANDR_LIBRARY} ${XINERAMA_LIBRARY} ${XEXT_LIBRARY} ${XFIXES_LIBRARY} PkgConfig::WAYLAND_CLIENT PkgConfig::XKBCOMMON PkgConfig::XKBCOMMON_X11 PkgConfig::XCB ${DL_LIBRARY} PkgConfig::LIBFFI PkgConfig::DBUS PkgConfig::GTK3 ${ZLIB_LIBRARY} ${JPEG_LIBRARY} ${XI_LIBRARY})

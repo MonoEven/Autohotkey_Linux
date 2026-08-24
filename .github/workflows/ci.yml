@@ -55,9 +55,9 @@ jobs:
             cmake g++ ninja-build pkg-config \
             libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev libxi-dev \
             libxfixes-dev \
-            libwayland-dev wayland-protocols libxkbcommon-dev \
+            libwayland-dev wayland-protocols libxkbcommon-dev libxkbcommon-x11-dev \
             libffi-dev libdbus-1-dev dbus libgtk-3-dev zlib1g-dev libjpeg-dev \
-            xvfb xdotool sway xwayland weston \
+            xvfb xdotool x11-xkb-utils sway xwayland weston \
             xclip
           sudo apt-get install -y --no-install-recommends python3 dpkg-dev
 
@@ -85,6 +85,10 @@ jobs:
       - name: External X11 input oracle
         if: matrix.build == 'core'
         run: xvfb-run -a bash tests/oracle/run_x11_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
+
+      - name: Layout-aware key model oracle
+        if: matrix.build == 'core'
+        run: xvfb-run -a -s '-screen 0 1280x1024x24 -noreset' bash tests/oracle/run_keymodel_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
 
       - name: Upload external oracle trace
         if: always() && matrix.build == 'core'
@@ -240,7 +244,7 @@ jobs:
           # build host's libjpeg8; the wcslcpy/strlcpy self-containment that
           # debian's older glibc exposed is covered by the symbol check.)
           docker run --rm -v /tmp/packwork:/tmp/packwork -w /tmp/packwork ubuntu:24.04 \
-            bash -c 'apt-get update -y -qq >/dev/null 2>&1 && apt-get install -y -qq --no-install-recommends libx11-6 libxext6 libxrandr2 libxinerama1 libxtst6 libxi6 libxfixes3 libxkbcommon0 libwayland-client0 libffi8 libgtk-3-0 zlib1g libjpeg8 >/dev/null 2>&1; rm -f out.txt pk.txt; ./packed; grep -q "compiled=1 res=1" pk.txt && echo pack-acceptance-pass'
+            bash -c 'apt-get update -y -qq >/dev/null 2>&1 && apt-get install -y -qq --no-install-recommends libx11-6 libxext6 libxrandr2 libxinerama1 libxtst6 libxi6 libxfixes3 libxkbcommon0 libxkbcommon-x11-0 libwayland-client0 libffi8 libgtk-3-0 zlib1g libjpeg8 >/dev/null 2>&1; rm -f out.txt pk.txt; ./packed; grep -q "compiled=1 res=1" pk.txt && echo pack-acceptance-pass'
 
   # check_detail0821 §16-3 / R4: a no-XWayland job -- sway with xwayland
   # disabled runs the Wayland suite, proving the pure-Wayland downgrade path
@@ -305,7 +309,7 @@ jobs:
             cmake g++ ninja-build pkg-config \
             libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev libxi-dev \
             libxfixes-dev \
-            libwayland-dev wayland-protocols libxkbcommon-dev \
+            libwayland-dev wayland-protocols libxkbcommon-dev libxkbcommon-x11-dev \
             libffi-dev libdbus-1-dev dbus libgtk-3-dev libjpeg-dev \
             python3 dpkg-dev rpm libfuse2 squashfs-tools
           # appimagetool (continuous, v295+) packages the AppDir through

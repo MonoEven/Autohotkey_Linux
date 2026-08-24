@@ -364,23 +364,28 @@ const char *LinuxInputBackendProvenanceName(AhkSyntheticProvenance aValue)
 	}
 }
 
-static bool CapsSatisfy(const AhkInputBackendCaps *c, bool aPassthrough, bool aKeyUp, bool aBare, bool aWildcard)
+static bool CapsSatisfy(const AhkInputBackendCaps *c, bool aPassthrough, bool aKeyUp,
+	bool aBare, bool aWildcard, bool aScanCode, bool aCustomCombo)
 {
 	if (!c || !c->global_hotkeys) return false;
 	if (aPassthrough && !c->passthrough) return false;
 	if (aKeyUp && !c->key_up) return false;
 	if (aBare && !c->bare_keys) return false;
 	if (aWildcard && !c->wildcard) return false;
+	if (aScanCode && !c->scan_code) return false;
+	if (aCustomCombo && !c->custom_combo) return false;
 	return true;
 }
 
 // Per-hotkey backend routing (check_detail0821 §1-A / R3): pick the best
 // backend whose caps satisfy the hotkey's needs.  The effective backend wins
 // when it qualifies; otherwise walk the other lanes in priority order.
-AhkInputBackendKind LinuxInputBackendRoute(bool aPassthrough, bool aKeyUp, bool aBare, bool aWildcard)
+AhkInputBackendKind LinuxInputBackendRoute(bool aPassthrough, bool aKeyUp, bool aBare,
+	bool aWildcard, bool aScanCode, bool aCustomCombo)
 {
 	const AhkInputBackendKind eff = CurrentKind();
-	if (CapsSatisfy(KindCaps(eff), aPassthrough, aKeyUp, aBare, aWildcard))
+	if (CapsSatisfy(KindCaps(eff), aPassthrough, aKeyUp, aBare, aWildcard,
+		aScanCode, aCustomCombo))
 		return eff;
 	// Priority: prefer non-root, integration-light lanes first.
 	static const AhkInputBackendKind kCandidates[] = {
@@ -392,7 +397,14 @@ AhkInputBackendKind LinuxInputBackendRoute(bool aPassthrough, bool aKeyUp, bool 
 	for (AhkInputBackendKind k : kCandidates)
 	{
 		if (k == eff) continue;
-		if (CapsSatisfy(KindCaps(k), aPassthrough, aKeyUp, aBare, aWildcard))
+		if (k == AhkInputBackendKind::X11)
+		{
+			const char *display = getenv("DISPLAY");
+			if (!display || !*display)
+				continue;
+		}
+		if (CapsSatisfy(KindCaps(k), aPassthrough, aKeyUp, aBare, aWildcard,
+			aScanCode, aCustomCombo))
 			return k;
 	}
 	return eff; // keep current behavior when nothing qualifies

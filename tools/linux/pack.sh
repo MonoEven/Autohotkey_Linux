@@ -113,7 +113,7 @@ Priority: optional
 Architecture: $ARCH
 Maintainer: MonoEven <MonoEven@users.noreply.github.com>
 Installed-Size: $DEB_SIZE
-Depends: libx11-6, libxext6, libxrandr2, libxinerama1, libxtst6, libgtk-3-0, libdbus-1-3, libffi8
+Depends: libx11-6, libxext6, libxrandr2, libxinerama1, libxtst6, libxkbcommon-x11-0, libgtk-3-0, libdbus-1-3, libffi8
 Recommends: zenity | yad
 Description: AutoHotkey v2 automation for Linux (X11/Wayland)
  AutoHotkey v2.0.26 interpreter and Linux desktop backends: X11/XWayland

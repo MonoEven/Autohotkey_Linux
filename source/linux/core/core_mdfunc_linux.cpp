@@ -2190,7 +2190,8 @@ BIF_DECL(BIF_Linux_HotkeyBackendGet)
 				// Wildcard has no dedicated field on Hotkey; a name starting
 				// with '*' is the wildcard form.
 				bool wildcard = keyname[0] == _T('*');
-				kind = LinuxInputBackendRoute(passthrough, key_up, bare, wildcard);
+				kind = LinuxInputBackendRoute(passthrough, key_up, bare, wildcard,
+					hk->mSC != 0, hk->mModifierVK != 0 || hk->mModifierSC != 0);
 			}
 		}
 	}

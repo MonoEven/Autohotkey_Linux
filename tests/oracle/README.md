@@ -16,6 +16,14 @@ to an XTEST device. Raw traces are test output; the stable schema and summary
 make later Linux/Windows differential traces possible without changing the
 consumer format.
 
+`run_keymodel_oracle.sh` installs a checked-in, X11-compatible AZERTY/AltGr
+fixture (maximum keycode 255) into an Xvfb server started with `-noreset`. It
+proves that `sc01E` follows one physical key across logical-layout changes and
+that `SendText("€")` reaches an independent focused X11 receiver as EuroSign
+with Mod5/AltGr. The fixture avoids a known xkeyboard-config/X11 trap: modern
+maps contain keycodes above 255, which xkbcomp may clip while leaving Xvfb on
+its US map.
+
 The physical-layer VM lane uses `tools/linux/uinput-inject.c`: its virtual
 keyboard deliberately has no AHK identity, so evdev sees an independent input
 device. It remains permission-gated and is not pretended to run on ordinary

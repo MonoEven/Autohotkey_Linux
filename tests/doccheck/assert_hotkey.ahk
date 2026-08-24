@@ -124,7 +124,7 @@ bo := HotkeyBackendGet()
 Log("caps_obj_ok=" (IsObject(bo) && bo.backend != "" && (bo.global_hotkeys = 1 || bo.global_hotkeys = 0) ? 1 : 0))
 Log("caps_schema_v2=" (bo.caps_version = 2 ? 1 : 0))
 Log("caps_extended_x11=" (bo.backend = "x11"
-    && bo.scan_code = 0 && bo.custom_combo = 0 && bo.char_stream = 1
+    && bo.scan_code = 1 && bo.custom_combo = 0 && bo.char_stream = 1
     && bo.synthetic_provenance = "heuristic" && bo.send_level_gate = 1
     && bo.injection_unicode = 1 ? 1 : 0))
 

@@ -11,7 +11,7 @@ arch=('x86_64' 'aarch64')
 url="https://github.com/MonoEven/Autohotkey_Linux"
 license=('GPL2')
 depends=('libx11' 'libxext' 'libxrandr' 'libxinerama' 'libxtst'
-         'libxi' 'wayland' 'libxkbcommon')
+         'libxi' 'wayland' 'libxkbcommon' 'libxkbcommon-x11')
 makedepends=('cmake' 'ninja' 'gcc' 'wayland-protocols')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/MonoEven/Autohotkey_Linux/archive/refs/tags/v2.0.26-linux.16.tar.gz")
 sha256sums=('SKIP')

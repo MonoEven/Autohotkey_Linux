@@ -194,7 +194,9 @@ Check("comcall_err", () => ComCall(0, ComValue(3, 100), "Int"))
 
 ; --- Key lookup (headless-safe: static keysym tables) --------------------
 Check("getkeyvk", () => GetKeyVK("a") != 0)
-Check("getkeysc", () => GetKeySC("a") != 0)
+Check("getkeysc", () => (GetKeySC("b") = 0x30 && GetKeySC("F13") = 0x64
+    && GetKeySC("RCtrl") = 0x11D && GetKeySC("Delete") = 0x153
+    && GetKeySC("Pause") = 0x45 && GetKeySC("NumLock") = 0x145) ? 1 : 0)
 
 ; --- Output / state no-ops ----------------------------------------------
 Check("outputdebug", () => (OutputDebug("misc-cov probe"), 1))

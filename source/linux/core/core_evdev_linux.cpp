@@ -21,6 +21,7 @@
 #include "core_evdev_linux.h"
 #include "core_uinput_linux.h"
 #include "core_wayland_linux.h" // LinuxWaylandKeycodeForVk (vk->evdev)
+#include "core_keymodel_linux.h"
 #include "input_backend.h" // AhkBackendHotkeyEnabled
 #include <linux/input.h>
 #include <sys/poll.h>
@@ -286,15 +287,16 @@ bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat)
 {
 	EvTraceStart();
 	unsigned int vk = VkForEvdev(evcode);
-	if (!vk || vk > 0xFF)
-		return false;
-	// Track modifier state first so the matcher sees the updated state.
+	if (vk > 0xFF)
+		vk = 0;
+	// Track modifier state first so the matcher sees the updated state. A key
+	// without a VK may still match an explicit physical scXXX hotkey.
 	SetModifierFromEvdev(evcode, down);
-	SetDown(vk, down);
-
+	if (vk)
+		SetDown(vk, down);
 	if (vk == 0x10 || vk == 0x11 || vk == 0x12 || vk == 0x5B || vk == 0x5C
 		|| (vk >= 0xA0 && vk <= 0xA5))
-		return false; // Pure modifiers never fire hotkeys themselves.
+		return false;
 
 	unsigned int mods = ActiveMods();
 	EvTrace("ev %u vk=%u down=%d mods=%u", evcode, vk, (int)down, mods);
@@ -308,7 +310,10 @@ bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat)
 			continue;
 		if (hk->mKeyUp == down) // up-variants need a release; down need press.
 			continue;
-		if ((unsigned int)hk->mVK != vk)
+		bool key_match = hk->mVK
+			? (unsigned int)hk->mVK == vk
+			: hk->mSC && LinuxEvdevCodeForScanCode(hk->mSC) == evcode;
+		if (!key_match)
 			continue;
 		// Modifier match: the required neutral bits must be held; extra primary
 	// modifiers disqualify unless the hotkey is a wildcard (*).
