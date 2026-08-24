@@ -54,14 +54,14 @@ RegWrite	P3	Registry is a single-user INI file; no system-wide/permission/32-64 
 RegDelete	P3	Registry is a single-user INI file; no system-wide/permission/32-64 view semantics
 RegDeleteKey	P3	Registry is a single-user INI file; no system-wide/permission/32-64 view semantics
 RegCreateKey	P3	Registry is a single-user INI file; no system-wide/permission/32-64 view semantics
-ControlGetEnabled	P3	Control enabled state is a local shadow; external X changes are not read back
-ControlSetEnabled	P3	Control enabled state is a local shadow; external X changes are not read back
-ControlGetChecked	P3	Control checked state is a local shadow; external X changes are not read back
-ControlSetChecked	P3	Control checked state is a local shadow; external X changes are not read back
-ControlGetStyle	P3	Control style is a local shadow; external X changes are not read back
-ControlSetStyle	P3	Control style is a local shadow; external X changes are not read back
-ControlGetExStyle	P3	Control style is a local shadow; external X changes are not read back
-ControlSetExStyle	P3	Control style is a local shadow; external X changes are not read back
+ControlGetEnabled	P3	NotSupported for external windows (M5-B); process-local shadow only for own windows
+ControlSetEnabled	P3	NotSupported for external windows (M5-B); process-local shadow only for own windows
+ControlGetChecked	P3	NotSupported for external windows (M5-B); process-local shadow only for own windows
+ControlSetChecked	P3	NotSupported for external windows (M5-B); process-local shadow only for own windows
+ControlGetStyle	P3	NotSupported for external windows (M5-B); process-local shadow only for own windows
+ControlSetStyle	P3	NotSupported for external windows (M5-B); process-local shadow only for own windows
+ControlGetExStyle	P3	NotSupported for external windows (M5-B); process-local shadow only for own windows
+ControlSetExStyle	P3	NotSupported for external windows (M5-B); process-local shadow only for own windows
 WinGetStyle	P3	Window style is a virtual shadow + EWMH; exact for self-set windows only
 WinSetStyle	P3	Window style is a virtual shadow + EWMH; exact for self-set windows only
 WinGetExStyle	P3	Window style is a virtual shadow + EWMH; exact for self-set windows only
