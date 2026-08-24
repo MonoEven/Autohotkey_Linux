@@ -106,6 +106,10 @@ jobs:
         if: matrix.build == 'core'
         run: xvfb-run -a bash tests/oracle/run_input_event_model_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
 
+      - name: EWMH window enumeration oracle
+        if: matrix.build == 'core'
+        run: xvfb-run -a bash tests/oracle/run_ewmh_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
+
       - name: Upload external oracle trace
         if: always() && matrix.build == 'core'
         uses: actions/upload-artifact@v5

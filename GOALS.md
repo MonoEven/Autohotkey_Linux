@@ -72,6 +72,8 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
   through the evdev matcher, in-process fallback, dual-script no-conflict
   acceptance, and broker character stream (X11 layout decode; pure Wayland
   needs a compositor layout source). libei receiver remains tracked follow-up.
+- M5-A EWMH window enumeration: _NET_CLIENT_LIST preferred with ICCCM WM_STATE
+  subtree-probe fallback that preserves unmanaged windows; dual-path oracle.
 - Machine totals: 1160/1160 X11/headless, 17/17 Wayland and 255/255
   XWayland assertions; 27/27 headless regression tests.
 

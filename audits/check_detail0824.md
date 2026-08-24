@@ -585,17 +585,17 @@
 
 ### A. X11 窗口枚举改 EWMH 优先（P1-2）
 
-- `core_win_linux.cpp:266` 的 `XQueryTree(root)` 改为：
-  1. 首选读 root 的 `_NET_CLIENT_LIST`（[EWMH 规范](https://specifications.freedesktop.org/wm/latest/ar01s03.html)），
-     命中即为真实 client 窗口集合（Z 序用 `_NET_CLIENT_LIST_STACKING`）；
-  2. 属性缺失（无 WM 的 Xvfb）回退现有 XQueryTree + **WM_STATE 递归探测**
-     （ICCCM：沿子树找带 WM_STATE 的窗口即真 client，参照
-     [xlsclients 算法](https://stackoverflow.com/questions/37359063/x11-list-top-level-windows)）；
-  3. 激活/关闭走 `_NET_ACTIVE_WINDOW`/`_NET_CLOSE_WINDOW` client message
-     （带 source indication=2），替代直接 XSetInputFocus/XDestroyWindow 的
-     WM 旁路行为。
-- **验收**：GNOME Xorg 会话下 `WinGetList` 数量与 `wmctrl -l` 一致；
-  Xvfb 无 WM 场景不回归。
+- **M5-A 已交付**：`LinuxEnumTopWindows` 优先读 root 的 `_NET_CLIENT_LIST`
+  （EWMH，WM 维护的真实 client 集合，Z 序语义留给 `_NET_CLIENT_LIST_STACKING`
+  后续）；属性缺失（无 WM 的 Xvfb）回退 XQueryTree + ICCCM `WM_STATE` 子树
+  探测，且当 WM_STATE 过滤结果为空时**回退裸枚举**（保护无 WM_STATE 的
+  未管理测试窗口，保持既有 1160 断言）。独立 oracle `x11_ewmh.c` +
+  `run_ewmh_oracle.sh` 双路径验证：EWMH 模式下 B 被排除（a=1 b=0）、回退
+  模式两者可见（a=1 b=1）；Xvfb 全量 doc-check 无新增失败。
+- **落点文件**：`core_win_linux.cpp`（LinuxEnumTopWindows +
+  WM_STATE 探测）、`tests/oracle/x11_ewmh.c`、`run_ewmh_oracle.sh`。
+- **验收**：`_NET_CLIENT_LIST` 命中即用（oracle 证明）；无 WM 回退不回归
+  （CI doc-check）；GNOME Xorg 实机对照留待真桌面 job（M6）。
 
 ### B. Control* 虚拟状态退场（P1-2）
 

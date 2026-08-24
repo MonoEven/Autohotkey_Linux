@@ -256,19 +256,98 @@ static bool LinuxWinProcess(pid_t aPid, std::string &aName, std::string &aPath)
 	return !aName.empty() || !aPath.empty();
 }
 
-// Top-level windows: direct children of the root window.
+// ICCCM WM_STATE probe (M5-A): a window carrying WM_STATE is a real client;
+// WM frames wrap it, so probe the subtree of an unmanaged root child.
+static Atom sWmStateAtom = None;
+
+static Atom LinuxWmStateAtom(Display *d)
+{
+	if (sWmStateAtom == None)
+		sWmStateAtom = XInternAtom(d, "WM_STATE", False);
+	return sWmStateAtom;
+}
+
+static bool LinuxHasWmState(Display *d, Window w)
+{
+	Atom a = LinuxWmStateAtom(d);
+	if (a == None)
+		return false;
+	Atom type = 0;
+	int format = 0;
+	unsigned long nitems = 0, after = 0;
+	unsigned char *data = nullptr;
+	if (XGetWindowProperty(d, w, a, 0, 1, False, AnyPropertyType,
+		&type, &format, &nitems, &after, &data) == Success)
+	{
+		if (data)
+			XFree(data);
+		return nitems > 0;
+	}
+	return false;
+}
+
+static Window LinuxFindWmStateWindow(Display *d, Window w)
+{
+	if (LinuxHasWmState(d, w))
+		return w;
+	Window root_ret = 0, parent_ret = 0;
+	Window *children = nullptr;
+	unsigned int n = 0;
+	if (!XQueryTree(d, w, &root_ret, &parent_ret, &children, &n) || !children)
+		return 0;
+	Window found = 0;
+	for (unsigned int i = 0; i < n && !found; ++i)
+		found = LinuxFindWmStateWindow(d, children[i]);
+	XFree(children);
+	return found;
+}
+
+// Top-level windows (M5-A): EWMH _NET_CLIENT_LIST is the WM-maintained client
+// set and wins when present.  Without a WM, fall back to XQueryTree with an
+// ICCCM WM_STATE probe, and never return empty when the raw child list is
+// non-empty (unmanaged test windows have no WM_STATE).
 static void LinuxEnumTopWindows(Display *d, std::vector<Window> &aOut)
 {
 	Window root = DefaultRootWindow(d);
-	Window root_ret, parent_ret;
+	Atom prop = XInternAtom(d, "_NET_CLIENT_LIST", False);
+	Atom type = 0;
+	int format = 0;
+	unsigned long nitems = 0, after = 0;
+	unsigned char *data = nullptr;
+	if (prop != None
+		&& XGetWindowProperty(d, root, prop, 0, 4096, False, XA_WINDOW,
+			&type, &format, &nitems, &after, &data) == Success
+		&& type == XA_WINDOW && format == 32 && data && nitems > 0)
+	{
+		Window *ws = (Window *)data;
+		for (unsigned long i = 0; i < nitems; ++i)
+			aOut.push_back(ws[i]);
+		XFree(data);
+		return;
+	}
+	if (data)
+		XFree(data);
+	Window root_ret = 0, parent_ret = 0;
 	Window *children = nullptr;
 	unsigned int n = 0;
+	std::vector<Window> raw;
 	if (XQueryTree(d, root, &root_ret, &parent_ret, &children, &n) && children)
 	{
 		for (unsigned int i = 0; i < n; ++i)
-			aOut.push_back(children[i]);
+			raw.push_back(children[i]);
 		XFree(children);
 	}
+	std::vector<Window> state;
+	for (auto w : raw)
+	{
+		Window found = LinuxFindWmStateWindow(d, w);
+		if (found)
+			state.push_back(found);
+	}
+	if (!state.empty())
+		aOut = state;
+	else
+		aOut = raw;
 }
 
 // ---------------------------------------------------------------------------

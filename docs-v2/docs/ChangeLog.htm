@@ -106,6 +106,12 @@
     <code>:B0X*:pq</code> Hotstring fires from broker-distributed uinput
     events. Pure Wayland still lacks a layout source for broker char_stream,
     and the libei/InputCapture receiver remains upstream-gated.</li>
+  <li><b>M5-A EWMH window enumeration:</b> Win*/Control enumeration now prefers
+    the root <code>_NET_CLIENT_LIST</code> (real WM client windows), and falls
+    back to XQueryTree with an ICCCM <code>WM_STATE</code> subtree probe when
+    no window manager is present, keeping unmanaged test windows visible. An
+    independent oracle proves the EWMH list wins and the no-WM fallback stays
+    unchanged.</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>
