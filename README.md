@@ -90,8 +90,8 @@ ahk_core --pack my-script script.ahk
 
 The authoritative test totals are **1139/1139** X11/headless assertions,
 **17/17** native-Wayland assertions and **234/234** XWayland assertions. CI
-also runs regular and ASan builds, four distro containers, no-XWayland,
-packed-binary acceptance, scenario gates and an RSS/event-count soak.
+also runs regular, ASan and TSan-input builds, four distro containers,
+no-XWayland, packed-binary acceptance, scenario gates and an RSS/event-count soak.
 
 ## Important limits
 

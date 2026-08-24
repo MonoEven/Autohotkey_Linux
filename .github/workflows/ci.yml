@@ -308,9 +308,51 @@ jobs:
         env:
           XDG_RUNTIME_DIR: /tmp
 
+  tsan-input:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          echo 'Acquire::Retries "5";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
+          echo 'Acquire::http::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
+          echo 'Acquire::https::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99ci-retry
+          retry() { for i in 1 2 3 4 5 6; do timeout 300 "$@" && return 0; sudo dpkg --configure -a || true; sleep $((i*10)); done; return 1; }
+          retry sudo apt-get update
+          retry sudo apt-get install -y --no-install-recommends \
+            cmake g++ pkg-config python3 \
+            libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev \
+            libxi-dev libxfixes-dev libwayland-dev wayland-protocols \
+            libxkbcommon-dev libxkbcommon-x11-dev libffi-dev libdbus-1-dev \
+            dbus libgtk-3-dev zlib1g-dev libjpeg-dev xvfb x11-xkb-utils
+
+      - name: Configure ThreadSanitizer
+        run: |
+          cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS="-fsanitize=thread -g -O0 -fno-omit-frame-pointer" \
+            -DCMAKE_C_FLAGS="-fsanitize=thread -g -O0 -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+
+      - name: Build ThreadSanitizer
+        run: cmake --build build-tsan -j$(nproc)
+
+      - name: TSan headless and input oracles
+        env:
+          TSAN_OPTIONS: halt_on_error=1:exitcode=66:second_deadlock_stack=1
+        run: |
+          bash tests/run_tests.sh build-tsan/source/linux/core/ahk_core
+          xvfb-run -a bash tests/oracle/run_x11_oracle.sh build-tsan/source/linux/core/ahk_core
+          xvfb-run -a -s '-screen 0 1280x1024x24 -noreset' \
+            bash tests/oracle/run_keymodel_oracle.sh build-tsan/source/linux/core/ahk_core
+          xvfb-run -a bash tests/oracle/run_raw_capture_oracle.sh build-tsan/source/linux/core/ahk_core
+          xvfb-run -a bash tests/oracle/run_suppression_scope_oracle.sh build-tsan/source/linux/core/ahk_core
+
   package:
     runs-on: ubuntu-24.04
-    needs: build-and-test
+    needs: [build-and-test, tsan-input]
     permissions:
       contents: read
       id-token: write

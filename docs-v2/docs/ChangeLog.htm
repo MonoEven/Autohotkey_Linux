@@ -150,6 +150,10 @@
     Action semantics. VS Code windows are captured on X11 and Wayland, but the
     Monaco document content remains unexposed (U+FFFC/window-only), recorded as
     a versioned limitation rather than support.</li>
+  <li><b>M6 ThreadSanitizer gate:</b> a Debug/O0 TSan job runs all 27 headless
+    regressions plus four external input/keymodel/raw/suppression oracles with
+    halt-on-race/deadlock. VM validation reports no findings and release
+    packaging now waits on this job.</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>

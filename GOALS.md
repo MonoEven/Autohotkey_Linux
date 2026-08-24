@@ -90,6 +90,8 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
   backend status/capability tree, VSIX packaging and real extension-host oracle.
 - GUI-1 real host matrix: GTK 3.24.50 and Qt 6.9.2 full tested controls;
   VS Code/Electron 1.134.0 window/document captured but Monaco content unavailable.
+- M6 TSan input gate: Debug/O0 race instrumentation runs 27 headless tests plus
+  four independent X11/keymodel/raw/suppression oracles; package waits on it.
 - Machine totals: 1139/1139 X11/headless, 17/17 Wayland and 234/234
   XWayland assertions; 27/27 headless regression tests.
 

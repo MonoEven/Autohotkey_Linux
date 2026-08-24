@@ -570,10 +570,14 @@
   image（项目已有 `vmctl.py` 资产）；每夜跑，白天 CI 维持 headless。skip
   改为**显式预算**：`SUPPORT_MATRIX.md` 声明每场景"必须运行的环境集合"，
   环境可用却 skip 视为失败。
-- **T4 可靠性工况**：加 `-fsanitize=thread` 构建矩阵项（先只跑输入子集）；
-  24h soak 移到夜跑 VM（每 5 分钟一轮 hotkey/hotstring/clipboard 混合负载，
-  RSS 斜率 gate）；故障注入场景：`kill -STOP` compositor 3s、重启
-  xdg-desktop-portal、evdev 设备 add/remove（`uinput` 动态建删）。
+- **M6-T4 第一项已交付（TSan 输入门禁）**：GCC 15 Debug/O0
+  `-fsanitize=thread -fno-omit-frame-pointer` 构建（O1 会触发既有 inline 符号
+  链接问题，故固定 O0），`halt_on_error=1/exitcode=66`；VM 27/27 headless +
+  X11 双向/布局/多客户端 raw/精确 suppression 四个独立 oracle 均无
+  race/deadlock。CI 新增 `tsan-input` job，并成为 package 依赖。
+- **T4 剩余**：24h soak 移到夜跑 VM（每 5 分钟一轮
+  hotkey/hotstring/clipboard 混合负载，RSS 斜率 gate）；故障注入场景：
+  `kill -STOP` compositor 3s、重启 xdg-desktop-portal、evdev 设备 add/remove。
 - **T5 oracle 收紧纪律**：场景 PASS 判据必须绑定**本进程身份**（bus name、
   PID、object path）；`run_scenarios.sh` 增加 lint：禁止裸 `grep` 通配判 PASS。
 - **修复复杂度：中高**（T2 需要 Windows 基建，但一次投入长期复利）。
