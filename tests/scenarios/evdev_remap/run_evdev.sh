@@ -4,7 +4,8 @@
 # /dev/uinput (the runner skips when the needs gate fails).
 set -u
 AHK="${AHK:?runner must export AHK}"
-TOOLS="/home/mono/Autohotkey_Linux/tools/linux"
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
+TOOLS="$ROOT/tools/linux"
 unset DISPLAY WAYLAND_DISPLAY 2>/dev/null || true
 pkill -9 -f 'uinput-inject' 2>/dev/null; pkill -9 -f 'ahk_core.*evrem' 2>/dev/null
 gcc -o /tmp/uinput-inject "$TOOLS/uinput-inject.c" 2>/dev/null || exit 0

@@ -464,6 +464,12 @@
 ### 8.2 解决思路
 
 - **T1 外部注入器/记录器（性价比最高，先做）**：
+  **M1-O 已交付第一层**：`tests/oracle/input_oracle.c` 是与 ahk_core 无共享
+  代码的 XI2.1 JSONL recorder + XTEST injector；CI 双向验证“AHK Send → 外部
+  down/up/sourceid/XTEST trace”和“外部 injector → AHK hotkey”。trace schema、
+  verifier 与摘要作为 CI artifact；VM 物理层复用 `tools/linux/uinput-inject.c`
+  （设备名刻意不含 AHK）和 evdev 场景。后续 Windows golden trace 仍属 T2，
+  不因本层完成而冒充跨平台差分完成。
   1. 注入侧：测试容器里用 `uinput` 写一个 20 行的独立 C 注入器（或直接用
      `ydotool`/`wtype`），物理层面产生输入——AHK 的捕获栈从 X 服务器视角看到
      的是真键盘事件，打破"同一进程同一套错误约定"；

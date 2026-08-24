@@ -119,6 +119,7 @@ cmake -S . -B build-core
 cmake --build build-core -j2
 bash tests/run_tests.sh build-core/source/linux/core/ahk_core
 bash tests/doccheck/run_check.sh --xvfb build-core/source/linux/core/ahk_core
+xvfb-run -a bash tests/oracle/run_x11_oracle.sh build-core/source/linux/core/ahk_core
 ```
 
 Release packages are built with:

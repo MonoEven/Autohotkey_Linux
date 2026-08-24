@@ -36,6 +36,11 @@
     generates ephemeral OpenPGP identities and emits an explicit unsigned
     marker when no pinned long-term key is configured. Current X11/headless
     total: 1152/1152.</li>
+  <li><b>M1-O external input oracle:</b> an independent XI2.1 recorder now
+    captures AHK Send output as schema-versioned JSONL (order, timing,
+    device/source IDs and XTEST provenance), while a separate XTEST process
+    injects a key which AHK must capture. CI uploads the trace and summary;
+    the permission-gated VM lane retains a separate uinput device oracle.</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>

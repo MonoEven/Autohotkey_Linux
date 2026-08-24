@@ -45,6 +45,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - `ahk_core --pack`, `A_IsCompiled` and embedded FileInstall resources.
 - CI: regular + ASan, scenario gate, no-XWayland, packed-binary acceptance,
   RSS/event-count soak and fedora/arch/debian/ubuntu container builds.
+- External input oracle: independent XI2.1 JSONL recorder and XTEST injector
+  gate both Send output and hotkey input directions; uinput covers the VM
+  physical-device lane.
 - Machine totals: 1152/1152 X11/headless, 17/17 Wayland and 255/255
   XWayland assertions; 27/27 headless regression tests.
 

@@ -52,7 +52,7 @@ jobs:
             retry sudo apt-get update
           fi
           retry sudo apt-get install -y --no-install-recommends \
-            cmake g++ ninja-build \
+            cmake g++ ninja-build pkg-config \
             libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev libxi-dev \
             libxfixes-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev \
@@ -78,6 +78,21 @@ jobs:
       - name: Headless regression
         run: |
           bash tests/run_tests.sh "$BUILD_DIR/source/linux/core/ahk_core"
+
+      # check_detail0824 M1-O: neither direction is self-verified by AHK.
+      # An independent XI2 recorder observes Send as JSONL; a separate XTEST
+      # client injects a key which AHK must capture.
+      - name: External X11 input oracle
+        if: matrix.build == 'core'
+        run: xvfb-run -a bash tests/oracle/run_x11_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
+
+      - name: Upload external oracle trace
+        if: always() && matrix.build == 'core'
+        uses: actions/upload-artifact@v5
+        with:
+          name: input-oracle-x11
+          path: tests/oracle/out/
+          if-no-files-found: error
 
       - name: Doc-check (Xvfb)
         run: |
@@ -287,7 +302,7 @@ jobs:
             retry sudo apt-get update
           fi
           retry sudo apt-get install -y --no-install-recommends \
-            cmake g++ ninja-build \
+            cmake g++ ninja-build pkg-config \
             libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev libxi-dev \
             libxfixes-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev \
