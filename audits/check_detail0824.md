@@ -790,7 +790,7 @@
 - `extensions/vscode-ahk-linux/`：AutoHotkey v2 language/grammar、运行文件与
   选区、停止进程、TaskProvider/problem matcher、错误 diagnostics、状态栏
   backend 与 `--diag` 能力树；input backend/inputd socket 可配置。
-- 官方 `@vscode/vsce@3.6.2` 生成 `autohotkey-linux-tools-0.1.0.vsix`；CI 单测、
+- 官方 `@vscode/vsce@3.6.2` 生成 `autohotkey-linux-tools-0.2.0.vsix`；CI 单测、
   打包并上传 VSIX，release package job 把 VSIX 纳入 CKSUMS、attestation 与
   release-assets。
 - VS Code 1.134.0 VM extension-host oracle：VSIX 安装、ahk2 language、5 命令、
@@ -800,8 +800,12 @@
   标准 file URI、transaction、文件断点 3、run、stack/context、`x=10`、step 到
   4、`y=15`、detach 与恢复结果 30。修复 FIONREAD LP64 假 pending、Unix URI
   反斜杠及精确 UTF-8 缓冲区 bug；D-Bus ComObject 不伪造 IDispatch 子属性。
-- **未冒充完成**：VSC-1 UI 尚未贡献 debugger；DBGp→DAP adapter 与真实 VS Code
-  breakpoint/step/variable extension-host 验收为 VSC-2 D2。
+- **VSC-2 D2 已交付**：0.2.0 VSIX 贡献 `ahk-linux` inline DAP，支持 launch、
+  filename breakpoints、continue、step in/over/out、stack/scopes/scalar variables/
+  evaluate 与 terminate。外部 DAP client 对真实 runtime 通过；VS Code 1.134
+  extension-host tracker 同样观察 breakpoint=3、step=4、x=10、y=15 与 clean
+  termination。**D3 未完成**：对象分页、exception、idle pause/reconnect、D-Bus
+  对象真实投影。
 
 ### B. GUI-1 真实宿主捕获矩阵（已交付）
 

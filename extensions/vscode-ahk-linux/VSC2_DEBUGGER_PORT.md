@@ -39,17 +39,22 @@ Independent acceptance is `tests/oracle/run_dbgp_oracle.sh`. Its Python IDE serv
 
 The oracle is independent of the runtime and is a required core CI gate.
 
-## D2 — VS Code debug adapter: next
+## D2 — VS Code debug adapter: delivered
 
-Implement a small Debug Adapter Protocol process translating:
+The dependency-free inline Debug Adapter Protocol implementation translates:
 
 - launch/terminate;
 - setBreakpoints;
-- threads/stackTrace/scopes/variables;
+- threads/stackTrace/scopes/variables and scalar evaluate;
 - continue, next, stepIn and stepOut;
-- stopped/terminated events.
+- stopped/exited/terminated and stdout/stderr events.
 
-Acceptance requires a real VS Code extension-host test which launches `ahk_core --debug`, hits two source breakpoints, steps, reads a variable and terminates. VSC-1 does not claim interactive debugging until that passes.
+Two layers enforce acceptance. `run_dap_adapter_oracle.sh` is an external DAP
+client over the real runtime; it proves breakpoint line 3, step line 4,
+`x=10`, `y=15` and result 30. `run_vscode_extension_oracle.sh` installs the
+0.2.0 VSIX into VS Code 1.134, starts the contributed `ahk-linux` debugger,
+and observes the same breakpoint/step/variables through a DebugAdapterTracker
+before clean termination.
 
 ## D3 — advanced values and persistence
 

@@ -2,7 +2,7 @@
   "name": "autohotkey-linux-tools",
   "displayName": "AutoHotkey Linux Tools",
   "description": "Run AutoHotkey v2 Linux scripts and inspect input-backend capabilities from VS Code.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "autohotkey-linux-community",
   "license": "GPL-2.0-or-later",
   "engines": {
@@ -10,6 +10,7 @@
   },
   "categories": [
     "Programming Languages",
+    "Debuggers",
     "Other"
   ],
   "keywords": [
@@ -37,7 +38,8 @@
     "onCommand:ahkLinux.runFile",
     "onCommand:ahkLinux.runSelection",
     "onCommand:ahkLinux.showDiagnostics",
-    "onView:ahkLinux.capabilities"
+    "onView:ahkLinux.capabilities",
+    "onDebug:ahk-linux"
   ],
   "main": "./extension.js",
   "scripts": {
@@ -65,6 +67,75 @@
         "language": "ahk2",
         "scopeName": "source.ahk2",
         "path": "./syntaxes/ahk2.tmLanguage.json"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "ahk-linux",
+        "label": "AutoHotkey Linux DBGp",
+        "languages": [
+          "ahk2"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "AutoHotkey script to debug."
+              },
+              "runtime": {
+                "type": "string",
+                "description": "Path to the DBGp-enabled ahk_core runtime. Defaults to ahkLinux.runtime."
+              },
+              "runtimeArgs": {
+                "type": "array",
+                "items": { "type": "string" },
+                "default": []
+              },
+              "args": {
+                "type": "array",
+                "items": { "type": "string" },
+                "default": []
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Debuggee working directory."
+              },
+              "backend": {
+                "type": "string",
+                "enum": ["auto", "x11", "portal", "gnome-shell", "evdev"],
+                "default": "auto"
+              },
+              "inputdSocket": {
+                "type": "string",
+                "default": ""
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "ahk-linux",
+            "request": "launch",
+            "name": "Debug current AutoHotkey file",
+            "program": "${file}"
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "AutoHotkey Linux: Debug current file",
+            "description": "Launch the current AHK v2 script with the native Linux DBGp runtime.",
+            "body": {
+              "type": "ahk-linux",
+              "request": "launch",
+              "name": "Debug current AutoHotkey file",
+              "program": "${file}"
+            }
+          }
+        ]
       }
     ],
     "commands": [

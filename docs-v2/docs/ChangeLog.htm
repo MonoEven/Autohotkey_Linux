@@ -140,13 +140,13 @@
     without an X display and maps Enter/Space to Action; complex Send syntax is
     rejected explicitly. CI covers the variable contract and a GNOME oracle
     proves real <code>Base-世界</code> text without focus fallback.</li>
-  <li><b>VSC-1 product:</b> added a packaged VS Code extension with AHK v2
-    language support, run/selection/stop/tasks, problem diagnostics and a live
-    input-backend capability tree. VSIX packaging is in CI/release checksums and
-    a real VS Code 1.134 extension-host oracle proves activation and execution.
-    VSC-2 D1 now enables the Linux DBGp core: a Python IDE oracle proves a
-    filename breakpoint, run/step, stack/context, scalar variables and detach.
-    The VS Code DBGp-to-DAP adapter remains the explicit D2 boundary.</li>
+  <li><b>VS Code 0.2.0:</b> packages AHK v2 language/run/tasks/diagnostics/
+    capabilities plus VSC-2 interactive debugging. D1 enables the Linux DBGp
+    core; D2 contributes a dependency-free inline DAP adapter for breakpoints,
+    continue/stepping, stack/scopes/scalars/evaluate and termination. Independent
+    protocol/DAP oracles and a real VS Code 1.134 tracker prove breakpoint 3,
+    step 4, <code>x=10</code>/<code>y=15</code>. VSIX remains in release
+    checksums/artifacts; advanced objects/exception/idle pause remain D3.</li>
   <li><b>GUI-1 real host matrix:</b> installed and tested GTK 3.24.50, Qt 6.9.2
     and VS Code/Electron 1.134. GTK/Qt tested controls pass X11/AT-SPI text and
     Action semantics. VS Code windows are captured on X11 and Wayland, but the

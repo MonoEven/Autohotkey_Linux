@@ -53,9 +53,12 @@ explicit rejection of complex Send syntax.
 `run_dbgp_oracle.sh` starts an independent Python DBGp IDE server and proves
 protocol framing, init negotiation, a file-URI line breakpoint, run/step,
 stack/context/scalar properties, detach and the resumed script's external
-result. `run_vscode_extension_oracle.sh` installs the packaged VSIX into VS Code
+result. `run_dap_adapter_oracle.sh` drives the inline adapter as an external DAP
+client over that real runtime. `run_vscode_extension_oracle.sh` installs the
+packaged 0.2.0 VSIX into VS Code
 and proves extension-host activation, language/command registration, `--diag`
-parsing and real script execution. `run_gui_host_matrix.sh` then aggregates
+parsing and real script execution, then observes breakpoint/step/scalar variables
+and termination through VS Code's DebugAdapterTracker. `run_gui_host_matrix.sh` then aggregates
 independent GTK3, Qt6 and VS Code/Electron capture oracles; see
 `GUI_HOST_MATRIX.md` for the exact versions and the explicit Monaco-content
 limitation.

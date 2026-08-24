@@ -85,7 +85,7 @@ ahk_core --pack my-script script.ahk
 | Accessibility | AT-SPI Cache text/action controls on GNOME Wayland; real GTK 3.24, Qt 6.9 and VS Code/Electron 1.134 host matrix |
 | Interop | `.so` `DllCall` + libffi callbacks, including Float/Double ABI types; D-Bus adapted COM layer |
 | Desktop | GTK3 GUI/Menu, notifications, AutoHotkey StatusNotifierItem tray icon and `A_TrayMenu` |
-| Developer tooling | Packaged VS Code extension plus independently verified Linux DBGp runtime (`--debug`); VS Code DAP UI remains D2 |
+| Developer tooling | VS Code 0.2.0: syntax/run/tasks/diagnostics/capabilities plus verified DBGp/DAP breakpoints, stack, variables and stepping |
 | Distribution | deb, RPM, tarball, AppImage, VSIX, AUR PKGBUILD, Flatpak manifest and `--pack` |
 
 The authoritative test totals are **1139/1139** X11/headless assertions,

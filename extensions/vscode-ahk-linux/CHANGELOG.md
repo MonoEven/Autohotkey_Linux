@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0
+
+- Native inline Debug Adapter Protocol implementation over the Linux DBGp core.
+- Launch configurations and F5 debugging for `.ahk`/`.ah2` files.
+- Verified filename breakpoints, continue, step into/over/out, stack frames,
+  Local/Global scopes, scalar variables, evaluate and termination.
+- Real VS Code extension-host oracle observes breakpoint line 3, step line 4,
+  `x=10`, `y=15` and clean termination.
+
 ## 0.1.0
 
 - Initial VSC-1 extension.

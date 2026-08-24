@@ -127,6 +127,10 @@ jobs:
           npm test
           npm run package
 
+      - name: Linux DBGp-to-DAP adapter oracle
+        if: matrix.build == 'core'
+        run: bash tests/oracle/run_dap_adapter_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
+
       - name: Upload VS Code extension VSIX
         if: matrix.build == 'core'
         uses: actions/upload-artifact@v5
@@ -456,7 +460,7 @@ jobs:
           test -f squashfs-root/usr/share/autohotkey/autohotkey.png
           rm -rf squashfs-root
           ls dist/*.AppImage dist/*.rpm dist/*.vsix
-          grep -q 'autohotkey-linux-tools-0.1.0.vsix' dist/CKSUMS.txt
+          grep -q 'autohotkey-linux-tools-0.2.0.vsix' dist/CKSUMS.txt
 
       # check0820: every release ships a CKSUMS.txt (SHA-256) so
       # `ahk --update <VER>` can be verified against the published hashes

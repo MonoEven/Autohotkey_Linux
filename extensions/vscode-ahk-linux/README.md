@@ -2,7 +2,7 @@
 
 A small, dependency-free VS Code extension for the native AutoHotkey v2 Linux port.
 
-## VSC-1 features
+## Features
 
 - AutoHotkey v2 language registration, comments, brackets, folding and TextMate syntax highlighting.
 - Run the current `.ahk`/`.ah2` file with a configurable native `ahk_core` executable (`F6`).
@@ -12,6 +12,9 @@ A small, dependency-free VS Code extension for the native AutoHotkey v2 Linux po
 - Runtime error output promoted to VS Code diagnostics.
 - `ahk_core --diag` output channel, status-bar backend indicator and **AHK Linux Capabilities** Explorer tree.
 - Input lane configuration (`auto`, X11, portal, GNOME Shell or evdev) and optional `ahk-inputd` socket.
+- Native interactive debugger (`type: "ahk-linux"`): filename breakpoints, continue,
+  step into/over/out, call stack, Local/Global scopes, scalar variables/evaluate
+  and clean termination through the Linux DBGp core.
 
 ## Configure the runtime
 
@@ -42,9 +45,23 @@ For Remote SSH, Dev Containers or WSL, install the extension in the remote exten
 }
 ```
 
-## Debugging status
+## Debugging
 
-VSC-1 provides execution, process stopping, problem diagnostics and runtime/backend inspection. The VSC-2 D1 Linux DBGp core is now independently verified for breakpoints, stepping, stack/context and scalar variables. The extension still does **not** claim interactive debugging until the D2 DBGp-to-DAP adapter passes a real extension-host test. Protocol evidence and the remaining dependency order are recorded in [VSC2_DEBUGGER_PORT.md](VSC2_DEBUGGER_PORT.md).
+Press F5 on an AHK v2 file or add this launch configuration:
+
+```json
+{
+  "type": "ahk-linux",
+  "request": "launch",
+  "name": "Debug current AutoHotkey file",
+  "program": "${file}"
+}
+```
+
+VSC-2 D1 (runtime DBGp) and D2 (inline DBGp-to-DAP adapter) are both
+independently exercised, including a real VS Code 1.134 extension-host run.
+Advanced object paging, exception breaks and idle-script pause/reconnect remain
+D3; see [VSC2_DEBUGGER_PORT.md](VSC2_DEBUGGER_PORT.md).
 
 ## Package and test
 

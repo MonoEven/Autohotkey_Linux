@@ -11,6 +11,7 @@ const {
   parseAhkDiagnostics,
   parseDiag,
 } = require('./lib/core');
+const { AhkDebugAdapterCore } = require('./lib/debugAdapterCore');
 
 class RuntimeManager {
   constructor(output, diagnostics) {
@@ -223,6 +224,64 @@ class AhkTaskProvider {
   }
 }
 
+class AhkDebugConfigurationProvider {
+  constructor(runtime) { this.runtime = runtime; }
+
+  resolveDebugConfiguration(folder, config) {
+    const editor = vscode.window.activeTextEditor;
+    const fallbackUri = editor && editor.document.languageId === 'ahk2'
+      ? editor.document.uri
+      : folder && folder.uri;
+    if (!fallbackUri) {
+      vscode.window.showErrorMessage('Open an AutoHotkey v2 file or workspace before debugging.');
+      return undefined;
+    }
+    const runtimeConfig = this.runtime.configuration(fallbackUri);
+    const context = this.runtime.contextFor(fallbackUri);
+    const program = config.program
+      ? expandVariables(config.program, context)
+      : editor && editor.document.languageId === 'ahk2'
+        ? editor.document.uri.fsPath
+        : '';
+    if (!program) {
+      vscode.window.showErrorMessage('Set "program" in the AutoHotkey Linux debug configuration.');
+      return undefined;
+    }
+    return {
+      ...config,
+      type: 'ahk-linux',
+      request: 'launch',
+      name: config.name || 'Debug AutoHotkey Linux',
+      program,
+      runtime: expandVariables(config.runtime || runtimeConfig.runtime, { ...context, file: program }),
+      runtimeArgs: config.runtimeArgs || runtimeConfig.runtimeArgs,
+      cwd: expandVariables(config.cwd || runtimeConfig.workingDirectory, { ...context, file: program }),
+      backend: config.backend || runtimeConfig.inputBackend,
+      inputdSocket: config.inputdSocket || runtimeConfig.inputdSocket,
+      args: config.args || [],
+    };
+  }
+}
+
+class InlineAhkDebugAdapter {
+  constructor() {
+    this.emitter = new vscode.EventEmitter();
+    this.onDidSendMessage = this.emitter.event;
+    this.core = new AhkDebugAdapterCore((message) => this.emitter.fire(message));
+  }
+  handleMessage(message) { this.core.handleMessage(message); }
+  dispose() {
+    this.core.dispose();
+    this.emitter.dispose();
+  }
+}
+
+class AhkDebugAdapterFactory {
+  createDebugAdapterDescriptor() {
+    return new vscode.DebugAdapterInlineImplementation(new InlineAhkDebugAdapter());
+  }
+}
+
 function quoteForDisplay(value) {
   const text = String(value);
   return /\s/.test(text) ? JSON.stringify(text) : text;
@@ -240,6 +299,90 @@ function activeAhkUri() {
   return editor && editor.document.languageId === 'ahk2' ? editor.document.uri : undefined;
 }
 
+async function runDebugSelfTest(context, script, runtimePath) {
+  const uri = vscode.Uri.file(script);
+  const breakpoint = new vscode.SourceBreakpoint(
+    new vscode.Location(uri, new vscode.Position(2, 0)),
+    true,
+  );
+  const evidence = { started: false, breakpointLine: 0, stepLine: 0, x: null, y: null, terminated: false };
+  let debugSession;
+  let phase = 0;
+  let chain = Promise.resolve();
+  let resolveTerminated;
+  const terminated = new Promise((resolve) => { resolveTerminated = resolve; });
+
+  const inspect = async (session) => {
+    const stack = await session.customRequest('stackTrace', { threadId: 1, startFrame: 0, levels: 20 });
+    const frame = stack.stackFrames[0];
+    const scopes = await session.customRequest('scopes', { frameId: frame.id });
+    const globalScope = scopes.scopes.find((scope) => scope.name === 'Global');
+    const variables = await session.customRequest('variables', {
+      variablesReference: globalScope.variablesReference,
+    });
+    return { frame, variables: variables.variables };
+  };
+
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory('ahk-linux', {
+    createDebugAdapterTracker(session) {
+      debugSession = session;
+      return {
+        onDidSendMessage(message) {
+          if (message.type !== 'event' || message.event !== 'stopped') return;
+          chain = chain.then(async () => {
+            const snapshot = await inspect(debugSession);
+            if (phase === 0) {
+              evidence.breakpointLine = snapshot.frame.line;
+              evidence.x = snapshot.variables.find((item) => item.name === 'x')?.value ?? null;
+              phase = 1;
+              await debugSession.customRequest('stepIn', { threadId: 1 });
+            } else if (phase === 1) {
+              evidence.stepLine = snapshot.frame.line;
+              evidence.y = snapshot.variables.find((item) => item.name === 'y')?.value ?? null;
+              phase = 2;
+              await debugSession.customRequest('continue', { threadId: 1 });
+            }
+          });
+        },
+      };
+    },
+  });
+  const terminateListener = vscode.debug.onDidTerminateDebugSession((session) => {
+    if (session.type === 'ahk-linux') {
+      evidence.terminated = true;
+      resolveTerminated();
+    }
+  });
+
+  vscode.debug.addBreakpoints([breakpoint]);
+  try {
+    evidence.started = await vscode.debug.startDebugging(
+      vscode.workspace.getWorkspaceFolder(uri),
+      {
+        type: 'ahk-linux',
+        request: 'launch',
+        name: 'AHK Linux VSC-2 oracle',
+        program: script,
+        runtime: runtimePath,
+        cwd: path.dirname(script),
+        backend: 'auto',
+      },
+    );
+    if (!evidence.started) throw new Error('VS Code rejected the debug session');
+    await Promise.race([
+      terminated,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('VS Code debug self-test timeout')), 30000)),
+    ]);
+    await chain;
+    return evidence;
+  } finally {
+    vscode.debug.removeBreakpoints([breakpoint]);
+    tracker.dispose();
+    terminateListener.dispose();
+    if (debugSession && !evidence.terminated) vscode.debug.stopDebugging(debugSession);
+  }
+}
+
 async function activate(context) {
   const output = vscode.window.createOutputChannel('AutoHotkey Linux');
   const diagnostics = vscode.languages.createDiagnosticCollection('ahk-linux');
@@ -248,6 +391,8 @@ async function activate(context) {
   statusBar.command = 'ahkLinux.refreshCapabilities';
   const capabilities = new CapabilityProvider(runtime, statusBar);
   const taskProvider = new AhkTaskProvider(runtime);
+  const debugConfigurationProvider = new AhkDebugConfigurationProvider(runtime);
+  const debugAdapterFactory = new AhkDebugAdapterFactory();
 
   context.subscriptions.push(
     output,
@@ -256,6 +401,8 @@ async function activate(context) {
     capabilities.emitter,
     vscode.window.registerTreeDataProvider('ahkLinux.capabilities', capabilities),
     vscode.tasks.registerTaskProvider('ahk-linux', taskProvider),
+    vscode.debug.registerDebugConfigurationProvider('ahk-linux', debugConfigurationProvider),
+    vscode.debug.registerDebugAdapterDescriptorFactory('ahk-linux', debugAdapterFactory),
     vscode.commands.registerCommand('ahkLinux.runFile', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor || editor.document.languageId !== 'ahk2') {
@@ -320,6 +467,14 @@ async function activate(context) {
     const runResult = script
       ? await runtime.runScript(vscode.Uri.file(script), { cwd: path.dirname(script) })
       : { code: null, output: '' };
+    const debugScript = process.env.AHK_LINUX_VSCODE_DEBUG_SCRIPT;
+    const debugEvidence = debugScript
+      ? await runDebugSelfTest(
+          context,
+          debugScript,
+          runtime.configuration(vscode.Uri.file(debugScript)).runtime,
+        )
+      : null;
     const allCommands = await vscode.commands.getCommands(true);
     const languages = await vscode.languages.getLanguages();
     const evidence = {
@@ -337,6 +492,7 @@ async function activate(context) {
       diagnosticsEntries: parseDiag(diagResult.text).length,
       runExitCode: runResult.code,
       runOutput: runResult.output,
+      debug: debugEvidence,
     };
     fs.writeFileSync(selfTestMarker, `${JSON.stringify(evidence)}\n`, 'utf8');
   } else if (uri) {

@@ -86,8 +86,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - M5-C A_ControlSendMode: writable focus/atspi mode; AT-SPI appends plain Unicode
   to EditableText or triggers Enter/Space Action without X focus, rejecting
   unsupported key syntax explicitly; GNOME oracle + four CI contract assertions.
-- VSC-1 VS Code extension: syntax, run/selection/stop/tasks, diagnostics,
-  backend status/capability tree, VSIX packaging and real extension-host oracle.
+- VSC-1/VSC-2 VS Code 0.2.0: syntax/run/tasks/diagnostics/capabilities plus
+  Linux DBGp and inline DAP breakpoint/stack/scopes/scalars/stepping; independent
+  protocol/DAP oracles and a real VS Code 1.134 extension-host tracker pass.
 - GUI-1 real host matrix: GTK 3.24.50 and Qt 6.9.2 full tested controls;
   VS Code/Electron 1.134.0 window/document captured but Monaco content unavailable.
 - M6 TSan input gate: Debug/O0 race instrumentation runs 27 headless tests plus
@@ -106,8 +107,8 @@ result:
 - KDE VM end-to-end matrix and a real Flatpak-host run.
 - Wider AT-SPI matrix still needs LibreOffice/Java/real-document hosts; GTK,
   Qt6 and VS Code/Electron are now installed and versioned in the VM matrix.
-- VSC-2 D2 debug adapter: D1 Linux DBGp is delivered (filename breakpoint,
-  run/step/stack/context/scalars/detach oracle); VS Code DAP translation remains.
+- VSC-2 D3 advanced debugger values: object paging, exception breaks,
+  idle-script pause/reconnect and a real D-Bus object projection remain.
 - libei injection, unless a compositor/portal environment suitable for E2E
   verification is provided.
 - Supplementary-plane Wayland text (UTF-16 surrogate-pair/emoji combination);

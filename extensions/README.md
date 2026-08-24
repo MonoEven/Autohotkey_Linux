@@ -4,13 +4,15 @@
 
 Source: `extensions/vscode-ahk-linux/`
 
-VSC-1 is a native Linux runtime companion, not a repackaged Windows-only debugger:
+The extension is a native Linux runtime companion with its own verified DBGp/DAP debugger:
 
 - AutoHotkey v2 language registration, syntax grammar and editor configuration;
 - run file/selection, stop processes, task provider and problem matcher;
 - runtime error diagnostics;
 - backend status bar and `ahk_core --diag` capability tree;
 - X11/portal/GNOME/evdev and optional `ahk-inputd` settings;
+- filename breakpoints, stack/scopes/scalars, continue and stepping through an
+  inline DAP adapter over the native Linux DBGp core;
 - pinned `@vscode/vsce` VSIX packaging.
 
 Tests:
@@ -25,11 +27,11 @@ VM extension-host oracle:
 
 ```bash
 bash tests/oracle/run_vscode_extension_oracle.sh \
-  extensions/vscode-ahk-linux/autohotkey-linux-tools-0.1.0.vsix \
+  extensions/vscode-ahk-linux/autohotkey-linux-tools-0.2.0.vsix \
   build-core/source/linux/core/ahk_core
 ```
 
-The oracle installs the VSIX into isolated VS Code user/extension directories, starts a real extension host under Xvfb, checks language and command registration, parses runtime diagnostics and executes an AHK script. VSC-1 explicitly does not claim interactive breakpoints/stepping; the DBGp/DAP adapter is VSC-2.
+The oracle installs the VSIX into isolated directories, starts a real VS Code extension host, checks language/commands/diagnostics and executes an AHK script. It then starts the contributed debugger, observes breakpoint line 3, step line 4, `x=10`, `y=15` and clean termination through a DebugAdapterTracker.
 
 ## GNOME Shell — global-hotkey broker extension
 
