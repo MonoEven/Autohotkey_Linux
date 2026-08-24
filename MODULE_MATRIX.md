@@ -67,7 +67,7 @@
 |---|---|---|
 | Send/SendEvent/SendInput/SendPlay/SendText | ✅ | X11:XTEST + xkbcommon-x11 当前布局 Shift/AltGr 反查；Wayland:虚拟键盘/指针；独立 XI2/keysym oracle 验证 |
 | Click/Mouse*/KeyWait/GetKeyState/BlockInput | ✅ | X11 实测;锁键开关、阻断语义 |
-| Hotkey / HotIf | ✅ | X11/XWayland:XGrabKey；X11/evdev 支持 canonical set-1 `scXXX`；evdev 支持 `A & B` 状态机（X11/portal/GNOME 明确不支持）；**鼠标热键**(round-30,XGrabButton:左/右/中/X1/X2/滚轮)、**左右修饰键 `<^a`/`>^a` 与通配 `*`**(round-31)、哈希索引、动态 modifier map、BadAccess 冲突报错、Off/透传(round-29) |
+| Hotkey / HotIf | ✅ | **per-hotkey mux**:按能力路由到 X11/portal/GNOME/evdev 并多 lane 同存；X11/evdev 支持 canonical set-1 `scXXX`；evdev 支持 `A & B` 状态机；**鼠标热键**(round-30,XGrabButton)、**左右修饰键与通配**、哈希索引、动态 modifier map、BadAccess 冲突报错、Off/透传 |
 | Hotstring | ✅ | XI2.1 raw multi-client 字符流；原始 trigger 到达目标，按精确 Backspace 数回删再替换；C/*/O/X/B0、大小写、inside-word、HotIf、Unicode；双进程外部 oracle |
 | InputHook | ✅ | XI2 raw 观察 + KeyOpt/visibility 精确 keycode suppression grabs；运行时重配；多脚本/目标可见；缓冲/EndKey/Match/退格、canonical VK/SC、Unicode/回调 |
 

@@ -25,7 +25,10 @@ suppression is a selected passive-grab set derived from InputHook visibility and
 KeyOpt; raw handles every unselected key and runtime changes reconcile it.
 `core/input_event.*` is the versioned normalization/wire-schema precursor for
 M3/M4: every lane reports physical/logical/text/source/level/device/origin, and
-`AHK_INPUT_EVENT_TRACE=<path>` writes its JSONL oracle.
+`AHK_INPUT_EVENT_TRACE=<path>` writes its JSONL oracle. `input_backend.*` owns
+the per-hotkey mux: each hotkey is routed to the lane whose caps satisfy it, and
+several lanes can stay active at once (see `--diag input-mux` /
+`HotkeyBackendGet().mux`).
 
 Key runtime controls:
 

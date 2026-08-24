@@ -1,0 +1,8 @@
+id: input_mux
+title: "one script routes F12 to X11 and a & b to evdev concurrently"
+script: run_mux.sh
+script_type: sh
+check: marker:/tmp/scn_input_mux
+envs: x11
+expect: pass
+needs: uinput

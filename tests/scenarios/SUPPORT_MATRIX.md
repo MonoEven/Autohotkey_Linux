@@ -2,7 +2,7 @@
 
 | scenario | env | status | note |
 |---|---|---|---|
-| a_and_b | x11 | not-run | "a & b" custom-combo registration (X11: documented unsupported error) |
+| a_and_b | x11 | not-run | "a & b" custom-combo registration (routes to evdev or raises a clear error) |
 | atspi_matrix | x11 | not-run | "AT-SPI app matrix: ControlGetText finds gnome-terminal + firefox under a GNOME Wayland session" |
 | callback_fp | x11 | not-run | "CallbackCreate with Float/Double ABI types (libffi SysV FP registers)" |
 | capslock_dual | x11 | not-run | "CapsLock dual-role: tap = CapsLock, hold = Esc (evdev/uinput)" |
@@ -17,6 +17,7 @@
 | hotkey_basic | x11 | pass | Basic hotkey fires via the X grab |
 | hotkey_thisprior | x11 | pass | A_ThisHotkey / A_PriorHotkey track the fired hotkeys |
 | ibus_compat | x11 | not-run | "IBus session compatibility: the port runs + SendText Chinese does not crash (uinput clipboard fallback)" |
+| input_mux | x11 | not-run | "one script routes F12 to X11 and a & b to evdev concurrently" |
 | kde_sni | x11 | skip | Tray StatusNotifierItem on KDE Plasma (needs a KDE host) |
 | keydown_longpress | x11 | pass | Key-down hotkey fires repeatedly while held (bounded count) |
 | multiscript_conflict | x11 | not-run | "Conflicted X11 hotkey reports BadAccess then auto-recovers after owner exit" |

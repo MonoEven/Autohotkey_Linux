@@ -154,6 +154,7 @@ void FireEvdevStandalonePrefix(unsigned int aCode, unsigned int aMods, int aPhas
 	{
 		Hotkey *hk = Hotkey::shk[i];
 		if (!hk || hk->mModifierVK || hk->mModifierSC
+			|| !LinuxInputBackendHotkeyAssigned(hk, AhkInputBackendKind::EVDEV)
 			|| EvdevForHotkeyKey(hk, false) != aCode)
 			continue;
 		if ((aPhase == 0 && hk->mKeyUp) || (aPhase == 1 && !hk->mKeyUp))
@@ -191,6 +192,7 @@ bool EvdevPrefixProperties(unsigned int aCode, bool &aPassthrough)
 	{
 		Hotkey *hk = Hotkey::shk[i];
 		if (!hk || (!hk->mModifierVK && !hk->mModifierSC)
+			|| !LinuxInputBackendHotkeyAssigned(hk, AhkInputBackendKind::EVDEV)
 			|| EvdevForHotkeyKey(hk, true) != aCode)
 			continue;
 		HotkeyVariant *variant = nullptr;
@@ -419,6 +421,7 @@ int HandleEvdevCombo(unsigned int aCode, bool aDown, bool aRepeat, unsigned int 
 	{
 		Hotkey *hk = Hotkey::shk[i];
 		if (!hk || (!hk->mModifierVK && !hk->mModifierSC)
+			|| !LinuxInputBackendHotkeyAssigned(hk, AhkInputBackendKind::EVDEV)
 			|| EvdevForHotkeyKey(hk, false) != aCode)
 			continue;
 		unsigned int prefix = EvdevForHotkeyKey(hk, true);
@@ -484,7 +487,8 @@ bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat)
 	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
 	{
 		Hotkey *hk = Hotkey::shk[i];
-		if (!hk || hk->mModifierVK || hk->mModifierSC || hk->IsCompletelyDisabled())
+		if (!hk || hk->mModifierVK || hk->mModifierSC || hk->IsCompletelyDisabled()
+			|| !LinuxInputBackendHotkeyAssigned(hk, AhkInputBackendKind::EVDEV))
 			continue;
 		if (hk->mKeyUp == down) // up-variants need a release; down need press.
 			continue;

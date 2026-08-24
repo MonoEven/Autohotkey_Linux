@@ -95,7 +95,16 @@
   `HotkeyBackendGet().event_version` 与 `--diag` 可查询。可选
   `AHK_INPUT_EVENT_TRACE` 输出 JSONL oracle。Xvfb 证明本进程 SendLevel=3 为
   self_inject，独立 XTEST 为 other_inject且不能伪造 level；GNOME VM uinput
-  证明 physical/evdev。匹配器分批消费该结构；M3-M mux 尚未完成。
+  证明 physical/evdev。匹配器分批消费该结构。
+- **M3-M 已交付（真 per-hotkey mux）**：`LinuxInputBackendForHotkey()` 按每个
+  hotkey 的 caps 需求（tilde/up/bare/wildcard/scXXX/custom combo/作为其他
+  combo 的 prefix）路由到具体 backend；X11、portal、GNOME Shell、evdev 四个
+  lane 可同时注册/泵送，各自只注册分配给自己的 hotkey。X11 desired/index/
+  evdev 匹配器按 assigned 过滤；`HotkeyBackendGet().mux` 与 `--diag` 输出
+  活动组合（如 `x11+evdev`）。运行时 Hotkey 开关差量启停 backend；BIF 注册前
+  用 route 预测能力契约，注册后按真实 hotkey 重建 mux。场景 `input_mux`
+  证明同一脚本内 XTEST F12→x11 与 uinput `a & b`→evdev 并发触发；`a_and_b`
+  改为"路由成功或明确报错"。
 - **落点文件**：`input_event.h/.cpp`；`core_capture_linux.cpp`、
   `core_evdev_linux.cpp`、`core_hotkey_linux.cpp`、`input_backend*.cpp`。
 - **验收标准**：全量 doc-check 不回归；新增断言"XTEST 注入事件的

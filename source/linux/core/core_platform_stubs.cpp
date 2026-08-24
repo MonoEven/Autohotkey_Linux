@@ -59,6 +59,7 @@ extern "C" int LinuxRunDiagnostic()
 	const char *backend = LinuxInputBackendName();
 	std::printf("input-backend: %s\n", backend ? backend : "(unknown)");
 	std::printf("input-event-version: %u\n", AHK_INPUT_EVENT_VERSION);
+	std::printf("input-mux    : %s\n", LinuxInputBackendMuxDescription());
 	if (const AhkInputBackendCaps *caps = LinuxInputBackendCaps())
 	{
 		std::printf("  caps-version=%u global=%d suppress=%d passthrough=%d key_up=%d wildcard=%d"

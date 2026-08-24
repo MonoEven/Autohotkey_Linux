@@ -480,8 +480,9 @@ void LinuxBuildDesired(Display *d, std::set<GrabSpec> &aDesired)
 	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
 	{
 		Hotkey *hk = Hotkey::shk[i];
-		if (!hk || hk->mModifierVK || hk->IsCompletelyDisabled())
-			continue; // Prefix hotkeys unsupported; disabled variants ungrabbed.
+		if (!hk || hk->mModifierVK || hk->mModifierSC || hk->IsCompletelyDisabled()
+			|| !LinuxInputBackendHotkeyAssigned(hk, AhkInputBackendKind::X11))
+			continue; // Other mux lanes own their registrations.
 		KeyCode kc = LinuxHotkeyKeycode(d, hk);
 		unsigned int btn = kc ? 0 : LinuxHotkeyButton(hk);
 		if (!kc && !btn)
@@ -550,7 +551,8 @@ void LinuxBuildHotkeyIndex(Display *d)
 	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
 	{
 		Hotkey *hk = Hotkey::shk[i];
-		if (!hk || hk->mModifierVK || hk->IsCompletelyDisabled())
+		if (!hk || hk->mModifierVK || hk->mModifierSC || hk->IsCompletelyDisabled()
+			|| !LinuxInputBackendHotkeyAssigned(hk, AhkInputBackendKind::X11))
 			continue;
 		KeyCode kc = LinuxHotkeyKeycode(d, hk);
 		unsigned int btn = kc ? 0 : LinuxHotkeyButton(hk);
@@ -1505,14 +1507,6 @@ BIF_DECL(BIF_Linux_Hotkey)
 	// the evdev lane have no X11 dependency, so a Wayland session must NOT
 	// be rejected out of hand (it previously never reached the backend at all).
 	// UNKNOWN kinds (auto not yet resolved) cannot register anything.
-	const AhkInputBackendKind backend_kind = LinuxInputBackendKind();
-	if (backend_kind == AhkInputBackendKind::X11 && !LinuxHotkeyDisplay())
-	{
-		aResultToken.Error(LinuxWaylandActive()
-			? _T("Hotkeys are not available: the active input backend is X11 but there is no working X11 display here; use AHK_INPUT_BACKEND=portal (or gnome-shell/evdev).")
-			: _T("Hotkeys require an X11 display (XOpenDisplay failed)."), _T(""), ErrorPrototype::OS);
-		return;
-	}
 	// The portal / gnome-shell / evdev backends do not create an X11 display
 	// and need no X11 check here: their registrations are pushed through
 	// LinuxInputBackendSync() below, which knows each backend's own
@@ -1531,19 +1525,20 @@ BIF_DECL(BIF_Linux_Hotkey)
 			explicit_scan = true;
 			break;
 		}
-	const AhkInputBackendCaps *backend_caps = LinuxInputBackendCapsFor(backend_kind);
-	if (explicit_scan && (!backend_caps || !backend_caps->scan_code))
+	bool custom_combo = wcsstr(name, L" & ") != nullptr;
+	bool key_up = wcslen(name) >= 3 && !_tcsicmp(name + wcslen(name) - 3, L" up");
+	bool wildcard = wcschr(name, L'*') != nullptr;
+	bool passthrough = wcschr(name, L'~') != nullptr;
+	AhkInputBackendKind target_hint = LinuxInputBackendRoute(passthrough, key_up,
+		false, wildcard, explicit_scan, custom_combo);
+	if (target_hint == AhkInputBackendKind::AUTO)
 	{
-		aResultToken.Error(_T("Explicit scXXX hotkeys are not supported by the active Linux input backend; use X11 or evdev."), _T(""), ErrorPrototype::OS);
+		aResultToken.Error(_T("No available Linux input backend satisfies this hotkey's capability requirements."), name, ErrorPrototype::OS);
 		return;
 	}
-	// "A & B" needs a prefix-key state machine. No current lane implements it
-	// (including evdev), matching custom_combo=false in the versioned caps.
-	// Reject before mutating the upstream hotkey table: never accept a binding
-	// which cannot fire.
-	if (wcsstr(name, L" & ") && (!backend_caps || !backend_caps->custom_combo))
+	if (target_hint == AhkInputBackendKind::X11 && !LinuxHotkeyDisplay())
 	{
-		aResultToken.Error(_T("Hotkey \"A & B\" custom combinations are not implemented by the active Linux input backend."), _T(""), ErrorPrototype::OS);
+		aResultToken.Error(_T("The routed hotkey requires X11, but XOpenDisplay failed."), name, ErrorPrototype::OS);
 		return;
 	}
 	TCHAR opt_buf[256];
@@ -1556,35 +1551,26 @@ BIF_DECL(BIF_Linux_Hotkey)
 		FResultToError(aResultToken, aParam, aParamCount, fr, 0);
 		return;
 	}
-	// Registration succeeded: make the backend reconcile immediately (no
-	// cold-start wait for an X event) and surface grab conflicts.  The X11
-	// backend has its own reconcile+conflict-reporting; the Wayland/evdev
-	// backends reconcile through the unified sync and report their own
-	// availability via LinuxInputBackendLastError().
-	if (backend_kind == AhkInputBackendKind::X11)
+	// Registration can migrate existing prefix/suffix hotkeys between lanes,
+	// so recompute the complete mux before reconciling X11 and backend state.
+	UCHAR no_suppress = 0;
+	bool hook_mandatory = false;
+	Hotkey *registered = Hotkey::FindHotkeyByTrueNature(name, no_suppress, hook_mandatory);
+	AhkInputBackendKind target = registered
+		? LinuxInputBackendForHotkey(registered) : target_hint;
+	LinuxInputBackendSync();
+	LinuxReconcileHotkeyGrabs(target == AhkInputBackendKind::X11);
+	if (target == AhkInputBackendKind::X11 && sLastConflictName[0])
 	{
-		LinuxReconcileHotkeyGrabs(true);
-		if (sLastConflictName[0])
-		{
-			aResultToken.Error(_T("Hotkey could not be registered: the key combination is already grabbed by another client (X11 BadAccess): ")
-				, sLastConflictName, ErrorPrototype::OS);
-			sLastConflictName[0] = _T('\0');
-		}
+		aResultToken.Error(_T("Hotkey could not be registered: the key combination is already grabbed by another client (X11 BadAccess): ")
+			, sLastConflictName, ErrorPrototype::OS);
+		sLastConflictName[0] = _T('\0');
 		return;
 	}
-	if (backend_kind != AhkInputBackendKind::AUTO)
+	const wchar_t *backend_err = LinuxInputBackendLastErrorFor(target);
+	if (backend_err && backend_err[0])
 	{
-		// portal / gnome-shell / evdev: push the (possibly changed) set to
-		// the active backend now, not only on the next state-change hook.
-		LinuxInputBackendSync();
-		const wchar_t *backend_err = LinuxInputBackendLastError();
-		if (backend_err && backend_err[0])
-		{
-			// Surface a backend that cannot run (e.g. evdev with no device
-			// permission, unknown value) instead of silently accepting the
-			// hotkey and delivering nothing - honest failure (check0820).
-			aResultToken.Error(backend_err, _T(""), ErrorPrototype::OS);
-			return;
-		}
+		aResultToken.Error(backend_err, _T(""), ErrorPrototype::OS);
+		return;
 	}
 }

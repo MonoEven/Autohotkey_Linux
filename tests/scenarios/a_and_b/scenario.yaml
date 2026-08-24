@@ -1,7 +1,7 @@
 id: a_and_b
-title: "a & b" custom-combo registration (X11: documented unsupported error)
+title: "a & b" custom-combo registration (routes to evdev or raises a clear error)
 script: run.ahk
-check: script:grep -q '^err:' /tmp/scn_a_and_b
+check: script:grep -Eq '^(routed=evdev|err:)' /tmp/scn_a_and_b
 envs: x11
-expect: unsupported
+expect: pass
 needs: ""

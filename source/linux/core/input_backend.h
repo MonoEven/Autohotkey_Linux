@@ -118,13 +118,19 @@ const char *LinuxInputBackendProvenanceName(AhkSyntheticProvenance aValue);
 const AhkInputBackendCaps *LinuxInputBackendCapsFor(AhkInputBackendKind aKind);
 const char *LinuxInputBackendNameFor(AhkInputBackendKind aKind);
 
-// Per-hotkey backend routing (check_detail0821 §1-A / R3): pick the best
+struct Hotkey; // ../../hotkey.h
+
+// Per-hotkey backend routing (check_detail0821 §1-A / M3-M): pick the best
 // backend whose capabilities satisfy the hotkey's needs (tilde passthrough,
 // key-up, bare key, wildcard).  Starts from the effective backend; falls back
 // through the other lanes in priority order when the effective one cannot
 // satisfy the flags.
 AhkInputBackendKind LinuxInputBackendRoute(bool aPassthrough, bool aKeyUp, bool aBare,
 	bool aWildcard, bool aScanCode = false, bool aCustomCombo = false);
+AhkInputBackendKind LinuxInputBackendForHotkey(Hotkey *aHotkey);
+bool LinuxInputBackendHotkeyAssigned(Hotkey *aHotkey, AhkInputBackendKind aKind);
+bool LinuxInputBackendMuxUses(AhkInputBackendKind aKind);
+const char *LinuxInputBackendMuxDescription();
 
 // Hotkey set changed (called from LinuxHotkeyStateChanged): let the active
 // backend reconcile its registrations.  No-op for X11/EVDEV.
@@ -138,6 +144,7 @@ void LinuxInputBackendShutdown();
 
 // Human-readable failure reason (empty when the last operation succeeded).
 const wchar_t *LinuxInputBackendLastError();
+const wchar_t *LinuxInputBackendLastErrorFor(AhkInputBackendKind aKind);
 
 // True when the active backend currently has shortcuts bound.
 bool LinuxInputBackendActive();
@@ -146,7 +153,6 @@ bool LinuxInputBackendActive();
 // Kept here so neither backend duplicates the hotkey fire logic; the X11
 // machinery in core_hotkey_linux.cpp is not affected.
 
-struct Hotkey;      // ../../hotkey.h
 struct HotkeyVariant;
 
 // Enabled/suspended + normal/hook type check.

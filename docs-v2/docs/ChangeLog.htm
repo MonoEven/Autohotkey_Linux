@@ -73,6 +73,13 @@
     device and origin across X11, evdev, Portal and GNOME Shell entry points.
     The schema is queryable from HotkeyBackendGet/--diag and an optional JSONL
     trace has independent self/other/physical provenance oracles.</li>
+  <li><b>M3-M per-hotkey input mux:</b> hotkeys are routed by capability to
+    X11, portal, GNOME Shell or evdev, and multiple lanes can be registered and
+    pumped at once in one script (each backend only owns its assigned keys).
+    The active composition is exposed as <code>HotkeyBackendGet().mux</code>
+    and <code>--diag input-mux</code>; runtime Hotkey changes differentially
+    start/stop lanes. A scenario proves XTEST F12 (X11) and a uinput
+    <code>a &amp; b</code> (evdev) fire concurrently in the same script.</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>

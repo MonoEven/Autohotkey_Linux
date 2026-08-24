@@ -35,6 +35,8 @@
 namespace
 {
 
+unsigned sMuxMask = 0;
+char sMuxDescription[96] = "(none)";
 wchar_t sLastErrorBuf[512] = { 0 };
 
 void SetError(const char *aText)
@@ -397,19 +399,97 @@ AhkInputBackendKind LinuxInputBackendRoute(bool aPassthrough, bool aKeyUp, bool 
 	for (AhkInputBackendKind k : kCandidates)
 	{
 		if (k == eff) continue;
+		if (!CapsSatisfy(KindCaps(k), aPassthrough, aKeyUp, aBare, aWildcard,
+			aScanCode, aCustomCombo))
+			continue;
 		if (k == AhkInputBackendKind::X11)
 		{
 			const char *display = getenv("DISPLAY");
 			if (!display || !*display)
 				continue;
 		}
-		if (CapsSatisfy(KindCaps(k), aPassthrough, aKeyUp, aBare, aWildcard,
-			aScanCode, aCustomCombo))
-			return k;
+		if (k == AhkInputBackendKind::GNOME_SHELL && !LinuxGnomeShellAvailable())
+			continue;
+		if (k == AhkInputBackendKind::PORTAL && !LinuxPortalGlobalShortcutsAvailable())
+			continue;
+		return k;
 	}
-	return eff; // keep current behavior when nothing qualifies
+	return AhkInputBackendKind::AUTO; // no backend satisfies the contract.
 }
 
+AhkInputBackendKind LinuxInputBackendForHotkey(Hotkey *aHotkey)
+{
+	if (!aHotkey)
+		return AhkInputBackendKind::AUTO;
+	bool passthrough = (aHotkey->mNoSuppress & (NO_SUPPRESS_PREFIX
+		| AT_LEAST_ONE_VARIANT_HAS_TILDE | AT_LEAST_ONE_COMBO_HAS_TILDE)) != 0;
+	bool combo = aHotkey->mModifierVK != 0 || aHotkey->mModifierSC != 0;
+	bool acts_as_prefix = false;
+	for (int i = 0; !acts_as_prefix && i < Hotkey::sHotkeyCount; ++i)
+	{
+		Hotkey *other = Hotkey::shk[i];
+		if (!other || other == aHotkey || other->IsCompletelyDisabled())
+			continue;
+		acts_as_prefix = (aHotkey->mVK && other->mModifierVK == aHotkey->mVK)
+			|| (aHotkey->mSC && other->mModifierSC == aHotkey->mSC);
+	}
+	bool scan = aHotkey->mSC != 0 || aHotkey->mModifierSC != 0;
+	bool bare = aHotkey->mModifiers == 0 && aHotkey->mModifiersLR == 0
+		&& !combo && !acts_as_prefix;
+	return LinuxInputBackendRoute(passthrough, aHotkey->mKeyUp, bare,
+		aHotkey->mAllowExtraModifiers != 0, scan, combo || acts_as_prefix);
+}
+
+bool LinuxInputBackendHotkeyAssigned(Hotkey *aHotkey, AhkInputBackendKind aKind)
+{
+	return aHotkey && LinuxInputBackendForHotkey(aHotkey) == aKind;
+}
+
+static unsigned KindBit(AhkInputBackendKind aKind)
+{
+	return aKind == AhkInputBackendKind::AUTO ? 0u : 1u << (unsigned)aKind;
+}
+
+bool LinuxInputBackendMuxUses(AhkInputBackendKind aKind)
+{
+	return (sMuxMask & KindBit(aKind)) != 0;
+}
+
+const char *LinuxInputBackendMuxDescription()
+{
+	return sMuxDescription;
+}
+
+static unsigned ComputeMuxMask()
+{
+	unsigned mask = 0;
+	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
+	{
+		Hotkey *hk = Hotkey::shk[i];
+		if (!hk || hk->IsCompletelyDisabled())
+			continue;
+		mask |= KindBit(LinuxInputBackendForHotkey(hk));
+	}
+	return mask;
+}
+
+static void UpdateMuxDescription()
+{
+	sMuxDescription[0] = '\0';
+	const AhkInputBackendKind kinds[] = { AhkInputBackendKind::X11,
+		AhkInputBackendKind::PORTAL, AhkInputBackendKind::GNOME_SHELL,
+		AhkInputBackendKind::EVDEV };
+	for (AhkInputBackendKind kind : kinds)
+		if (LinuxInputBackendMuxUses(kind))
+		{
+			if (sMuxDescription[0])
+				strncat(sMuxDescription, "+", sizeof(sMuxDescription) - strlen(sMuxDescription) - 1);
+			strncat(sMuxDescription, LinuxInputBackendNameFor(kind),
+				sizeof(sMuxDescription) - strlen(sMuxDescription) - 1);
+		}
+	if (!sMuxDescription[0])
+		strcpy(sMuxDescription, "(none)");
+}
 
 // Version of the GlobalShortcuts portal backend on the session bus (0 when
 // absent/unreachable).  Functional probe used by auto selection and --diag.
@@ -488,45 +568,40 @@ int LinuxGnomeMajorVersion()
 
 void LinuxInputBackendSync()
 {
-	// Fresh view: only failures in THIS sync call remain visible to the
-	// caller (portal/gnome-shell clear their own buffers; x11/evdev do not
-	// set one on success and the evdev branch re-sets on any failure below).
+	// Recompute the complete per-hotkey assignment before touching a backend.
+	// Backends which disappear from the mask are shut down so stale global
+	// registrations/grabs cannot survive a runtime Hotkey Off/delete.
 	sLastErrorBuf[0] = 0;
-	switch (CurrentKind())
-	{
-	case AhkInputBackendKind::PORTAL:
+	unsigned old_mask = sMuxMask;
+	sMuxMask = ComputeMuxMask();
+	UpdateMuxDescription();
+	if ((old_mask & KindBit(AhkInputBackendKind::PORTAL))
+		&& !LinuxInputBackendMuxUses(AhkInputBackendKind::PORTAL))
+		LinuxGShortcutShutdown();
+	if ((old_mask & KindBit(AhkInputBackendKind::GNOME_SHELL))
+		&& !LinuxInputBackendMuxUses(AhkInputBackendKind::GNOME_SHELL))
+		LinuxGnomeShellShutdown();
+	if ((old_mask & KindBit(AhkInputBackendKind::EVDEV))
+		&& !LinuxInputBackendMuxUses(AhkInputBackendKind::EVDEV))
+		LinuxEvdevShutdown();
+	if (LinuxInputBackendMuxUses(AhkInputBackendKind::PORTAL))
 		LinuxGShortcutSync();
-		break;
-	case AhkInputBackendKind::GNOME_SHELL:
+	if (LinuxInputBackendMuxUses(AhkInputBackendKind::GNOME_SHELL))
 		LinuxGnomeShellSync();
-		break;
-	case AhkInputBackendKind::EVDEV:
-		// The evdev lane is a standing reader; nothing to sync.  If it
-		// could not open any device (no permission), surface the reason.
-		if (!LinuxEvdevActive())
-			SetError(LinuxEvdevLastError());
-		break;
-	default:
-		break; // X11: handled by the existing XGrabKey machinery.
-	}
+	if (LinuxInputBackendMuxUses(AhkInputBackendKind::EVDEV) && !LinuxEvdevActive())
+		SetError(LinuxEvdevLastError());
 }
 
 void LinuxInputBackendDispatch()
 {
-	switch (CurrentKind())
-	{
-	case AhkInputBackendKind::PORTAL:
+	// Every lane with assigned registrations is non-blocking and must be
+	// pumped; CurrentKind is only the preferred/default route, not a switch.
+	if (LinuxInputBackendMuxUses(AhkInputBackendKind::PORTAL))
 		LinuxGShortcutDispatch();
-		break;
-	case AhkInputBackendKind::GNOME_SHELL:
+	if (LinuxInputBackendMuxUses(AhkInputBackendKind::GNOME_SHELL))
 		LinuxGnomeShellDispatch();
-		break;
-	case AhkInputBackendKind::EVDEV:
+	if (LinuxInputBackendMuxUses(AhkInputBackendKind::EVDEV))
 		LinuxEvdevDispatch();
-		break;
-	default:
-		break;
-	}
 	// §4: the GNOME-extension clipboard listener is display-independent (it
 	// rides the session bus), so pump it on every main-loop pass -- the
 	// XFixes path above handles X11 and this covers pure Wayland.
@@ -537,51 +612,34 @@ void LinuxInputBackendDispatch()
 
 void LinuxInputBackendShutdown()
 {
-	switch (CurrentKind())
+	LinuxGShortcutShutdown();
+	LinuxGnomeShellShutdown();
+	LinuxEvdevShutdown();
+	sMuxMask = 0;
+	UpdateMuxDescription();
+}
+
+const wchar_t *LinuxInputBackendLastErrorFor(AhkInputBackendKind aKind)
+{
+	switch (aKind)
 	{
-	case AhkInputBackendKind::PORTAL:
-		LinuxGShortcutShutdown();
-		break;
-	case AhkInputBackendKind::GNOME_SHELL:
-		LinuxGnomeShellShutdown();
-		break;
-	case AhkInputBackendKind::EVDEV:
-		LinuxEvdevShutdown();
-		break;
-	default:
-		break;
+	case AhkInputBackendKind::PORTAL: return LinuxGShortcutLastError();
+	case AhkInputBackendKind::GNOME_SHELL: return LinuxGnomeShellLastError();
+	default: return sLastErrorBuf;
 	}
 }
 
 const wchar_t *LinuxInputBackendLastError()
 {
-	// Route to the active backend's own error state (its buffer is cleared
-	// at the start of every Sync(), so a non-empty result means the most
-	// recent sync failed).  The unified buffer only ever holds backend-
-	// selection errors (unknown AHK_INPUT_BACKEND value) and the evdev
-	// failure text, which LinuxInputBackendSync() refreshes on each call.
-	switch (CurrentKind())
-	{
-	case AhkInputBackendKind::PORTAL:
-		return LinuxGShortcutLastError();
-	case AhkInputBackendKind::GNOME_SHELL:
-		return LinuxGnomeShellLastError();
-	default:
+	if (sLastErrorBuf[0])
 		return sLastErrorBuf;
-	}
+	return LinuxInputBackendLastErrorFor(CurrentKind());
 }
 
 bool LinuxInputBackendActive()
 {
-	switch (CurrentKind())
-	{
-	case AhkInputBackendKind::PORTAL:
-		return LinuxGShortcutActive();
-	case AhkInputBackendKind::GNOME_SHELL:
-		return LinuxGnomeShellActive();
-	case AhkInputBackendKind::EVDEV:
-		return LinuxEvdevActive();
-	default:
-		return false;
-	}
+	return (LinuxInputBackendMuxUses(AhkInputBackendKind::PORTAL) && LinuxGShortcutActive())
+		|| (LinuxInputBackendMuxUses(AhkInputBackendKind::GNOME_SHELL) && LinuxGnomeShellActive())
+		|| (LinuxInputBackendMuxUses(AhkInputBackendKind::EVDEV) && LinuxEvdevActive())
+		|| LinuxInputBackendMuxUses(AhkInputBackendKind::X11);
 }

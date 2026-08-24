@@ -62,6 +62,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - Versioned normalized input events: physical evdev/set-1 SC, VK, text,
   phase/repeat, source/SendLevel/device/origin across X11, evdev, Portal and
   GNOME entry points, with optional JSONL trace.
+- Per-hotkey input mux: capability-based routing across X11/portal/GNOME/evdev
+  with concurrent multi-lane registration and differential start/stop; exposed
+  via HotkeyBackendGet().mux and --diag.
 - Machine totals: 1160/1160 X11/headless, 17/17 Wayland and 255/255
   XWayland assertions; 27/27 headless regression tests.
 

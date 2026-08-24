@@ -611,7 +611,8 @@ void LinuxGnomeShellSync()
 	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
 	{
 		Hotkey *hk = Hotkey::shk[i];
-		if (!AhkBackendHotkeyEnabled(hk)) continue;
+		if (!AhkBackendHotkeyEnabled(hk)
+			|| !LinuxInputBackendHotkeyAssigned(hk, AhkInputBackendKind::GNOME_SHELL)) continue;
 		if (hk->mType != HK_NORMAL && hk->mType != HK_KEYBD_HOOK) continue;
 		std::string accel = AhkBackendComboForHotkey(hk);
 		if (accel.empty()) continue;

@@ -2184,16 +2184,7 @@ BIF_DECL(BIF_Linux_HotkeyBackendGet)
 			bool hook_mandatory = false;
 			Hotkey *hk = Hotkey::FindHotkeyByTrueNature(keyname, no_suppress, hook_mandatory);
 			if (hk)
-			{
-				bool passthrough = (no_suppress & NO_SUPPRESS_PREFIX) != 0;
-				bool key_up = hk->mKeyUp;
-				bool bare = (hk->mModifiers == 0 && hk->mVK != 0);
-				// Wildcard has no dedicated field on Hotkey; a name starting
-				// with '*' is the wildcard form.
-				bool wildcard = keyname[0] == _T('*');
-				kind = LinuxInputBackendRoute(passthrough, key_up, bare, wildcard,
-					hk->mSC != 0, hk->mModifierVK != 0 || hk->mModifierSC != 0);
-			}
+				kind = LinuxInputBackendForHotkey(hk);
 		}
 	}
 	const char *name = LinuxInputBackendNameFor(kind);
@@ -2219,6 +2210,14 @@ BIF_DECL(BIF_Linux_HotkeyBackendGet)
 		obj->SetOwnProp(_T("backend"), _T(""));
 	obj->SetOwnProp(_T("caps_version"), (__int64)LinuxInputBackendCapsVersion());
 	obj->SetOwnProp(_T("event_version"), (__int64)AHK_INPUT_EVENT_VERSION);
+	const char *mux = LinuxInputBackendMuxDescription();
+	wchar_t mux_buf[96];
+	size_t mux_len = mbstowcs(mux_buf, mux, _countof(mux_buf) - 1);
+	if (mux_len == (size_t)-1) mux_len = 0;
+	mux_buf[mux_len] = 0;
+	LPTSTR mux_persistent = (LPTSTR)SimpleHeap::Alloc((mux_len + 1) * sizeof(TCHAR));
+	tmemcpy(mux_persistent, mux_buf, mux_len + 1);
+	obj->SetOwnProp(_T("mux"), mux_persistent);
 	obj->SetOwnProp(_T("global_hotkeys"), (__int64)(caps && caps->global_hotkeys));
 	obj->SetOwnProp(_T("suppress"), (__int64)(caps && caps->suppress));
 	obj->SetOwnProp(_T("passthrough"), (__int64)(caps && caps->passthrough));

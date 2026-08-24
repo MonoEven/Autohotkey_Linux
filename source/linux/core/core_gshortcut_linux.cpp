@@ -61,7 +61,7 @@ bool Applicable()
 	// when the router chose it for this session (Wayland without the GNOME
 	// Shell extension, or explicit AHK_INPUT_BACKEND=portal /
 	// AHK_FORCE_GLOBAL_SHORTCUTS=1).  X11 sessions keep XGrabKey instead.
-	return LinuxInputBackendKind() == AhkInputBackendKind::PORTAL;
+	return LinuxInputBackendMuxUses(AhkInputBackendKind::PORTAL);
 }
 
 void WideToUtf8(const wchar_t *aIn, char *aOut, size_t aSize)
@@ -437,7 +437,8 @@ void LinuxGShortcutSync()
 	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
 	{
 		Hotkey *hk = Hotkey::shk[i];
-		if (!HotkeyEnabled(hk)) continue;
+		if (!HotkeyEnabled(hk)
+			|| !LinuxInputBackendHotkeyAssigned(hk, AhkInputBackendKind::PORTAL)) continue;
 		if (hk->mType != HK_NORMAL && hk->mType != HK_KEYBD_HOOK) continue;
 		char id[48];
 		snprintf(id, sizeof(id), "ahk_%p", (void *)hk);
