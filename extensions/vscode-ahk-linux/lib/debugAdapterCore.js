@@ -12,11 +12,16 @@ const {
 const VARIABLE_PAGE_SIZE = 16;
 
 class AhkDebugAdapterCore {
-  constructor(sendMessage) {
+  constructor(sendMessage, options = {}) {
     this.sendMessage = sendMessage;
+    this.onDetached = options.onDetached || (() => {});
     this.sequence = 1;
     this.session = null;
     this.child = null;
+    this.processId = 0;
+    this.debugHost = '127.0.0.1';
+    this.debugPort = 0;
+    this.attachMode = false;
     this.init = null;
     this.frames = new Map();
     this.breakpoints = new Map();
@@ -68,6 +73,7 @@ class AhkDebugAdapterCore {
       supportsSetVariable: false,
       supportsVariablePaging: true,
       supportsRestartRequest: false,
+      supportTerminateDebuggee: true,
       supportsExceptionInfoRequest: false,
       exceptionBreakpointFilters: [
         { filter: 'all', label: 'All caught and uncaught exceptions', default: false },
@@ -80,7 +86,8 @@ class AhkDebugAdapterCore {
     if (!config.program) throw new Error('A debug program path is required');
     if (!config.runtime) throw new Error('An ahk_core runtime path is required');
     this.session = new DbgpSession();
-    const port = await this.session.listen();
+    const port = await this.session.listen(this.debugHost);
+    this.debugPort = port;
     const env = { ...process.env, ...(config.env || {}) };
     if (config.backend && config.backend !== 'auto') env.AHK_INPUT_BACKEND = config.backend;
     if (config.inputdSocket) env.AHK_INPUTD_SOCKET = config.inputdSocket;
@@ -93,6 +100,7 @@ class AhkDebugAdapterCore {
       env,
       windowsHide: true,
     });
+    this.processId = this.child.pid;
     this.child.stdout.on('data', (chunk) => this.output(chunk, 'stdout'));
     this.child.stderr.on('data', (chunk) => this.output(chunk, 'stderr'));
     this.child.on('error', (error) => this.output(`${error.message}\n`, 'stderr'));
@@ -101,10 +109,41 @@ class AhkDebugAdapterCore {
       this.sendTerminated({ code, signal });
     });
     this.init = await this.session.waitForInit();
+    await this.configureSession();
+    this.respond(request, {
+      processId: this.processId,
+      reconnect: { host: this.debugHost, port: this.debugPort },
+    });
+    this.event('initialized');
+  }
+
+  async request_attach(request) {
+    const config = request.arguments || {};
+    this.processId = Number(config.processId);
+    this.debugHost = String(config.host || '127.0.0.1');
+    this.debugPort = Number(config.port);
+    if (!Number.isInteger(this.processId) || this.processId <= 0) throw new Error('A valid processId is required');
+    if (!Number.isInteger(this.debugPort) || this.debugPort <= 0 || this.debugPort > 65535) {
+      throw new Error('A valid reconnect port is required');
+    }
+    this.attachMode = true;
+    this.session = new DbgpSession();
+    await this.session.listen(this.debugHost, this.debugPort);
+    try {
+      process.kill(this.processId, 'SIGUSR2');
+    } catch (error) {
+      this.session.close();
+      throw new Error(`Cannot signal process ${this.processId}: ${error.message}`);
+    }
+    this.init = await this.session.waitForInit();
+    await this.configureSession();
+    this.respond(request, { processId: this.processId });
+    this.event('initialized');
+  }
+
+  async configureSession() {
     await this.session.send(`feature_set -n max_children -v ${VARIABLE_PAGE_SIZE}`);
     await this.session.send('feature_set -n max_depth -v 1');
-    this.respond(request);
-    this.event('initialized');
   }
 
   async request_setBreakpoints(request) {
@@ -136,7 +175,18 @@ class AhkDebugAdapterCore {
 
   request_configurationDone(request) {
     this.respond(request);
-    this.startContinuation('run', 'breakpoint');
+    if (this.attachMode) {
+      this.variableHandles.clear();
+      this.nextVariableHandle = 1;
+      this.event('stopped', {
+        reason: 'pause',
+        description: 'Reconnected to existing AutoHotkey process',
+        threadId: 1,
+        allThreadsStopped: true,
+      });
+    } else {
+      this.startContinuation('run', 'breakpoint');
+    }
   }
 
   async request_setExceptionBreakpoints(request) {
@@ -328,16 +378,34 @@ class AhkDebugAdapterCore {
   request_disconnect(request) {
     this.respond(request);
     const terminate = request.arguments?.terminateDebuggee !== false;
-    if (this.session) {
-      this.session.send(terminate ? 'stop' : 'detach').catch(() => {}).finally(() => this.dispose());
-    } else {
-      this.dispose();
+    if (!this.session) {
+      this.dispose(!terminate);
+      return;
     }
+    if (!terminate) {
+      const info = {
+        processId: this.processId,
+        host: this.debugHost,
+        port: this.debugPort,
+        fileuri: this.init?.attributes?.fileuri || '',
+      };
+      this.session.send('detach').then(() => {
+        this.onDetached(info);
+        this.sendTerminated({ detached: true, processId: this.processId });
+      }).catch((error) => this.output(`${error.message}\n`, 'stderr'))
+        .finally(() => this.dispose(true));
+      return;
+    }
+    this.session.send('stop').then(() => this.sendTerminated({ processId: this.processId }))
+      .catch(() => {}).finally(() => this.dispose(false));
   }
 
   request_terminate(request) {
     this.respond(request);
-    if (this.session) this.session.send('stop').catch(() => {}).finally(() => this.dispose());
+    if (this.session) {
+      this.session.send('stop').then(() => this.sendTerminated({ processId: this.processId }))
+        .catch(() => {}).finally(() => this.dispose(false));
+    }
   }
 
   startContinuation(command, reason) {
@@ -374,10 +442,13 @@ class AhkDebugAdapterCore {
     this.event('terminated', body || {});
   }
 
-  dispose() {
+  dispose(keepDebuggee = false) {
     if (this.session) this.session.close();
     this.session = null;
-    if (this.child && this.child.exitCode === null && !this.child.killed) this.child.kill('SIGTERM');
+    if (!keepDebuggee && this.child && this.child.exitCode === null && !this.child.killed) {
+      this.child.kill('SIGTERM');
+    }
+    if (keepDebuggee && this.child) this.child.unref();
     this.child = null;
   }
 }

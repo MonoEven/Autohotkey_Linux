@@ -19,6 +19,7 @@ GNU General Public License for more details.
 #include "globaldata.h" // for a lot of things
 #ifndef _WIN32
 #include "linux/core/core_mdfunc_linux.h" // LinuxNewBuiltInFunc (strict parity)
+#include "linux/core/core_debugger_linux.h"
 #endif
 #include "util.h" // for strlcpy() etc.
 #include "window.h" // for a lot of things
@@ -9686,6 +9687,10 @@ ResultType Line::ExecUntil(ExecUntilMode aMode, ResultToken *aResultToken, Line 
 			LOG_LINE(line)
 
 #ifdef CONFIG_DEBUGGER
+#ifdef __linux__
+		if (!g_Debugger.IsConnected() && LinuxDebuggerReconnectPending())
+			LinuxDebuggerPump();
+#endif
 		if (g_Debugger.IsConnected() && line->mActionType != ACT_WHILE) // L31: PreExecLine of ACT_WHILE is now handled in PerformLoopWhile() where inspecting A_Index will yield the correct result.
 			g_Debugger.PreExecLine(line);
 #endif
@@ -10836,6 +10841,10 @@ ResultType Line::PerformLoopWhile(ResultToken *aResultToken, Line *&aJumpToLine)
 	{
 		g_script.mCurrLine = this; // For error-reporting purposes.
 #ifdef CONFIG_DEBUGGER
+#ifdef __linux__
+		if (!g_Debugger.IsConnected() && LinuxDebuggerReconnectPending())
+			LinuxDebuggerPump();
+#endif
 		// L31: Let the debugger break at the 'While' line each iteration. Before this change,
 		// a While loop with empty body such as While FuncWithSideEffect() {} would be "hit"
 		// (via breakpoint or step) only once even if the loop had multiple iterations.
@@ -10874,6 +10883,10 @@ bool Line::EvaluateLoopUntil(ResultType &aResult)
 	if (g->ListLinesIsEnabled)
 		LOG_LINE(this);
 #ifdef CONFIG_DEBUGGER
+#ifdef __linux__
+	if (!g_Debugger.IsConnected() && LinuxDebuggerReconnectPending())
+		LinuxDebuggerPump();
+#endif
 	// Let the debugger break at or step onto UNTIL.
 	if (g_Debugger.IsConnected())
 		g_Debugger.PreExecLine(this);

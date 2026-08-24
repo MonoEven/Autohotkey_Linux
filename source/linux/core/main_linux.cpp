@@ -11,6 +11,7 @@
 #include "../../hotkey.h"
 #include "../../SimpleHeap.h"
 #include "core_timer_linux.h"
+#include "core_debugger_linux.h"
 #include "core_hotkey_linux.h"
 #include "core_pack_linux.h"
 #include "../gui/script_gui_linux.h"
@@ -286,15 +287,9 @@ int main(int argc, char** argv)
 #ifdef CONFIG_DEBUGGER
 	if (debugger_host[0])
 	{
-		if (g_Debugger.Connect(debugger_host, debugger_port) != DEBUGGER_E_OK)
-		{
-			std::fprintf(stderr, "AutoHotkey Linux: failed to connect to DBGp IDE at %s:%s.\n",
-				debugger_host, debugger_port);
+		LinuxDebuggerConfigure(debugger_host, debugger_port);
+		if (!LinuxDebuggerInitialConnect())
 			return 1;
-		}
-		// The DBGp IDE receives <init>, installs breakpoints/features and sends
-		// run/step/detach.  This is the same pre-auto-execute break as Windows.
-		g_Debugger.Break();
 	}
 #endif
 

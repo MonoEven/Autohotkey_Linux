@@ -107,9 +107,9 @@ result:
 - KDE VM end-to-end matrix and a real Flatpak-host run.
 - Wider AT-SPI matrix still needs LibreOffice/Java/real-document hosts; GTK,
   Qt6 and VS Code/Electron are now installed and versioned in the VM matrix.
-- VSC-2 D3 remaining: container paging, caught exceptions, bounded idle Pause
-  and side-effect-free D-Bus adapter projection are delivered across raw DBGp/
-  DAP/VS Code; reconnect after detach/crash cleanup remains.
+- VSC-2 D1-D3 complete for declared Linux scope: protocol/DAP, paged containers,
+  exceptions, idle Pause, D-Bus metadata and same-PID detach/reconnect/crash
+  cleanup pass raw DBGp, external DAP and real VS Code oracles.
 - libei injection, unless a compositor/portal environment suitable for E2E
   verification is provided.
 - Supplementary-plane Wayland text (UTF-16 surrogate-pair/emoji combination);

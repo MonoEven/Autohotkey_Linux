@@ -153,8 +153,10 @@
     via the bounded Linux main-loop pump; an explicit no-active-frame entry
     exposes Global scope without inventing a runtime stack. Linux D-Bus
     compatibility objects expose only local adapter metadata (no hidden remote
-    calls) and typed values. Reconnect/crash cleanup remains. VSIX stays in
-    release checksums/artifacts.</li>
+    calls) and typed values. Same-PID Detach/Reconnect uses a signal-safe
+    SIGUSR2 trigger for idle or running scripts; an IDE TCP crash leaves the
+    script alive for a later reconnect. VSC-2 D1-D3 is complete for this Linux
+    scope, and the VSIX stays in release checksums/artifacts.</li>
   <li><b>GUI-1 real host matrix:</b> installed and tested GTK 3.24.50, Qt 6.9.2
     and VS Code/Electron 1.134. GTK/Qt tested controls pass X11/AT-SPI text and
     Action semantics. VS Code windows are captured on X11 and Wayland, but the

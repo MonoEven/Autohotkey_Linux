@@ -819,7 +819,11 @@
 - **VSC-2 D3 第四项（D-Bus投影）已交付**：ComObject仅暴露本地VarType/
   Flags/IsProxy/Service/Path/Interface/Value，不因IDE展开触发远端D-Bus调用；
   `org.freedesktop.DBus` proxy与`ComValue(3,42)`三层oracle通过。
-  **D3 剩余**：detach后reconnect/crash cleanup。
+- **VSC-2 D3 第五项（reconnect/crash cleanup）已交付**：Detach保留原PID/
+  endpoint；Reconnect新attach会话监听后以SIGUSR2触发，handler仅写
+  `sig_atomic_t`。idle与tight loop均可重连；IDE TCP无detach崩溃时脚本继续，
+  随后可第二次重连。raw验证两次重连+crash+running hook，DAP复验，VS Code
+  两个用户命令重连原PID并读`idleValue=77`。**VSC-2 D1-D3完成**。
 
 ### B. GUI-1 真实宿主捕获矩阵（已交付）
 

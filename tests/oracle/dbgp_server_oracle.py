@@ -9,7 +9,9 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import os
 import pathlib
+import signal
 import socket
 import subprocess
 import sys
@@ -116,6 +118,8 @@ def main() -> int:
     args = parser.parse_args()
     runtime = args.runtime.resolve()
     fixture = args.fixture.resolve()
+    running_fixture = fixture.with_name("dbgp_running_fixture.ahk")
+    assert running_fixture.is_file(), running_fixture
     args.summary.parent.mkdir(parents=True, exist_ok=True)
     marker = pathlib.Path("/tmp/ahk-dbgp-fixture.out")
     marker.unlink(missing_ok=True)
@@ -133,6 +137,7 @@ def main() -> int:
         text=True,
     )
     transcript: list[str] = []
+    running_proc: subprocess.Popen[str] | None = None
     try:
         conn, _ = listener.accept()
         conn.settimeout(10)
@@ -316,19 +321,99 @@ def main() -> int:
             transcript.append(text)
             assert property_value(idle_prop, "idleValue") == "77", text
 
-            send_command(conn, "stop -i 25")
-            stopped_packet, text = recv_packet(conn)
+            detach, text = command_response(conn, "detach", 25)
             transcript.append(text)
-            assert stopped_packet.attrib.get("transaction_id") == "25", text
+            assert detach.attrib.get("command") == "detach", text
+            assert detach.attrib.get("status") == "stopped", text
+
+        assert proc.poll() is None, "detach terminated the debuggee"
+        reconnect_started = time.monotonic()
+        os.kill(proc.pid, signal.SIGUSR2)
+        conn2, _ = listener.accept()
+        reconnect1_ms = round((time.monotonic() - reconnect_started) * 1000, 3)
+        conn2.settimeout(10)
+        with conn2:
+            init2, text = recv_packet(conn2)
+            transcript.append(text)
+            assert local_name(init2.tag) == "init", text
+            assert init2.attrib.get("fileuri") == file_uri, text
+            idle2, text = command_response(conn2, "property_get -n idleValue -c 1 -d 0", 31)
+            transcript.append(text)
+            assert property_value(idle2, "idleValue") == "77", text
+            # Resume, then drop the socket without detach to simulate an IDE crash.
+            send_command(conn2, "run -i 32")
+
+        assert proc.poll() is None, "IDE socket crash terminated the debuggee"
+        reconnect_started = time.monotonic()
+        os.kill(proc.pid, signal.SIGUSR2)
+        conn3, _ = listener.accept()
+        reconnect2_ms = round((time.monotonic() - reconnect_started) * 1000, 3)
+        conn3.settimeout(10)
+        with conn3:
+            init3, text = recv_packet(conn3)
+            transcript.append(text)
+            assert local_name(init3.tag) == "init", text
+            assert init3.attrib.get("fileuri") == file_uri, text
+            idle3, text = command_response(conn3, "property_get -n idleValue -c 1 -d 0", 41)
+            transcript.append(text)
+            assert property_value(idle3, "idleValue") == "77", text
+            send_command(conn3, "stop -i 42")
+            stopped_packet, text = recv_packet(conn3)
+            transcript.append(text)
+            assert stopped_packet.attrib.get("transaction_id") == "42", text
             assert stopped_packet.attrib.get("status") == "stopped", text
 
         stdout, stderr = proc.communicate(timeout=10)
         assert proc.returncode == 0, (proc.returncode, stdout, stderr)
+        assert "IDE connection closed; script continues detached" in stderr, stderr
+        assert reconnect1_ms < 500 and reconnect2_ms < 500, (reconnect1_ms, reconnect2_ms)
         deadline = time.monotonic() + 2
         while not marker.exists() and time.monotonic() < deadline:
             time.sleep(0.02)
         result = marker.read_text(encoding="utf-8").strip()
         assert result == "value=30 caught=D3-boom", result
+
+        # Separate execution-hook lane: detach before auto-execute, let a tight
+        # While loop run, then SIGUSR2 must reconnect without waiting for the
+        # persistent main loop.
+        running_proc = subprocess.Popen(
+            [str(runtime), "--debug", f"127.0.0.1:{port}", str(running_fixture)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        conn4, _ = listener.accept()
+        conn4.settimeout(10)
+        with conn4:
+            running_init, text = recv_packet(conn4)
+            transcript.append(text)
+            assert local_name(running_init.tag) == "init", text
+            running_detach, text = command_response(conn4, "detach", 51)
+            transcript.append(text)
+            assert running_detach.attrib.get("status") == "stopped", text
+        time.sleep(0.1)
+        assert running_proc.poll() is None, "running fixture exited before reconnect"
+        running_started = time.monotonic()
+        os.kill(running_proc.pid, signal.SIGUSR2)
+        conn5, _ = listener.accept()
+        running_reconnect_ms = round((time.monotonic() - running_started) * 1000, 3)
+        conn5.settimeout(10)
+        with conn5:
+            running_init2, text = recv_packet(conn5)
+            transcript.append(text)
+            assert local_name(running_init2.tag) == "init", text
+            counter_prop, text = command_response(conn5, "property_get -n counter -c 1 -d 0", 52)
+            transcript.append(text)
+            counter_value = int(property_value(counter_prop, "counter"))
+            assert counter_value > 0, counter_value
+            send_command(conn5, "stop -i 53")
+            running_stop, text = recv_packet(conn5)
+            transcript.append(text)
+            assert running_stop.attrib.get("status") == "stopped", text
+        running_stdout, running_stderr = running_proc.communicate(timeout=10)
+        assert running_proc.returncode == 0, (running_proc.returncode, running_stdout, running_stderr)
+        assert running_reconnect_ms < 500, running_reconnect_ms
+
         summary = {
             "schema": 1,
             "result": "pass",
@@ -351,6 +436,12 @@ def main() -> int:
             "idle_pause_ms": pause_ms,
             "idle_stack_frames": idle_stack_frames,
             "idle_value": 77,
+            "detach_survived": True,
+            "reconnect_count": 2,
+            "reconnect_ms": [reconnect1_ms, reconnect2_ms],
+            "ide_crash_survived": True,
+            "running_reconnect_ms": running_reconnect_ms,
+            "running_counter": counter_value,
             "stop": True,
             "script_result": result,
             "packets": len(transcript),
@@ -359,8 +450,12 @@ def main() -> int:
         print(json.dumps(summary, sort_keys=True))
         return 0
     except Exception:
-        proc.kill()
+        if proc.poll() is None:
+            proc.kill()
         stdout, stderr = proc.communicate(timeout=5)
+        if running_proc is not None and running_proc.poll() is None:
+            running_proc.kill()
+            running_proc.communicate(timeout=5)
         print("--- DBGp transcript ---", file=sys.stderr)
         for packet in transcript:
             print(packet, file=sys.stderr)

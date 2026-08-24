@@ -70,7 +70,7 @@ assert data["schema"] == 1
 assert data["activated"] is True
 assert data["extensionVersion"] == "0.2.0"
 assert data["languageRegistered"] is True
-assert len(data["commands"]) == 5, data
+assert len(data["commands"]) == 7, data
 assert data["diagnosticsEntries"] >= 3, data
 assert data["runExitCode"] == 0, data
 debug = data["debug"]
@@ -94,6 +94,10 @@ assert debug["exceptionMessage"] == "D3-boom", data
 assert debug["idlePauseMs"] < 500, data
 assert debug["idleFrame"] == "Idle (no active script frame)", data
 assert debug["idleValue"] == "77", data
+assert debug["detached"] is True, data
+assert debug["reconnected"] is True, data
+assert debug["reconnectMs"] < 2000, data
+assert debug["reconnectIdleValue"] == "77", data
 assert debug["terminated"] is True, data
 print(json.dumps(data, sort_keys=True))
 PY

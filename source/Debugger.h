@@ -210,6 +210,9 @@ public:
 	int Break(LPCSTR aReason = "ok");
 	
 	bool HasPendingCommand();
+#ifdef __linux__
+	bool ConnectionClosed();
+#endif
 
 	// Streams
 	int WriteStreamPacket(LPCTSTR aText, LPCSTR aType);

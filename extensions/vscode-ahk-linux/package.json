@@ -38,6 +38,8 @@
     "onCommand:ahkLinux.runFile",
     "onCommand:ahkLinux.runSelection",
     "onCommand:ahkLinux.showDiagnostics",
+    "onCommand:ahkLinux.detachDebugger",
+    "onCommand:ahkLinux.reconnectDebugger",
     "onView:ahkLinux.capabilities",
     "onDebug:ahk-linux"
   ],
@@ -114,6 +116,24 @@
                 "default": ""
               }
             }
+          },
+          "attach": {
+            "required": ["processId", "port"],
+            "properties": {
+              "processId": {
+                "type": "integer",
+                "description": "PID of a detached ahk_core process launched with --debug."
+              },
+              "host": {
+                "type": "string",
+                "default": "127.0.0.1",
+                "description": "Original DBGp IDE host."
+              },
+              "port": {
+                "type": "integer",
+                "description": "Original DBGp IDE port retained by the debuggee."
+              }
+            }
           }
         },
         "initialConfigurations": [
@@ -152,6 +172,17 @@
       {
         "command": "ahkLinux.stop",
         "title": "AutoHotkey Linux: Stop Running Script",
+        "category": "AutoHotkey Linux"
+      },
+      {
+        "command": "ahkLinux.detachDebugger",
+        "title": "AutoHotkey Linux: Detach Debugger (Keep Script Running)",
+        "category": "AutoHotkey Linux",
+        "enablement": "inDebugMode"
+      },
+      {
+        "command": "ahkLinux.reconnectDebugger",
+        "title": "AutoHotkey Linux: Reconnect Last Detached Debuggee",
         "category": "AutoHotkey Linux"
       },
       {

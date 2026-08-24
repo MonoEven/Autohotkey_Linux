@@ -23,6 +23,7 @@
 #include "../../script_func_impl.h"
 #include "../../hotkey.h"
 #include "core_timer_linux.h"
+#include "core_debugger_linux.h"
 #include "core_win_linux.h"
 #include "core_hotkey_linux.h"
 #include "core_capture_linux.h"
@@ -192,11 +193,9 @@ void LinuxRunMainLoop()
 		// regardless of which backend the loop waited on.
 		LinuxInputBackendDispatch();
 #ifdef CONFIG_DEBUGGER
-		// PreExecLine polls DBGp while script code is running.  A persistent
-		// script can be completely idle in this loop, so pump an asynchronous
-		// break/stop command within the same bounded 50 ms responsiveness budget.
-		if (g_Debugger.IsConnected() && g_Debugger.HasPendingCommand())
-			g_Debugger.ProcessCommands();
+		// PreExecLine handles running code; this covers persistent-idle commands,
+		// peer crash cleanup and an explicit SIGUSR2 reconnect request.
+		LinuxDebuggerPump();
 #endif
 		LinuxCheckScriptTimers();
 		// A non-persistent GUI script ends when its last window closes (and

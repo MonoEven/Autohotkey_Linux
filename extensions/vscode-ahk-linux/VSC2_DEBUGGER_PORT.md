@@ -97,9 +97,24 @@ before clean termination.
 - Proxy `org.freedesktop.DBus` (`VT_DISPATCH=9`) and typed scalar `ComValue(3,42)`
   pass raw DBGp, external DAP and real VS Code variable-tree tests.
 
-Remaining D3 work:
+### Delivered: detach reconnect and IDE crash cleanup
 
-- reconnect after detach and crash cleanup.
+- **Detach Debugger (Keep Script Running)** sends DBGp detach and records the
+  original PID/host/port; it does not restart or clone the process.
+- **Reconnect Last Detached Debuggee** binds the same endpoint, then sends
+  SIGUSR2. The signal handler only sets `sig_atomic_t`; connect/break runs in a
+  main-loop or execution-hook safe context.
+- Persistent-idle and tight-running scripts both reconnect. The runtime also
+  detects TCP HUP/ERR after an IDE crash, clears debugger state and continues
+  detached instead of terminating or blocking.
+- Raw DBGp proves detach, two same-PID reconnects, an intervening ungraceful
+  socket close and a separate running-loop reconnect. External DAP repeats
+  detach/reconnect/crash/reconnect; both layers gate reconnect below 500 ms.
+  Real VS Code uses the two user commands, reopens Global `idleValue=77` within
+  a 2 s full-session gate and terminates the original PID.
+
+VSC-2 D1-D3 are now complete for the declared Linux scope. Unsupported Windows
+IDispatch/SAFEARRAY projections remain intentionally outside that scope.
 
 ## Non-goals
 

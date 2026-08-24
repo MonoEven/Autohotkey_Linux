@@ -16,7 +16,8 @@ async function main() {
   try { fs.unlinkSync(marker); } catch (_) { /* absent */ }
   const messages = [];
   const waiters = [];
-  const adapter = new AhkDebugAdapterCore((message) => {
+  let detachedInfo = null;
+  const emit = (message) => {
     messages.push(message);
     for (const waiter of [...waiters]) {
       if (waiter.predicate(message)) {
@@ -25,7 +26,11 @@ async function main() {
         waiter.resolve(message);
       }
     }
+  };
+  const makeAdapter = () => new AhkDebugAdapterCore(emit, {
+    onDetached: (info) => { detachedInfo = info; },
   });
+  let adapter = makeAdapter();
   let sequence = 1;
   const send = (command, args = {}) => {
     const request = { seq: sequence++, type: 'request', command, arguments: args };
@@ -53,6 +58,38 @@ async function main() {
     (message) => message.type === 'event' && message.event === event && messages.indexOf(message) >= from,
     `${event} event`,
   );
+  const attachExisting = async (info) => {
+    adapter = makeAdapter();
+    let request = send('initialize', { clientID: 'ahk-linux-oracle', adapterID: 'ahk-linux' });
+    let reply = await response(request);
+    if (!reply.success) throw new Error(`reconnect initialize failed: ${reply.message}`);
+    const attachStart = messages.length;
+    const started = Date.now();
+    request = send('attach', info);
+    reply = await response(request);
+    if (!reply.success) throw new Error(`reconnect attach failed: ${reply.message}`);
+    await nextEvent('initialized', attachStart);
+    const configuredAt = messages.length;
+    request = send('configurationDone');
+    await response(request);
+    const stopped = await nextEvent('stopped', configuredAt);
+    const reconnectMs = Date.now() - started;
+    if (stopped.body.reason !== 'pause' || reconnectMs >= 500) {
+      throw new Error(`reconnect stop mismatch: ${reconnectMs}ms ${JSON.stringify(stopped)}`);
+    }
+    request = send('stackTrace', { threadId: 1 });
+    reply = await response(request);
+    const frame = reply.body.stackFrames[0];
+    if (frame.name !== 'Idle (no active script frame)') throw new Error(`reconnect frame mismatch: ${JSON.stringify(frame)}`);
+    request = send('scopes', { frameId: frame.id });
+    reply = await response(request);
+    const globalScope = reply.body.scopes.find((scope) => scope.name === 'Global');
+    request = send('variables', { variablesReference: globalScope.variablesReference });
+    reply = await response(request);
+    const value = reply.body.variables.find((variable) => variable.name === 'idleValue');
+    if (!value || value.value !== '77') throw new Error(`reconnect global mismatch: ${JSON.stringify(value)}`);
+    return { reconnectMs, frame, value };
+  };
 
   try {
     let request = send('initialize', { clientID: 'ahk-linux-oracle', adapterID: 'ahk-linux' });
@@ -69,6 +106,8 @@ async function main() {
     });
     reply = await response(request);
     if (!reply.success) throw new Error(reply.message || 'launch failed');
+    const launchedProcessId = reply.body.processId;
+    const reconnectEndpoint = reply.body.reconnect;
     await nextEvent('initialized', launchStart);
 
     request = send('setExceptionBreakpoints', { filters: ['all'] });
@@ -215,10 +254,12 @@ async function main() {
     await response(request);
 
     const deadline = Date.now() + 3000;
-    while (!fs.existsSync(marker) && Date.now() < deadline) {
+    let scriptResult = '';
+    while (Date.now() < deadline) {
+      if (fs.existsSync(marker)) scriptResult = fs.readFileSync(marker, 'utf8').trim();
+      if (scriptResult === 'value=30 caught=D3-boom') break;
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    const scriptResult = fs.readFileSync(marker, 'utf8').trim();
     if (scriptResult !== 'value=30 caught=D3-boom') throw new Error(`script result mismatch: ${scriptResult}`);
 
     const pauseStartIndex = messages.length;
@@ -244,6 +285,25 @@ async function main() {
     const idleValue = reply.body.variables.find((variable) => variable.name === 'idleValue');
     if (!idleValue || idleValue.value !== '77') throw new Error(`idle value mismatch: ${JSON.stringify(idleValue)}`);
 
+    const detachStart = messages.length;
+    request = send('disconnect', { terminateDebuggee: false });
+    await response(request);
+    await nextEvent('terminated', detachStart);
+    if (!detachedInfo || detachedInfo.processId !== launchedProcessId
+      || detachedInfo.port !== reconnectEndpoint.port) {
+      throw new Error(`detach metadata mismatch: ${JSON.stringify(detachedInfo)}`);
+    }
+    process.kill(launchedProcessId, 0); // Same process must still exist.
+
+    const reconnect1 = await attachExisting(detachedInfo);
+    request = send('continue', { threadId: 1 });
+    await response(request);
+    // Simulate an IDE/adapter crash: close TCP without a DBGp detach command.
+    adapter.dispose(true);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    process.kill(launchedProcessId, 0);
+
+    const reconnect2 = await attachExisting(detachedInfo);
     const terminateStart = messages.length;
     request = send('terminate');
     await response(request);
@@ -272,6 +332,11 @@ async function main() {
       idlePauseMs,
       idleFrame: idleFrame.name,
       idleValue: Number(idleValue.value),
+      processId: launchedProcessId,
+      detachSurvived: true,
+      reconnectCount: 2,
+      reconnectMs: [reconnect1.reconnectMs, reconnect2.reconnectMs],
+      ideCrashSurvived: true,
       terminated: true,
       scriptResult,
       dapMessages: messages.length,

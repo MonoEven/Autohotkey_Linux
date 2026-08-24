@@ -14,6 +14,9 @@
   no-active-frame label and readable Global scope.
 - Side-effect-free Linux D-Bus ComObject projection for adapter metadata and
   typed scalar values.
+- Same-PID detach/reconnect commands using a signal-safe SIGUSR2 trigger;
+  persistent-idle and tight-running scripts reattach, and IDE crashes leave the
+  debuggee alive for a later reconnect.
 - Real VS Code extension-host oracle observes breakpoint line 3, step line 4,
   `x=10`, `y=15`, expanded container values and clean termination.
 

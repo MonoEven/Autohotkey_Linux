@@ -115,11 +115,11 @@ class DbgpSession {
     });
   }
 
-  async listen(host = '127.0.0.1') {
+  async listen(host = '127.0.0.1', port = 0) {
     this.server = net.createServer((socket) => this.accept(socket));
     await new Promise((resolve, reject) => {
       this.server.once('error', reject);
-      this.server.listen(0, host, resolve);
+      this.server.listen(port, host, resolve);
     });
     return this.server.address().port;
   }

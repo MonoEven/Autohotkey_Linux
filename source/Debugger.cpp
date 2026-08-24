@@ -34,6 +34,7 @@ freely, without restriction.
 #include <wspiapi.h> // for getaddrinfo()
 #else
 #include <netdb.h>
+#include <poll.h>
 #endif
 #include <stdarg.h>
 
@@ -210,6 +211,10 @@ int Debugger::PreExecLine(Line *aLine)
 		// A command was sent asynchronously.
 		return ProcessCommands();
 	}
+#ifdef __linux__
+	if (ConnectionClosed())
+		Disconnect(); // IDE crash: running script continues without a debugger.
+#endif
 	return DEBUGGER_E_OK;
 }
 
@@ -262,6 +267,26 @@ bool Debugger::HasPendingCommand()
 		return dataPending > 0;
 	return false;
 }
+
+#ifdef __linux__
+bool Debugger::ConnectionClosed()
+{
+	if (mSocket == INVALID_SOCKET)
+		return true;
+	struct pollfd pfd { mSocket, (short)(POLLIN | POLLHUP | POLLERR), 0 };
+	if (poll(&pfd, 1, 0) <= 0)
+		return false;
+	if (pfd.revents & (POLLHUP | POLLERR | POLLNVAL))
+		return true;
+	if (pfd.revents & POLLIN)
+	{
+		char byte;
+		ssize_t received = recv(mSocket, &byte, 1, MSG_PEEK | MSG_DONTWAIT);
+		return received == 0;
+	}
+	return false;
+}
+#endif
 
 
 int Debugger::EnterBreakState(LPCSTR aReason)

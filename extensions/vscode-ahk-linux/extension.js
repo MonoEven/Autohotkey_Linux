@@ -228,6 +228,24 @@ class AhkDebugConfigurationProvider {
   constructor(runtime) { this.runtime = runtime; }
 
   resolveDebugConfiguration(folder, config) {
+    if (config.request === 'attach') {
+      const processId = Number(config.processId);
+      const port = Number(config.port);
+      if (!Number.isInteger(processId) || processId <= 0
+        || !Number.isInteger(port) || port <= 0 || port > 65535) {
+        vscode.window.showErrorMessage('Reconnect requires a valid processId and DBGp port.');
+        return undefined;
+      }
+      return {
+        ...config,
+        type: 'ahk-linux',
+        request: 'attach',
+        name: config.name || `Reconnect AutoHotkey Linux (${processId})`,
+        processId,
+        host: config.host || '127.0.0.1',
+        port,
+      };
+    }
     const editor = vscode.window.activeTextEditor;
     const fallbackUri = editor && editor.document.languageId === 'ahk2'
       ? editor.document.uri
@@ -264,10 +282,13 @@ class AhkDebugConfigurationProvider {
 }
 
 class InlineAhkDebugAdapter {
-  constructor() {
+  constructor(onDetached) {
     this.emitter = new vscode.EventEmitter();
     this.onDidSendMessage = this.emitter.event;
-    this.core = new AhkDebugAdapterCore((message) => this.emitter.fire(message));
+    this.core = new AhkDebugAdapterCore(
+      (message) => this.emitter.fire(message),
+      { onDetached },
+    );
   }
   handleMessage(message) { this.core.handleMessage(message); }
   dispose() {
@@ -277,8 +298,11 @@ class InlineAhkDebugAdapter {
 }
 
 class AhkDebugAdapterFactory {
+  constructor(onDetached) { this.onDetached = onDetached; }
   createDebugAdapterDescriptor() {
-    return new vscode.DebugAdapterInlineImplementation(new InlineAhkDebugAdapter());
+    return new vscode.DebugAdapterInlineImplementation(
+      new InlineAhkDebugAdapter(this.onDetached),
+    );
   }
 }
 
@@ -322,11 +346,16 @@ async function runDebugSelfTest(context, script, runtimePath) {
     idlePauseMs: null,
     idleFrame: null,
     idleValue: null,
+    detached: false,
+    reconnected: false,
+    reconnectMs: null,
+    reconnectIdleValue: null,
     terminated: false,
   };
   let debugSession;
   let phase = 0;
   let idlePauseStarted = 0;
+  let reconnectStarted = 0;
   let chain = Promise.resolve();
   let resolveTerminated;
   const terminated = new Promise((resolve) => { resolveTerminated = resolve; });
@@ -423,6 +452,12 @@ async function runDebugSelfTest(context, script, runtimePath) {
               evidence.idleFrame = snapshot.frame.name;
               evidence.idleValue = snapshot.variables.find((item) => item.name === 'idleValue')?.value ?? null;
               phase = 4;
+              await vscode.commands.executeCommand('ahkLinux.detachDebugger');
+            } else if (phase === 5) {
+              evidence.reconnectMs = Date.now() - reconnectStarted;
+              evidence.reconnected = true;
+              evidence.reconnectIdleValue = snapshot.variables.find((item) => item.name === 'idleValue')?.value ?? null;
+              phase = 6;
               await debugSession.customRequest('terminate');
             }
           });
@@ -431,7 +466,18 @@ async function runDebugSelfTest(context, script, runtimePath) {
     },
   });
   const terminateListener = vscode.debug.onDidTerminateDebugSession((session) => {
-    if (session.type === 'ahk-linux') {
+    if (session.type !== 'ahk-linux') return;
+    if (phase === 4) {
+      evidence.detached = true;
+      phase = 5;
+      reconnectStarted = Date.now();
+      chain = chain.then(async () => {
+        const started = await vscode.commands.executeCommand('ahkLinux.reconnectDebugger');
+        if (!started) throw new Error('VS Code rejected the reconnect session');
+      });
+      return;
+    }
+    if (phase === 6) {
       evidence.terminated = true;
       resolveTerminated();
     }
@@ -475,7 +521,10 @@ async function activate(context) {
   const capabilities = new CapabilityProvider(runtime, statusBar);
   const taskProvider = new AhkTaskProvider(runtime);
   const debugConfigurationProvider = new AhkDebugConfigurationProvider(runtime);
-  const debugAdapterFactory = new AhkDebugAdapterFactory();
+  let lastDetachedDebuggee = null;
+  const debugAdapterFactory = new AhkDebugAdapterFactory((info) => {
+    lastDetachedDebuggee = info;
+  });
 
   context.subscriptions.push(
     output,
@@ -513,6 +562,26 @@ async function activate(context) {
       });
     }),
     vscode.commands.registerCommand('ahkLinux.stop', () => runtime.stopAll()),
+    vscode.commands.registerCommand('ahkLinux.detachDebugger', async () => {
+      const session = vscode.debug.activeDebugSession;
+      if (!session || session.type !== 'ahk-linux') {
+        vscode.window.showWarningMessage('No active AutoHotkey Linux debug session.');
+        return;
+      }
+      await session.customRequest('disconnect', { terminateDebuggee: false });
+    }),
+    vscode.commands.registerCommand('ahkLinux.reconnectDebugger', async () => {
+      if (!lastDetachedDebuggee) {
+        vscode.window.showWarningMessage('No detached AutoHotkey Linux process is available.');
+        return false;
+      }
+      return vscode.debug.startDebugging(undefined, {
+        type: 'ahk-linux',
+        request: 'attach',
+        name: `Reconnect AutoHotkey Linux (${lastDetachedDebuggee.processId})`,
+        ...lastDetachedDebuggee,
+      });
+    }),
     vscode.commands.registerCommand('ahkLinux.showDiagnostics', async () => {
       const uri = activeAhkUri()
         || (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0].uri);
@@ -568,6 +637,8 @@ async function activate(context) {
         'ahkLinux.runFile',
         'ahkLinux.runSelection',
         'ahkLinux.stop',
+        'ahkLinux.detachDebugger',
+        'ahkLinux.reconnectDebugger',
         'ahkLinux.showDiagnostics',
         'ahkLinux.refreshCapabilities',
       ].filter((command) => allCommands.includes(command)),
