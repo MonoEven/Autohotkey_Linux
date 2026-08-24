@@ -44,7 +44,7 @@ pkill -f 'gnome-terminal' 2>/dev/null; pkill -f 'firefox' 2>/dev/null
 pkill -f 'gtk_utf8_probe.py' 2>/dev/null
 if [ -f /tmp/scn_matrix_out.txt ] \
    && grep -q 'term=1 ff=1 utf8=1' /tmp/scn_matrix_out.txt \
-   && grep -Eq '^# cache_apps=[1-9][0-9]* .*cache_items=[1-9][0-9]*' /tmp/scn_matrix_dump.txt; then
+   && grep -Eq '^# cache_apps=[1-9][0-9]* .*cache_items=[1-9][0-9]* .*pending_calls=[1-9][0-9]* .*pump_slices=[1-9][0-9]*' /tmp/scn_matrix_dump.txt; then
   touch /tmp/scn_atspi_matrix
 fi
 exit 0

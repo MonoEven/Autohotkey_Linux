@@ -145,6 +145,12 @@
     Linux errno values. Real/fault-injected oracles cover success 0, ENOENT 2,
     EINVAL 22, ENODATA 61, ENOTSUP 95, ENOTCONN 107 and ETIMEDOUT 110, including
     reading the value inside catch blocks.</li>
+  <li><b>M5-C pending-call integration:</b> removed all 12 blocking libdbus
+    convenience calls. Bounded pending waits pump the Linux GTK/Wayland/
+    hotkey/timer loop; diagnostics expose pending-call and pump-slice counts.
+    A 200ms injected reply delay proves a 50ms Timer fires first, while nested
+    AT-SPI safely reports EBUSY and the outer call succeeds. CI forbids the
+    blocking API from returning.</li>
   <li><b>M5-C A_ControlSendMode:</b> the writable Linux variable accepts
     <code>focus</code> (existing X11 focus/send/restore behavior) or
     <code>atspi</code>. AT-SPI mode appends plain Unicode text to EditableText

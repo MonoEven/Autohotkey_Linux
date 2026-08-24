@@ -15,6 +15,7 @@
 //   - Action.GetNactions/GetName(i)/DoAction(i)
 #include "../../stdafx.h"
 #include "../../globaldata.h"
+#include "../../application.h"
 #include "core_atspi_linux.h"
 #include <dbus/dbus.h>
 #include <cerrno>
@@ -40,6 +41,10 @@ int sLastCacheItems = 0;
 int sLastBudgetMs = 0;
 bool sLastBudgetExceeded = false;
 uint64_t sQueryDeadlineUs = 0;
+unsigned long sPendingCalls = 0;
+unsigned long sPendingPumpSlices = 0;
+bool sDelayInjectionUsed = false;
+int sPendingWaitDepth = 0;
 
 static uint64_t AtspiNowUs();
 
@@ -142,7 +147,99 @@ std::vector<AtspiRef> sTable;
 // Low-level helpers
 // ---------------------------------------------------------------------------
 
-// One-shot synchronous call on the at-spi bus; caller owns the reply.
+struct AtspiPendingDepthGuard
+{
+	AtspiPendingDepthGuard() { ++sPendingWaitDepth; }
+	~AtspiPendingDepthGuard() { --sPendingWaitDepth; }
+};
+
+// Submit a libdbus pending call and wait in bounded slices while pumping the
+// existing Linux message loop. Public Control APIs remain synchronous, but a
+// slow accessibility peer no longer freezes GTK/Wayland/hotkey/timer dispatch.
+// A nested AT-SPI call from an interrupting script thread returns EBUSY rather
+// than mutating the shared cache/deadline while this call is pending.
+static DBusMessage *AtspiPendingReply(DBusConnection *aBus, DBusMessage *aMessage,
+	int aTimeoutMs, DBusError *aError)
+{
+	if (!aBus || !aMessage || aTimeoutMs <= 0)
+	{
+		if (aError)
+			dbus_set_error(aError, DBUS_ERROR_NO_REPLY, "AT-SPI call budget expired");
+		AtspiSetLastError(ETIMEDOUT);
+		return nullptr;
+	}
+	DBusPendingCall *pending = nullptr;
+	if (!dbus_connection_send_with_reply(aBus, aMessage, &pending, aTimeoutMs) || !pending)
+	{
+		if (aError)
+			dbus_set_error(aError, DBUS_ERROR_NO_MEMORY, "Unable to allocate AT-SPI pending call");
+		AtspiSetLastError(ENOMEM);
+		return nullptr;
+	}
+	++sPendingCalls;
+	AtspiPendingDepthGuard pending_depth;
+	dbus_connection_flush(aBus);
+	uint64_t now_start = AtspiNowUs();
+	uint64_t deadline = now_start + (uint64_t)aTimeoutMs * 1000ULL;
+	uint64_t injected_not_before = 0;
+	if (!sDelayInjectionUsed)
+		if (const char *delay = getenv("AHK_ATSPI_TEST_REPLY_DELAY_MS"))
+		{
+			int delay_ms = atoi(delay);
+			if (delay_ms > 0 && delay_ms < aTimeoutMs)
+			{
+				sDelayInjectionUsed = true;
+				injected_not_before = now_start + (uint64_t)delay_ms * 1000ULL;
+			}
+		}
+	for (;;)
+	{
+		uint64_t now = AtspiNowUs();
+		bool completed = dbus_pending_call_get_completed(pending);
+		if (completed && (!injected_not_before || now >= injected_not_before))
+			break;
+		if (now && now >= deadline)
+		{
+			dbus_pending_call_cancel(pending);
+			if (aError)
+				dbus_set_error(aError, DBUS_ERROR_NO_REPLY, "AT-SPI pending call timed out");
+			AtspiSetLastError(ETIMEDOUT);
+			dbus_pending_call_unref(pending);
+			return nullptr;
+		}
+		int remain_ms = now && deadline > now ? (int)((deadline - now + 999ULL) / 1000ULL) : 10;
+		int slice_ms = remain_ms > 10 ? 10 : remain_ms;
+		if (slice_ms < 1) slice_ms = 1;
+		++sPendingPumpSlices;
+		if (!completed && !dbus_connection_read_write_dispatch(aBus, slice_ms))
+		{
+			dbus_pending_call_cancel(pending);
+			if (aError)
+				dbus_set_error(aError, DBUS_ERROR_DISCONNECTED, "AT-SPI bus disconnected");
+			AtspiSetLastError(ENOTCONN);
+			dbus_pending_call_unref(pending);
+			return nullptr;
+		}
+		MsgSleep(completed ? 1 : 0, RETURN_AFTER_MESSAGES_SPECIAL_FILTER);
+	}
+	DBusMessage *reply = dbus_pending_call_steal_reply(pending);
+	dbus_pending_call_unref(pending);
+	if (reply && dbus_message_get_type(reply) == DBUS_MESSAGE_TYPE_ERROR)
+	{
+		if (aError)
+		{
+			dbus_set_error_from_message(aError, reply);
+			AtspiSetLastError(AtspiDbusErrorCode(*aError));
+		}
+		else
+			AtspiSetLastError(EIO);
+		dbus_message_unref(reply);
+		return nullptr;
+	}
+	return reply;
+}
+
+// One-shot pending call on the at-spi bus; caller owns the reply.
 DBusMessage *AtspiCall(DBusConnection *bus, const char *aPath, const char *aIface,
 	const char *aMethod, int aTimeoutMs = 3000)
 {
@@ -156,7 +253,7 @@ DBusMessage *AtspiCall(DBusConnection *bus, const char *aPath, const char *aIfac
 		return nullptr;
 	DBusError err;
 	dbus_error_init(&err);
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(bus, msg, aTimeoutMs, &err);
+	DBusMessage *rep = AtspiPendingReply(bus, msg, aTimeoutMs, &err);
 	dbus_message_unref(msg);
 	if (dbus_error_is_set(&err))
 	{
@@ -181,7 +278,7 @@ DBusMessage *AtspiCallTo(const char *aDest, const char *aPath, const char *aIfac
 		return nullptr;
 	DBusError err;
 	dbus_error_init(&err);
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(sBus, msg, aTimeoutMs, &err);
+	DBusMessage *rep = AtspiPendingReply(sBus, msg, aTimeoutMs, &err);
 	dbus_message_unref(msg);
 	if (dbus_error_is_set(&err))
 	{
@@ -235,7 +332,7 @@ std::string GetNameProp(const char *aDest, const char *aPath)
 		dbus_error_free(&err);
 		return std::string();
 	}
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(sBus, msg, timeout, &err);
+	DBusMessage *rep = AtspiPendingReply(sBus, msg, timeout, &err);
 	dbus_message_unref(msg);
 	std::string out;
 	if (rep)
@@ -480,7 +577,7 @@ bool InitOnce()
 	dbus_error_init(&err);
 	DBusMessage *m = dbus_message_new_method_call("org.a11y.Bus", "/org/a11y/bus",
 		"org.a11y.Bus", "GetAddress");
-	DBusMessage *rep = m ? dbus_connection_send_with_reply_and_block(sess, m, 2000, &err) : nullptr;
+	DBusMessage *rep = m ? AtspiPendingReply(sess, m, 2000, &err) : nullptr;
 	if (m)
 		dbus_message_unref(m);
 	std::string addr;
@@ -541,6 +638,8 @@ bool InitOnce()
 
 bool LinuxAtspiAvailable()
 {
+	if (sPendingWaitDepth > 0)
+		return AtspiFail(EBUSY);
 	bool available = InitOnce() && sBus != nullptr;
 	AtspiSetLastError(available ? 0 : ENOTCONN);
 	return available;
@@ -554,6 +653,8 @@ int LinuxAtspiRefresh()
 	sLastFallbackApps = 0;
 	sLastCacheItems = 0;
 	sLastBudgetExceeded = false;
+	sPendingCalls = 0;
+	sPendingPumpSlices = 0;
 	if (!LinuxAtspiAvailable())
 		return 0;
 	int budget_ms = 2000;
@@ -579,9 +680,10 @@ int LinuxAtspiRefresh()
 		FILE *f = fopen(dump, "w");
 		if (f)
 		{
-			fprintf(f, "# cache_apps=%d fallback_apps=%d cache_items=%d nodes=%zu budget_ms=%d budget_exceeded=%d\n",
+			fprintf(f, "# cache_apps=%d fallback_apps=%d cache_items=%d nodes=%zu budget_ms=%d budget_exceeded=%d pending_calls=%lu pump_slices=%lu\n",
 				sLastCacheApps, sLastFallbackApps, sLastCacheItems, sTable.size(),
-				sLastBudgetMs, sLastBudgetExceeded ? 1 : 0);
+				sLastBudgetMs, sLastBudgetExceeded ? 1 : 0,
+				sPendingCalls, sPendingPumpSlices);
 			for (const auto &e : sTable)
 				fprintf(f, "%s\t%s\tdest=%s\trole=%u\tinterfaces=%s\tdescription=%s\n",
 					e.name.c_str(), e.path.c_str(), e.dest.c_str(), e.role,
@@ -739,7 +841,7 @@ bool LinuxAtspiGetText(const char *aPath, std::string &aText)
 	}
 	DBusError err;
 	dbus_error_init(&err);
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(sBus, msg, 3000, &err);
+	DBusMessage *rep = AtspiPendingReply(sBus, msg, 3000, &err);
 	dbus_message_unref(msg);
 	if (!rep)
 	{
@@ -780,7 +882,7 @@ bool LinuxAtspiSetText(const char *aPath, const char *aText)
 	}
 	DBusError err;
 	dbus_error_init(&err);
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(sBus, msg, 3000, &err);
+	DBusMessage *rep = AtspiPendingReply(sBus, msg, 3000, &err);
 	dbus_message_unref(msg);
 	bool ok = rep && dbus_message_get_type(rep) == DBUS_MESSAGE_TYPE_METHOD_RETURN;
 	if (rep)
@@ -827,7 +929,7 @@ bool LinuxAtspiDoAction(const char *aPath, int aIndex, const char *aNameOrNull)
 			int arg = i;
 			if (dbus_message_append_args(m, DBUS_TYPE_INT32, &arg, DBUS_TYPE_INVALID))
 			{
-				DBusMessage *r = dbus_connection_send_with_reply_and_block(sBus, m, 3000, nullptr);
+				DBusMessage *r = AtspiPendingReply(sBus, m, 3000, nullptr);
 				if (r)
 				{
 					const char *s = nullptr;
@@ -852,7 +954,7 @@ bool LinuxAtspiDoAction(const char *aPath, int aIndex, const char *aNameOrNull)
 	dbus_message_append_args(m, DBUS_TYPE_INT32, &arg, DBUS_TYPE_INVALID);
 	DBusError err;
 	dbus_error_init(&err);
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(sBus, m, 5000, &err);
+	DBusMessage *rep = AtspiPendingReply(sBus, m, 5000, &err);
 	dbus_message_unref(m);
 	dbus_bool_t result = FALSE;
 	if (rep)
@@ -1016,7 +1118,7 @@ bool LinuxAtspiSelectionSelect(const char *aPath, int aZeroBasedIndex)
 	dbus_error_init(&err);
 	int timeout = AtspiBoundTimeout(3000);
 	DBusMessage *reply = timeout > 0
-		? dbus_connection_send_with_reply_and_block(sBus, message, timeout, &err) : nullptr;
+		? AtspiPendingReply(sBus, message, timeout, &err) : nullptr;
 	dbus_message_unref(message);
 	dbus_bool_t result = FALSE;
 	if (reply)
@@ -1059,7 +1161,7 @@ bool LinuxAtspiSelectionGetSelected(const char *aPath, int &aZeroBasedIndex, std
 	dbus_error_init(&err);
 	int timeout = AtspiBoundTimeout(3000);
 	DBusMessage *reply = timeout > 0
-		? dbus_connection_send_with_reply_and_block(sBus, message, timeout, &err) : nullptr;
+		? AtspiPendingReply(sBus, message, timeout, &err) : nullptr;
 	dbus_message_unref(message);
 	if (!reply)
 	{
@@ -1122,7 +1224,7 @@ static bool AtspiGetProperty(const std::string &aDest, const std::string &aPath,
 	dbus_error_init(&err);
 	int timeout = AtspiBoundTimeout(3000);
 	*aReply = timeout > 0
-		? dbus_connection_send_with_reply_and_block(sBus, message, timeout, &err) : nullptr;
+		? AtspiPendingReply(sBus, message, timeout, &err) : nullptr;
 	dbus_message_unref(message);
 	dbus_error_free(&err);
 	return *aReply != nullptr;
@@ -1213,7 +1315,7 @@ bool LinuxAtspiSetValue(const char *aPath, double aValue)
 	dbus_error_init(&err);
 	int timeout = AtspiBoundTimeout(3000);
 	DBusMessage *reply = timeout > 0
-		? dbus_connection_send_with_reply_and_block(sBus, message, timeout, &err) : nullptr;
+		? AtspiPendingReply(sBus, message, timeout, &err) : nullptr;
 	dbus_message_unref(message);
 	ok = reply && dbus_message_get_type(reply) == DBUS_MESSAGE_TYPE_METHOD_RETURN;
 	if (reply) dbus_message_unref(reply);

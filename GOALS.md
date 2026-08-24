@@ -91,6 +91,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
   callbacks prove list/slider effects and unsupported/invalid cases error.
 - M5-C A_LastError bridge: AT-SPI operations update per-thread Linux errno codes;
   Qt/fault oracles prove 0, ENOENT, EINVAL, ENODATA, ENOTSUP, ENOTCONN and ETIMEDOUT.
+- M5-C pending-call integration: all 12 blocking libdbus calls were removed;
+  bounded pending waits pump the Linux loop, Timer responsiveness is proven,
+  nested AT-SPI returns EBUSY, and cache/fallback/budget counters are non-zero.
 - VSC-1/VSC-2 VS Code 0.2.0: syntax/run/tasks/diagnostics/capabilities plus
   Linux DBGp and inline DAP breakpoint/stack/scopes/scalars/stepping; independent
   protocol/DAP oracles and a real VS Code 1.134 extension-host tracker pass.

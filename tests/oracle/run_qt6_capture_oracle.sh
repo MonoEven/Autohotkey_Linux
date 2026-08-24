@@ -108,6 +108,28 @@ EOF
 AHK_ATSPI_DUMP=/tmp/qt6_wayland.dump timeout -k 2 30 "$BIN" /tmp/qt6_wayland.ahk \
   >/tmp/qt6_wayland_ahk.log 2>&1
 rc=$?
+cat >/tmp/qt6_pending.ahk <<'EOF'
+#Requires AutoHotkey v2.0
+global timerFired := 0, timerNestedError := -1, timerNestedText := "sentinel"
+TimerProbe() {
+    global timerFired, timerNestedError, timerNestedText
+    timerFired := 1
+    timerNestedText := ControlGetText("QT6-ENTRY", "AHK Qt6 Probe")
+    timerNestedError := A_LastError
+    FileAppend("timer nested=" timerNestedError "`n", "/tmp/qt6_pending_timer.out")
+}
+SetTimer(TimerProbe, -50)
+started := A_TickCount
+text := ControlGetText("QT6-ENTRY", "AHK Qt6 Probe")
+elapsed := A_TickCount - started
+FileAppend("fired=" timerFired " elapsed=" elapsed " text=" text
+    " nestedError=" timerNestedError " nestedText=" timerNestedText " outerError=" A_LastError "`n", "/tmp/qt6_pending.out")
+ExitApp
+EOF
+rm -f /tmp/qt6_pending.out /tmp/qt6_pending_timer.out /tmp/qt6_pending.dump
+AHK_ATSPI_TEST_REPLY_DELAY_MS=200 AHK_ATSPI_DUMP=/tmp/qt6_pending.dump \
+  timeout -k 2 30 "$BIN" /tmp/qt6_pending.ahk >/tmp/qt6_pending.log 2>&1
+pending_rc=$?
 cat >/tmp/qt6_budget_error.ahk <<'EOF'
 #Requires AutoHotkey v2.0
 caught := 0, code := 0
@@ -126,6 +148,15 @@ AHK_ATSPI_TOTAL_BUDGET_MS=1 timeout -k 2 20 "$BIN" /tmp/qt6_budget_error.ahk \
 budget_rc=$?
 kill "$QPID" 2>/dev/null; wait "$QPID" 2>/dev/null
 [ "$rc" = 0 ] || { echo QT6_WAYLAND_AHK_FAIL; cat /tmp/qt6_wayland_ahk.log; exit 1; }
+pending_elapsed="$(sed -n 's/.*elapsed=\([0-9][0-9]*\).*/\1/p' /tmp/qt6_pending.out | head -1)"
+pending_calls="$(head -1 /tmp/qt6_pending.dump | sed -n 's/.*pending_calls=\([0-9][0-9]*\).*/\1/p')"
+pump_slices="$(head -1 /tmp/qt6_pending.dump | sed -n 's/.*pump_slices=\([0-9][0-9]*\).*/\1/p')"
+[ "$pending_rc" = 0 ] && grep -q '^fired=1 .*nestedError=16 nestedText= outerError=0$' /tmp/qt6_pending.out \
+  && grep -q '^timer nested=16$' /tmp/qt6_pending_timer.out \
+  && [ -n "$pending_elapsed" ] && [ "$pending_elapsed" -ge 180 ] && [ "$pending_elapsed" -lt 3000 ] \
+  && [ -n "$pending_calls" ] && [ "$pending_calls" -gt 0 ] \
+  && [ -n "$pump_slices" ] && [ "$pump_slices" -gt 0 ] \
+  || { echo QT6_PENDING_MAINLOOP_FAIL; cat /tmp/qt6_pending.out /tmp/qt6_pending.log; head -1 /tmp/qt6_pending.dump; exit 1; }
 [ "$budget_rc" = 0 ] && grep -q '^caught=1 code=110$' /tmp/qt6_budget_error.out \
   || { echo QT6_BUDGET_LASTERROR_FAIL; cat /tmp/qt6_budget_error.out /tmp/qt6_budget_error.log; exit 1; }
 grep -q '^before=你好-Qt6$' /tmp/qt6_wayland.out \
@@ -185,6 +216,6 @@ bus_rc=$?
   || { echo QT6_BUS_LASTERROR_FAIL; cat /tmp/qt6_bus_error.out /tmp/qt6_bus_error.log; exit 1; }
 header="$(head -1 /tmp/qt6_wayland.dump 2>/dev/null)"
 cat >"$OUT/qt6-capture-summary.json" <<EOF
-{"schema":1,"result":"pass","qt_version":"$(pkg-config --modversion Qt6Widgets)","x11_window_count":1,"wayland_before":"你好-Qt6","wayland_after":"你好-Qt6-追加","action_text":"clicked-Qt6","selection_items":["Alpha","Bravo","世界"],"selection_final":"Bravo","value_before":25,"value_after":64,"last_error":{"success":0,"enoent":2,"einval":22,"enodata":61,"enotsup":95,"enotconn":107,"etimedout":110},"atspi_header":"$header"}
+{"schema":1,"result":"pass","qt_version":"$(pkg-config --modversion Qt6Widgets)","x11_window_count":1,"wayland_before":"你好-Qt6","wayland_after":"你好-Qt6-追加","action_text":"clicked-Qt6","selection_items":["Alpha","Bravo","世界"],"selection_final":"Bravo","value_before":25,"value_after":64,"last_error":{"success":0,"enoent":2,"einval":22,"enodata":61,"enotsup":95,"enotconn":107,"etimedout":110},"pending":{"timer_fired":true,"elapsed_ms":$pending_elapsed,"calls":$pending_calls,"pump_slices":$pump_slices,"nested_errno":16,"outer_errno":0},"atspi_header":"$header"}
 EOF
-echo "QT6_CAPTURE_ORACLE_PASS version=$(pkg-config --modversion Qt6Widgets) x11=1 atspi=text+action+selection+value last_error=0,2,22,61,95,107,110"
+echo "QT6_CAPTURE_ORACLE_PASS version=$(pkg-config --modversion Qt6Widgets) x11=1 atspi=text+action+selection+value last_error=0,2,22,61,95,107,110 pending_calls=$pending_calls pump_slices=$pump_slices timer=1 nested=EBUSY"

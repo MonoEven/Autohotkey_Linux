@@ -82,7 +82,7 @@ ahk_core --pack my-script script.ahk
 | X11/XWayland | `Win*`, `Control*`, hotkeys, hotstrings, InputHook, Unicode Send, pixels/monitors, dialogs and GTK3 GUI |
 | Native Wayland | xdg-shell, wlroots virtual keyboard/pointer and screencopy; global hotkeys via portal, GNOME Shell or evdev |
 | Input backends | Versioned normalized events/caps; X11/portal/GNOME/evdev routes; layout-aware key model; XI2 raw multi-client Hotstring/InputHook; physical `scXXX` and evdev `A & B` |
-| Accessibility | AT-SPI Cache Text/EditableText/Action/Selection/Value on Wayland; real GTK 3.24, Qt 6.9 and VS Code/Electron 1.134 matrix |
+| Accessibility | AT-SPI Cache Text/Action/Selection/Value with pending-call event pumping and errno bridge; GTK/Qt/VS Code matrix |
 | Interop | `.so` `DllCall` + libffi callbacks, including Float/Double ABI types; D-Bus adapted COM layer |
 | Desktop | GTK3 GUI/Menu, notifications, AutoHotkey StatusNotifierItem tray icon and `A_TrayMenu` |
 | Developer tooling | VS Code 0.2.0: syntax/run/tasks/diagnostics plus DBGp/DAP breakpoints, paged variables, exceptions, idle Pause and same-PID reconnect |

@@ -66,7 +66,10 @@ and termination through VS Code's DebugAdapterTracker. `run_gui_host_matrix.sh` 
 independent GTK3, Qt6 and VS Code/Electron capture oracles. The Qt lane also
 uses QListWidget/QSlider callbacks to prove AT-SPI Selection and Value produce
 real toolkit changes, then fault-injects timeout/bus/interface/input failures to
-verify A_LastError errno 0/2/22/61/95/107/110; see `GUI_HOST_MATRIX.md` for versions and the explicit
+verify A_LastError errno 0/2/22/61/95/107/110. A delayed pending reply proves a
+Timer fires while ControlGetText waits; nested AT-SPI returns EBUSY and the outer
+call remains successful. Cache/fallback/budget dumps require non-zero pending
+call/pump-slice counts; see `GUI_HOST_MATRIX.md` for versions and the explicit
 Monaco-content limitation.
 
 The physical-layer VM lane uses `tools/linux/uinput-inject.c`: its virtual

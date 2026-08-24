@@ -50,17 +50,27 @@ run_case cache
 cache_header="$(head -1 /tmp/m5cache_cache.dump 2>/dev/null)"
 cache_apps="$(printf '%s' "$cache_header" | sed -n 's/.*cache_apps=\([0-9][0-9]*\).*/\1/p')"
 cache_items="$(printf '%s' "$cache_header" | sed -n 's/.*cache_items=\([0-9][0-9]*\).*/\1/p')"
+cache_pending="$(printf '%s' "$cache_header" | sed -n 's/.*pending_calls=\([0-9][0-9]*\).*/\1/p')"
+cache_pumps="$(printf '%s' "$cache_header" | sed -n 's/.*pump_slices=\([0-9][0-9]*\).*/\1/p')"
 [ -n "$cache_apps" ] && [ "$cache_apps" -gt 0 ] \
   || { echo "ATSPI_CACHE_NOT_USED header=[$cache_header]"; exit 1; }
 [ -n "$cache_items" ] && [ "$cache_items" -gt 0 ] \
   || { echo "ATSPI_CACHE_EMPTY header=[$cache_header]"; exit 1; }
+[ -n "$cache_pending" ] && [ "$cache_pending" -gt 0 ] \
+  && [ -n "$cache_pumps" ] && [ "$cache_pumps" -gt 0 ] \
+  || { echo "ATSPI_PENDING_NOT_USED header=[$cache_header]"; exit 1; }
 
 run_case fallback
 fallback_header="$(head -1 /tmp/m5cache_fallback.dump 2>/dev/null)"
 fallback_cache="$(printf '%s' "$fallback_header" | sed -n 's/.*cache_apps=\([0-9][0-9]*\).*/\1/p')"
 fallback_apps="$(printf '%s' "$fallback_header" | sed -n 's/.*fallback_apps=\([0-9][0-9]*\).*/\1/p')"
+fallback_pending="$(printf '%s' "$fallback_header" | sed -n 's/.*pending_calls=\([0-9][0-9]*\).*/\1/p')"
+fallback_pumps="$(printf '%s' "$fallback_header" | sed -n 's/.*pump_slices=\([0-9][0-9]*\).*/\1/p')"
 [ "$fallback_cache" = 0 ] && [ -n "$fallback_apps" ] && [ "$fallback_apps" -gt 0 ] \
   || { echo "ATSPI_FALLBACK_NOT_USED header=[$fallback_header]"; exit 1; }
+[ -n "$fallback_pending" ] && [ "$fallback_pending" -gt 0 ] \
+  && [ -n "$fallback_pumps" ] && [ "$fallback_pumps" -gt 0 ] \
+  || { echo "ATSPI_FALLBACK_PENDING_NOT_USED header=[$fallback_header]"; exit 1; }
 
 # Fault injection: a 1ms total refresh budget must terminate quickly and mark
 # the partial result instead of blocking on the desktop tree indefinitely.
@@ -79,11 +89,15 @@ kill "$GPID" 2>/dev/null; wait "$GPID" 2>/dev/null
 budget_elapsed=$((end_ms - start_ms))
 budget_header="$(head -1 /tmp/m5cache_budget.dump 2>/dev/null)"
 budget_exceeded="$(printf '%s' "$budget_header" | sed -n 's/.*budget_exceeded=\([0-9][0-9]*\).*/\1/p')"
+budget_pending="$(printf '%s' "$budget_header" | sed -n 's/.*pending_calls=\([0-9][0-9]*\).*/\1/p')"
+budget_pumps="$(printf '%s' "$budget_header" | sed -n 's/.*pump_slices=\([0-9][0-9]*\).*/\1/p')"
 [ "$budget_rc" = 0 ] && [ "$budget_exceeded" = 1 ] && [ "$budget_elapsed" -lt 5000 ] \
+  && [ -n "$budget_pending" ] && [ "$budget_pending" -gt 0 ] \
+  && [ -n "$budget_pumps" ] && [ "$budget_pumps" -gt 0 ] \
   || { echo "ATSPI_BUDGET_FAIL rc=$budget_rc elapsed=$budget_elapsed header=[$budget_header]"; exit 1; }
 
 pkill -f 'gtk-ok --title CacheWin' 2>/dev/null
 cat >"$OUT/atspi-cache-summary.json" <<EOF
-{"schema":1,"result":"pass","cache_apps":$cache_apps,"cache_items":$cache_items,"fallback_apps":$fallback_apps,"budget_ms":1,"budget_exceeded":true,"budget_elapsed_ms":$budget_elapsed,"text":"CacheText"}
+{"schema":1,"result":"pass","cache_apps":$cache_apps,"cache_items":$cache_items,"fallback_apps":$fallback_apps,"pending_calls":$cache_pending,"pump_slices":$cache_pumps,"fallback_pending_calls":$fallback_pending,"fallback_pump_slices":$fallback_pumps,"budget_ms":1,"budget_exceeded":true,"budget_elapsed_ms":$budget_elapsed,"budget_pending_calls":$budget_pending,"budget_pump_slices":$budget_pumps,"text":"CacheText"}
 EOF
-echo "ATSPI_CACHE_ORACLE_PASS cache_apps=$cache_apps cache_items=$cache_items fallback_apps=$fallback_apps budget_elapsed_ms=$budget_elapsed"
+echo "ATSPI_CACHE_ORACLE_PASS cache_apps=$cache_apps cache_items=$cache_items fallback_apps=$fallback_apps pending=$cache_pending/$cache_pumps budget_elapsed_ms=$budget_elapsed"

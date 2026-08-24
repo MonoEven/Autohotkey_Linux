@@ -376,7 +376,10 @@ Highlights of this release:</p>
     Selection-backed list APIs and Value-backed scalar Get/Set are real (Qt
     QListWidget/QSlider callbacks prove effects and clear/error semantics).
     Each operation updates <code>A_LastError</code> with Linux errno (0 success;
-    match/interface/bus/timeout failures have stable codes). Real-host tests cover GTK 3.24 and Qt 6.9. VS Code/Electron 1.134 exposes
+    match/interface/bus/timeout failures have stable codes). All D-Bus calls use
+    bounded pending waits which pump GTK/Wayland/hotkey/timer events; diagnostics
+    publish pending-call/pump-slice counts and nested AT-SPI reports EBUSY.
+    Real-host tests cover GTK 3.24 and Qt 6.9. VS Code/Electron 1.134 exposes
     its window/Document but not Monaco source content (window-only support).</li>
   <li><b>VS Code extension product</b>: <code>extensions/vscode-ahk-linux/</code>
     packages syntax, run/stop/tasks, diagnostics and a backend capability tree
