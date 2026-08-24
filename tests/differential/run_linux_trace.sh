@@ -47,6 +47,7 @@ wait_phase hotkeys || { cat "$LOG"; exit 1; }
 "$INJECTOR" inject-keycode-state-x11 37 down
 "$INJECTOR" inject-keycode-x11 95 25
 "$INJECTOR" inject-keycode-state-x11 37 up
+sleep .2
 "$INJECTOR" inject-keycode-state-x11 96 down
 sleep .5
 "$INJECTOR" inject-keycode-state-x11 96 up

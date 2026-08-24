@@ -72,6 +72,11 @@ call remains successful. Cache/fallback/budget dumps require non-zero pending
 call/pump-slice counts; see `GUI_HOST_MATRIX.md` for versions and the explicit
 Monaco-content limitation.
 
+`run_compositor_stop_oracle.sh` owns a private headless sway, establishes a
+virtual-keyboard path, SIGSTOPs the compositor for three seconds and requires
+30+ Timer/input iterations while stopped. After SIGCONT the same AHK PID must
+trigger another sway binding and sway IPC must respond.
+
 `run_evdev_hotplug_oracle.sh` is the privileged VM fault lane. An independent
 uinput keyboard is added, fires a physical SC hotkey and is destroyed three
 times while one runtime remains alive. `/proc/$pid/fd` independently requires

@@ -601,7 +601,11 @@
   负载在CI跑30s并上传事件数/RSS slope JSON；夜跑入口接受
   `AHK_SOAK_SECONDS=86400`。GNOME VM 5分钟1408轮，三类事件最终一致，无丢失；
   X11 clipboard发布以≤200ms有界等待，记录535次重试；warm-up后RSS仅+148KB，
-  斜率29.60KB/min。**未完成**：实际24h结果、`kill -STOP` compositor。
+  斜率29.60KB/min。**未完成**：实际24h结果。
+- **M6-T4 compositor STOP/CONT已交付**：CI私有headless sway；STOP前同一AHK
+  通过虚拟键盘触发`b`，SIGSTOP 3s期间每100ms Timer继续执行并发F24（30/31 tick），
+  SIGCONT后同一PID再触发`a`且sway IPC恢复。连续3轮通过，证明Wayland dispatch
+  不因compositor暂停阻塞脚本主循环。
 - **M6-T4 evdev热插拔已交付**：即使当前0设备仍按2s重扫；POLLHUP/ERR/NVAL
   或read ENODEV/EIO会ungrab+close并压缩device vector，重新计算suppress能力。
   root/uinput独立oracle在同一AHK PID做3轮add→KEY_A触发→remove→re-add；每轮

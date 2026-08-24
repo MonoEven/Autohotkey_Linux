@@ -620,7 +620,10 @@ bool LinuxKeyUpVariantExists(unsigned int aKeycode,
 		if (!LinuxHotkeyModsMatch(hk, aEvMods, aEvLR))
 			continue;
 		HotkeyVariant *vp = hk->FindVariant();
-		if (vp && vp->mEnabled && hk->PerformIsAllowed(*vp))
+		// Press-side ownership must not depend on the current thread being
+		// interruptible or below MaxThreads. Re-evaluate PerformIsAllowed when
+		// the actual release arrives; dropping the grab here loses it forever.
+		if (vp && vp->mEnabled)
 			return true;
 	}
 	return false;

@@ -187,6 +187,10 @@
     Action semantics. VS Code windows are captured on X11 and Wayland, but the
     Monaco document content remains unexposed (U+FFFC/window-only), recorded as
     a versioned limitation rather than support.</li>
+  <li><b>M6 compositor STOP/CONT fault gate:</b> a private headless sway receives
+    virtual-keyboard input before SIGSTOP, remains stopped for three seconds while
+    the same AHK runs 30+ Timer/input iterations, then receives input after
+    SIGCONT and restores IPC. Three VM runs keep one runtime PID.</li>
   <li><b>M6 evdev hotplug fault gate:</b> rescans now continue from zero devices;
     removed device fds are ungrabbed, closed and pruned on poll/read failure. A
     root/uinput VM oracle performs three add/fire/remove cycles in one runtime,

@@ -126,6 +126,10 @@ jobs:
         if: matrix.build == 'core'
         run: bash tests/oracle/run_portal_restart_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
 
+      - name: Compositor STOP-CONT fault oracle
+        if: matrix.build == 'core'
+        run: bash tests/oracle/run_compositor_stop_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
+
       - name: EWMH window enumeration oracle
         if: matrix.build == 'core'
         run: xvfb-run -a bash tests/oracle/run_ewmh_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"

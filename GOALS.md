@@ -121,6 +121,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - M6 evdev hotplug: zero-device rescans recover; removed device fds are ungrabbed,
   closed and pruned. Three uinput add/fire/remove cycles returned fd count 5→6→5
   with one stable runtime PID, no stale descriptor and no held-prefix ghost state.
+- M6 compositor pause: private sway receives input before STOP, remains stopped 3s
+  while the same AHK runs 30+ Timer/input ticks, then receives input after CONT and
+  restores IPC; three runs pass and the runtime PID never changes.
 - Machine totals: 1143/1143 X11/headless, 17/17 Wayland and 234/234
   XWayland assertions; 27/27 headless regression tests.
 
