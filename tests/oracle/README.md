@@ -24,6 +24,12 @@ with Mod5/AltGr. The fixture avoids a known xkeyboard-config/X11 trap: modern
 maps contain keycodes above 255, which xkbcomp may clip while leaving Xvfb on
 its US map.
 
+`run_input_event_model_oracle.sh` validates the version-1 normalized event
+schema independently of the matching code. It requires exact physical
+(evdev/set-1 SC), logical VK, text, phase, source, SendLevel, device and origin
+values for both self Send and another XTEST process. The same schema is emitted
+by evdev and shortcut entry points when `AHK_INPUT_EVENT_TRACE` is set.
+
 The physical-layer VM lane uses `tools/linux/uinput-inject.c`: its virtual
 keyboard deliberately has no AHK identity, so evdev sees an independent input
 device. It remains permission-gated and is not pretended to run on ordinary

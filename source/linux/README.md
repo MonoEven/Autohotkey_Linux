@@ -23,6 +23,9 @@ delay); other lanes keep `custom_combo=false`. `core_capture_linux.cpp` now
 uses the existing XI2.1 raw subscription for Hotstrings and visible InputHook;
 suppression is a selected passive-grab set derived from InputHook visibility and
 KeyOpt; raw handles every unselected key and runtime changes reconcile it.
+`core/input_event.*` is the versioned normalization/wire-schema precursor for
+M3/M4: every lane reports physical/logical/text/source/level/device/origin, and
+`AHK_INPUT_EVENT_TRACE=<path>` writes its JSONL oracle.
 
 Key runtime controls:
 

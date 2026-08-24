@@ -34,6 +34,7 @@ extern "C" const char *LinuxParityLookup(const char *aName, int &aLevel);
 #include "core_hotkey_linux.h"
 #include "core_pack_linux.h"
 #include "input_backend.h"
+#include "input_event.h"
 #include "core_clipboard_linux.h"
 #include "core_ime_linux.h"
 #include <cstdlib>
@@ -2217,6 +2218,7 @@ BIF_DECL(BIF_Linux_HotkeyBackendGet)
 	else
 		obj->SetOwnProp(_T("backend"), _T(""));
 	obj->SetOwnProp(_T("caps_version"), (__int64)LinuxInputBackendCapsVersion());
+	obj->SetOwnProp(_T("event_version"), (__int64)AHK_INPUT_EVENT_VERSION);
 	obj->SetOwnProp(_T("global_hotkeys"), (__int64)(caps && caps->global_hotkeys));
 	obj->SetOwnProp(_T("suppress"), (__int64)(caps && caps->suppress));
 	obj->SetOwnProp(_T("passthrough"), (__int64)(caps && caps->passthrough));

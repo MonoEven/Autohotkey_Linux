@@ -17,12 +17,14 @@
 //  Signals on the session object: Activated(o, s id, t, a{sv}) etc.
 #include "core_gshortcut_linux.h"
 #include "input_backend.h"
+#include "input_event.h"
 #include "../../script.h"
 #include "../../globaldata.h"
 #include "../../script_func_impl.h"
 #include "../../hotkey.h"
 #include "../../keyboard_mouse.h"
 #include "../../application.h"
+#include "core_keymodel_linux.h"
 #include <dbus/dbus.h>
 #include <cstring>
 #include <cstdlib>
@@ -206,6 +208,12 @@ void FireShortcut(const std::string &aId)
 	for (HotkeyVariant *v = hk->mFirstVariant; v; v = v->mNextVariant)
 		if (VariantFireable(hk, v)) { vp = v; break; }
 	if (!vp) return;
+	AhkInputEvent event = {
+		LinuxInputEventMonotonicUs(), LinuxEvdevCodeForScanCode(hk->mSC),
+		hk->mVK, hk->mSC, 0, false, false, AhkInputSource::PHYSICAL, -1, 0,
+		AhkInputOrigin::PORTAL
+	};
+	LinuxInputEventTrace(event);
 	++g_nThreads;
 	++g;
 	InitNewThread(vp->mPriority, false, false);

@@ -30,8 +30,10 @@
 //  UnregisterMany) and short timeouts so binding dozens/hundreds of hotkeys
 //  cannot block the main loop for seconds each.
 #include "input_backend_gnome_shell.h"
+#include "input_event.h"
 #include "input_backend.h"
 #include "../../hotkey.h"
+#include "core_keymodel_linux.h"
 #include <dbus/dbus.h>
 #include <cstring>
 #include <cstdlib>
@@ -708,7 +710,15 @@ void LinuxGnomeShellDispatch()
 		sPendingTs.clear();
 		for (size_t i = 0; i < hks.size(); ++i)
 			if (hks[i])
+			{
+				AhkInputEvent event = {
+					LinuxInputEventMonotonicUs(), LinuxEvdevCodeForScanCode(hks[i]->mSC),
+					hks[i]->mVK, hks[i]->mSC, 0, false, false,
+					AhkInputSource::PHYSICAL, -1, 0, AhkInputOrigin::GNOME_SHELL
+				};
+				LinuxInputEventTrace(event);
 				AhkBackendFireHotkey(hks[i]);
+			}
 	}
 }
 

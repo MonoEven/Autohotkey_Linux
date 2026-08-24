@@ -17,6 +17,7 @@
 #include "core_wayland_linux.h"
 #include "core_gshortcut_linux.h"
 #include "input_backend.h"
+#include "input_event.h"
 #include "core_clipboard_linux.h"
 #include "../gui/script_gui_linux.h"
 #include <X11/Xlib.h>
@@ -57,6 +58,7 @@ extern "C" int LinuxRunDiagnostic()
 	// Input backend + capability summary.
 	const char *backend = LinuxInputBackendName();
 	std::printf("input-backend: %s\n", backend ? backend : "(unknown)");
+	std::printf("input-event-version: %u\n", AHK_INPUT_EVENT_VERSION);
 	if (const AhkInputBackendCaps *caps = LinuxInputBackendCaps())
 	{
 		std::printf("  caps-version=%u global=%d suppress=%d passthrough=%d key_up=%d wildcard=%d"

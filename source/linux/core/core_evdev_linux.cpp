@@ -23,6 +23,7 @@
 #include "core_wayland_linux.h" // LinuxWaylandKeycodeForVk (vk->evdev)
 #include "core_keymodel_linux.h"
 #include "input_backend.h" // AhkBackendHotkeyEnabled
+#include "input_event.h"
 #include <linux/input.h>
 #include <sys/poll.h>
 #include <unistd.h>
@@ -589,6 +590,15 @@ void LinuxEvdevDispatch()
 				break; // EAGAIN or short read: next poll.
 			if (ev.type != EV_KEY)
 				continue;
+			unsigned int event_vk = VkForEvdev(ev.code);
+			AhkInputEvent normalized = {
+				LinuxInputEventMonotonicUs(), (uint32_t)ev.code,
+				(vk_type)(event_vk <= 0xff ? event_vk : 0),
+				LinuxScanCodeForEvdev((uint32_t)ev.code), 0,
+				ev.value == 0, ev.value == 2, AhkInputSource::PHYSICAL, -1,
+				(uint32_t)(i + 1), AhkInputOrigin::EVDEV
+			};
+			LinuxInputEventTrace(normalized);
 			// Panic escape key: Backspace->Escape->Enter releases the grabs
 			// (check_detail0821 §1-B / R4).  Checked before hotkey dispatch so
 			// the sequence always wins.

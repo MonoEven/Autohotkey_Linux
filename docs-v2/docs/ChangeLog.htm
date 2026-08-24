@@ -68,6 +68,11 @@
     exact scope and target visibility. InputHook EndReason/EndKey now follows
     the official v2 contract for both keycode and E-character modes. Current
     branch totals: 1160/1160 X11/headless, 17/17 Wayland, 255/255 XWayland.</li>
+  <li><b>M3-E normalized input events:</b> version-1 events carry physical
+    evdev/set-1 SC, logical VK, Unicode text, phase/repeat, source, SendLevel,
+    device and origin across X11, evdev, Portal and GNOME Shell entry points.
+    The schema is queryable from HotkeyBackendGet/--diag and an optional JSONL
+    trace has independent self/other/physical provenance oracles.</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>

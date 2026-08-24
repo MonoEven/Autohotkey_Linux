@@ -5,7 +5,7 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 unset DISPLAY WAYLAND_DISPLAY 2>/dev/null || true
 pkill -9 -f 'uinput-inject' 2>/dev/null
 cc -O2 -Wall -Wextra -o /tmp/uinput-inject "$ROOT/tools/linux/uinput-inject.c" 2>/dev/null || exit 0
-rm -f /tmp/scn_custom_combo_evdev /tmp/scn_combo_fired /tmp/scn_combo_ready /tmp/scn_combo_cmd
+rm -f /tmp/scn_custom_combo_evdev /tmp/scn_combo_fired /tmp/scn_combo_ready /tmp/scn_combo_cmd /tmp/scn_combo_events.jsonl
 cat >/tmp/scn_combo.ahk <<'EOF'
 #Requires AutoHotkey v2.0
 OnDown(*) => FileAppend("down`n", "/tmp/scn_combo_fired")
@@ -25,7 +25,7 @@ EOF
 /tmp/uinput-inject /tmp/scn_combo_cmd >/tmp/scn_combo_inject.log 2>&1 &
 IPID=$!
 sleep 1
-AHK_INPUT_BACKEND=evdev "$AHK" /tmp/scn_combo.ahk >/tmp/scn_combo_ahk.log 2>&1 &
+AHK_INPUT_BACKEND=evdev AHK_INPUT_EVENT_TRACE=/tmp/scn_combo_events.jsonl "$AHK" /tmp/scn_combo.ahk >/tmp/scn_combo_ahk.log 2>&1 &
 APID=$!
 for _ in $(seq 1 500); do test -f /tmp/scn_combo_ready && break; sleep .02; done
 if ! grep -q 'custom=1 backend=evdev' /tmp/scn_combo_ready 2>/dev/null; then
@@ -60,7 +60,9 @@ if test "$(grep -c '^down$' /tmp/scn_combo_fired 2>/dev/null)" -eq 1 \
    && test "$(grep -c '^tilde$' /tmp/scn_combo_fired 2>/dev/null)" -eq 1 \
    && test "$(grep -c '^solo-e$' /tmp/scn_combo_fired 2>/dev/null)" -eq 1 \
    && test "$(grep -c '^e-f$' /tmp/scn_combo_fired 2>/dev/null)" -eq 1 \
-   && test "$(wc -l </tmp/scn_combo_fired)" -eq 5; then
+   && test "$(wc -l </tmp/scn_combo_fired)" -eq 5 \
+   && grep -q '"evdev_code":30.*"sc":30.*"source":"physical".*"origin":"evdev"' /tmp/scn_combo_events.jsonl \
+   && grep -q '"evdev_code":48.*"sc":48.*"source":"physical".*"origin":"evdev"' /tmp/scn_combo_events.jsonl; then
   touch /tmp/scn_custom_combo_evdev
 fi
 exit 0

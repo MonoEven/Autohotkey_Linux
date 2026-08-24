@@ -19,6 +19,7 @@
 #include "core_capture_linux.h"
 #include "core_input_linux.h"
 #include "core_keymodel_linux.h"
+#include "input_event.h"
 #include "../../application.h"
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
@@ -32,7 +33,8 @@
 
 wchar_t LinuxCharFromKeySym(KeySym aKs);
 vk_type LinuxKeysymToVk(KeySym aKs);
-bool LinuxCaptureFeedInput(Display *d, XEvent &ev);
+bool LinuxCaptureFeedInput(Display *d, XEvent &ev
+	, const AhkLinuxKeyIdentity *aPredecoded = nullptr);
 
 namespace {
 
@@ -530,9 +532,11 @@ void LinuxCaptureDispatchInputNotifies()
 }
 
 void LinuxCaptureRawKeyEvent(Display *d, KeyCode aKeycode, bool aIsPress,
-	Time aTime, unsigned int aCoreState, int aSelfLevel, bool aIsSendInput)
+	Time aTime, unsigned int aCoreState, int aSelfLevel, bool aIsSendInput,
+	AhkInputSource aSource, uint32_t aDeviceId)
 {
-	if (!LinuxCaptureUsesRaw() || aIsSendInput)
+	bool capture = LinuxCaptureUsesRaw();
+	if (!capture && !LinuxInputEventTraceEnabled())
 		return;
 	XEvent ev;
 	memset(&ev, 0, sizeof(ev));
@@ -543,6 +547,16 @@ void LinuxCaptureRawKeyEvent(Display *d, KeyCode aKeycode, bool aIsPress,
 	ev.xkey.state = aCoreState;
 	ev.xkey.time = aTime;
 	ev.xkey.same_screen = True;
+	AhkLinuxKeyIdentity identity;
+	LinuxEventKeyIdentity(d, ev, identity);
+	AhkInputEvent normalized = {
+		LinuxInputEventMonotonicUs(), identity.evdev_code, identity.vk,
+		identity.sc, (char32_t)identity.text, !aIsPress, false, aSource,
+		(int16_t)aSelfLevel, aDeviceId, AhkInputOrigin::X11
+	};
+	LinuxInputEventTrace(normalized);
+	if (!capture || aIsSendInput)
+		return;
 	if (g_input && g_input->InProgress())
 	{
 		// Selected suppression keys are fed by their normal passive-grab event;
@@ -552,20 +566,18 @@ void LinuxCaptureRawKeyEvent(Display *d, KeyCode aKeycode, bool aIsPress,
 		if (aSelfLevel >= 0 && g_input->MinSendLevel > 0
 			&& aSelfLevel < (int)g_input->MinSendLevel)
 			return;
-		LinuxCaptureFeedInput(d, ev);
+		LinuxCaptureFeedInput(d, ev, &identity);
 		return;
 	}
 	if (!aIsPress || aSelfLevel == 0)
 		return;
-	AhkLinuxKeyIdentity key;
-	LinuxEventKeyIdentity(d, ev, key);
-	if (!key.text)
+	if (!identity.text)
 	{
-		if (!LinuxIsModifierKey(key.keysym))
+		if (!LinuxIsModifierKey(identity.keysym))
 			sRawBuffer.clear();
 		return;
 	}
-	LinuxRawFeedHotstrings(d, key, aSelfLevel);
+	LinuxRawFeedHotstrings(d, identity, aSelfLevel);
 }
 
 bool LinuxInputHookKeyNeedsGrab(Display *d, KeyCode aKeycode)
@@ -707,13 +719,19 @@ wchar_t LinuxInputHookChar(const AhkLinuxKeyIdentity &aKey)
 // undo, and the OnChar notification.  Named VK end-keys and the OnKeyDown
 // VK/SC arguments remain documented limitations (single-char end keys and
 // the default end behaviour are covered).
-bool LinuxCaptureFeedInput(Display *d, XEvent &ev)
+bool LinuxCaptureFeedInput(Display *d, XEvent &ev
+	, const AhkLinuxKeyIdentity *aPredecoded)
 {
 	input_type *active = g_input;
 	if (!active || !active->InProgress())
 		return false;
-	AhkLinuxKeyIdentity key;
-	LinuxEventKeyIdentity(d, ev, key);
+	AhkLinuxKeyIdentity decoded;
+	if (!aPredecoded)
+	{
+		LinuxEventKeyIdentity(d, ev, decoded);
+		aPredecoded = &decoded;
+	}
+	const AhkLinuxKeyIdentity &key = *aPredecoded;
 	if (ev.type != KeyPress)
 	{
 		// KeyRelease: notify canonical logical VK + set-1 scan code.

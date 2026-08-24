@@ -1424,16 +1424,19 @@ void LinuxDispatchHotkeys()
 					// §3: record the source classification (sourceid is only
 					// valid from XI 2.1; the tap is disabled otherwise).
 					LinuxXTestTapRecord((unsigned int)raw_keycode, is_press, is_xtest);
-					if (LinuxCaptureUsesRaw())
+					if (LinuxCaptureUsesRaw() || LinuxInputEventTraceEnabled())
 					{
 						int raw_level = -1;
 						bool raw_sendinput = false;
-						LinuxSelfLookupRaw((unsigned int)raw_keycode, is_press
+						bool is_self = LinuxSelfLookupRaw((unsigned int)raw_keycode, is_press
 							, raw_level, raw_sendinput);
+						AhkInputSource source = is_self ? AhkInputSource::SELF_INJECT
+							: (is_xtest ? AhkInputSource::OTHER_INJECT : AhkInputSource::PHYSICAL);
 						unsigned int core_state = XkbBuildCoreState(
 							sRawDepressedMods | sRawLockedMods, sRawGroup);
 						LinuxCaptureRawKeyEvent(d, raw_keycode, is_press, re->time
-							, core_state, raw_level, raw_sendinput);
+							, core_state, raw_level, raw_sendinput, source
+							, (uint32_t)re->sourceid);
 					}
 				}
 				else if (cookie->extension == sXI2Opcode && cookie->evtype == XI_HierarchyChanged)

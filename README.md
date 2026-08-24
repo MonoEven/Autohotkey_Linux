@@ -81,7 +81,7 @@ ahk_core --pack my-script script.ahk
 | Language/runtime | AutoHotkey v2 syntax, objects, functions, classes, timers, files and processes |
 | X11/XWayland | `Win*`, `Control*`, hotkeys, hotstrings, InputHook, Unicode Send, pixels/monitors, dialogs and GTK3 GUI |
 | Native Wayland | xdg-shell, wlroots virtual keyboard/pointer and screencopy; global hotkeys via portal, GNOME Shell or evdev |
-| Input backends | Per-hotkey routing across X11, portal, GNOME Shell and evdev/uinput; versioned caps; layout-aware key model; XI2 raw multi-client Hotstring/visible InputHook; physical `scXXX` and evdev `A & B` |
+| Input backends | Versioned normalized events/caps; X11/portal/GNOME/evdev routes; layout-aware key model; XI2 raw multi-client Hotstring/InputHook; physical `scXXX` and evdev `A & B` |
 | Accessibility | AT-SPI text/action controls on GNOME Wayland; tested with GNOME Terminal and Firefox |
 | Interop | `.so` `DllCall` + libffi callbacks, including Float/Double ABI types; D-Bus adapted COM layer |
 | Desktop | GTK3 GUI/Menu, notifications, AutoHotkey StatusNotifierItem tray icon and `A_TrayMenu` |

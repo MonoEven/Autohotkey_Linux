@@ -2,6 +2,7 @@
 #pragma once
 #include <X11/Xlib.h>
 #include <set>
+#include "input_event.h"
 
 struct GrabSpec;
 
@@ -29,7 +30,8 @@ bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel = -1);
 // core modifier/group state synthesized at event time. Raw observation never
 // suppresses the original event; Hotstring replacement uses backspacing.
 void LinuxCaptureRawKeyEvent(Display *d, KeyCode aKeycode, bool aIsPress,
-	Time aTime, unsigned int aCoreState, int aSelfLevel, bool aIsSendInput);
+	Time aTime, unsigned int aCoreState, int aSelfLevel, bool aIsSendInput,
+	AhkInputSource aSource, uint32_t aDeviceId);
 
 // Hotstring state changed: recompute the active flag.
 void LinuxCaptureStateChanged();

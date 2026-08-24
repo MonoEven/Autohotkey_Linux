@@ -59,6 +59,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
   of all-key grabs/XSendEvent forwarding.
 - InputHook selected suppression: exact KeyOpt/visibility keycodes are grabbed,
   raw handles all others, and runtime changes reconcile without restart.
+- Versioned normalized input events: physical evdev/set-1 SC, VK, text,
+  phase/repeat, source/SendLevel/device/origin across X11, evdev, Portal and
+  GNOME entry points, with optional JSONL trace.
 - Machine totals: 1160/1160 X11/headless, 17/17 Wayland and 255/255
   XWayland assertions; 27/27 headless regression tests.
 

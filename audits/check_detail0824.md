@@ -89,9 +89,16 @@
   3. portal/GNOME 路径：Activated/Deactivated 信号合成 press/release 对
      （text=0、device_id=0、source=PHYSICAL——因为 compositor 已经代表用户确认）；
   4. hotkey/hotstring/InputHook 匹配层全部改为只消费 `AhkInputEvent`。
-- **落点文件**：新建 `input_event.h`；改 `core_capture_linux.cpp`、
+- **M3-E 已交付**：`input_event.{h,cpp}` 定义 version 1 的统一事件，X11 raw/
+  selected-grab、evdev、Portal、GNOME Shell入口归一化 timestamp、evdev_code、
+  canonical VK/SC、text、release/repeat、source、send_level、device_id、origin；
+  `HotkeyBackendGet().event_version` 与 `--diag` 可查询。可选
+  `AHK_INPUT_EVENT_TRACE` 输出 JSONL oracle。Xvfb 证明本进程 SendLevel=3 为
+  self_inject，独立 XTEST 为 other_inject且不能伪造 level；GNOME VM uinput
+  证明 physical/evdev。匹配器分批消费该结构；M3-M mux 尚未完成。
+- **落点文件**：`input_event.h/.cpp`；`core_capture_linux.cpp`、
   `core_evdev_linux.cpp`、`core_hotkey_linux.cpp`、`input_backend*.cpp`。
-- **验收标准**：现有 1143 doc-check 不回归；新增断言"XTEST 注入事件的
+- **验收标准**：全量 doc-check 不回归；新增断言"XTEST 注入事件的
   `source==SELF_INJECT` 且 `device_id==XTEST slave id`"。
 - **风险**：X11 事件入口分散（grab 事件 vs capture 事件两条路），归一化点
   必须放在 `LinuxDispatchHotkeys()`/capture pump 的最上游，否则出现双份逻辑。
