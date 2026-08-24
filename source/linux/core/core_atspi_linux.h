@@ -32,7 +32,11 @@ void LinuxAtspiDump(std::string &aDebug);
 // Find a descendant whose accessible name equals aName (matched like
 // ControlGetText listeners do: substring).  Returns >0 when found.
 // aOutPath receives the D-Bus object path of the match.
-bool LinuxAtspiFindByName(const char *aName, std::string &aOutPath);
+// aWindowTitle (optional) limits the search to the application subtree that
+// owns the window whose accessible name equals it, so same-named controls in
+// different applications do not cross-match (M5-C WinTitle limiting).
+bool LinuxAtspiFindByName(const char *aName, std::string &aOutPath
+	, const char *aWindowTitle = nullptr);
 
 // Text of an accessible object ('Text' interface GetText(0, -1)) -> aText.
 bool LinuxAtspiGetText(const char *aPath, std::string &aText);

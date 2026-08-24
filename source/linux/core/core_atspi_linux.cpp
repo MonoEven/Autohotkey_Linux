@@ -314,16 +314,94 @@ void LinuxAtspiDump(std::string &aDebug)
 	}
 }
 
-bool LinuxAtspiFindByName(const char *aName, std::string &aOutPath)
+// Application scope of a node: its D-Bus destination.  AT-SPI object paths
+// are flat ids, so application identity is the destination (every object of
+// one app lives under its unique bus name).  The root placeholder itself
+// (/accessible/root) is the app entry point, not a descendant window.
+static bool AtspiAppScope(const AtspiRef &aNode, std::string &aDest)
+{
+	static const char kApp[] = "/org/a11y/atspi/accessible/";
+	size_t base = strlen(kApp);
+	if (aNode.path.compare(0, base, kApp) != 0)
+		return false;
+	if (aNode.path == "/org/a11y/atspi/accessible/root")
+		return false; // the application root placeholder, not a window
+	aDest = aNode.dest;
+	return true;
+}
+
+// Resolve aWinTitle to the application (D-Bus destination) that owns a window
+// with that accessible name, so Control* searches stay inside that app.
+static bool AtspiScopeForWindowTitle(const char *aWinTitle, std::string &aDest)
+{
+	if (!aWinTitle || !*aWinTitle)
+		return false;
+	std::string title(aWinTitle);
+	std::string dest;
+	bool found = false;
+	for (const auto &e : sTable)
+		if (e.name == title && AtspiAppScope(e, dest))
+		{
+			found = true;
+			break;
+		}
+	if (!found)
+		for (const auto &e : sTable)
+			if (e.name.find(title) != std::string::npos && AtspiAppScope(e, dest))
+			{
+				found = true;
+				break;
+			}
+	if (!found)
+		return false;
+	aDest = dest;
+	return true;
+}
+
+// Diagnostics (AHK_ATSPI_DUMP): log the cached table entries whose name
+// matches aWindowTitle or aName, so subtree-scope issues are visible.
+static void AtspiDumpMatches(const char *aWinTitle, const char *aName)
+{
+	const char *diag = getenv("AHK_ATSPI_DUMP");
+	if (!diag || !*diag)
+		return;
+	FILE *f = fopen("/tmp/atspi_table.log", "a");
+	if (!f)
+		return;
+	for (const auto &e : sTable)
+		if ((aWinTitle && e.name.find(aWinTitle) != std::string::npos)
+			|| (aName && e.name.find(aName) != std::string::npos))
+			fprintf(f, "name=%s dest=%s path=%s\n", e.name.c_str(), e.dest.c_str(), e.path.c_str());
+	fclose(f);
+}
+
+// Application-root placeholder nodes (path ends in /accessible/root) are the
+// D-Bus entry points, not operable controls; their Name property can collide
+// with a control's name, so never match them for Control*.
+static bool AtspiIsAppRoot(const AtspiRef &e)
+{
+	static const char kApp[] = "/org/a11y/atspi/accessible/root";
+	return e.path == kApp;
+}
+
+bool LinuxAtspiFindByName(const char *aName, std::string &aOutPath, const char *aWindowTitle)
 {
 	if (!aName || !*aName)
 		return false;
 	aOutPath.clear();
 	std::string n(aName);
+	std::string scope_dest;
+	AtspiDumpMatches(aWindowTitle, aName);
+	if (aWindowTitle && *aWindowTitle)
+		if (!AtspiScopeForWindowTitle(aWindowTitle, scope_dest))
+			return false; // the named window is not on the a11y tree
+	auto in_scope = [&](const AtspiRef &e) {
+		return scope_dest.empty() || e.dest == scope_dest;
+	};
 	for (const auto &e : sTable)
-		if (e.name == n) { aOutPath = e.dest + "|" + e.path; return true; }
+		if (!AtspiIsAppRoot(e) && in_scope(e) && e.name == n) { aOutPath = e.dest + "|" + e.path; return true; }
 	for (const auto &e : sTable)
-		if (e.name.find(n) != std::string::npos) { aOutPath = e.dest + "|" + e.path; return true; }
+		if (!AtspiIsAppRoot(e) && in_scope(e) && e.name.find(n) != std::string::npos) { aOutPath = e.dest + "|" + e.path; return true; }
 	return false;
 }
 

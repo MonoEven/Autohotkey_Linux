@@ -508,12 +508,21 @@ BIF_DECL(BIF_Linux_ControlGetText)
 			name = (LPTSTR)_T("");
 		if (name && *name && LinuxAtspiAvailable())
 		{
-			char nb2[1024];
-			wcstombs(nb2, name, sizeof(nb2) - 1);
-			nb2[sizeof(nb2) - 1] = 0;
+			char nb[1024];
+			wcstombs(nb, name, sizeof(nb) - 1);
+			nb[sizeof(nb) - 1] = 0;
+			// M5-C WinTitle limiting: the WinTitle (param 1) selects the
+			// application subtree so same-named controls in other apps do
+			// not cross-match.
+			TCHAR wt_buf[1024];
+			LPTSTR wintitle = (aParamCount > 1 && !ParamIndexIsOmitted(1))
+				? TokenToString(*aParam[1], wt_buf, nullptr) : nullptr;
+			char wt[1024] = { 0 };
+			if (wintitle && *wintitle)
+				wcstombs(wt, wintitle, sizeof(wt) - 1);
 			LinuxAtspiRefresh();
 			std::string path, t;
-			if (LinuxAtspiFindByName(nb2, path) && LinuxAtspiGetText(path.c_str(), t))
+			if (LinuxAtspiFindByName(nb, path, wt) && LinuxAtspiGetText(path.c_str(), t))
 			{
 				std::wstring w;
 				if (!LinuxCtrlUtf8ToWide(t.data(), t.size(), w))
@@ -576,7 +585,13 @@ BIF_DECL(BIF_Linux_ControlSetText)
 			nb2[sizeof(nb2) - 1] = 0;
 			LinuxAtspiRefresh();
 			std::string path;
-			if (LinuxAtspiFindByName(nb, path) && LinuxAtspiSetText(path.c_str(), nb2))
+			TCHAR wt_buf[1024];
+			LPTSTR wintitle = (aParamCount > 2 && !ParamIndexIsOmitted(2))
+				? TokenToString(*aParam[2], wt_buf, nullptr) : nullptr;
+			char wt[1024] = { 0 };
+			if (wintitle && *wintitle)
+				wcstombs(wt, wintitle, sizeof(wt) - 1);
+			if (LinuxAtspiFindByName(nb, path, wt) && LinuxAtspiSetText(path.c_str(), nb2))
 			{
 				LinuxCtrlDelay();
 				return;
@@ -944,9 +959,15 @@ BIF_DECL(BIF_Linux_ControlClick)
 					nb[sizeof(nb) - 1] = 0;
 					LinuxAtspiRefresh();
 					std::string path;
+					TCHAR wt_buf[1024];
+					LPTSTR wintitle = (aParamCount > 1 && !ParamIndexIsOmitted(1))
+						? TokenToString(*aParam[1], wt_buf, nullptr) : nullptr;
+					char wt[1024] = { 0 };
+					if (wintitle && *wintitle)
+						wcstombs(wt, wintitle, sizeof(wt) - 1);
 					// Prefer the "click" action by name (robust across role
 					// naming), then fall back to Action[0] ("push button" etc).
-					if (LinuxAtspiFindByName(nb, path)
+					if (LinuxAtspiFindByName(nb, path, wt)
 						&& (LinuxAtspiDoAction(path.c_str(), -1, "click")
 							|| LinuxAtspiDoAction(path.c_str(), 0, nullptr)))
 					{

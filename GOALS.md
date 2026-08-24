@@ -77,6 +77,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - M5-B Control* virtual-state retirement: external windows get a clear
   NotSupported for style/enabled/checked/Combo-List/Edit-caret/ListView-row
   instead of a fake process-local shadow; text operations stay real.
+- M5-C AT-SPI WinTitle limiting: Control* on Wayland resolves WinTitle to its
+  application (D-Bus destination) before searching, skipping app-root
+  placeholders; two-process GTK oracle proves no cross-app matching.
 - Machine totals: 1135/1135 X11/headless, 17/17 Wayland and 230/230
   XWayland assertions; 27/27 headless regression tests.
 

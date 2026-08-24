@@ -631,6 +631,20 @@
 
 ### C. AT-SPI 层重做：Cache 批量 + 异步 + UTF-8（P1-5、P2-1）
 
+- **M5-C 第一项（WinTitle 限定）已交付**：`LinuxAtspiFindByName` 增加
+  `aWindowTitle` 参数——先按可访问名解析窗口归属的**应用（D-Bus destination）**，
+  再限定在该应用内搜索控件，消除同名控件跨应用误命中；AT-SPI 对象路径是
+  扁平 id，因此应用限定以 destination 为准（不用路径前缀）。Control* 的
+  Wayland 分支（GetText/SetText/Click）把 WinTitle 参数传入。同时修复
+  **应用根占位符（path=/accessible/root）被 FindByName 命中**导致对无 Text
+  接口节点调 GetText 的 assertion 与错误匹配。独立 oracle `gtk_ok.c`（两个
+  GTK 进程同名 entry、不同文本）+ `run_atspi_wintitle_oracle.sh` 在 GNOME
+  Wayland 会话验证：`ControlGetText("OK","WintA")=HelloA`、
+  `("OK","WintB")=HelloB`、不存在控件返回空。**未完成**：Cache.GetItems
+  批量遍历、异步化+预算、`A_ControlSendMode`、IME 集成。
+- **落点文件**：`core_atspi_linux.cpp/.h`、`core_ctrl_linux.cpp`、
+  `tests/oracle/gtk_ok.c`、`run_atspi_wintitle_oracle.sh`。
+
 1. **UTF-8 修复（确定性 bug，立即）**：`core_ctrl_linux.cpp:97/445` 的
    逐字节 `<0x80?:'?'` 替换为完整 UTF-8→UTF-32 解码（项目内已有转换工具函数
    可复用），中文控件文本即刻可读；

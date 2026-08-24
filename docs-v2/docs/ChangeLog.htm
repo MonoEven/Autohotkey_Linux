@@ -119,6 +119,14 @@
     The gate keys off the top-level <code>_NET_WM_PID</code>, so windows this
     script created can still use the semantics. Assertions moved to
     NotSupported coverage (1135/17/230 totals).</li>
+  <li><b>M5-C AT-SPI WinTitle limiting:</b> Control* on a native-Wayland
+    session now resolves the WinTitle to its owning application (D-Bus
+    destination) and searches only that app's accessible subtree, so
+    same-named controls in different applications no longer cross-match.
+    Application-root placeholder nodes are skipped when matching a control
+    name. An independent two-process GTK oracle proves
+    <code>ControlGetText("OK","WintA")</code> and <code>("OK","WintB")</code>
+    resolve inside their own applications.</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>
