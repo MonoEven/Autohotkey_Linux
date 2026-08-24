@@ -127,6 +127,11 @@
     name. An independent two-process GTK oracle proves
     <code>ControlGetText("OK","WintA")</code> and <code>("OK","WintB")</code>
     resolve inside their own applications.</li>
+  <li><b>M5-C AT-SPI bulk cache:</b> discovery reads each application's
+    <code>org.a11y.atspi.Cache.GetItems</code> once (500ms call budget) instead
+    of issuing GetChildren/Name calls per node. Unsupported and Qt old-signature
+    caches fall back per application. Diagnostics expose cache/fallback/item
+    counts and VM oracles prove both paths while preserving UTF-8 text results.</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>

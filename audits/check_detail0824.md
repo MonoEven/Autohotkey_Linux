@@ -640,10 +640,21 @@
   接口节点调 GetText 的 assertion 与错误匹配。独立 oracle `gtk_ok.c`（两个
   GTK 进程同名 entry、不同文本）+ `run_atspi_wintitle_oracle.sh` 在 GNOME
   Wayland 会话验证：`ControlGetText("OK","WintA")=HelloA`、
-  `("OK","WintB")=HelloB`、不存在控件返回空。**未完成**：Cache.GetItems
-  批量遍历、异步化+预算、`A_ControlSendMode`、IME 集成。
+  `("OK","WintB")=HelloB`、不存在控件返回空。
+- **M5-C 第二项（Cache 批量）已交付**：桌面 root 只取应用引用；每个应用以
+  500ms 预算调用 `/org/a11y/atspi/cache` 的 `Cache.GetItems`，解析官方新签名
+  `a((so)(so)(so)iiassusau)` 的 object/name 字段，一次载入 realized tree；
+  不支持、空回复或 Qt 旧签名则只对该应用回退原有 GetChildren 遍历。
+  `AHK_ATSPI_DUMP` 首行输出 cache/fallback/items 计数，
+  `AHK_ATSPI_DISABLE_CACHE=1` 可强制验收回退。GNOME VM：正常矩阵
+  `cache_apps=12/cache_items=2043/fallback=0`；独立 oracle 同时通过 cache
+  （11 app/1935 item）和强制 fallback（11 app）并读取 `CacheText`。官方来源：
+  [at-spi2-core Cache](https://gnome.pages.gitlab.gnome.org/at-spi2-core/devel-docs/doc-org.a11y.atspi.Cache.html)
+  与 [toolkit 兼容说明](https://gnome.pages.gitlab.gnome.org/at-spi2-core/devel-docs/toolkits.html)。
+  **未完成**：pending-call 异步化+总预算、`A_ControlSendMode`、IME 集成。
 - **落点文件**：`core_atspi_linux.cpp/.h`、`core_ctrl_linux.cpp`、
-  `tests/oracle/gtk_ok.c`、`run_atspi_wintitle_oracle.sh`。
+  `tests/oracle/gtk_ok.c`、`run_atspi_wintitle_oracle.sh`、
+  `run_atspi_cache_oracle.sh`、`scenarios/atspi_matrix/run_matrix.sh`。
 
 1. **UTF-8 修复（确定性 bug，立即）**：`core_ctrl_linux.cpp:97/445` 的
    逐字节 `<0x80?:'?'` 替换为完整 UTF-8→UTF-32 解码（项目内已有转换工具函数

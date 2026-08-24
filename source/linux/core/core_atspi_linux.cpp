@@ -7,7 +7,8 @@
 //   - bus address: org.a11y.Bus.GetAddress (on the session bus) returns
 //     the at-spi bus address; the registry lives there as
 //     org.a11y.atspi.Registry with root /org/a11y/atspi/accessible/root.
-//   - Accessible.GetChildren -> a(so) [name, object-path]
+//   - Cache.GetItems -> a((so)(so)(so)iiassusau), one bulk call per app;
+//     unsupported/old-signature apps fall back to Accessible.GetChildren.
 //   - Accessible.Name / ChildCount are D-Bus PROPERTIES
 //   - Accessible.GetRoleName() -> s
 //   - Text.GetText(0, -1) -> s ; EditableText.SetTextContents(s)
@@ -25,9 +26,14 @@ namespace {
 
 const char *REG = "org.a11y.atspi.Registry";
 const char *IFACE = "org.a11y.atspi.Accessible";
+const char *CACHE_IFACE = "org.a11y.atspi.Cache";
+const char *CACHE_PATH = "/org/a11y/atspi/cache";
 
 DBusConnection *sBus = nullptr;
 bool sTried = false;
+int sLastCacheApps = 0;
+int sLastFallbackApps = 0;
+int sLastCacheItems = 0;
 
 struct AtspiRef
 {
@@ -141,6 +147,122 @@ std::string GetNameProp(const char *aDest, const char *aPath)
 	}
 	dbus_error_free(&err);
 	return out;
+}
+
+// Parse one item of the preferred Cache.GetItems signature:
+// ((so)(so)(so)iiassusau).  We only need the main object reference and its
+// cached Name; role/states remain in the reply for future enrichment.
+static bool ReadCacheItemNew(DBusMessageIter *aItem, const char *aFallbackDest, AtspiRef &aOut)
+{
+	if (dbus_message_iter_get_arg_type(aItem) != DBUS_TYPE_STRUCT)
+		return false;
+	DBusMessageIter fields;
+	dbus_message_iter_recurse(aItem, &fields);
+	std::string obj_dest, obj_path;
+	if (!ReadRef(&fields, obj_dest, obj_path) || obj_path.empty())
+		return false;
+	// main ref -> application ref -> parent ref -> index -> child count ->
+	// interfaces -> name (six iterator advances).
+	for (int i = 0; i < 6; ++i)
+		if (!dbus_message_iter_next(&fields))
+			return false;
+	if (dbus_message_iter_get_arg_type(&fields) != DBUS_TYPE_STRING)
+		return false; // Old Qt signature reaches a different type here.
+	const char *name = nullptr;
+	dbus_message_iter_get_basic(&fields, &name);
+	aOut.name = name ? name : "";
+	aOut.path = obj_path;
+	aOut.dest = obj_dest.empty() ? (aFallbackDest ? aFallbackDest : "") : obj_dest;
+	return !aOut.dest.empty();
+}
+
+// One bulk round-trip per application.  Unsupported/old signatures fall back
+// to WalkChildren for that application only, preserving Qt compatibility.
+static bool LoadCacheForApp(const char *aDest)
+{
+	// Test/diagnostic override: prove the per-application GetChildren fallback
+	// without requiring an old-signature Qt process.
+	if (getenv("AHK_ATSPI_DISABLE_CACHE"))
+		return false;
+	DBusMessage *rep = AtspiCallTo(aDest, CACHE_PATH, CACHE_IFACE, "GetItems", 500);
+	if (!rep)
+		return false;
+	DBusMessageIter it;
+	if (!dbus_message_iter_init(rep, &it)
+		|| dbus_message_iter_get_arg_type(&it) != DBUS_TYPE_ARRAY)
+	{
+		dbus_message_unref(rep);
+		return false;
+	}
+	DBusMessageIter arr;
+	dbus_message_iter_recurse(&it, &arr);
+	size_t before = sTable.size();
+	int parsed = 0;
+	bool valid = true;
+	while (dbus_message_iter_get_arg_type(&arr) != DBUS_TYPE_INVALID)
+	{
+		AtspiRef e;
+		if (!ReadCacheItemNew(&arr, aDest, e))
+		{
+			valid = false;
+			break;
+		}
+		sTable.push_back(std::move(e));
+		++parsed;
+		dbus_message_iter_next(&arr);
+	}
+	dbus_message_unref(rep);
+	if (!valid || parsed == 0)
+	{
+		sTable.resize(before);
+		return false;
+	}
+	++sLastCacheApps;
+	sLastCacheItems += parsed;
+	return true;
+}
+
+void WalkChildren(const char *aDest, const char *aPath, int aDepth, int aMaxDepth);
+
+// Read the desktop's application roots once, then load each application's
+// cache in bulk.  The registry itself has no per-app cache.
+static bool RefreshApplications(int aMaxDepth)
+{
+	DBusMessage *rep = AtspiCall(sBus, "/org/a11y/atspi/accessible/root", IFACE, "GetChildren");
+	if (!rep)
+		return false;
+	DBusMessageIter it;
+	if (!dbus_message_iter_init(rep, &it)
+		|| dbus_message_iter_get_arg_type(&it) != DBUS_TYPE_ARRAY)
+	{
+		dbus_message_unref(rep);
+		return false;
+	}
+	DBusMessageIter arr;
+	dbus_message_iter_recurse(&it, &arr);
+	while (dbus_message_iter_get_arg_type(&arr) != DBUS_TYPE_INVALID)
+	{
+		std::string owner, path;
+		if (ReadRef(&arr, owner, path) && !owner.empty() && !path.empty())
+		{
+			std::string disp = owner;
+			if (disp[0] == ':')
+			{
+				std::string n = GetNameProp(owner.c_str(), path.c_str());
+				if (!n.empty())
+					disp = n;
+			}
+			sTable.push_back(AtspiRef{disp, path, owner});
+			if (!LoadCacheForApp(owner.c_str()))
+			{
+				++sLastFallbackApps;
+				WalkChildren(owner.c_str(), path.c_str(), 1, aMaxDepth);
+			}
+		}
+		dbus_message_iter_next(&arr);
+	}
+	dbus_message_unref(rep);
+	return true;
 }
 
 // Recursive BFS over the accessible tree (bounded depth + node count).
@@ -281,20 +403,27 @@ bool LinuxAtspiAvailable()
 int LinuxAtspiRefresh()
 {
 	sTable.clear();
+	sLastCacheApps = 0;
+	sLastFallbackApps = 0;
+	sLastCacheItems = 0;
 	if (!LinuxAtspiAvailable())
 		return 0;
-	int max = 6; // Default depth reaches app windows and common controls.
+	int max = 6; // Fallback depth reaches app windows and common controls.
 	if (const char *extra = getenv("AHK_ATSPI_MAXDEPTH"))
 		max = atoi(extra);
 	if (max < 1)
 		max = 1;
-	WalkChildren(REG, "/org/a11y/atspi/accessible/root", 1, max);
-	// Diagnostics: AHK_ATSPI_DUMP=<path> writes the tree (name<TAB>path).
+	if (!RefreshApplications(max))
+		WalkChildren(REG, "/org/a11y/atspi/accessible/root", 1, max);
+	// Diagnostics: AHK_ATSPI_DUMP=<path> writes cache/fallback counts and the
+	// flat table (name<TAB>path).  This is also the external bulk-cache oracle.
 	if (const char *dump = getenv("AHK_ATSPI_DUMP"))
 	{
 		FILE *f = fopen(dump, "w");
 		if (f)
 		{
+			fprintf(f, "# cache_apps=%d fallback_apps=%d cache_items=%d nodes=%zu\n",
+				sLastCacheApps, sLastFallbackApps, sLastCacheItems, sTable.size());
 			for (const auto &e : sTable)
 				fprintf(f, "%s\t%s\n", e.name.c_str(), e.path.c_str());
 			fclose(f);

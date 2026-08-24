@@ -7,9 +7,10 @@
 //
 // This module is a MINIMAL AT-SPI client (libdbus):
 //   - resolves the at-spi bus address via org.a11y.Bus.GetAddress,
-//   - walks the desktop tree (root -> desktop frame -> app windows ->
-//     widgets) using Accessible.GetChildren / GetChildAtIndex,
-//   - reads Name/ChildCount properties and GetRoleName,
+//   - bulk-loads each application's realized objects with Cache.GetItems
+//     (new signature), falling back per app to Accessible.GetChildren,
+//   - reads Name/ChildCount properties and GetRoleName when fallback/enrichment
+//     is required,
 //   - reads component geometry (Component.GetExtents),
 //   - triggers actions (Action.DoAction) and edits text
 //     (EditableText.SetTextContents), the Control* primitives.

@@ -1,5 +1,5 @@
 id: atspi_matrix
-title: "AT-SPI app matrix: ControlGetText finds gnome-terminal + firefox under a GNOME Wayland session"
+title: "AT-SPI Cache matrix: bulk discovery finds terminal, Firefox and UTF-8 GTK controls"
 script: run_matrix.sh
 script_type: sh
 check: marker:/tmp/scn_atspi_matrix

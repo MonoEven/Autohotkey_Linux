@@ -39,6 +39,14 @@ the broker character stream (a Hotstring fires from broker-distributed uinput
 events decoded through the X11 layout). All three need root for EVIOCGRAB, so
 they run on the VM rather than GitHub-hosted runners.
 
+`run_atspi_wintitle_oracle.sh` launches two independent GTK applications with
+same-named controls and proves WinTitle confines lookup to the owning app.
+`run_atspi_cache_oracle.sh` then proves both the Cache.GetItems bulk path and
+an explicitly forced per-application GetChildren fallback while preserving
+UTF-8 text. These require a real GNOME Wayland accessibility session and run on
+the VM; the scenario `atspi_matrix` additionally requires a non-zero cache
+count before it may pass.
+
 The physical-layer VM lane uses `tools/linux/uinput-inject.c`: its virtual
 keyboard deliberately has no AHK identity, so evdev sees an independent input
 device. It remains permission-gated and is not pretended to run on ordinary

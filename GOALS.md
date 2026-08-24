@@ -80,6 +80,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - M5-C AT-SPI WinTitle limiting: Control* on Wayland resolves WinTitle to its
   application (D-Bus destination) before searching, skipping app-root
   placeholders; two-process GTK oracle proves no cross-app matching.
+- M5-C AT-SPI bulk cache: one Cache.GetItems call per application (500ms),
+  per-app GetChildren fallback for unsupported/old Qt signatures; diagnostics
+  and VM oracle prove cache and forced-fallback paths.
 - Machine totals: 1135/1135 X11/headless, 17/17 Wayland and 230/230
   XWayland assertions; 27/27 headless regression tests.
 
