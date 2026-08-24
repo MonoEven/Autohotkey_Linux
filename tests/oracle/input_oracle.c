@@ -160,6 +160,25 @@ static int record_x11(const char *out_path, const char *keysym_name,
     return 0;
 }
 
+static int inject_keycode_state_x11(unsigned int raw_code, int is_press)
+{
+    Display *d = XOpenDisplay(NULL);
+    if (!d) {
+        fprintf(stderr, "input-oracle: cannot open DISPLAY\n");
+        return 2;
+    }
+    KeyCode code = raw_code > 0 && raw_code <= 255 ? (KeyCode)raw_code : 0;
+    if (!code || !XTestFakeKeyEvent(d, code, is_press ? True : False, CurrentTime)) {
+        fprintf(stderr, "input-oracle: invalid X keycode/state: %u/%s\n",
+                raw_code, is_press ? "down" : "up");
+        XCloseDisplay(d);
+        return 2;
+    }
+    XSync(d, False);
+    XCloseDisplay(d);
+    return 0;
+}
+
 static int inject_keycode_x11(unsigned int raw_code, int hold_ms)
 {
     Display *d = XOpenDisplay(NULL);
@@ -222,7 +241,8 @@ static void usage(const char *argv0)
         "  %s record-x11 OUT KEYSYM COUNT TIMEOUT_MS\n"
         "  %s inject-x11 KEYSYM HOLD_MS\n"
         "  %s inject-keycode-x11 X_KEYCODE HOLD_MS\n"
-        "  %s probe-grab-x11 KEYSYM\n", argv0, argv0, argv0, argv0);
+        "  %s inject-keycode-state-x11 X_KEYCODE down|up\n"
+        "  %s probe-grab-x11 KEYSYM\n", argv0, argv0, argv0, argv0, argv0);
 }
 
 int main(int argc, char **argv)
@@ -233,6 +253,14 @@ int main(int argc, char **argv)
         return inject_x11(argv[2], atoi(argv[3]));
     if (argc == 4 && !strcmp(argv[1], "inject-keycode-x11"))
         return inject_keycode_x11((unsigned int)strtoul(argv[2], NULL, 0), atoi(argv[3]));
+    if (argc == 4 && !strcmp(argv[1], "inject-keycode-state-x11")) {
+        if (strcmp(argv[3], "down") && strcmp(argv[3], "up")) {
+            usage(argv[0]);
+            return 2;
+        }
+        return inject_keycode_state_x11((unsigned int)strtoul(argv[2], NULL, 0),
+                                        !strcmp(argv[3], "down"));
+    }
     if (argc == 3 && !strcmp(argv[1], "probe-grab-x11"))
         return probe_grab_x11(argv[2]);
     usage(argv[0]);

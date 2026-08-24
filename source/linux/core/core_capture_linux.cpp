@@ -334,6 +334,15 @@ int LinuxCaseMode(const wchar_t *aText, int aLen)
 	return 0;
 }
 
+void LinuxPrepareHotstringThread(Hotstring *aHotstring)
+{
+	g_script.mPriorHotkeyName = g_script.mThisHotkeyName;
+	g_script.mPriorHotkeyStartTime = g_script.mThisHotkeyStartTime;
+	g_script.mThisHotkeyName = aHotstring->mName;
+	g_script.mThisHotkeyStartTime = GetTickCount();
+	g_script.mThisHotkeyModifiersLR = 0;
+}
+
 void LinuxRawSendBackspaces(Display *d, int aCount)
 {
 	if (aCount <= 0)
@@ -354,6 +363,7 @@ void LinuxRawFireHotstring(Display *d, Hotstring *aHs, int aCaseMode
 		LinuxRawSendBackspaces(d, aEraseCount);
 	if (aHs->mCallback)
 	{
+		LinuxPrepareHotstringThread(aHs);
 		++g_nThreads;
 		++g;
 		InitNewThread(aHs->mPriority, false, false);
@@ -469,9 +479,10 @@ void LinuxCaptureFire(Display *d, Hotstring *aHs, int aCaseMode, bool aForwardEn
 	sBufLen = 0;
 	if (aHs->mCallback)
 	{
+		LinuxPrepareHotstringThread(aHs);
 		++g_nThreads;
 		++g;
-		InitNewThread(0, false, false);
+		InitNewThread(aHs->mPriority, false, false);
 		aHs->PerformInNewThreadMadeByCaller();
 		ResumeUnderlyingThread();
 	}
@@ -957,10 +968,12 @@ bool LinuxCaptureFeedInput(Display *d, XEvent &ev
 			LinuxInputNotifyQueue(active, NOTIFY_KEYUP, key.vk, key.sc, 0);
 		return true; // Releases are consumed while the input is active.
 	}
-	if (LinuxIsModifierKey(key.keysym))
-		return true;
 	if (active->ScriptObject && active->ScriptObject->onKeyDown)
 		LinuxInputNotifyQueue(active, NOTIFY_KEYDOWN, key.vk, key.sc, 0);
+	// Modifier keys do not join the character stream, but Windows InputHook
+	// still reports them through OnKeyDown/OnKeyUp.
+	if (LinuxIsModifierKey(key.keysym))
+		return true;
 	wchar_t ch = LinuxInputHookChar(key);
 	// KeyDown/EndKey above remain physical-key driven, but preedit text and its
 	// Backspaces never mutate the character buffer. CommitText is fed later.

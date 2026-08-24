@@ -1,0 +1,16 @@
+{"schema":1,"seq":1,"case":"meta","kind":"runtime","vk":0,"sc":0,"text":0,"name":"v2:ptr8"}
+{"schema":1,"seq":2,"case":"input-basic","kind":"down","vk":65,"sc":30,"text":0,"name":""}
+{"schema":1,"seq":3,"case":"input-basic","kind":"char","vk":0,"sc":0,"text":97,"name":""}
+{"schema":1,"seq":4,"case":"input-basic","kind":"up","vk":65,"sc":30,"text":0,"name":""}
+{"schema":1,"seq":5,"case":"input-basic","kind":"down","vk":160,"sc":42,"text":0,"name":""}
+{"schema":1,"seq":6,"case":"input-basic","kind":"down","vk":65,"sc":30,"text":0,"name":""}
+{"schema":1,"seq":7,"case":"input-basic","kind":"char","vk":0,"sc":0,"text":65,"name":""}
+{"schema":1,"seq":8,"case":"input-basic","kind":"up","vk":65,"sc":30,"text":0,"name":""}
+{"schema":1,"seq":9,"case":"input-basic","kind":"up","vk":160,"sc":42,"text":0,"name":""}
+{"schema":1,"seq":10,"case":"input-basic","kind":"down","vk":124,"sc":100,"text":0,"name":""}
+{"schema":1,"seq":11,"case":"input-basic","kind":"up","vk":124,"sc":100,"text":0,"name":""}
+{"schema":1,"seq":12,"case":"input-basic","kind":"end","vk":0,"sc":0,"text":0,"name":"Stopped"}
+{"schema":1,"seq":13,"case":"hotkeys","kind":"fire","vk":0,"sc":0,"text":0,"name":"^F11"}
+{"schema":1,"seq":14,"case":"hotkeys","kind":"fire","vk":0,"sc":0,"text":0,"name":"F12 Up"}
+{"schema":1,"seq":15,"case":"hotstring","kind":"fire","vk":0,"sc":0,"text":0,"name":":B0*:zxq"}
+{"schema":1,"seq":16,"case":"meta","kind":"complete","vk":0,"sc":0,"text":0,"name":""}

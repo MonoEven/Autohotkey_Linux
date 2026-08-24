@@ -602,6 +602,30 @@ void LinuxFindHotkey(Display *d, unsigned int aId, unsigned int aEvMods, modLR_t
 	}
 }
 
+// True if an enabled, currently fireable keyboard-up variant owns this press.
+// A passive X grab must retain the press so the corresponding release is sent
+// back to this connection; forwarding the press first loses the release.
+bool LinuxKeyUpVariantExists(unsigned int aKeycode,
+	unsigned int aEvMods, modLR_type aEvLR)
+{
+	std::unordered_map<unsigned int, std::vector<int>>::const_iterator it
+		= sIndex.buckets.find((aKeycode << 8) | aEvMods);
+	if (it == sIndex.buckets.end())
+		return false;
+	for (size_t k = 0; k < it->second.size(); ++k)
+	{
+		Hotkey *hk = Hotkey::shk[it->second[k]];
+		if (!hk || !hk->mKeyUp || hk->mModifierVK || hk->mModifierSC)
+			continue;
+		if (!LinuxHotkeyModsMatch(hk, aEvMods, aEvLR))
+			continue;
+		HotkeyVariant *vp = hk->FindVariant();
+		if (vp && vp->mEnabled && hk->PerformIsAllowed(*vp))
+			return true;
+	}
+	return false;
+}
+
 // ---------------------------------------------------------------------------
 // Event matching and dispatch
 // ---------------------------------------------------------------------------
@@ -752,6 +776,11 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 	}
 	else
 	{
+		// For a key-up hotkey, retain the press-side passive grab so X sends us
+		// the release. This mirrors the established button-up path below.
+		if (!is_up && LinuxKeyUpVariantExists(
+			(unsigned int)ev.xkey.keycode, evmods, evlr))
+			return;
 		// No variant may fire (HotIf false, Suspend, thread limits, or this
 		// event belongs to a pass-through/key-up hotkey's non-firing phase):
 		// give the typed-text capture engine a chance to hold/consume it

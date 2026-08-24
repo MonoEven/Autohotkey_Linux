@@ -575,6 +575,14 @@
      device id）；纳入 CI 为非阻塞报告，成熟后按模块转 gate。
   4. 覆盖顺序按用户价值：Send 键序 → hotkey 触发矩阵（修饰/wildcard/up/~）→
      hotstring 选项矩阵 → InputHook → remap。
+- **M6-T2 第一批已交付并转blocking gate**：从官方v2.0.26 x64 zip收集黄金，
+  固定官方archive SHA-256、解压exe SHA-256、trace SHA-256；Windows独立sender
+  连续3次字节一致。JSONL v1严格比较seq/VK/SC/Unicode/回调名/结束原因，仅不记录
+  timestamp/device id。Linux用独立XTEST C injector回放16行：`a`、Shift+A、物理
+  F13、`^F11`、`F12 Up`、动态Hotstring全部与Windows精确一致，连续5轮通过并
+  纳入CI/artifact。该差分直接发现并修复modifier OnKeyDown缺失、F13 release
+  VK=0、键盘up variant丢release、Hotstring `A_ThisHotkey`为空。**剩余T2**：
+  wildcard/~、custom combo/remap、SendInput/Play时序与完整Hotstring选项矩阵。
 - **T3 真桌面矩阵**：GitHub runner 支持 KVM 嵌套的 job 跑 GNOME/KDE cloud
   image（项目已有 `vmctl.py` 资产）；每夜跑，白天 CI 维持 headless。skip
   改为**显式预算**：`SUPPORT_MATRIX.md` 声明每场景"必须运行的环境集合"，
@@ -588,8 +596,13 @@
   `NameOwnerChanged`；owner消失清session/bind/map但保留wanted，replacement出现
   自动CreateSession+Bind；session bus断线丢弃dead connection并以500ms节流重连。
   CI独立fake portal A/B进程真实换owner，同一AHK PID、同一shortcut id依次收到
-  两次Activated；连续3轮通过。剩余T4：24h soak夜跑、`kill -STOP` compositor、
-  evdev设备add/remove。
+  两次Activated；连续3轮通过。
+- **M6-T4 mixed soak基建已交付**：同一参数化hotkey+Hotstring+clipboard+Timer
+  负载在CI跑30s并上传事件数/RSS slope JSON；夜跑入口接受
+  `AHK_SOAK_SECONDS=86400`。GNOME VM 5分钟1408轮，三类事件最终一致，无丢失；
+  X11 clipboard发布以≤200ms有界等待，记录535次重试；warm-up后RSS仅+148KB，
+  斜率29.60KB/min。**未完成**：实际24h结果、`kill -STOP` compositor、evdev
+  设备add/remove。
 - **M6-T5 oracle收紧已交付**：`lint_oracles.py`静态检查22个scenario：expected-pass
   必须有脚本+显式check，marker必须是精确`/tmp/scn_*`，script grep必须锚定且消费
   scenario自有证据；D-Bus monitor必须绑定动态`destination=$BUS`与精确object path，

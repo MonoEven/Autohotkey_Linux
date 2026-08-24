@@ -72,6 +72,12 @@ call remains successful. Cache/fallback/budget dumps require non-zero pending
 call/pump-slice counts; see `GUI_HOST_MATRIX.md` for versions and the explicit
 Monaco-content limitation.
 
+`run_mixed_soak.sh` runs one parameterized hotkey/Hotstring/clipboard/Timer
+workload. CI uses 30 seconds; `AHK_SOAK_SECONDS=86400` is the unchanged nightly
+profile. It gates exact event counts and bounded clipboard convergence, samples
+warm RSS and emits a slope summary. The current VM evidence is 1408 matching
+rounds in five minutes with +148KB warm RSS; this is not a 24-hour claim.
+
 `run_portal_restart_oracle.sh` starts an independent GlobalShortcuts portal twice
 on one private session bus. It proves one unchanged AHK process receives an
 activation, survives the owner disappearance, recreates/rebinds its session to

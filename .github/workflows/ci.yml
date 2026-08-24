@@ -106,6 +106,18 @@ jobs:
         if: matrix.build == 'core'
         run: xvfb-run -a bash tests/oracle/run_input_event_model_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
 
+      - name: Windows v2.0.26 differential trace gate
+        if: matrix.build == 'core'
+        run: bash tests/differential/run_linux_trace.sh "$BUILD_DIR/source/linux/core/ahk_core"
+
+      - name: Upload Windows differential evidence
+        if: always() && matrix.build == 'core'
+        uses: actions/upload-artifact@v5
+        with:
+          name: windows-v2.0.26-differential
+          path: tests/differential/out/
+          if-no-files-found: error
+
       - name: Fcitx5 IME commit protocol oracle
         if: matrix.build == 'core'
         run: bash tests/oracle/run_fcitx5_ime_protocol_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
@@ -188,26 +200,18 @@ jobs:
       - name: Scenario runner (Xvfb)
         run: xvfb-run -a bash tests/scenarios/run_scenarios.sh "$BUILD_DIR/source/linux/core/ahk_core" --env x11
 
-      # check_detail0821 §16-6 / R4: a short soak -- high-frequency-ish Send
-      # under Xvfb with RSS stability (no unbounded growth) and no event loss.
-      - name: Soak (RSS stability + event count)
-        run: |
-          printf 'cnt := 0\nF6::{\n    global cnt\n    cnt++\n}\nSleep 300\nLoop 100 {\n    Send("{F6}")\n    Sleep 200\n}\nSleep 1000\nFileAppend("count=" cnt "\\n", "/tmp/soak_out.txt")\nExitApp\n' > /tmp/soak.ahk
-          xvfb-run -a bash -c '"$1" /tmp/soak.ahk' _ "$BUILD_DIR/source/linux/core/ahk_core" > /tmp/soak_run.log 2>&1 &
-          SPID=$!
-          RSS0=""; RSSN=""
-          for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
-            kill -0 $SPID 2>/dev/null || break
-            rss=$(grep VmRSS /proc/$SPID/status 2>/dev/null | awk '{print $2}')
-            [ -n "$rss" ] && { [ -z "$RSS0" ] && RSS0=$rss; RSSN=$rss; }
-            sleep 2
-          done
-          wait $SPID
-          grep -q 'count=100' /tmp/soak_out.txt || { echo "FAIL: event loss"; exit 1; }
-          GROWTH=$(( ${RSSN:-0} - ${RSS0:-0} ))
-          echo "soak RSS growth_kb=$GROWTH (start=${RSS0:-?} end=${RSSN:-?})"
-          [ "$GROWTH" -lt 20000 ] || { echo "FAIL: RSS grew > 20MB"; exit 1; }
-          echo soak-pass
+      # M6-T4: the same parameterized hotkey+Hotstring+clipboard+Timer workload
+      # runs for 30s in CI and accepts AHK_SOAK_SECONDS=86400 on the nightly VM.
+      - name: Mixed soak (RSS slope + event counts)
+        run: AHK_SOAK_SECONDS=30 xvfb-run -a bash tests/oracle/run_mixed_soak.sh "$BUILD_DIR/source/linux/core/ahk_core"
+
+      - name: Upload mixed-soak evidence
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: mixed-soak-${{ matrix.build }}
+          path: tests/oracle/out/mixed-soak-summary.json
+          if-no-files-found: error
 
       # check0819: the published numbers in CHECK_REPORT.md used to drift by
       # hand (Wayland "847", XWayland 235 vs 247).  This recomputes every

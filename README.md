@@ -91,7 +91,9 @@ ahk_core --pack my-script script.ahk
 The authoritative test totals are **1143/1143** X11/headless assertions,
 **17/17** native-Wayland assertions and **234/234** XWayland assertions. CI
 also runs regular, ASan and TSan-input builds, four distro containers,
-no-XWayland, packed-binary acceptance, scenario gates and an RSS/event-count soak.
+no-XWayland, packed-binary acceptance, identity-bound scenarios, a mixed
+hotkey/Hotstring/clipboard soak and the first strict official-Windows v2.0.26
+differential trace gate.
 
 ## Important limits
 

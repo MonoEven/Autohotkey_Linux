@@ -187,6 +187,17 @@
     Action semantics. VS Code windows are captured on X11 and Wayland, but the
     Monaco document content remains unexposed (U+FFFC/window-only), recorded as
     a versioned limitation rather than support.</li>
+  <li><b>M6 mixed reliability soak:</b> one parameterized hotkey, Hotstring,
+    clipboard and Timer workload runs for 30 seconds in CI and accepts 86400
+    seconds on the nightly VM. A 5-minute VM profile completed 1408 matching
+    rounds; warm RSS grew 148KB (29.60KB/min). The actual 24-hour result remains
+    explicitly open.</li>
+  <li><b>M6 Windows v2.0.26 differential gate (first slice):</b> the official
+    x64 archive, executable and repeated byte-identical golden trace are hash
+    pinned. An independent Linux XTEST replay strictly matches all 16 rows of
+    VK/SC/down-up/Unicode/Hotkey/Hotstring observations. This exposed and fixed
+    modifier OnKeyDown, F13 release VK, keyboard-up hotkey and Hotstring
+    A_ThisHotkey defects; wider wildcard/remap/options matrices remain open.</li>
   <li><b>M6 portal restart fault gate:</b> GlobalShortcuts now watches the
     portal name owner, clears stale session/bind state and automatically creates
     and binds against a replacement owner. An independent two-process fake

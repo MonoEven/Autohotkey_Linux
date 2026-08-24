@@ -251,6 +251,17 @@ bool LinuxKeyModelX11Decode(Display *aDisplay, KeyCode aKeycode, unsigned int aX
 	aOut.keysym = (KeySym)xkb_state_key_get_one_sym(event_state, (xkb_keycode_t)aKeycode);
 	aOut.text = xkb_state_key_get_utf32(event_state, (xkb_keycode_t)aKeycode);
 	aOut.vk = KeysymToVk((xkb_keysym_t)aOut.keysym);
+	// Some synthetic/headless X servers expose canonical F13-F24 physical
+	// keycodes without a usable keysym on release. Preserve the logical VK from
+	// the canonical set-1 layer instead of emitting VK=0.
+	if (!aOut.vk)
+	{
+		unsigned int sc = (unsigned int)aOut.sc;
+		if (sc >= 0x064 && sc <= 0x06E)
+			aOut.vk = (vk_type)(0x7C + sc - 0x064); // F13..F23.
+		else if (sc == 0x076)
+			aOut.vk = (vk_type)0x87; // F24.
+	}
 	xkb_state_unref(event_state);
 	return true;
 }

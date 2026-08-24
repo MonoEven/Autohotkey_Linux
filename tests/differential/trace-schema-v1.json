@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autohotkey.com/linux/tests/differential/trace-schema-v1.json",
+  "title": "AutoHotkey input semantic trace v1 row",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "seq", "case", "kind", "vk", "sc", "text", "name"],
+  "properties": {
+    "schema": { "const": 1 },
+    "seq": { "type": "integer", "minimum": 1 },
+    "case": { "type": "string" },
+    "kind": { "enum": ["runtime", "down", "up", "char", "end", "fire", "complete"] },
+    "vk": { "type": "integer", "minimum": 0 },
+    "sc": { "type": "integer", "minimum": 0 },
+    "text": { "type": "integer", "minimum": 0, "maximum": 1114111 },
+    "name": { "type": "string" }
+  }
+}

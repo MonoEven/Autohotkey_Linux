@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "runtime": "AutoHotkey v2.0.26 x64",
+  "platform": "windows-x64",
+  "collected_utc": "2026-08-24T22:18:00Z",
+  "official_release_url": "https://github.com/AutoHotkey/AutoHotkey/releases/tag/v2.0.26",
+  "archive_url": "https://github.com/AutoHotkey/AutoHotkey/releases/download/v2.0.26/AutoHotkey_2.0.26.zip",
+  "archive_sha256": "43522AA3122A57784AC5DB30ABF85C2244475C36ACD7796E2C993355F9E926AE",
+  "executable": "AutoHotkey64.exe",
+  "executable_sha256": "A2A54B8ABC476D7671D4DE0771BB54BF5F2373D79FF6871D0BA6A62C3B88AE00",
+  "trace": "windows-v2.0.26-x64.jsonl",
+  "trace_sha256": "F3D8CBABD11AC14563950DD9947AE9AE2949419FCCE12FC307234EB42F3D998D",
+  "repeat_runs": 3,
+  "byte_identical": true,
+  "scope": [
+    "InputHook VK/SC down-up sequence",
+    "InputHook Unicode character sequence",
+    "modified hotkey activation",
+    "key-up hotkey activation",
+    "Hotstring activation"
+  ]
+}

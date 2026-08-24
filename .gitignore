@@ -15,6 +15,7 @@ ipch/
 # GitHub Pages site)
 tests/doccheck/out/
 tests/oracle/out/
+tests/differential/out/
 
 # Release packaging output
 dist/
