@@ -222,9 +222,16 @@
   - 无法收缩（`KeyOpt("{All}","S")`）时才回退全键 grab，并打运行时警告；
   - evdev/broker lane 可用时优先路由（天然支持全局抑制）。
 - **落点文件**：`core_inputhook_linux.cpp`、`core_capture_linux.cpp`。
-- **验收标准**：`InputHook("V")`（默认可见模式）零 grab；
-  `InputHook("S", "{Enter}")` 只 grab Enter 一键。
-- **修复复杂度：高**（识别引擎重写 + 选项矩阵回归），但比 broker 独立可交付。
+- **M2-L 已交付（X11 分级抑制）**：raw 始终观察全流，但只给实际需要
+  suppression 的 canonical keycodes 安装 passive grabs；selected keys 由 grab
+  喂 InputHook，raw 对其让位避免双计。`InputHook("V") + KeyOpt("{Enter}","S")`
+  只 grab/suppress Enter，其他字符原始可见；运行时 KeyOpt S↔V 立即差量重建。
+  默认 non-visible hook 只 grab当前 layout 能产文本的键而非 8..255，并在范围
+  过大时打印收窄指引。该实现同时修复 Linux `vk_to_sc(vk,true)` 忽略
+  secondary SC 导致 Enter/NumpadEnter、Delete/NumpadDel KeyOpt/EndKey 混淆。
+- **验收标准**：`InputHook("V")` 零 grab；V + selected Enter S 只 grab
+  Enter；独立 XGrabKey probe + target visibility + runtime reconfigure 全部通过。
+- **修复复杂度：高**（已完成本体内 X11 分级；broker 路由留 M4）。
 
 #### C. SendLevel 建模（解 G4，与 §5 联动）
 

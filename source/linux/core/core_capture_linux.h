@@ -11,6 +11,8 @@ struct GrabSpec;
 bool LinuxCaptureActive();
 bool LinuxCaptureNeedsGrabs();
 bool LinuxCaptureUsesRaw();
+bool LinuxCaptureKeycodeNeedsGrab(Display *d, KeyCode aKeycode);
+void LinuxCaptureGrabKeycodes(Display *d, std::set<KeyCode> &aOut);
 
 // Add the all-keys passive-grab set to aDesired (implemented in
 // core_hotkey_linux.cpp, which owns the modifier masks).
@@ -34,6 +36,7 @@ void LinuxCaptureStateChanged();
 
 // Keyboard map changed: the grab set must be rebuilt.
 void LinuxCaptureMappingNotify();
+void LinuxCaptureKeymapChanged();
 
 // Keysym -> Unicode character (ASCII/Latin-1 direct, Unicode keysym range
 // 0x01000000.. by subtraction, \r/\t/\b for the named keys).  0 = not text.

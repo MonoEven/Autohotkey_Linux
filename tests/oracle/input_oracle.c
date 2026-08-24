@@ -18,6 +18,14 @@
 #include <time.h>
 #include <unistd.h>
 
+static volatile int g_bad_access = 0;
+static int grab_error(Display *d, XErrorEvent *e)
+{
+    (void)d;
+    if (e->error_code == BadAccess) g_bad_access = 1;
+    return 0;
+}
+
 static uint64_t monotonic_us(void)
 {
     struct timespec ts;
@@ -189,12 +197,32 @@ static int inject_x11(const char *keysym_name, int hold_ms)
     return code ? inject_keycode_x11((unsigned int)code, hold_ms) : 2;
 }
 
+static int probe_grab_x11(const char *keysym_name)
+{
+    Display *d = XOpenDisplay(NULL);
+    if (!d) return 2;
+    KeyCode code = resolve_key(d, keysym_name);
+    if (!code) { XCloseDisplay(d); return 2; }
+    g_bad_access = 0;
+    int (*previous)(Display *, XErrorEvent *) = XSetErrorHandler(grab_error);
+    XGrabKey(d, code, 0, DefaultRootWindow(d), False, GrabModeAsync, GrabModeAsync);
+    XSync(d, False);
+    XSetErrorHandler(previous);
+    if (!g_bad_access)
+        XUngrabKey(d, code, 0, DefaultRootWindow(d));
+    XSync(d, False);
+    printf("%s\n", g_bad_access ? "conflict" : "free");
+    XCloseDisplay(d);
+    return 0;
+}
+
 static void usage(const char *argv0)
 {
     fprintf(stderr, "usage:\n"
         "  %s record-x11 OUT KEYSYM COUNT TIMEOUT_MS\n"
         "  %s inject-x11 KEYSYM HOLD_MS\n"
-        "  %s inject-keycode-x11 X_KEYCODE HOLD_MS\n", argv0, argv0, argv0);
+        "  %s inject-keycode-x11 X_KEYCODE HOLD_MS\n"
+        "  %s probe-grab-x11 KEYSYM\n", argv0, argv0, argv0, argv0);
 }
 
 int main(int argc, char **argv)
@@ -205,6 +233,8 @@ int main(int argc, char **argv)
         return inject_x11(argv[2], atoi(argv[3]));
     if (argc == 4 && !strcmp(argv[1], "inject-keycode-x11"))
         return inject_keycode_x11((unsigned int)strtoul(argv[2], NULL, 0), atoi(argv[3]));
+    if (argc == 3 && !strcmp(argv[1], "probe-grab-x11"))
+        return probe_grab_x11(argv[2]);
     usage(argv[0]);
     return 2;
 }

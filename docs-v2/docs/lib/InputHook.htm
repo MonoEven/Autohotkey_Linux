@@ -13,7 +13,7 @@
 
 <h1>InputHook</h1>
 
-<div class="note" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> On X11/XWayland, <code>InputHook</code> collects live input, canonical VK/set-1 SC and Unicode characters; callbacks, EndKeys/Match/Timeout and Backspace undo are active. The <code>V</code> (visible) mode uses XI2.1 raw observation, installs no all-key passive grabs, and can be used by multiple scripts while the target receives the original event. A hook which requests suppression (the default text visibility or KeyOpt <code>S</code>) currently uses the compatibility passive-grab lane; broad/per-key suppression is refined in M2-L. Pure native Wayland has no InputHook character stream without the future evdev broker.</div>
+<div class="note" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> On X11/XWayland, <code>InputHook</code> collects live input, canonical VK/set-1 SC and Unicode characters; callbacks, EndKeys/Match/Timeout and Backspace undo are active. The <code>V</code> (visible) mode uses XI2.1 raw observation, installs no all-key passive grabs, and can be used by multiple scripts while the target receives the original event. Suppression is narrowed to the exact keycodes selected by visibility and KeyOpt: for example <code>InputHook("V")</code> plus <code>KeyOpt("{Enter}", "S")</code> grabs only Enter while every other key remains on the raw visible stream. Runtime KeyOpt changes reconcile grabs immediately. A default non-visible hook can still require many text-key grabs and emits a warning recommending V + selective S. Pure native Wayland has no InputHook character stream without the future evdev broker.</div>
 
 
 <p>Creates an object which can be used to collect or intercept keyboard input.</p>

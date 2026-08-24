@@ -21,7 +21,8 @@ binding before the Unicode borrow fallback. The evdev lane also owns the first
 custom-combo state machine (`A & B`, up/tilde/wildcard and standalone-prefix
 delay); other lanes keep `custom_combo=false`. `core_capture_linux.cpp` now
 uses the existing XI2.1 raw subscription for Hotstrings and visible InputHook;
-only explicit suppression remains on the compatibility all-key grab path.
+suppression is a selected passive-grab set derived from InputHook visibility and
+KeyOpt; raw handles every unselected key and runtime changes reconcile it.
 
 Key runtime controls:
 

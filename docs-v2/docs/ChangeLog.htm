@@ -59,7 +59,15 @@
     while the target receives original <code>send_event=False</code> events;
     Hotstring replacement uses exact Backspace counts instead of holding and
     synthetically forwarding every key. Suppression requests stay on a
-    separate compatibility-grab lane pending M2-L per-key narrowing.</li>
+    separate compatibility-grab lane.</li>
+  <li><b>M2-L selected suppression:</b> InputHook now installs passive grabs
+    only for keycodes which its visibility/KeyOpt policy actually suppresses;
+    raw observation handles the rest. Runtime KeyOpt changes reconcile the
+    set immediately, canonical secondary scan codes distinguish Enter/Numpad
+    and navigation/numpad variants, and an independent XGrabKey oracle proves
+    exact scope and target visibility. InputHook EndReason/EndKey now follows
+    the official v2 contract for both keycode and E-character modes. Current
+    branch totals: 1160/1160 X11/headless, 17/17 Wayland, 255/255 XWayland.</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>

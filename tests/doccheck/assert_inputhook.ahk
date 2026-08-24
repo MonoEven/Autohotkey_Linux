@@ -60,6 +60,19 @@ Log("ih2_ku=" (ku >= 1 ? 1 : 0))
 ih2.Stop()
 Sleep(50)
 
+; 2a) Per-key suppression: V keeps the stream visible, KeyOpt S selects only
+; Enter for a passive grab. Named EndKey is matched by canonical set-1 SC.
+ih2s := InputHook("VT3", "{Enter}")
+ih2s.Start()
+ih2s.KeyOpt("{Enter}", "S")
+SendLevel(1)
+Send("m{Enter}")
+ih2s.Wait(2500)
+SendLevel(0)
+Log("ih_selected_input=" (ih2s.Input = "m" ? 1 : 0))
+Log("ih_selected_end=" (ih2s.EndReason = "EndKey" ? 1 : 0))
+Sleep(50)
+
 ; 2b) Visible InputHook uses XI2 raw observation: no all-key passive grab,
 ; while both the hook and independent foreground client receive the key.
 ihv := InputHook("VL1T3")
@@ -88,14 +101,22 @@ Log("ih3_unicode=" (seq3 = "你好" ? 1 : 0))
 ih2b.Stop()
 Sleep(50)
 
-; 4) End char terminates with EndReason "EndChar"; buffer holds the text
-;    before the end char.
+; 4) EndKeys always terminates with EndReason "EndKey". Without E it is
+;    matched by canonical VK/SC; the key itself is not collected.
 ih3 := InputHook("T3", "z")
 ih3.Start()
 Send("abz")
 ih3.Wait(2500)
 Log("ih3_val=" (ih3.Input = "ab" ? 1 : 0))
-Log("ih3_end=" (ih3.EndReason = "EndChar" ? 1 : 0))
+Log("ih3_end=" (ih3.EndReason = "EndKey" && StrLower(ih3.EndKey) = "z" ? 1 : 0))
+Sleep(50)
+; E matches by produced character but still reports EndReason=EndKey; EndKey
+; returns the actual character (official v2 contract).
+ih3e := InputHook("ET3", "Z")
+ih3e.Start()
+Send("aZ")
+ih3e.Wait(2500)
+Log("ih3e_end=" (ih3e.Input = "a" && ih3e.EndReason = "EndKey" && ih3e.EndKey = "Z" ? 1 : 0))
 Sleep(50)
 
 ; 5) Match list terminates with EndReason "Match".

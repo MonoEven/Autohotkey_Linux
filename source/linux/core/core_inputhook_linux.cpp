@@ -362,8 +362,6 @@ LPTSTR input_type::GetEndReason(LPTSTR aKeyBuf, int aKeyBufSize)
 	case INPUT_TERMINATED_BY_ENDKEY:
 	{
 		LPTSTR key_name = aKeyBuf;
-		if (EndingChar)
-			return _T("EndChar");
 		if (!key_name) return _T("EndKey");
 		if (EndingChar)
 		{

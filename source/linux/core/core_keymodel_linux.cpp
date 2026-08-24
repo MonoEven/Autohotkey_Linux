@@ -297,3 +297,26 @@ bool LinuxKeyModelX11FindUtf32(Display *aDisplay, uint32_t aCodepoint, AhkLinuxK
 	}
 	return false;
 }
+
+bool LinuxKeyModelX11KeyProducesText(Display *aDisplay, KeyCode aKeycode)
+{
+	if (!aKeycode || !EnsureModel(aDisplay))
+		return false;
+	xkb_layout_index_t layouts = xkb_keymap_num_layouts_for_key(sKeymap, aKeycode);
+	for (xkb_layout_index_t layout = 0; layout < layouts; ++layout)
+	{
+		xkb_level_index_t levels = xkb_keymap_num_levels_for_key(sKeymap, aKeycode, layout);
+		for (xkb_level_index_t level = 0; level < levels; ++level)
+		{
+			const xkb_keysym_t *syms = nullptr;
+			int n = xkb_keymap_key_get_syms_by_level(sKeymap, aKeycode, layout, level, &syms);
+			for (int i = 0; i < n; ++i)
+			{
+				uint32_t cp = xkb_keysym_to_utf32(syms[i]);
+				if (cp >= 0x20 && cp != 0x7f)
+					return true;
+			}
+		}
+	}
+	return false;
+}

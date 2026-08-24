@@ -38,6 +38,8 @@ namespace {
 
 bool sActive = false;
 bool sNeedsGrabs = false;
+bool sGrabKeycodesDirty = true;
+std::set<KeyCode> sGrabKeycodes;
 std::wstring sRawBuffer;
 
 // Held (typed-but-not-yet-committed) events: compatibility path for an
@@ -541,10 +543,12 @@ void LinuxCaptureRawKeyEvent(Display *d, KeyCode aKeycode, bool aIsPress,
 	ev.xkey.state = aCoreState;
 	ev.xkey.time = aTime;
 	ev.xkey.same_screen = True;
-	AhkLinuxKeyIdentity key;
-	LinuxEventKeyIdentity(d, ev, key);
 	if (g_input && g_input->InProgress())
 	{
+		// Selected suppression keys are fed by their normal passive-grab event;
+		// raw must stand aside or callbacks/buffer would receive them twice.
+		if (LinuxCaptureKeycodeNeedsGrab(d, aKeycode))
+			return;
 		if (aSelfLevel >= 0 && g_input->MinSendLevel > 0
 			&& aSelfLevel < (int)g_input->MinSendLevel)
 			return;
@@ -553,6 +557,8 @@ void LinuxCaptureRawKeyEvent(Display *d, KeyCode aKeycode, bool aIsPress,
 	}
 	if (!aIsPress || aSelfLevel == 0)
 		return;
+	AhkLinuxKeyIdentity key;
+	LinuxEventKeyIdentity(d, ev, key);
 	if (!key.text)
 	{
 		if (!LinuxIsModifierKey(key.keysym))
@@ -562,16 +568,70 @@ void LinuxCaptureRawKeyEvent(Display *d, KeyCode aKeycode, bool aIsPress,
 	LinuxRawFeedHotstrings(d, key, aSelfLevel);
 }
 
+bool LinuxInputHookKeyNeedsGrab(Display *d, KeyCode aKeycode)
+{
+	input_type *input = g_input;
+	if (!input || !input->InProgress())
+		return false;
+	AhkLinuxKeyIdentity key;
+	if (!LinuxKeyModelX11Decode(d, aKeycode, 0, key))
+		return false;
+	UCHAR flags = input->KeyVK[key.vk] | input->KeySC[key.sc];
+	if (flags & INPUT_KEY_VISIBILITY_MASK)
+		return (flags & INPUT_KEY_SUPPRESS) != 0;
+	if (LinuxIsModifierKey(key.keysym))
+		return false;
+	if (key.vk == VK_BACK && input->BackspaceIsUndo)
+		return !input->VisibleText;
+	bool text = LinuxKeyModelX11KeyProducesText(d, aKeycode)
+		&& !(flags & INPUT_KEY_IGNORE_TEXT);
+	return !(text ? input->VisibleText : input->VisibleNonText);
+}
+
+void LinuxCaptureRefreshGrabKeycodes(Display *d)
+{
+	if (!sGrabKeycodesDirty)
+		return;
+	sGrabKeycodes.clear();
+	if (InputHookNeedsGrabs() && d)
+		for (int code = 8; code <= 255; ++code)
+			if (LinuxInputHookKeyNeedsGrab(d, (KeyCode)code))
+				sGrabKeycodes.insert((KeyCode)code);
+	sGrabKeycodesDirty = false;
+	static bool warned_broad = false;
+	if (!warned_broad && sGrabKeycodes.size() > 96)
+	{
+		fprintf(stderr, "AHK warning: InputHook suppression requires %zu X11 passive key grabs; use option V plus KeyOpt(..., 'S') to narrow suppression.\n"
+			, sGrabKeycodes.size());
+		warned_broad = true;
+	}
+}
+
 bool LinuxCaptureNeedsGrabs()
 {
 	return InputHookNeedsGrabs();
 }
 
+bool LinuxCaptureKeycodeNeedsGrab(Display *d, KeyCode aKeycode)
+{
+	LinuxCaptureRefreshGrabKeycodes(d);
+	return sGrabKeycodes.count(aKeycode) != 0;
+}
+
+void LinuxCaptureGrabKeycodes(Display *d, std::set<KeyCode> &aOut)
+{
+	LinuxCaptureRefreshGrabKeycodes(d);
+	aOut.insert(sGrabKeycodes.begin(), sGrabKeycodes.end());
+}
+
+void LinuxCaptureKeymapChanged()
+{
+	sGrabKeycodesDirty = true;
+}
+
 bool LinuxCaptureUsesRaw()
 {
-	if (g_input && g_input->InProgress())
-		return !InputHookNeedsGrabs();
-	return Hotstring::sEnabledCount > 0;
+	return Hotstring::sEnabledCount > 0 || (g_input && g_input->InProgress());
 }
 
 bool LinuxCaptureActive()
@@ -583,16 +643,19 @@ void LinuxCaptureStateChanged()
 {
 	bool want = Hotstring::sEnabledCount > 0 || (g_input && g_input->InProgress());
 	bool needs_grabs = InputHookNeedsGrabs();
-	if (want != sActive || needs_grabs != sNeedsGrabs)
+	bool mode_changed = want != sActive || needs_grabs != sNeedsGrabs;
+	sGrabKeycodesDirty = true; // KeyOpt may change the set without mode change.
+	if (mode_changed)
 	{
 		sActive = want;
 		sNeedsGrabs = needs_grabs;
 		sHeldCount = 0;
 		sBufLen = 0;
 		sRawBuffer.clear();
-		LinuxSetReconcileDirty();
-		// Reconcile immediately only when compatibility suppression grabs
-		// change. Raw Hotstring/visible InputHook never add all-key grabs.
+	}
+	if (mode_changed || needs_grabs)
+	{
+		LinuxCaptureMappingNotify(); // also rebuild the selected GrabSpec set.
 		LinuxReconcileHotkeyGrabs();
 	}
 }
@@ -676,16 +739,16 @@ bool LinuxCaptureFeedInput(Display *d, XEvent &ev)
 	// VK flags (KeyVK).  Check the pressed key's VK against them before
 	// collecting text: a single-char key ends with EndChar, a named key with
 	// EndKey (matching Windows semantics).
-	if (vk_type vk = key.vk)
+	if (key.vk || key.sc)
 	{
 		bool with_shift = (ev.xkey.state & ShiftMask) != 0;
 		UCHAR flag = with_shift ? END_KEY_WITH_SHIFT : END_KEY_WITHOUT_SHIFT;
-		if (active->KeyVK[vk] & flag)
+		UCHAR vk_flags = active->KeyVK[key.vk];
+		UCHAR sc_flags = active->KeySC[key.sc];
+		if ((vk_flags | sc_flags) & flag)
 		{
-			if (ch)
-				active->EndByChar((TCHAR)ch);
-			else
-				active->EndByKey(vk, key.sc, false, with_shift);
+			bool by_sc = (sc_flags & flag) && (key.sc || !(vk_flags & flag));
+			active->EndByKey(key.vk, key.sc, by_sc, with_shift);
 			return true;
 		}
 	}
@@ -704,7 +767,9 @@ bool LinuxCaptureFeedInput(Display *d, XEvent &ev)
 
 bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel)
 {
-	if (!LinuxCaptureActive() || LinuxCaptureUsesRaw())
+	if (!LinuxCaptureActive())
+		return false;
+	if (LinuxCaptureUsesRaw() && !LinuxCaptureKeycodeNeedsGrab(d, ev.xkey.keycode))
 		return false;
 
 	// An active InputHook captures the typed-text stream and consumes every

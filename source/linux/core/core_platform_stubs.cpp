@@ -547,12 +547,22 @@ LPTSTR GetKeyName(vk_type aVK, sc_type aSC, LPTSTR aBuf, int aBufSize, LPTSTR aD
 	return aDefault ? aDefault : aBuf;
 }
 
-sc_type vk_to_sc(vk_type aVK, bool)
+sc_type vk_to_sc(vk_type aVK, bool aReturnSecondary)
 {
+	sc_type primary = 0;
 	for (auto &e : sLinuxKeys)
-		if (e.vk == aVK)
-			return e.sc;
-	return 0;
+		if (e.vk == aVK && e.sc)
+		{
+			if (!primary)
+			{
+				primary = e.sc;
+				if (!aReturnSecondary)
+					return primary;
+			}
+			else if (e.sc != primary)
+				return e.sc;
+		}
+	return aReturnSecondary ? 0 : primary;
 }
 
 vk_type sc_to_vk(sc_type aSC)

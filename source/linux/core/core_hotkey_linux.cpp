@@ -1193,6 +1193,9 @@ void LinuxCaptureAddSpecs(std::set<GrabSpec> &aDesired)
 	if (sCaptureSpecsDirty)
 	{
 		sCaptureSpecs.clear();
+		Display *d = LinuxHotkeyDisplay();
+		if (!d)
+			return;
 		unsigned int prim[4] = { ControlMask, ShiftMask, sAltMask, sSuperMask };
 		unsigned int lock_combos[8];
 		int nlock = 1;
@@ -1203,7 +1206,9 @@ void LinuxCaptureAddSpecs(std::set<GrabSpec> &aDesired)
 			for (int j = 0; j < n; ++j)
 				lock_combos[nlock++] = lock_combos[j] | sLockMasks[i];
 		}
-		for (int kc = 8; kc <= 255; ++kc)
+		std::set<KeyCode> selected;
+		LinuxCaptureGrabKeycodes(d, selected);
+		for (KeyCode kc : selected)
 			for (int t = 0; t < 16; ++t)
 			{
 				unsigned int m = 0;
@@ -1223,6 +1228,7 @@ void LinuxCaptureMappingNotify()
 {
 	sCaptureSpecsDirty = true;
 	sReconcileDirty = true;
+	LinuxCaptureKeymapChanged();
 }
 
 // ---------------------------------------------------------------------------

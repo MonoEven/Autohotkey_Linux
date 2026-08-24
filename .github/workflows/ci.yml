@@ -98,6 +98,10 @@ jobs:
         if: matrix.build == 'core'
         run: xvfb-run -a bash tests/oracle/run_multiscript_hotstring_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
 
+      - name: Per-key InputHook suppression oracle
+        if: matrix.build == 'core'
+        run: xvfb-run -a bash tests/oracle/run_suppression_scope_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
+
       - name: Upload external oracle trace
         if: always() && matrix.build == 'core'
         uses: actions/upload-artifact@v5

@@ -7,7 +7,9 @@
 #include "script_object.h"
 #include "script_func_impl.h"
 #include "input_object.h"
-
+#ifdef __linux__
+void LinuxCaptureStateChanged();
+#endif
 
 ObjectMemberMd InputObject::sMembers[] =
 {
@@ -242,8 +244,17 @@ FResult InputObject::KeyOpt(StrArg keys, StrArg options)
 			input.KeyVK[i] = (input.KeyVK[i] & ~remove_flags) | add_flags;
 		for (int i = 0; i < _countof(input.KeySC); ++i)
 			input.KeySC[i] = (input.KeySC[i] & ~remove_flags) | add_flags;
+#ifdef __linux__
+		if (input.InProgress())
+			LinuxCaptureStateChanged();
+#endif
 		return OK;
 	}
 
-	return input.SetKeyFlags(keys, false, remove_flags, add_flags) ? OK : FR_FAIL;
+	FResult result = input.SetKeyFlags(keys, false, remove_flags, add_flags) ? OK : FR_FAIL;
+#ifdef __linux__
+	if (result == OK && input.InProgress())
+		LinuxCaptureStateChanged();
+#endif
+	return result;
 }

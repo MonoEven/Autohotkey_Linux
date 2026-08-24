@@ -36,3 +36,5 @@ bool LinuxKeyModelX11Decode(Display *aDisplay, KeyCode aKeycode, unsigned int aX
 // Find the least-modified key in the active layout which produces a Unicode
 // scalar. Supported modifier combinations are none, Shift, AltGr and both.
 bool LinuxKeyModelX11FindUtf32(Display *aDisplay, uint32_t aCodepoint, AhkLinuxKeyStroke &aOut);
+// True when any layout/level of this X keycode produces Unicode text.
+bool LinuxKeyModelX11KeyProducesText(Display *aDisplay, KeyCode aKeycode);

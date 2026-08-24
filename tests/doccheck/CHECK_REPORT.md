@@ -5,7 +5,7 @@
 - **校验对象**: Linux 移植版核心解释器 (`build-core/source/linux/core/ahk_core`,
   以及 ASan 构建 `build-asan/ahk_core`),基于 AutoHotkey v2.0.26 源码
 - **校验方式**: 文档条目 → `.ahk` 实测脚本 → 输出与预期逐条比对
-- **结果**: **1157 / 1157 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 53 项(含 Unicode 文本发送 3 项,round-34;**SendEvent/SendInput 模式拆分与键延迟 6 项** R2 §2-B 与 **SendLevel/#InputLevel 门控与 InputHook MinSendLevel 4 项** R2 §2-C)、控件模块 63 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 17 项、**热键透传/解除抓取模块 10 项**(round-29+round-36)、**Unicode 备用键码并发模块 5 项**(round-36)、**剪贴板回归模块 13 项**、**慢所有者剪贴板超时模块 4 项**、**剪贴板变更通知模块 4 项**(round-38)、**三层键模型/布局切换模块 6 项**、**按键重复/长按模块 4 项**与**IME 激活状态模块 2 项**(check0820)、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 44 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 5 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 31 项** 与 **D-Bus COM 20 项**;round-34 增 **热字串 Unicode 触发词 2 项** 与 **InputHook OnChar/OnKeyDown/OnKeyUp 通知 4 项**;**--diag 诊断模块 10 项**(check_detail0821 §12/R1-3 + §1.2-C/R1-6 + §2.2-A/§3);**parity 分类模块 9 项**(check_detail0821 §13/R2)与**严格 parity 模式模块 3 项**(R2);**A_IconFile/A_IconNumber 4 项**(R2 §5-M5)、**A_ThisHotkey/A_PriorHotkey 1 项**(R2 §5)与 **caps API + 逐键路由/版本化 schema 6 项**(R3 §1);27 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 17 项** 与 **XWayland 回退 255 项** 独立套件通过(见第 10 节)
+- **结果**: **1160 / 1160 断言通过** (普通构建与 ASan 构建均通过;含 Xvfb 虚拟显示下的窗口模块 67 项、输入模块 53 项(含 Unicode 文本发送 3 项,round-34;**SendEvent/SendInput 模式拆分与键延迟 6 项** R2 §2-B 与 **SendLevel/#InputLevel 门控与 InputHook MinSendLevel 4 项** R2 §2-C)、控件模块 63 项、显示器/像素/状态栏模块 25 项、定时器/悬浮提示模块 11 项、热键模块 17 项、**热键透传/解除抓取模块 10 项**(round-29+round-36)、**Unicode 备用键码并发模块 5 项**(round-36)、**剪贴板回归模块 13 项**、**慢所有者剪贴板超时模块 4 项**、**剪贴板变更通知模块 4 项**(round-38)、**三层键模型/布局切换模块 6 项**、**按键重复/长按模块 4 项**与**IME 激活状态模块 2 项**(check0820)、编辑/列表模块 47 项、文件对话框模块 16 项、消息/热字串/RunAs 模块 49 项、图像模块 44 项、窗口形状模块 19 项、**GUI/控件/菜单模块 32 项**、**未移植函数错误行为模块 5 项**、**覆盖补全模块 75 项**(round-27)实测,与 headless 各模块;新增 **DllCall 31 项** 与 **D-Bus COM 20 项**;round-34 增 **热字串 Unicode 触发词 2 项** 与 **InputHook OnChar/OnKeyDown/OnKeyUp 通知 4 项**;**--diag 诊断模块 10 项**(check_detail0821 §12/R1-3 + §1.2-C/R1-6 + §2.2-A/§3);**parity 分类模块 9 项**(check_detail0821 §13/R2)与**严格 parity 模式模块 3 项**(R2);**A_IconFile/A_IconNumber 4 项**(R2 §5-M5)、**A_ThisHotkey/A_PriorHotkey 1 项**(R2 §5)与 **caps API + 逐键路由/版本化 schema 6 项**(R3 §1);27 项 headless 回归测试亦全部通过)。另有 **Wayland 模式 17 项** 与 **XWayland 回退 255 项** 独立套件通过(见第 10 节)
 
 ---
 
@@ -50,7 +50,7 @@
 | 文件对话框 (FileSelect/DirSelect,内置 X11 路径输入对话框 + 无显示 stdin 回退) | `assert_dialog.ahk` | 16 |
 | 消息/热字串/RunAs (OnMessage/SendMessage/PostMessage/MenuSelect/Hotstring/RunAs) | `assert_msg.ahk` | 49 |
 | 热字串展开 (M2-R:XI2.1 raw 原始事件 + Backspace 替换；C/*/O/X/B0/inside-word/大小写/Unicode；不再全键 grab/XSendEvent；含行为 contract) | `assert_hotstring.ahk` | 17 |
-| InputHook 按键采集 (抑制型兼容 grab + Visible 模式 XI2 raw 零 grab；缓冲/结束键/匹配/退格、canonical VK/SC、Unicode、OnChar/OnKeyDown/Up；双进程外部 oracle) | `assert_inputhook.ahk` | 12 |
+| InputHook 按键采集 (Visible XI2 raw + 精确 KeyOpt 抑制 grab；运行时重配置、canonical VK/SC 与 E 字符 EndKey、缓冲/匹配/Unicode/回调；双进程/外部 grab oracle) | `assert_inputhook.ahk` | 15 |
 | 图像 (LoadPicture/IL_*/ImageSearch,BMP/ICO/PNG/GIF/CUR/JPEG/PPM 解码 + XGetImage 屏幕匹配) | `assert_image.ahk` | 44 |
 | 窗口形状 (WinSetRegion,X11 SHAPE 扩展;xshape_probe 端到端验证) | `assert_shape.ahk` | 19 |
 | GUI/控件/菜单 (Gui/GuiControl/Menu/MenuBar,GTK3 窗口;Edit/DDL/List/ListView/TreeView/StatusBar/Submit/OnEvent/菜单属性/HWND 反查等) | `assert_gui.ahk` | 32 |
@@ -67,7 +67,7 @@
 | --diag 诊断输出 (含 caps_version=2/schema 字段、headless 失败闭合的 GNOME/portal 探针与 XI2 sourceid/XTEST 设备行) | `assert_diag.ahk` | 10 |
 | parity 四级分类 (check_detail0821 §13/R2:parity 模型 P1 compatible/P2 adapted/P3 simulated/P4 unavailable 运行时可查——`ahk_core --parity FuncName` 打印级别+说明(ComObjArray→P4、SendInput→P2、RegRead→P3、MsgBox→P1),脚本内 `A_ParityLevel(FuncName)` 返回级别整数(未列函数默认 P1);数据源 parity.tsv + tools/gen_parity.py 生成 parity_data.h,CI 校验不漂移) | `assert_parity.ahk` | 9 |
 | 严格 parity 模式 (check_detail0821 §13/R2:`AHK_STRICT_PARITY=error` 下 P3/P4 函数首次调用抛错——InstallKeybdHook P3 抛"AHK_STRICT_PARITY=error"错误、P1/P2 函数不受影响;脚本内 EnvSet 设该变量同样生效;warn 模式 VM 实测打印 P3/P4 级别+说明,class 型 P4(ComObjArray 等)本就抛自身明确错误) | `assert_strict.ahk` | 3 |
-| **合计 (X11/headless,各 expect 文件行数之和 + assert_display_content 自由格式 4 项;由 verify_report_numbers.sh 机器校验,与 run_check.sh 实际 PASS 一致)** | | **1157** |
+| **合计 (X11/headless,各 expect 文件行数之和 + assert_display_content 自由格式 4 项;由 verify_report_numbers.sh 机器校验,与 run_check.sh 实际 PASS 一致)** | | **1160** |
 | Wayland 模式 (Send 虚拟键盘经 sway bindsym 端到端(含修饰键组合与鼠标按钮)、ToolTip xdg 窗口、X11 专属表面报错;round-34 增非 ASCII 剪贴板粘贴回退 2 项:Control_L+v 到达 compositor 与剪贴板还原;round-36 增空剪贴板还原 2 项) | `assert_wayland.ahk` | 17 |
 | **合计 (Wayland)** | | **17** |
 | XWayland 回退 (sway 的 XWayland 上运行 X11 套件:控件/编辑/对话框/消息/形状/图像/热键;图像经 wlr-screencopy 抓屏) | `wayland_run.sh --xwayland` | 255 |
@@ -389,11 +389,11 @@ bash tests/doccheck/wayland_run.sh --xwayland [bin]  # XWayland 回退(sway 的 
 
 ```
 普通构建: tests/run_tests.sh        PASS=27 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=1157 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=1160 FAIL=0
           tests/doccheck/wayland_run.sh PASS=17 FAIL=0 (Wayland 模式)
           tests/doccheck/wayland_run.sh --xwayland PASS=255 FAIL=0 (XWayland 回退)
 ASan 构建: tests/run_tests.sh        PASS=27 FAIL=0
-          tests/doccheck/run_check.sh --xvfb PASS=1157 FAIL=0
+          tests/doccheck/run_check.sh --xvfb PASS=1160 FAIL=0
           tests/doccheck/wayland_run.sh PASS=17 FAIL=0
           tests/doccheck/wayland_run.sh --xwayland PASS=255 FAIL=0
 ```

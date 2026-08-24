@@ -57,7 +57,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - XI2 raw capture: Hotstrings and visible InputHook are multi-client observers;
   original target events remain real, and replacement uses Backspace instead
   of all-key grabs/XSendEvent forwarding.
-- Machine totals: 1157/1157 X11/headless, 17/17 Wayland and 255/255
+- InputHook selected suppression: exact KeyOpt/visibility keycodes are grabbed,
+  raw handles all others, and runtime changes reconcile without restart.
+- Machine totals: 1160/1160 X11/headless, 17/17 Wayland and 255/255
   XWayland assertions; 27/27 headless regression tests.
 
 ## Active constraints / remaining work
