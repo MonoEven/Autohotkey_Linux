@@ -53,8 +53,11 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
   code hotkeys on X11/evdev, and live-layout Shift/AltGr Send lookup.
 - evdev custom-combo state machine: wildcard modifiers, up variants, tilde,
   VK/SC prefixes and delayed standalone-prefix behavior; X11 remains explicit
-  unsupported until the raw capture batch.
-- Machine totals: 1152/1152 X11/headless, 17/17 Wayland and 255/255
+  unsupported until its raw combo state batch.
+- XI2 raw capture: Hotstrings and visible InputHook are multi-client observers;
+  original target events remain real, and replacement uses Backspace instead
+  of all-key grabs/XSendEvent forwarding.
+- Machine totals: 1157/1157 X11/headless, 17/17 Wayland and 255/255
   XWayland assertions; 27/27 headless regression tests.
 
 ## Active constraints / remaining work

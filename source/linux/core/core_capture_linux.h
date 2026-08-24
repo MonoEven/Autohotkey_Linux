@@ -5,10 +5,12 @@
 
 struct GrabSpec;
 
-// True when typed-text capture is active (at least one enabled hotstring):
-// the hotkey backend then additionally grabs every key so this engine can
-// watch and filter the text stream.
+// Capture state/mode. Hotstrings and visible InputHook use XI2.1 raw events;
+// only an InputHook which asks for suppression retains the compatibility
+// passive-grab lane.
 bool LinuxCaptureActive();
+bool LinuxCaptureNeedsGrabs();
+bool LinuxCaptureUsesRaw();
 
 // Add the all-keys passive-grab set to aDesired (implemented in
 // core_hotkey_linux.cpp, which owns the modifier masks).
@@ -20,6 +22,12 @@ void LinuxCaptureAddSpecs(std::set<GrabSpec> &aDesired);
 // Returns true when the event was consumed (held toward a match, matched, or
 // forwarded by the engine); false when the normal hotkey flow should handle it.
 bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel = -1);
+
+// Feed one XI2 raw key event (physical or injected). aCoreState is an X11
+// core modifier/group state synthesized at event time. Raw observation never
+// suppresses the original event; Hotstring replacement uses backspacing.
+void LinuxCaptureRawKeyEvent(Display *d, KeyCode aKeycode, bool aIsPress,
+	Time aTime, unsigned int aCoreState, int aSelfLevel, bool aIsSendInput);
 
 // Hotstring state changed: recompute the active flag.
 void LinuxCaptureStateChanged();

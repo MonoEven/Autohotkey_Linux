@@ -65,6 +65,10 @@ void LinuxCaptureAddSpecs(std::set<GrabSpec> &aDesired);
 // §2-B) and level-gates the rest by #InputLevel / InputHook MinSendLevel (§2-C).
 void LinuxSelfTrack(unsigned int aKeycode, bool aIsPress, int aLevel, bool aIsSendInput);
 void LinuxSelfClear();
+// Raw XI2 sees the event in parallel with normal grabs, so it consumes a
+// dedicated copy of each self mark and cannot steal provenance from hotkeys.
+bool LinuxSelfLookupRaw(unsigned int aKeycode, bool aIsPress
+	, int &aLevel, bool &aIsSendInput);
 
 // XTEST device detection + raw-event source tap (check_detail0821 §2.2-A / §3).
 // The XTEST devices carry the "XTEST Device" property; raw events they produce

@@ -60,6 +60,17 @@ Log("ih2_ku=" (ku >= 1 ? 1 : 0))
 ih2.Stop()
 Sleep(50)
 
+; 2b) Visible InputHook uses XI2 raw observation: no all-key passive grab,
+; while both the hook and independent foreground client receive the key.
+ihv := InputHook("VL1T3")
+SendLevel(1)
+ihv.Start()
+Send("v")
+ihv.Wait(2500)
+SendLevel(0)
+Log("ih_visible_raw=" (ihv.Input = "v" ? 1 : 0))
+Sleep(100)
+
 ; 3) Unicode characters flow through OnChar (round-34): SendText injects CJK
 ;    keysyms through the borrowed-keycode path; the capture engine converts
 ;    the Unicode keysym back to the character.
@@ -109,6 +120,7 @@ Sleep(50)
 Sleep(200)
 kc := FileRead(KCFILE)
 Log("ih_sup=" ((InStr(kc, "k:down:a:", true) or InStr(kc, "k:down:b:", true) or InStr(kc, "k:down:x:", true) or InStr(kc, "k:down:z:", true)) ? 0 : 1))
+Log("ih_visible_target=" (InStr(kc, "k:down:v:") ? 1 : 0))
 
 ; Robust teardown: SIGKILL xkeycap (a stuck client can ignore SIGTERM and a
 ; blocking RunWait then wedges the runner; a bounded non-waiting kill plus an

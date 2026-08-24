@@ -19,7 +19,9 @@ VK/keysym → Unicode-text model. X11 loads the active server map through
 xkbcommon-x11; Send character lookup prefers the least-modified live-layout
 binding before the Unicode borrow fallback. The evdev lane also owns the first
 custom-combo state machine (`A & B`, up/tilde/wildcard and standalone-prefix
-delay); other lanes keep `custom_combo=false` until they share the M2 raw flow.
+delay); other lanes keep `custom_combo=false`. `core_capture_linux.cpp` now
+uses the existing XI2.1 raw subscription for Hotstrings and visible InputHook;
+only explicit suppression remains on the compatibility all-key grab path.
 
 Key runtime controls:
 

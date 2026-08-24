@@ -106,9 +106,10 @@ int main(int argc, char **argv)
                 int idx = (ev.xkey.state & ShiftMask) ? 1 : 0;
                 KeySym ks = XLookupKeysym(&ev.xkey, idx);
                 const char *name = ks ? XKeysymToString(ks) : "?";
-                fprintf(g_out, "k:%s:%s:mods:%x:t:%ld\n",
+                fprintf(g_out, "k:%s:%s:mods:%x:t:%ld:syn:%d\n",
                         ev.type == KeyPress ? "down" : "up",
-                        name ? name : "?", (unsigned)ev.xkey.state, now_ms() - start);
+                        name ? name : "?", (unsigned)ev.xkey.state,
+                        now_ms() - start, ev.xkey.send_event ? 1 : 0);
                 fflush(g_out);
                 break;
             }

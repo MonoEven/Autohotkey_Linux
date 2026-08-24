@@ -137,12 +137,17 @@ unsigned int sAltMask = Mod1Mask;   // Populated from XGetModifierMapping.
 unsigned int sSuperMask = Mod4Mask;
 unsigned int sLockMasks[8];
 int sLockMaskCount = 2;             // LockMask/Mod2Mask fallback.
+unsigned int sRawModMaskByKeycode[256] = {0};
+unsigned int sRawDepressedMods = 0;
+unsigned int sRawLockedMods = 0;
+unsigned int sRawGroup = 0;
 
 void LinuxUpdateModifierMap(Display *d)
 {
 	unsigned int lock[8];
 	int nlock = 0;
 	unsigned int alt = 0, super = 0;
+	memset(sRawModMaskByKeycode, 0, sizeof(sRawModMaskByKeycode));
 	XModifierKeymap *map = XGetModifierMapping(d);
 	if (map)
 	{
@@ -154,6 +159,7 @@ void LinuxUpdateModifierMap(Display *d)
 				KeyCode kc = map->modifiermap[slot * map->max_keypermod + k];
 				if (!kc)
 					continue;
+				sRawModMaskByKeycode[(unsigned int)kc] |= mask;
 				KeySym ks = XkbKeycodeToKeysym(d, kc, 0, 0);
 				if (ks == XK_Alt_L || ks == XK_Alt_R)
 					alt |= mask;
@@ -185,6 +191,15 @@ void LinuxUpdateModifierMap(Display *d)
 		sLockMasks[1] = Mod2Mask;
 		sLockMaskCount = 2;
 	}
+	XkbStateRec state;
+	if (d && XkbGetState(d, XkbUseCoreKbd, &state) == Success)
+	{
+		sRawDepressedMods = state.base_mods;
+		sRawLockedMods = state.locked_mods;
+		sRawGroup = state.group;
+	}
+	else
+		sRawDepressedMods = sRawLockedMods = sRawGroup = 0;
 }
 
 // X11 modifier mask for the Windows MOD_* bits (dynamic Alt/Super slots).
@@ -1056,17 +1071,22 @@ struct SelfMark
 	bool consumed;
 };
 static std::vector<SelfMark> sSelfLog;
+static std::vector<SelfMark> sRawSelfLog;
 #define SELF_MARK_MS_WINDOW 1000
 
 void LinuxSelfTrack(unsigned int aKeycode, bool aIsPress, int aLevel, bool aIsSendInput)
 {
 	DWORD now = GetTickCount();
 	// Opportunistic prune of expired marks (keeps the list bounded).
-	for (size_t i = 0; i < sSelfLog.size(); )
-		if (now - sSelfLog[i].when >= (DWORD)SELF_MARK_MS_WINDOW)
-			sSelfLog.erase(sSelfLog.begin() + (long)i);
-		else
-			++i;
+	auto prune = [now](std::vector<SelfMark> &log) {
+		for (size_t i = 0; i < log.size(); )
+			if (now - log[i].when >= (DWORD)SELF_MARK_MS_WINDOW)
+				log.erase(log.begin() + (long)i);
+			else
+				++i;
+	};
+	prune(sSelfLog);
+	prune(sRawSelfLog);
 	SelfMark m;
 	m.id = aKeycode;
 	m.when = now;
@@ -1075,11 +1095,13 @@ void LinuxSelfTrack(unsigned int aKeycode, bool aIsPress, int aLevel, bool aIsSe
 	m.level = aLevel;
 	m.consumed = false;
 	sSelfLog.push_back(m);
+	sRawSelfLog.push_back(m);
 }
 
 void LinuxSelfClear()
 {
 	sSelfLog.clear();
+	sRawSelfLog.clear();
 }
 
 // True when a grabbed event is a copy of a key this process injected
@@ -1100,6 +1122,29 @@ static bool LinuxSelfLookup(XEvent &ev, int &aLevel, bool &aIsSendInput)
 			continue;
 		if (now - m.when >= (DWORD)SELF_MARK_MS_WINDOW)
 			continue; // Expired; pruned on the next Track().
+		m.consumed = true;
+		aLevel = m.level;
+		aIsSendInput = m.is_sendinput;
+		return true;
+	}
+	return false;
+}
+
+bool LinuxSelfLookupRaw(unsigned int aKeycode, bool aIsPress
+	, int &aLevel, bool &aIsSendInput)
+{
+	bool is_up = !aIsPress;
+	DWORD now = GetTickCount();
+	// XI2 raw events preserve X request order, including re-entrant replacement
+	// sends. Match oldest-first so an already queued physical/original Space
+	// cannot consume a future level-0 replacement Space mark.
+	for (size_t i = 0; i < sRawSelfLog.size(); ++i)
+	{
+		SelfMark &m = sRawSelfLog[i];
+		if (m.id != aKeycode || m.is_up != is_up || m.consumed)
+			continue;
+		if (now - m.when >= (DWORD)SELF_MARK_MS_WINDOW)
+			continue;
 		m.consumed = true;
 		aLevel = m.level;
 		aIsSendInput = m.is_sendinput;
@@ -1143,10 +1188,8 @@ bool sCaptureSpecsDirty = true;
 
 void LinuxCaptureAddSpecs(std::set<GrabSpec> &aDesired)
 {
-	if (!LinuxCaptureActive())
-	{
+	if (!LinuxCaptureNeedsGrabs())
 		return;
-	}
 	if (sCaptureSpecsDirty)
 	{
 		sCaptureSpecs.clear();
@@ -1357,11 +1400,35 @@ void LinuxDispatchHotkeys()
 				{
 					XIRawEvent *re = (XIRawEvent *)cookie->data;
 					bool is_press = cookie->evtype == XI_RawKeyPress;
-					LinuxTrackModifierKeycode((KeyCode)re->detail, is_press);
+					KeyCode raw_keycode = (KeyCode)re->detail;
+					LinuxTrackModifierKeycode(raw_keycode, is_press);
+					unsigned int raw_mod = sRawModMaskByKeycode[(unsigned int)raw_keycode];
+					if (raw_mod)
+					{
+						if (is_press) sRawDepressedMods |= raw_mod;
+						else sRawDepressedMods &= ~raw_mod;
+					}
+					XkbStateRec raw_state;
+					if (XkbGetState(d, XkbUseCoreKbd, &raw_state) == Success)
+					{
+						sRawLockedMods = raw_state.locked_mods;
+						sRawGroup = raw_state.group;
+					}
+					bool is_xtest = LinuxIsXTestDevice((int)re->sourceid);
 					// §3: record the source classification (sourceid is only
 					// valid from XI 2.1; the tap is disabled otherwise).
-					LinuxXTestTapRecord((unsigned int)re->detail, is_press
-						, LinuxIsXTestDevice((int)re->sourceid));
+					LinuxXTestTapRecord((unsigned int)raw_keycode, is_press, is_xtest);
+					if (LinuxCaptureUsesRaw())
+					{
+						int raw_level = -1;
+						bool raw_sendinput = false;
+						LinuxSelfLookupRaw((unsigned int)raw_keycode, is_press
+							, raw_level, raw_sendinput);
+						unsigned int core_state = XkbBuildCoreState(
+							sRawDepressedMods | sRawLockedMods, sRawGroup);
+						LinuxCaptureRawKeyEvent(d, raw_keycode, is_press, re->time
+							, core_state, raw_level, raw_sendinput);
+					}
 				}
 				else if (cookie->extension == sXI2Opcode && cookie->evtype == XI_HierarchyChanged)
 				{

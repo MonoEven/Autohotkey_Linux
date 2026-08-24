@@ -9,13 +9,12 @@
 //     the X event dispatch (LinuxDispatchInputHook) fire OnEnd.
 //   - GetEndReason: the shifted-endkey branch uses GetKeyName (Linux key
 //     name table) instead of ToUnicodeOrAsciiEx.
-//   - InputStart: grabs the keyboard via XGrabKeyboard instead of installing
-//     a low-level hook.
+//   - InputStart: activates XI2 raw observation for V mode; suppression uses
+//     the compatibility passive-grab lane owned by core_hotkey_linux.
 //
-// Keyboard capture: while an InputHook is active, the X server keyboard is
-// grabbed; KeyPress/KeyRelease events are dispatched in the main loop /
-// MsgSleep (same integration as hotkeys).  Keys are translated to characters
-// through the same US-layout table used by the Send engine.
+// Visible capture is multi-client and layout-aware through the canonical
+// evdev/set-1 SC + VK/keysym + UTF-32 model. Suppressing capture is explicitly
+// separated so raw observers never claim that they can consume input.
 
 #include "../../stdafx.h"
 #include "../../script.h"

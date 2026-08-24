@@ -1,13 +1,7 @@
-; Hotstring expansion doc-check (round 32): the port now expands
-; hotstrings from the live typed-text stream (all-keys passive grabs while
-; any hotstring is enabled).  Verified with the independent xkeycap client:
-;   - "::xq" -> "ZZ" on the end char (space): the trigger never reaches the
-;     client, the replacement does, and the end char follows;
-;   - "O::cd" -> "Q": the end char is omitted;
-;   - "X::ef" runs the callback instead of sending text;
-;   - "*::ab" -> "W": no end char required (fires on the next char, which
-;     is passed through);
-;   - unmatched text ("hello ") passes through unchanged.
+; Hotstring expansion doc-check (M2-R): XI2.1 raw observation never grabs or
+; replaces physical events with XSendEvent. The original trigger reaches the
+; independent xkeycap client (syn:0), then AHK sends the documented Backspace
+; count + replacement. O/*/X/case/Unicode semantics remain covered.
 ; Requires --xvfb (xkeycap window + XTEST via Send).
 #Requires AutoHotkey v2.0
 
@@ -30,15 +24,24 @@ Hotstring("::xq", "ZZ")     ; end char required.
 Hotstring(":O:cd", "Q")     ; omit the end char.
 Hotstring(":X:ef", CB)      ; callback form.
 Hotstring(":*:ab", "W")     ; no end char required.
-Hotstring(":*:你好", "nn")  ; round-34: Unicode trigger (CJK).
+Hotstring(":*:你好", "nn")  ; Unicode trigger (CJK).
+Hotstring(":B0*:gh", "R")   ; B0: do not erase original trigger.
+Hotstring("::ij", "S")      ; default: must not match inside a word.
 Sleep(300)
 
+; Synthetic test input needs level > the default Hotstring input level 0.
+; Auto-replacement itself is forced to level 0 and cannot recurse.
+SendLevel(1)
 Send("xq ")                 ; -> "ZZ" + space.
 Send("cd ")                 ; -> "Q", space omitted.
 Send("ef.")                 ; callback fires; '.' forwarded.
 Send("abz")                 ; -> "W" + 'z'.
 Send("hello ")              ; no match -> passthrough.
-SendText("你好")             ; round-34: CJK trigger -> "cn".
+SendText("你好")             ; CJK raw trigger -> Backspace x2 + "nn".
+Send("gh")                   ; B0 -> original "gh" remains, then R.
+Send("xij ")                ; inside-word guard: no replacement.
+Send(" ij ")                ; boundary match: Backspace x3 + S + space.
+SendLevel(0)
 Sleep(800)
 
 ; Callback result + caps behavior contract: a backend may advertise
@@ -49,19 +52,30 @@ Log("hs_caps_contract=" (HotkeyBackendGet().char_stream = 1 && cnt = 1 ? 1 : 0))
 Sleep(500)
 ; Foreground client results (xkeycap keysym log).
 kc := FileRead(KCFILE)
-Log("hs_zz_seen=" (InStr(kc, "k:down:Z:") ? 1 : 0))       ; replacement sent.
-Log("hs_x_hidden=" (InStr(kc, "k:down:x:", true) ? 0 : 1))     ; trigger suppressed.
-Log("hs_q_hidden=" (InStr(kc, "k:down:q:", true) ? 0 : 1))
-Log("hs_w_seen=" (InStr(kc, "k:down:W:") ? 1 : 0))       ; * option replacement.
-Log("hs_a_hidden=" (InStr(kc, "k:down:a:", true) ? 0 : 1))
-Log("hs_b_hidden=" (InStr(kc, "k:down:b:", true) ? 0 : 1))
-Log("hs_c_hidden=" (InStr(kc, "k:down:c:", true) ? 0 : 1))
-Log("hs_d_hidden=" (InStr(kc, "k:down:d:", true) ? 0 : 1))
-Log("hs_hello=" (InStr(kc, "k:down:h:") ? 1 : 0))        ; unmatched text passes.
-Log("hs_unicode=" (InStr(kc, "k:down:n:") ? 1 : 0))      ; CJK replacement (nn).
-Log("hs_cjk_hidden=" ((InStr(kc, "U4F60", true) or InStr(kc, "U597D", true)) ? 0 : 1)) ; CJK trigger suppressed.
-; The O option must omit exactly the "cd " end char: count spaces in
-; the client log (xq's + hello's = 2).
+Log("hs_zz_seen=" (InStr(kc, "k:down:Z:") ? 1 : 0))
+Log("hs_raw_trigger=" (InStr(kc, "k:down:x:") && InStr(kc, "k:down:q:") ? 1 : 0))
+Log("hs_no_xsendevent=" (InStr(kc, ":syn:1") ? 0 : 1))
+Log("hs_w_seen=" (InStr(kc, "k:down:W:") ? 1 : 0))
+Log("hs_a_seen=" (InStr(kc, "k:down:a:") ? 1 : 0))
+Log("hs_b_seen=" (InStr(kc, "k:down:b:") ? 1 : 0))
+Log("hs_c_seen=" (InStr(kc, "k:down:c:") ? 1 : 0))
+Log("hs_d_seen=" (InStr(kc, "k:down:d:") ? 1 : 0))
+Log("hs_hello=" (InStr(kc, "k:down:h:") ? 1 : 0))
+Log("hs_unicode=" (InStr(kc, "k:down:n:") ? 1 : 0))
+Log("hs_cjk_seen=" ((InStr(kc, "U4F60", true) && InStr(kc, "U597D", true)) ? 1 : 0))
+Log("hs_b0=" (InStr(kc, "k:down:g:") && InStr(kc, "k:down:R:") ? 1 : 0))
+s_count := 0
+s_pos := 1
+loop {
+    s_pos := InStr(kc, "k:down:S:", true, s_pos)
+    if !s_pos
+        break
+    s_count++
+    s_pos += 9
+}
+Log("hs_inside_word=" (s_count = 1 ? 1 : 0))
+; Raw model: original spaces xq/cd/hello (3) plus xq's restored end char (1).
+; O omits cd's restored end char.
 sp := 0
 spos := 1
 loop {
@@ -71,7 +85,17 @@ loop {
     sp++
     spos += 13
 }
-Log("hs_space_count=" (sp = 2 ? 1 : 0))
+Log("hs_space_count=" (sp = 8 ? 1 : 0))
+bs := 0
+bpos := 1
+loop {
+    bpos := InStr(kc, "k:down:BackSpace:", true, bpos)
+    if !bpos
+        break
+    bs++
+    bpos += 18
+}
+Log("hs_backspace_count=" (bs = 16 ? 1 : 0))
 
 ; Release any keys the capture engine may have left physically down
 ; (their events were held toward a match; on exit they would stay down at

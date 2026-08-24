@@ -14,7 +14,7 @@
 
 <h1>Hotstrings</h1>
 
-<div class="note" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> hotstrings are implemented (full capture-engine triggering with C/*/O/X options, case-follow, HotIf and end characters) and work on X11/XWayland. The examples below are for reference.</div>
+<div class="note" style="padding:.5em .8em;margin:.6em 0"><b>Linux port:</b> X11/XWayland hotstrings use the XI2.1 raw character stream, so multiple scripts can observe the same physical events without all-key passive-grab conflicts. Original trigger events reach the target normally (<code>send_event=False</code>); a match uses the documented Backspace count and then sends the replacement. C/*/O/X/B0, case-follow, HotIf, inside-word and end-character behavior are supported. Native Wayland still needs the future evdev broker character stream.</div>
 
 <h2 id="toc">Table of Contents</h2>
 <ul>

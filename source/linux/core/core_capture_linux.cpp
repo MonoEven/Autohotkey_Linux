@@ -1,24 +1,15 @@
-// Hotstring expansion engine (round 32): typed-text capture on X11.
+// X11 typed-text capture (check_detail0824 M2-R).
 //
-// Design:
-//   - While at least one enabled hotstring exists, the hotkey backend grabs
-//     every key (keycodes 8..255 x primary-modifier power set x lock
-//     combos), so typed characters reach this engine instead of the target
-//     application.
-//   - The engine holds the presses/releases of characters that could still
-//     form a match (a hotstring trigger whose prefix is a suffix of the
-//     typed text), forwards everything else with the standard XTEST
-//     passthrough, and on a full match discards the held trigger (nothing
-//     was ever sent, so no backspaces are needed -- unlike Windows) and
-//     sends the replacement (or runs the X-option callback).
-//   - Matching covers the core options: C (case sensitive), * (no end char
-//     required), O (omit the end char), X (callback) and case conforming;
-//     the end chars are the live g_EndChars set.  Hotstrings registered
-//     under a HotIf criterion are checked with HotCriterionAllowsFiring.
-//     The longest trigger wins; ties keep registration order.
+// Hotstrings and visible InputHook consume the XI2.1 raw stream. Raw events
+// are observation-only and multi-client: original physical events reach the
+// target with send_event=False. Hotstring matches erase the already-visible
+// trigger with Backspace and send the replacement, matching the Windows
+// model. Only an InputHook which requests suppression retains the legacy
+// all-key passive-grab compatibility lane until M2-L narrows it per KeyOpt.
 //
-// Limitation (documented): SendLevel and per-hotstring send-mode timing
-// options are not modeled (the port's Send modes are all XTEST anyway).
+// Matching covers C/*/O/X/B0, case conformity, inside-word, end characters,
+// HotIf and longest-trigger priority. The three-layer key model supplies
+// canonical physical SC, logical VK and layout-aware Unicode text.
 #include "../../stdafx.h"
 #include "../../script.h"
 #include "../../globaldata.h"
@@ -34,17 +25,23 @@
 #include <X11/XKBlib.h>
 #include <set>
 #include <vector>
+#include <string>
 #include <cstring>
 #include <cwctype>
 #include "../../hook.h"
 
 wchar_t LinuxCharFromKeySym(KeySym aKs);
 vk_type LinuxKeysymToVk(KeySym aKs);
+bool LinuxCaptureFeedInput(Display *d, XEvent &ev);
 
 namespace {
 
 bool sActive = false;
+bool sNeedsGrabs = false;
+std::wstring sRawBuffer;
 
+// Held (typed-but-not-yet-committed) events: compatibility path for an
+// InputHook which explicitly suppresses input. Hotstrings never use it.
 // Held (typed-but-not-yet-committed) events: presses and their releases.
 struct HeldEvent
 {
@@ -55,6 +52,22 @@ HeldEvent sHeld[128];
 int sHeldCount = 0;
 wchar_t sBuffer[128]; // The text of the held characters.
 int sBufLen = 0;
+
+bool InputHookNeedsGrabs()
+{
+	input_type *input = g_input;
+	if (!input || !input->InProgress())
+		return false;
+	if (!input->VisibleText || !input->VisibleNonText)
+		return true;
+	for (int i = 0; i < VK_ARRAY_COUNT; ++i)
+		if (input->KeyVK[i] & INPUT_KEY_SUPPRESS)
+			return true;
+	for (int i = 0; i < SC_ARRAY_COUNT; ++i)
+		if (input->KeySC[i] & INPUT_KEY_SUPPRESS)
+			return true;
+	return false;
+}
 
 // Modifier/lock keys never interrupt or join the text stream.
 bool LinuxIsModifierKey(KeySym ks)
@@ -295,6 +308,130 @@ int LinuxCaseMode(const wchar_t *aText, int aLen)
 	return 0;
 }
 
+void LinuxRawSendBackspaces(Display *d, int aCount)
+{
+	if (aCount <= 0)
+		return;
+	wchar_t spec[64];
+	_sntprintf(spec, _countof(spec), L"{Backspace %d}", aCount);
+	LinuxSendKeysString(d, spec);
+}
+
+void LinuxRawFireHotstring(Display *d, Hotstring *aHs, int aCaseMode
+	, int aEraseCount, wchar_t aEndChar, bool aViaEnd)
+{
+	// Auto-replacement output is level 0 by definition and therefore cannot
+	// recursively trigger the raw Hotstring buffer.
+	SendLevelType saved_level = g->SendLevel;
+	g->SendLevel = 0;
+	if (aHs->mDoBackspace)
+		LinuxRawSendBackspaces(d, aEraseCount);
+	if (aHs->mCallback)
+	{
+		++g_nThreads;
+		++g;
+		InitNewThread(aHs->mPriority, false, false);
+		aHs->PerformInNewThreadMadeByCaller();
+		ResumeUnderlyingThread();
+	}
+	else
+	{
+		wchar_t repl[LINE_SIZE + 8];
+		tcslcpy(repl, aHs->mReplacement ? aHs->mReplacement : _T(""), _countof(repl));
+		if (aHs->mConformToCase && *repl)
+		{
+			if (aCaseMode == 2)
+				for (wchar_t *cp = repl; *cp; ++cp)
+					*cp = (wchar_t)towupper(*cp);
+			else if (aCaseMode == 1)
+				repl[0] = (wchar_t)towupper(repl[0]);
+		}
+		LinuxSendCharsString(d, repl);
+	}
+	// With backspacing, the end char was erased and must be restored unless O.
+	// B0 leaves the original stream in place, so re-sending would duplicate it.
+	if (aViaEnd && aHs->mDoBackspace && !aHs->mOmitEndChar)
+	{
+		wchar_t end_text[2] = { aEndChar, 0 };
+		LinuxSendCharsString(d, end_text);
+	}
+	g->SendLevel = saved_level;
+}
+
+void LinuxRawFeedHotstrings(Display *d, const AhkLinuxKeyIdentity &aKey, int aSelfLevel)
+{
+	if (!Hotstring::sEnabledCount || !aKey.text)
+		return;
+	wchar_t ch = (wchar_t)aKey.text;
+	if (ch == L'\b')
+	{
+		if (!sRawBuffer.empty())
+			sRawBuffer.pop_back();
+		return;
+	}
+	if (ch < 0x20 && ch != L'\n' && ch != L'\t')
+	{
+		sRawBuffer.clear();
+		return;
+	}
+	if (sRawBuffer.size() >= 512)
+		sRawBuffer.erase(0, sRawBuffer.size() - 511);
+	sRawBuffer.push_back(ch);
+	bool is_endchar = wcschr(g_EndChars, ch) != nullptr;
+	Hotstring *best = nullptr;
+	int best_len = 0;
+	bool best_via_end = false;
+	for (int i = 0; i < Hotstring::sHotstringCount; ++i)
+	{
+		Hotstring *hs = Hotstring::shs[i];
+		if (!hs || (hs->mSuspended & (HS_SUSPENDED | HS_TURNED_OFF | HS_TEMPORARILY_DISABLED)))
+			continue;
+		if (hs->mHotCriterion && !HotCriterionAllowsFiring(hs->mHotCriterion, hs->mName))
+			continue;
+		// Windows rule: a synthetic event can trigger only when its SendLevel is
+		// strictly greater than the Hotstring's input level. Physical/other-
+		// process input is represented by -1 and always qualifies.
+		if (aSelfLevel >= 0 && aSelfLevel <= (int)hs->mInputLevel)
+			continue;
+		int sl = (int)wcslen(hs->mString);
+		int text_len = (int)sRawBuffer.size() - (hs->mEndCharRequired ? 1 : 0);
+		if (sl < 1 || text_len < sl || (hs->mEndCharRequired && !is_endchar))
+			continue;
+		if (!LinuxBufEndsWith(sRawBuffer.c_str(), text_len, hs->mString, hs->mCaseSensitive))
+			continue;
+		int start = text_len - sl;
+		if (!hs->mDetectWhenInsideWord && start > 0)
+		{
+			wchar_t prev = sRawBuffer[(size_t)start - 1];
+			if (iswalnum(prev) || prev == L'_')
+				continue;
+		}
+		if (sl >= best_len)
+		{
+			best = hs;
+			best_len = sl;
+			best_via_end = hs->mEndCharRequired;
+		}
+	}
+	if (!best)
+		return;
+	int typed_len = (int)sRawBuffer.size() - (best_via_end ? 1 : 0);
+	int case_mode = best->mConformToCase
+		? LinuxCaseMode(sRawBuffer.c_str(), typed_len) : 0;
+	int erase_count = best_len + (best_via_end ? 1 : 0);
+	LinuxRawFireHotstring(d, best, case_mode, erase_count, ch, best_via_end);
+	if (best->mDoReset)
+		sRawBuffer.clear();
+	else
+	{
+		// Replacement is injected and ignored by the raw buffer; retain only
+		// the pre-trigger context so later inside-word checks stay meaningful.
+		sRawBuffer.resize((size_t)(typed_len - best_len));
+		if (best_via_end && !best->mOmitEndChar)
+			sRawBuffer.push_back(ch);
+	}
+}
+
 void LinuxCaptureFire(Display *d, Hotstring *aHs, int aCaseMode, bool aForwardEndChar, XEvent &aEndEv)
 {
 	// The held trigger events are discarded: nothing was ever sent to the
@@ -390,25 +527,72 @@ void LinuxCaptureDispatchInputNotifies()
 	}
 }
 
+void LinuxCaptureRawKeyEvent(Display *d, KeyCode aKeycode, bool aIsPress,
+	Time aTime, unsigned int aCoreState, int aSelfLevel, bool aIsSendInput)
+{
+	if (!LinuxCaptureUsesRaw() || aIsSendInput)
+		return;
+	XEvent ev;
+	memset(&ev, 0, sizeof(ev));
+	ev.type = aIsPress ? KeyPress : KeyRelease;
+	ev.xkey.type = ev.type;
+	ev.xkey.display = d;
+	ev.xkey.keycode = aKeycode;
+	ev.xkey.state = aCoreState;
+	ev.xkey.time = aTime;
+	ev.xkey.same_screen = True;
+	AhkLinuxKeyIdentity key;
+	LinuxEventKeyIdentity(d, ev, key);
+	if (g_input && g_input->InProgress())
+	{
+		if (aSelfLevel >= 0 && g_input->MinSendLevel > 0
+			&& aSelfLevel < (int)g_input->MinSendLevel)
+			return;
+		LinuxCaptureFeedInput(d, ev);
+		return;
+	}
+	if (!aIsPress || aSelfLevel == 0)
+		return;
+	if (!key.text)
+	{
+		if (!LinuxIsModifierKey(key.keysym))
+			sRawBuffer.clear();
+		return;
+	}
+	LinuxRawFeedHotstrings(d, key, aSelfLevel);
+}
+
+bool LinuxCaptureNeedsGrabs()
+{
+	return InputHookNeedsGrabs();
+}
+
+bool LinuxCaptureUsesRaw()
+{
+	if (g_input && g_input->InProgress())
+		return !InputHookNeedsGrabs();
+	return Hotstring::sEnabledCount > 0;
+}
+
 bool LinuxCaptureActive()
 {
-	// Capture is needed while any hotstring is enabled or an InputHook is
-	// in progress (live key capture).
-	return sActive || (g_input && g_input->InProgress());
+	return sActive;
 }
 
 void LinuxCaptureStateChanged()
 {
 	bool want = Hotstring::sEnabledCount > 0 || (g_input && g_input->InProgress());
-	if (want != sActive)
+	bool needs_grabs = InputHookNeedsGrabs();
+	if (want != sActive || needs_grabs != sNeedsGrabs)
 	{
 		sActive = want;
+		sNeedsGrabs = needs_grabs;
 		sHeldCount = 0;
 		sBufLen = 0;
+		sRawBuffer.clear();
 		LinuxSetReconcileDirty();
-		// Install/remove the all-keys capture grabs right away (the lazy
-		// dispatch reconcile only runs inside the main loop, which a
-		// synchronous script may never enter).
+		// Reconcile immediately only when compatibility suppression grabs
+		// change. Raw Hotstring/visible InputHook never add all-key grabs.
 		LinuxReconcileHotkeyGrabs();
 	}
 }
@@ -520,7 +704,7 @@ bool LinuxCaptureFeedInput(Display *d, XEvent &ev)
 
 bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel)
 {
-	if (!LinuxCaptureActive())
+	if (!LinuxCaptureActive() || LinuxCaptureUsesRaw())
 		return false;
 
 	// An active InputHook captures the typed-text stream and consumes every

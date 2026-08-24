@@ -81,13 +81,13 @@ ahk_core --pack my-script script.ahk
 | Language/runtime | AutoHotkey v2 syntax, objects, functions, classes, timers, files and processes |
 | X11/XWayland | `Win*`, `Control*`, hotkeys, hotstrings, InputHook, Unicode Send, pixels/monitors, dialogs and GTK3 GUI |
 | Native Wayland | xdg-shell, wlroots virtual keyboard/pointer and screencopy; global hotkeys via portal, GNOME Shell or evdev |
-| Input backends | Per-hotkey routing across X11, portal, GNOME Shell and evdev/uinput; versioned caps API; layout-aware xkbcommon key model, physical `scXXX` on X11/evdev and `A & B` combos on evdev |
+| Input backends | Per-hotkey routing across X11, portal, GNOME Shell and evdev/uinput; versioned caps; layout-aware key model; XI2 raw multi-client Hotstring/visible InputHook; physical `scXXX` and evdev `A & B` |
 | Accessibility | AT-SPI text/action controls on GNOME Wayland; tested with GNOME Terminal and Firefox |
 | Interop | `.so` `DllCall` + libffi callbacks, including Float/Double ABI types; D-Bus adapted COM layer |
 | Desktop | GTK3 GUI/Menu, notifications, AutoHotkey StatusNotifierItem tray icon and `A_TrayMenu` |
 | Distribution | deb, RPM, tarball, AppImage, AUR PKGBUILD, Flatpak manifest and `--pack` |
 
-The authoritative test totals are **1152/1152** X11/headless assertions,
+The authoritative test totals are **1157/1157** X11/headless assertions,
 **17/17** native-Wayland assertions and **255/255** XWayland assertions. CI
 also runs regular and ASan builds, four distro containers, no-XWayland,
 packed-binary acceptance, scenario gates and an RSS/event-count soak.

@@ -201,8 +201,14 @@
   4. `sHeld/sBuffer` 在 raw 模式下不再需要 hold 转发——buffer 改
      `std::wstring`，只留识别缓冲上限（对齐 Windows 的 `#Hotstring` buffer
      语义），解 G3。
+- **M2-R 已交付**：X11/XWayland Hotstring 与 `InputHook("V")` 改为 XI2.1
+  raw 流；Hotstring 不再安装全键 passive grabs/用 XSendEvent 伪造转发，而是
+  原始事件先落地，匹配后发送精确 Backspace + replacement；C/*/O/X/B0、
+  inside-word、HotIf、大小写/Unicode保留。抑制型 InputHook 暂保留兼容 grab，
+  与 visible raw 路径显式分离。双进程 Hotstring、双 visible InputHook + 独立
+  target/oracle 均通过，且修复 raw self-level mark 必须 FIFO 的重入次序 bug。
 - **验收标准**：两个脚本各自带 Hotstring 同时运行、互不 BadAccess、都能触发
-  （新场景 `multiscript_hotstring`）；应用收到的 trigger 键是**原始物理事件**
+  （`tests/oracle/run_multiscript_hotstring_oracle.sh`）；应用收到的 trigger 键是**原始物理事件**
   （xterm + `xev` 断言 `send_event=False`），解 G2；对照断言：backspace 回删
   数 = trigger 长度（含 end char 处理与 `*`/`?`/`O`/`B0` 选项矩阵）。
 - **风险**：回删可见闪烁——与 Windows AHK 行为一致，属可接受；密码框场景

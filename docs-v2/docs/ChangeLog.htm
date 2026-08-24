@@ -54,6 +54,12 @@
     explicit scan-code prefixes/suffixes. X11/portal/GNOME keep
     <code>custom_combo=false</code> and reject registration until the M2 raw
     event path can implement them without fragile passive grabs.</li>
+  <li><b>M2-R XI2 raw capture:</b> Hotstrings and visible InputHook now share
+    an observation-only XI2.1 stream. Two scripts can observe the same input
+    while the target receives original <code>send_event=False</code> events;
+    Hotstring replacement uses exact Backspace counts instead of holding and
+    synthetically forwarding every key. Suppression requests stay on a
+    separate compatibility-grab lane pending M2-L per-key narrowing.</li>
 </ul>
 
 <h2 id="linux.16">v2.0.26-linux.16</h2>

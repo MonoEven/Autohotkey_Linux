@@ -1,7 +1,7 @@
 # AutoHotkey v2.0.26 Linux 移植 —— 模块验证矩阵
 
 > 对照 AutoHotkey v2 官方文档逐模块确认可用性。完整逐模块校验报告见
-> `tests/doccheck/CHECK_REPORT.md`（1152/1152 断言，普通 + ASan 双构建）。
+> `tests/doccheck/CHECK_REPORT.md`（1157/1157 断言，普通 + ASan 双构建）。
 > 状态图例：✅ 已实现并有 .ahk 验证；⚠️ 部分实现/依赖外部工具；❌ 未实现（明确报错）。
 > GUI 类功能区分「有画面」(DISPLAY 可用，X11/WSLg/XFCE/XWayland) 与「无画面」(headless)。
 
@@ -68,8 +68,8 @@
 | Send/SendEvent/SendInput/SendPlay/SendText | ✅ | X11:XTEST + xkbcommon-x11 当前布局 Shift/AltGr 反查；Wayland:虚拟键盘/指针；独立 XI2/keysym oracle 验证 |
 | Click/Mouse*/KeyWait/GetKeyState/BlockInput | ✅ | X11 实测;锁键开关、阻断语义 |
 | Hotkey / HotIf | ✅ | X11/XWayland:XGrabKey；X11/evdev 支持 canonical set-1 `scXXX`；evdev 支持 `A & B` 状态机（X11/portal/GNOME 明确不支持）；**鼠标热键**(round-30,XGrabButton:左/右/中/X1/X2/滚轮)、**左右修饰键 `<^a`/`>^a` 与通配 `*`**(round-31)、哈希索引、动态 modifier map、BadAccess 冲突报错、Off/透传(round-29) |
-| Hotstring | ✅ | **round-32 真实触发**:全键捕获引擎 hold/flush/match,支持 C/*/O/X 选项、大小写跟随、HotIf;触发词抑制并发送替换(或回调);xkeycap 独立客户端验证(11 断言);round-34 增 Unicode 触发词(中文端到端) |
-| InputHook | ✅ | **round-33 按键采集核心**:捕获引擎实时喂键——缓冲收集、结束键(EndChar/EndKey)、匹配表(Match)、退格撤销、输入抑制(6 断言);**round-34 增 OnChar/OnKeyDown/OnKeyUp 排队通知**(主循环派发;Windows 参数语义;SC=X11 keycode)+ Unicode 字符流,共 10 断言 |
+| Hotstring | ✅ | XI2.1 raw multi-client 字符流；原始 trigger 到达目标，按精确 Backspace 数回删再替换；C/*/O/X/B0、大小写、inside-word、HotIf、Unicode；双进程外部 oracle |
+| InputHook | ✅ | Visible 模式 XI2 raw 零全键 grab，可多脚本观察且目标可见；抑制请求走独立兼容 grab；缓冲/EndKey/Match/退格、canonical VK/SC、Unicode 与回调 |
 
 ## 6. GUI(有画面 / 无画面)
 
@@ -110,7 +110,7 @@
 
 ## 汇总
 
-- **1152/1152** X11/headless doc-check 断言通过（普通 + ASan 双构建）
+- **1157/1157** X11/headless doc-check 断言通过（普通 + ASan 双构建）
 - **27/27** headless 回归测试；Wayland **17/17** + XWayland **255/255** 独立套件
 - 场景门禁覆盖 X11、纯 Wayland、GNOME 会话、evdev/uinput、打包和 SNI；CI 另跑四发行版容器、no-XWayland、pack 容器验收与 soak
 - Unicode 文本发送（round-34 + round-36）:X11/XWayland 非 ASCII 经 keysym 传输（借键码重映射 + 跨进程 X Selection 租约），纯 Wayland 走剪贴板粘贴回退（等待目标实际消费、恢复空原剪贴板、`AHK_WAYLAND_PASTE=0` 可禁、uinput 通道），无注入路径明确报错
