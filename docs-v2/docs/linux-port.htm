@@ -181,7 +181,7 @@ and 20 for the D-Bus COM layer). The port has two display backends:</p>
 <p><code>heuristic</code> provenance means process-local/device heuristics; only a future broker/compositor-stamped origin may claim <code>authoritative</code>. A <code>no</code> value remains no until a matching behavior test is added.</p>
 <!-- INPUT_CAPS:END -->
     X11 and evdev now share a three-layer key model: Linux evdev physical code
-    â†?AutoHotkey/Windows set-1 <code>scXXX</code>, logical VK/keysym, and
+    â†” AutoHotkey/Windows set-1 <code>scXXX</code>, logical VK/keysym, and
     Unicode text. X11 keymap/state comes from xkbcommon-x11 and refreshes on
     MappingNotify. Character Send searches the live layout for the least
     modified key (none, Shift, AltGr, Shift+AltGr) before using the serialized
@@ -370,7 +370,7 @@ the <code>v2.0.26-linux.*</code> git tags.  The latest release is
 Highlights of this release:</p>
 <ul>
   <li><b><code>Hotkey()</code> works on Wayland</b>: the X-only guard is
-    gone â€?<code>Hotkey()</code> routes through the unified input backend
+    gone â€” <code>Hotkey()</code> routes through the unified input backend
     (gnome-shell/portal/evdev) and reports per-backend errors; verified
     end-to-end on the GNOME 49 VM (F12 and Ctrl+1 fire through the
     extension, disable &rarr; enable re-registers automatically).</li>
@@ -439,7 +439,7 @@ Highlights of this release:</p>
   <li><b>Portal deny/cancel regression</b> and
     <b>evdev/uinput permission artifacts</b>
     (<code>tools/linux/permissions/</code>: udev rule, input group,
-    polkit action, install script â€?VM-verified).</li>
+    polkit action, install script â€” VM-verified).</li>
   <li><b>Windows differential:</b> official v2.0.26 x64 archive/executable/
     trace hashes are pinned. An independent Linux XTEST replay strictly matches
     the first 20-row VK/SC/Unicode/Hotkey/Hotstring golden slice, including wildcard,
