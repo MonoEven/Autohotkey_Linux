@@ -25,6 +25,8 @@
 #include <ctime>
 #include <string>
 #include <vector>
+#include <algorithm>
+#include <cmath>
 
 namespace {
 
@@ -308,7 +310,7 @@ bool ReadRef(DBusMessageIter *aIt, std::string &aName, std::string &aPath)
 
 // Read the Name D-Bus property of an accessible object (org.freedesktop.
 // D-Bus.Properties.Get, 'org.a11y.atspi.Accessible', 'Name').
-std::string GetNameProp(const char *aDest, const char *aPath)
+std::string GetNameProp(const char *aDest, const char *aPath, int aTimeoutMs = 2000)
 {
 	if (!sBus || !aDest || !*aDest || !aPath || !*aPath)
 		return std::string();
@@ -325,7 +327,7 @@ std::string GetNameProp(const char *aDest, const char *aPath)
 	}
 	DBusError err;
 	dbus_error_init(&err);
-	int timeout = AtspiBoundTimeout(2000);
+	int timeout = AtspiBoundTimeout(aTimeoutMs);
 	if (timeout <= 0)
 	{
 		dbus_message_unref(msg);
@@ -407,6 +409,40 @@ static bool ReadCacheItemNew(DBusMessageIter *aItem, const char *aFallbackDest, 
 	return !aOut.dest.empty();
 }
 
+static bool ParseCacheItems(DBusMessage *aReply, const char *aDest,
+	std::vector<AtspiRef> &aItems)
+{
+	aItems.clear();
+	if (!aReply)
+		return false;
+	DBusMessageIter it;
+	if (!dbus_message_iter_init(aReply, &it)
+		|| dbus_message_iter_get_arg_type(&it) != DBUS_TYPE_ARRAY)
+		return false;
+	DBusMessageIter arr;
+	dbus_message_iter_recurse(&it, &arr);
+	while (dbus_message_iter_get_arg_type(&arr) != DBUS_TYPE_INVALID)
+	{
+		AtspiRef item;
+		if (!ReadCacheItemNew(&arr, aDest, item))
+		{
+			aItems.clear();
+			return false;
+		}
+		aItems.push_back(std::move(item));
+		dbus_message_iter_next(&arr);
+	}
+	return !aItems.empty();
+}
+
+static void AppendCacheItems(std::vector<AtspiRef> &aItems)
+{
+	sLastCacheApps++;
+	sLastCacheItems += (int)aItems.size();
+	for (auto &item : aItems)
+		sTable.push_back(std::move(item));
+}
+
 // One bulk round-trip per application.  Unsupported/old signatures fall back
 // to WalkChildren for that application only, preserving Qt compatibility.
 static bool LoadCacheForApp(const char *aDest)
@@ -418,48 +454,52 @@ static bool LoadCacheForApp(const char *aDest)
 	DBusMessage *rep = AtspiCallTo(aDest, CACHE_PATH, CACHE_IFACE, "GetItems", 500);
 	if (!rep)
 		return false;
-	DBusMessageIter it;
-	if (!dbus_message_iter_init(rep, &it)
-		|| dbus_message_iter_get_arg_type(&it) != DBUS_TYPE_ARRAY)
-	{
-		dbus_message_unref(rep);
-		return false;
-	}
-	DBusMessageIter arr;
-	dbus_message_iter_recurse(&it, &arr);
-	size_t before = sTable.size();
-	int parsed = 0;
-	bool valid = true;
-	while (dbus_message_iter_get_arg_type(&arr) != DBUS_TYPE_INVALID)
-	{
-		if (AtspiBudgetExpired())
-			break; // keep already parsed cache entries as a partial result
-		AtspiRef e;
-		if (!ReadCacheItemNew(&arr, aDest, e))
-		{
-			valid = false;
-			break;
-		}
-		sTable.push_back(std::move(e));
-		++parsed;
-		dbus_message_iter_next(&arr);
-	}
+	std::vector<AtspiRef> items;
+	bool valid = ParseCacheItems(rep, aDest, items);
 	dbus_message_unref(rep);
-	if (!valid || parsed == 0)
-	{
-		sTable.resize(before);
+	if (!valid)
 		return false;
-	}
-	++sLastCacheApps;
-	sLastCacheItems += parsed;
+	AppendCacheItems(items);
 	return true;
 }
 
 void WalkChildren(const char *aDest, const char *aPath, int aDepth, int aMaxDepth);
 
+static bool AtspiWindowLikeRole(uint32_t aRole)
+{
+	// AT-SPI roles: Alert=2, DesktopFrame=14, Dialog=16, FileChooser=19,
+	// Frame=23, InternalFrame=28. Role 0 means fallback metadata is unavailable.
+	return aRole == 0 || aRole == 2 || aRole == 14 || aRole == 16
+		|| aRole == 19 || aRole == 23 || aRole == 28;
+}
+
+static std::string AtspiComparableIdentity(const std::string &aText)
+{
+	std::string normalized;
+	for (unsigned char ch : aText)
+		if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9'))
+			normalized += (char)ch;
+		else if (ch >= 'A' && ch <= 'Z')
+			normalized += (char)(ch - 'A' + 'a');
+	return normalized;
+}
+
+static bool AtspiTitleRelated(const std::string &aIdentity, const std::string &aTitle)
+{
+	std::string identity = AtspiComparableIdentity(aIdentity);
+	std::string title = AtspiComparableIdentity(aTitle);
+	if (identity.size() < 3 || title.size() < 3)
+		return false;
+	bool title_ends_with_identity = title.size() >= identity.size()
+		&& title.compare(title.size() - identity.size(), identity.size(), identity) == 0;
+	bool partial_title_starts_identity = identity.size() >= title.size()
+		&& identity.compare(0, title.size(), title) == 0;
+	return title_ends_with_identity || partial_title_starts_identity;
+}
+
 // Read the desktop's application roots once, then load each application's
 // cache in bulk.  The registry itself has no per-app cache.
-static bool RefreshApplications(int aMaxDepth)
+static bool RefreshApplications(int aMaxDepth, const char *aWindowTitle)
 {
 	DBusMessage *rep = AtspiCall(sBus, "/org/a11y/atspi/accessible/root", IFACE, "GetChildren");
 	if (!rep)
@@ -471,34 +511,250 @@ static bool RefreshApplications(int aMaxDepth)
 		dbus_message_unref(rep);
 		return false;
 	}
+	auto load_app = [&](const std::string &owner, const std::string &path,
+		const std::string &display) {
+		sTable.push_back(AtspiRef{display, path, owner});
+		if (!LoadCacheForApp(owner.c_str()))
+		{
+			if (AtspiBudgetExpired())
+				return;
+			++sLastFallbackApps;
+			WalkChildren(owner.c_str(), path.c_str(), 1, aMaxDepth);
+		}
+	};
+	std::string hint = aWindowTitle ? aWindowTitle : "";
 	DBusMessageIter arr;
 	dbus_message_iter_recurse(&it, &arr);
+	if (hint.empty())
+	{
+		// Preserve the normal diagnostic/full-refresh order exactly.
+		while (dbus_message_iter_get_arg_type(&arr) != DBUS_TYPE_INVALID)
+		{
+			if (AtspiBudgetExpired())
+				break;
+			std::string owner, path;
+			if (ReadRef(&arr, owner, path) && !owner.empty() && !path.empty())
+			{
+				std::string display = owner;
+				if (display[0] == ':')
+				{
+					std::string name = GetNameProp(owner.c_str(), path.c_str());
+					if (!name.empty())
+						display = name;
+				}
+				load_app(owner, path, display);
+			}
+			dbus_message_iter_next(&arr);
+		}
+		dbus_message_unref(rep);
+		return true;
+	}
+
+	struct AppRoot
+	{
+		std::string owner;
+		std::string path;
+		std::string display;
+		bool preferred;
+	};
+	std::vector<AppRoot> apps;
 	while (dbus_message_iter_get_arg_type(&arr) != DBUS_TYPE_INVALID)
 	{
-		if (AtspiBudgetExpired())
-			break;
 		std::string owner, path;
 		if (ReadRef(&arr, owner, path) && !owner.empty() && !path.empty())
-		{
-			std::string disp = owner;
-			if (disp[0] == ':')
-			{
-				std::string n = GetNameProp(owner.c_str(), path.c_str());
-				if (!n.empty())
-					disp = n;
-			}
-			sTable.push_back(AtspiRef{disp, path, owner});
-			if (!LoadCacheForApp(owner.c_str()))
-			{
-				if (AtspiBudgetExpired())
-					break;
-				++sLastFallbackApps;
-				WalkChildren(owner.c_str(), path.c_str(), 1, aMaxDepth);
-			}
-		}
+			apps.push_back(AppRoot{owner, path, owner, false});
 		dbus_message_iter_next(&arr);
 	}
 	dbus_message_unref(rep);
+	// Probe every root name concurrently under one 500ms wall-clock budget.
+	// Serial per-app timeouts let one stale desktop process starve the target.
+	struct RootPending { size_t index; DBusPendingCall *call; };
+	std::vector<RootPending> pending;
+	int root_timeout = AtspiBoundTimeout(500);
+	if (root_timeout > 0)
+		for (size_t index = 0; index < apps.size(); ++index)
+		{
+			DBusMessage *message = dbus_message_new_method_call(apps[index].owner.c_str(),
+				apps[index].path.c_str(), "org.freedesktop.DBus.Properties", "Get");
+			if (!message)
+				continue;
+			const char *iface = "org.a11y.atspi.Accessible";
+			const char *property = "Name";
+			dbus_message_append_args(message, DBUS_TYPE_STRING, &iface,
+				DBUS_TYPE_STRING, &property, DBUS_TYPE_INVALID);
+			DBusPendingCall *call = nullptr;
+			if (dbus_connection_send_with_reply(sBus, message, &call, root_timeout) && call)
+			{
+				pending.push_back(RootPending{index, call});
+				++sPendingCalls;
+			}
+			dbus_message_unref(message);
+		}
+	if (!pending.empty())
+	{
+		dbus_connection_flush(sBus);
+		uint64_t deadline = AtspiNowUs() + (uint64_t)root_timeout * 1000ULL;
+		if (sQueryDeadlineUs && sQueryDeadlineUs < deadline)
+			deadline = sQueryDeadlineUs;
+		bool preferred_found = false;
+		AtspiPendingDepthGuard pending_depth;
+		for (;;)
+		{
+			bool any = false;
+			for (auto &entry : pending)
+			{
+				if (!entry.call)
+					continue;
+				any = true;
+				if (!dbus_pending_call_get_completed(entry.call))
+					continue;
+				DBusMessage *reply = dbus_pending_call_steal_reply(entry.call);
+				dbus_pending_call_unref(entry.call);
+				entry.call = nullptr;
+				std::string name;
+				if (reply && dbus_message_get_type(reply) == DBUS_MESSAGE_TYPE_METHOD_RETURN)
+				{
+					DBusMessageIter value, text;
+					if (dbus_message_iter_init(reply, &value)
+						&& dbus_message_iter_get_arg_type(&value) == DBUS_TYPE_VARIANT)
+					{
+						dbus_message_iter_recurse(&value, &text);
+						if (dbus_message_iter_get_arg_type(&text) == DBUS_TYPE_STRING)
+						{
+							const char *raw = nullptr;
+							dbus_message_iter_get_basic(&text, &raw);
+							name = raw ? raw : "";
+						}
+					}
+				}
+				if (reply)
+					dbus_message_unref(reply);
+				AppRoot &app = apps[entry.index];
+				if (!name.empty())
+					app.display = name;
+				app.preferred = AtspiTitleRelated(app.display, hint);
+				if (app.preferred)
+				{
+					preferred_found = true;
+					break;
+				}
+			}
+			if (preferred_found || !any)
+				break;
+			uint64_t now = AtspiNowUs();
+			if (now && now >= deadline)
+				break;
+			++sPendingPumpSlices;
+			if (!dbus_connection_read_write_dispatch(sBus, 10))
+				break;
+			MsgSleep(0, RETURN_AFTER_MESSAGES_SPECIAL_FILTER);
+		}
+		for (auto &entry : pending)
+			if (entry.call)
+			{
+				dbus_pending_call_cancel(entry.call);
+				dbus_pending_call_unref(entry.call);
+			}
+	}
+	bool preferred_known = std::any_of(apps.begin(), apps.end(),
+		[](const AppRoot &app) { return app.preferred; });
+	if (!preferred_known && !getenv("AHK_ATSPI_DISABLE_CACHE"))
+	{
+		struct CachePending { size_t index; DBusPendingCall *call; };
+		std::vector<CachePending> cache_pending;
+		int cache_timeout = AtspiBoundTimeout(1000);
+		if (cache_timeout > 0)
+			for (size_t index = 0; index < apps.size(); ++index)
+			{
+				DBusMessage *message = dbus_message_new_method_call(apps[index].owner.c_str(),
+					CACHE_PATH, CACHE_IFACE, "GetItems");
+				if (!message)
+					continue;
+				DBusPendingCall *call = nullptr;
+				if (dbus_connection_send_with_reply(sBus, message, &call, cache_timeout) && call)
+				{
+					cache_pending.push_back(CachePending{index, call});
+					++sPendingCalls;
+				}
+				dbus_message_unref(message);
+			}
+		if (!cache_pending.empty())
+		{
+			dbus_connection_flush(sBus);
+			uint64_t deadline = AtspiNowUs() + (uint64_t)cache_timeout * 1000ULL;
+			if (sQueryDeadlineUs && sQueryDeadlineUs < deadline)
+				deadline = sQueryDeadlineUs;
+			AtspiPendingDepthGuard pending_depth;
+			bool target_loaded = false;
+			for (;;)
+			{
+				bool any = false;
+				for (auto &entry : cache_pending)
+				{
+					if (!entry.call)
+						continue;
+					any = true;
+					if (!dbus_pending_call_get_completed(entry.call))
+						continue;
+					DBusMessage *reply = dbus_pending_call_steal_reply(entry.call);
+					dbus_pending_call_unref(entry.call);
+					entry.call = nullptr;
+					std::vector<AtspiRef> items;
+					bool valid = reply && dbus_message_get_type(reply) == DBUS_MESSAGE_TYPE_METHOD_RETURN
+						&& ParseCacheItems(reply, apps[entry.index].owner.c_str(), items);
+					if (reply)
+						dbus_message_unref(reply);
+					if (!valid)
+						continue;
+					std::string normalized_hint = AtspiComparableIdentity(hint);
+					bool match = std::any_of(items.begin(), items.end(), [&](const AtspiRef &item) {
+						std::string normalized_name = AtspiComparableIdentity(item.name);
+						bool raw_match = !hint.empty() && item.name.find(hint) != std::string::npos;
+						bool normalized_match = normalized_hint.size() >= 3
+							&& normalized_name.find(normalized_hint) != std::string::npos;
+						return AtspiWindowLikeRole(item.role) && (raw_match || normalized_match);
+					});
+					if (match)
+					{
+						AppRoot &app = apps[entry.index];
+						app.preferred = true;
+						sTable.push_back(AtspiRef{app.display, app.path, app.owner});
+						AppendCacheItems(items);
+						target_loaded = true;
+						break;
+					}
+				}
+				if (target_loaded || !any)
+					break;
+				uint64_t now = AtspiNowUs();
+				if (now && now >= deadline)
+					break;
+				++sPendingPumpSlices;
+				if (!dbus_connection_read_write_dispatch(sBus, 10))
+					break;
+				MsgSleep(0, RETURN_AFTER_MESSAGES_SPECIAL_FILTER);
+			}
+			for (auto &entry : cache_pending)
+				if (entry.call)
+				{
+					dbus_pending_call_cancel(entry.call);
+					dbus_pending_call_unref(entry.call);
+				}
+			if (target_loaded)
+				return true;
+		}
+	}
+	std::stable_sort(apps.begin(), apps.end(), [](const AppRoot &left, const AppRoot &right) {
+		return left.preferred && !right.preferred;
+	});
+	for (const auto &app : apps)
+	{
+		if (AtspiBudgetExpired())
+			break;
+		load_app(app.owner, app.path, app.display);
+		if (app.preferred)
+			break; // WinTitle scopes the operation to this application only.
+	}
 	return true;
 }
 
@@ -645,7 +901,7 @@ bool LinuxAtspiAvailable()
 	return available;
 }
 
-int LinuxAtspiRefresh()
+int LinuxAtspiRefresh(const char *aWindowTitle)
 {
 	AtspiSetLastError(0);
 	sTable.clear();
@@ -669,7 +925,7 @@ int LinuxAtspiRefresh()
 		max = atoi(extra);
 	if (max < 1)
 		max = 1;
-	if (!RefreshApplications(max))
+	if (!RefreshApplications(max, aWindowTitle))
 		WalkChildren(REG, "/org/a11y/atspi/accessible/root", 1, max);
 	AtspiBudgetExpired();
 	sQueryDeadlineUs = 0; // Later GetText/Action calls have their own timeout.
@@ -718,6 +974,8 @@ static bool AtspiAppScope(const AtspiRef &aNode, std::string &aDest)
 		return false;
 	if (aNode.path == "/org/a11y/atspi/accessible/root")
 		return false; // the application root placeholder, not a window
+	if (!AtspiWindowLikeRole(aNode.role))
+		return false; // menu/action labels are not WinTitle candidates.
 	aDest = aNode.dest;
 	return true;
 }
@@ -760,6 +1018,8 @@ static void AtspiDumpMatches(const char *aWinTitle, const char *aName)
 	FILE *f = fopen("/tmp/atspi_table.log", "a");
 	if (!f)
 		return;
+	fprintf(f, "query title=[%s] name=[%s]\n",
+		aWinTitle ? aWinTitle : "<null>", aName ? aName : "<null>");
 	for (const auto &e : sTable)
 		if ((aWinTitle && e.name.find(aWinTitle) != std::string::npos)
 			|| (aName && e.name.find(aName) != std::string::npos))
@@ -902,6 +1162,9 @@ bool LinuxAtspiSetText(const char *aPath, const char *aText)
 	return ok;
 }
 
+static bool AtspiGetProperty(const std::string &aDest, const std::string &aPath,
+	const char *aIface, const char *aProperty, DBusMessage **aReply);
+
 bool LinuxAtspiDoAction(const char *aPath, int aIndex, const char *aNameOrNull)
 {
 	if (!aPath || !*aPath)
@@ -918,6 +1181,18 @@ bool LinuxAtspiDoAction(const char *aPath, int aIndex, const char *aNameOrNull)
 		if (rep)
 		{
 			dbus_message_get_args(rep, nullptr, DBUS_TYPE_INT32, &n, DBUS_TYPE_INVALID);
+			dbus_message_unref(rep);
+		}
+		else if (AtspiGetProperty(dest, path, "org.a11y.atspi.Action", "NActions", &rep))
+		{
+			DBusMessageIter value, number;
+			if (dbus_message_iter_init(rep, &value)
+				&& dbus_message_iter_get_arg_type(&value) == DBUS_TYPE_VARIANT)
+			{
+				dbus_message_iter_recurse(&value, &number);
+				if (dbus_message_iter_get_arg_type(&number) == DBUS_TYPE_INT32)
+					dbus_message_iter_get_basic(&number, &n);
+			}
 			dbus_message_unref(rep);
 		}
 		bool found = false;
@@ -1321,6 +1596,39 @@ bool LinuxAtspiSetValue(const char *aPath, double aValue)
 	if (reply) dbus_message_unref(reply);
 	int code = ok ? 0 : AtspiDbusErrorCode(err, EIO);
 	dbus_error_free(&err);
-	AtspiSetLastError(code);
-	return ok;
+	if (!ok)
+		return AtspiFail(code);
+	// Some bridges (notably Java ATK Wrapper 0.42.1) advertise CurrentValue as
+	// readwrite and return METHOD_RETURN from Properties.Set, yet silently keep
+	// the old value. Enforce the project-wide real-effect-or-error contract.
+	uint64_t saved_deadline = sQueryDeadlineUs;
+	uint64_t verify_deadline = AtspiNowUs() + 250000ULL;
+	if (!sQueryDeadlineUs || verify_deadline < sQueryDeadlineUs)
+		sQueryDeadlineUs = verify_deadline;
+	for (int attempt = 0; attempt < 5; ++attempt)
+	{
+		double observed = 0.0;
+		if (LinuxAtspiGetValue(aPath, observed, nullptr))
+		{
+			bool same = false;
+			if (std::isnan(aValue))
+				same = std::isnan(observed);
+			else if (std::isinf(aValue))
+				same = observed == aValue;
+			else
+			{
+				double tolerance = std::max(1e-9, std::fabs(aValue) * 1e-9);
+				same = std::fabs(observed - aValue) <= tolerance;
+			}
+			if (same)
+			{
+				sQueryDeadlineUs = saved_deadline;
+				return AtspiSucceed();
+			}
+		}
+		if (attempt < 4)
+			MsgSleep(10, RETURN_AFTER_MESSAGES_SPECIAL_FILTER);
+	}
+	sQueryDeadlineUs = saved_deadline;
+	return AtspiFail(EIO);
 }

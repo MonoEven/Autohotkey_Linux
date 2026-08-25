@@ -182,11 +182,17 @@
     SIGUSR2 trigger for idle or running scripts; an IDE TCP crash leaves the
     script alive for a later reconnect. VSC-2 D1-D3 is complete for this Linux
     scope, and the VSIX stays in release checksums/artifacts.</li>
-  <li><b>GUI-1 real host matrix:</b> installed and tested GTK 3.24.50, Qt 6.9.2
-    and VS Code/Electron 1.134. GTK/Qt tested controls pass X11/AT-SPI text and
-    Action semantics. VS Code windows are captured on X11 and Wayland, but the
-    Monaco document content remains unexposed (U+FFFC/window-only), recorded as
-    a versioned limitation rather than support.</li>
+  <li><b>GUI-1/M6 real host matrix:</b> installed and tested GTK 3.24.50,
+    Qt 6.9.2, OpenJDK 21 + Java ATK Wrapper 0.42.1, LibreOffice Calc 25.8.7.3
+    and VS Code/Electron 1.134. Java Text/Action/Selection work; its bridge's
+    fake-success Value write is rejected by readback with EIO. Calc import Action
+    and title-scoped Table metadata (1048576x16384) work, while virtual cells have
+    no claimed Control API. VS Code Monaco remains U+FFFC/window-only.</li>
+  <li><b>AT-SPI large-host targeting:</b> WinTitle root probes and per-app Cache
+    requests run concurrently under bounded shared deadlines; the matching app
+    is loaded first and exclusively. Qt executable-name suffixes are related
+    conservatively. Normal full diagnostics retain registry order. Action now
+    supports the official NActions property and Value writes require readback.</li>
   <li><b>M6 compositor STOP/CONT fault gate:</b> a private headless sway receives
     virtual-keyboard input before SIGSTOP, remains stopped for three seconds while
     the same AHK runs 30+ Timer/input iterations, then receives input after

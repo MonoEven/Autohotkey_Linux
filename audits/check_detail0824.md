@@ -884,19 +884,27 @@
 
 ### B. GUI-1 真实宿主捕获矩阵（已交付）
 
-- VM 实际安装 Qt 6.9.2 与 VS Code 1.134.0；统一 oracle 覆盖 GTK 3.24.50、
-  Qt6、VS Code/Electron。
-- GTK：Wayland AT-SPI UTF-8 读写/Action/WinTitle application scope；Qt6：
-  X11 `WinGetList` + Wayland Entry Unicode 读写 + Button Action 外部 marker；
-  两者 tested controls 全通过。
+- VM实际安装GTK 3.24.50、Qt 6.9.2、OpenJDK 21.0.11 + Java ATK Wrapper
+  0.42.1、LibreOffice Calc 25.8.7.3、VS Code 1.134.0；统一aggregate逐宿主
+  独立进程/版本/能力等级。
+- GTK：Wayland AT-SPI UTF-8读写/Action/WinTitle scope；Qt6：X11窗口+
+  Wayland Entry/Button/List/Slider全部真实effect。Java Swing：JTextField读写、
+  JButton Action（新`NActions` property fallback）、JList Selection通过；JSlider
+  `Properties.Set`返回成功却仍25，runtime写后读回转显式EIO=5，不冒充成功。
+- LibreOffice Calc：CSV Import `OK` Action真实关闭对话框；主窗口WinTitle在默认
+  2s内只装载目标app（实测1137–1276节点，无超时），Sheet暴露Table 1048576×16384。
+  virtual cell内容不在Cache，当前无Table-cell Control API，明确记为partial。
 - VS Code/Electron：X11 窗口可枚举；Wayland 在
   `--force-renderer-accessibility` + `editor.accessibilitySupport=on` 下暴露
   Window/Document 与 Text/Hypertext/Document interfaces，但 Monaco source
   内容未进入 cache，Document.Text 仅 U+FFFC。矩阵明确标记
   `window-only-content-unavailable`，未来版本若改善则 limitation oracle 失败，
   不能静默宣称支持。
-- 落点：`tests/oracle/GUI_HOST_MATRIX.md`、`qt6_probe.cpp`、
-  `run_qt6_capture_oracle.sh`、`run_vscode_gui_capture_oracle.sh`、
+- 为大宿主新增WinTitle优先：root名并发探测，必要时所有app Cache并发1000ms（仍受总2s硬上限），
+  cache含完整标题即取消其余并只装载target；Qt executable名用保守suffix关联。
+  无WinTitle的完整诊断路径保持原顺序。Java/Qt/Cache/WinTitle回归全绿。
+- 落点：`tests/oracle/GUI_HOST_MATRIX.md`、`JavaAtspiProbe.java`、
+  `run_java_atspi_oracle.sh`、`run_libreoffice_atspi_oracle.sh`、Qt/VS Code oracles、
   `run_gui_host_matrix.sh`。
 
 ---

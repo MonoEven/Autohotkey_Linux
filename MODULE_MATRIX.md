@@ -83,7 +83,7 @@
 | Menu / MenuBar | ✅ GTK3 菜单 | ❌ 报错 | Menu/MenuBar:Add/Insert/Delete/Check/Enable/Rename/SetIcon/Show 弹窗 + Gui.MenuBar |
 | ImageSearch | ✅ X11 (XGetImage) | ❌ 报错 | 命中/未命中/容差/反向搜索 |
 | WinSetRegion | ✅ X11 (XShape) | ❌ 报错 | 窗口形状(19 断言) |
-| 真实宿主捕获矩阵 | GTK/Qt ✅；VS Code 窗口 ✅、内容 ❌ | GTK Text/Action ✅；Qt Text/Action/Selection/Value ✅；VS Code Window/Document ✅、Monaco ❌ | GTK 3.24.50 / Qt 6.9.2 / VS Code 1.134.0 VM oracle |
+| 真实宿主捕获矩阵 | GTK/Qt/Java/LibreOffice ✅；VS Code窗口✅、内容❌ | GTK/Qt测试控件✅；Java Text/Action/Selection✅、Value写EIO；Calc Action/Table元数据✅、虚拟cell API❌；VS Code Monaco❌ | GTK 3.24.50 / Qt 6.9.2 / JDK 21+Java ATK 0.42.1 / LibreOffice 25.8.7 / VS Code 1.134.0 |
 
 ## 7. 窗口管理 (Window)
 

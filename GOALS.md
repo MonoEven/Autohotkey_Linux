@@ -101,8 +101,10 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - VSC-1/VSC-2 VS Code 0.2.0: syntax/run/tasks/diagnostics/capabilities plus
   Linux DBGp and inline DAP breakpoint/stack/scopes/scalars/stepping; independent
   protocol/DAP oracles and a real VS Code 1.134 extension-host tracker pass.
-- GUI-1 real host matrix: GTK 3.24.50 and Qt 6.9.2 full tested controls;
-  VS Code/Electron 1.134.0 window/document captured but Monaco content unavailable.
+- GUI-1/M6 real host matrix: GTK 3.24.50 and Qt 6.9.2 full tested controls;
+  OpenJDK 21/Java ATK 0.42.1 Text/Action/Selection pass with Value-write EIO;
+  LibreOffice Calc 25.8.7 dialog Action/title-scoped Table metadata pass; VS Code/
+  Electron 1.134.0 window/document is captured but Monaco content is unavailable.
 - M6 TSan input gate: Debug/O0 race instrumentation runs 27 headless tests plus
   four independent X11/keymodel/raw/suppression oracles; package waits on it.
 - M6 scenario-oracle identity gate: 23 scenarios are linted for exact owned
@@ -137,8 +139,9 @@ result:
 - Real Fcitx5 desktop and Flatpak/portal IM-context visibility (protocol path is
   CI-tested; the current GNOME VM uses IBus/libpinyin).
 - KDE VM end-to-end matrix and a real Flatpak-host run.
-- Wider AT-SPI matrix still needs LibreOffice/Java/real-document hosts; GTK,
-  Qt6 and VS Code/Electron are now installed and versioned in the VM matrix.
+- Wider AT-SPI matrix still needs real Java Value-write support, LibreOffice
+  virtual-cell APIs and other real documents; all current limitations have
+  versioned host evidence instead of inferred toolkit compatibility.
 - VSC-2 D1-D3 complete for declared Linux scope: protocol/DAP, paged containers,
   exceptions, idle Pause, D-Bus metadata and same-PID detach/reconnect/crash
   cleanup pass raw DBGp, external DAP and real VS Code oracles.

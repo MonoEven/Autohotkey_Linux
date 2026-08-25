@@ -3,7 +3,7 @@
 // On a native-Wayland session X11 child-window enumeration is impossible
 // (the compositor owns the window tree); the portable cross-app route is
 // the AT-SPI accessibility bus (org.a11y.atspi on the at-spi D-Bus), which
-// every GTK/Qt/Electron application with accessibility enabled exposes.
+// GTK/Qt/Java/LibreOffice/Electron applications expose when accessibility is enabled.
 //
 // This module is a MINIMAL AT-SPI client (libdbus):
 //   - resolves the at-spi bus address via org.a11y.Bus.GetAddress,
@@ -27,8 +27,10 @@
 bool LinuxAtspiAvailable();
 
 // Refresh the cached accessible-object table (walks the desktop tree once).
+// When aWindowTitle is provided, the matching application's cache is loaded
+// first so a large unrelated app cannot consume the total query budget.
 // Returns the number of accessible objects discovered.
-int LinuxAtspiRefresh();
+int LinuxAtspiRefresh(const char *aWindowTitle = nullptr);
 
 // Diagnostics: dump the tree (caption, role, path) into aDebug.
 void LinuxAtspiDump(std::string &aDebug);

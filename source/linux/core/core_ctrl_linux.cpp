@@ -165,7 +165,7 @@ static bool LinuxCtrlAtspiResolveNamed(ResultToken &aResultToken, ExprTokenType 
 		aResultToken.Error(_T("The AT-SPI control/title could not be encoded as UTF-8."), _T(""), ErrorPrototype::Value);
 		return false;
 	}
-	LinuxAtspiRefresh();
+	LinuxAtspiRefresh(title_utf8.empty() ? nullptr : title_utf8.c_str());
 	if (!LinuxAtspiFindByName(control_utf8.c_str(), aPath,
 		title_utf8.empty() ? nullptr : title_utf8.c_str()))
 	{
@@ -607,7 +607,7 @@ BIF_DECL(BIF_Linux_ControlGetText)
 			char wt[1024] = { 0 };
 			if (wintitle && *wintitle)
 				wcstombs(wt, wintitle, sizeof(wt) - 1);
-			LinuxAtspiRefresh();
+			LinuxAtspiRefresh(wt[0] ? wt : nullptr);
 			std::string path, t;
 			bool read = false;
 			if (LinuxAtspiFindByName(nb, path, wt))
@@ -681,7 +681,6 @@ BIF_DECL(BIF_Linux_ControlSetText)
 			nb[sizeof(nb) - 1] = 0;
 			wcstombs(nb2, text, sizeof(nb2) - 1);
 			nb2[sizeof(nb2) - 1] = 0;
-			LinuxAtspiRefresh();
 			std::string path;
 			TCHAR wt_buf[1024];
 			LPTSTR wintitle = (aParamCount > 2 && !ParamIndexIsOmitted(2))
@@ -689,6 +688,7 @@ BIF_DECL(BIF_Linux_ControlSetText)
 			char wt[1024] = { 0 };
 			if (wintitle && *wintitle)
 				wcstombs(wt, wintitle, sizeof(wt) - 1);
+			LinuxAtspiRefresh(wt[0] ? wt : nullptr);
 			if (LinuxAtspiFindByName(nb, path, wt))
 			{
 				double current_value = 0.0;
@@ -1078,7 +1078,6 @@ BIF_DECL(BIF_Linux_ControlClick)
 					char nb[1024];
 					wcstombs(nb, spec.c_str(), sizeof(nb) - 1);
 					nb[sizeof(nb) - 1] = 0;
-					LinuxAtspiRefresh();
 					std::string path;
 					TCHAR wt_buf[1024];
 					LPTSTR wintitle = (aParamCount > 1 && !ParamIndexIsOmitted(1))
@@ -1086,6 +1085,7 @@ BIF_DECL(BIF_Linux_ControlClick)
 					char wt[1024] = { 0 };
 					if (wintitle && *wintitle)
 						wcstombs(wt, wintitle, sizeof(wt) - 1);
+					LinuxAtspiRefresh(wt[0] ? wt : nullptr);
 					// Prefer the "click" action by name (robust across role
 					// naming), then fall back to Action[0] ("push button" etc).
 					if (LinuxAtspiFindByName(nb, path, wt)
@@ -1279,7 +1279,7 @@ static void LinuxCtrlSendAtspi(ResultToken &aResultToken, ExprTokenType *aParam[
 	}
 	if (title && *title)
 		WideCharToUTF8(title, window_name, (int)sizeof(window_name));
-	LinuxAtspiRefresh();
+	LinuxAtspiRefresh(window_name[0] ? window_name : nullptr);
 	std::string path;
 	if (!LinuxAtspiFindByName(control_name, path, window_name))
 	{

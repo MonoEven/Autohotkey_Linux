@@ -16,12 +16,20 @@ version="$(code --version | head -1)"
 XWORK=/tmp/vscode-x11-work
 XUSER=/tmp/vscode-x11-user
 XEXT=/tmp/vscode-x11-ext
+pkill -f "$XUSER" 2>/dev/null || true
+sleep .3
 rm -rf "$XWORK" "$XUSER" "$XEXT" /tmp/vscode_x11.out /tmp/vscode_x11.log
 mkdir -p "$XWORK" "$XUSER" "$XEXT"
 printf 'X11-CAPTURE\n' >"$XWORK/VSCODE-X11-CAPTURE.txt"
 cat >/tmp/vscode_x11.ahk <<'EOF'
 #Requires AutoHotkey v2.0
-count := WinGetList("VSCODE-X11-CAPTURE.txt").Length
+count := 0
+Loop 100 {
+    count := WinGetList("VSCODE-X11-CAPTURE.txt").Length
+    if count
+        break
+    Sleep(200)
+}
 FileAppend("count=" count "`n", "/tmp/vscode_x11.out")
 ExitApp
 EOF
@@ -29,7 +37,7 @@ xvfb-run -a bash -c "code --user-data-dir '$XUSER' --extensions-dir '$XEXT' \
   --disable-extensions --disable-gpu --no-sandbox --disable-workspace-trust \
   --skip-welcome --ozone-platform=x11 --wait --new-window \
   '$XWORK/VSCODE-X11-CAPTURE.txt' >/tmp/vscode_x11.log 2>&1 & CPID=\$!; \
-  sleep 10; '$BIN' /tmp/vscode_x11.ahk >/tmp/vscode_x11_ahk.log 2>&1; \
+  sleep 3; '$BIN' /tmp/vscode_x11.ahk >/tmp/vscode_x11_ahk.log 2>&1; \
   kill \$CPID 2>/dev/null; wait \$CPID 2>/dev/null"
 x11_count="$(sed -n 's/^count=//p' /tmp/vscode_x11.out | head -1)"
 [ -n "$x11_count" ] && [ "$x11_count" -ge 1 ] \

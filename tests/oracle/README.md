@@ -84,6 +84,13 @@ each transition to return to baseline, proving no stale event descriptors. Two
 cycles remove the device with a custom-combo prefix held and require the next
 keyboard to have no ghost prefix state.
 
+`run_java_atspi_oracle.sh` drives a real OpenJDK Swing JFrame through Java ATK
+Wrapper. Text, Action and Selection must change toolkit marker files. Java's
+advertised readwrite Value property silently ignores Set, so runtime readback
+must convert it to explicit EIO instead of success. `run_libreoffice_atspi_oracle.sh`
+drives the real CSV Import OK action, then proves one-app WinTitle cache and
+Calc's 1,048,576 by 16,384 Table metadata; virtual cells are an explicit API gap.
+
 `run_mixed_soak.sh` runs one parameterized hotkey/Hotstring/clipboard/Timer
 workload. CI uses 30 seconds; `AHK_SOAK_SECONDS=86400` is the unchanged nightly
 profile. It gates exact event counts and bounded clipboard convergence, samples

@@ -383,8 +383,14 @@ Highlights of this release:</p>
     match/interface/bus/timeout failures have stable codes). All D-Bus calls use
     bounded pending waits which pump GTK/Wayland/hotkey/timer events; diagnostics
     publish pending-call/pump-slice counts and nested AT-SPI reports EBUSY.
-    Real-host tests cover GTK 3.24 and Qt 6.9. VS Code/Electron 1.134 exposes
-    its window/Document but not Monaco source content (window-only support).</li>
+    WinTitle probes/cache requests run concurrently and load only the matching
+    app, so large unrelated trees cannot spend the target's budget. Action
+    accepts old GetNactions or the official NActions property; Value writes are
+    read back and fail EIO if a bridge silently ignores them. Real-host tests
+    cover GTK 3.24, Qt 6.9, OpenJDK 21/Java ATK 0.42.1 and LibreOffice Calc
+    25.8.7. Java Value-write and Calc virtual-cell APIs remain explicit gaps.
+    VS Code/Electron 1.134 exposes its window/Document but not Monaco source
+    content (window-only support).</li>
   <li><b>VS Code extension product</b>: <code>extensions/vscode-ahk-linux/</code>
     packages syntax, run/stop/tasks, diagnostics and a backend capability tree
     as a VSIX. A real VS Code extension-host oracle verifies activation,

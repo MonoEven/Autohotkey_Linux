@@ -82,7 +82,7 @@ ahk_core --pack my-script script.ahk
 | X11/XWayland | `Win*`, `Control*`, hotkeys, hotstrings, InputHook, Unicode Send, pixels/monitors, dialogs and GTK3 GUI |
 | Native Wayland | xdg-shell, wlroots virtual keyboard/pointer and screencopy; global hotkeys via portal, GNOME Shell or evdev |
 | Input backends | Versioned normalized events/caps; X11/portal/GNOME/evdev routes; layout-aware key model; XI2 raw Hotstring/InputHook; physical `scXXX`, evdev `A & B`, hotplug recovery |
-| Accessibility/IME | AT-SPI Text/Action/Selection/Value with pending pumping; IBus preedit/commit drives Hotstring/InputHook; Fcitx5 protocol path |
+| Accessibility/IME | AT-SPI Text/Action/Selection/Value with pending pumping and title-priority; GTK/Qt/Java/LibreOffice/VS Code matrix; IBus commits drive Hotstring/InputHook |
 | Interop | `.so` `DllCall` + libffi callbacks, including Float/Double ABI types; D-Bus adapted COM layer |
 | Desktop | GTK3 GUI/Menu, notifications, AutoHotkey StatusNotifierItem tray icon and `A_TrayMenu` |
 | Developer tooling | VS Code 0.2.0: syntax/run/tasks/diagnostics plus DBGp/DAP breakpoints, paged variables, exceptions, idle Pause and same-PID reconnect |
@@ -106,8 +106,10 @@ differential trace gate.
   evdev/uinput integration.
 - The evdev/uinput chain and multi-client `ahk-inputd` broker are implemented;
   privileged installation still needs the supplied udev/polkit policy.
-- VS Code 1.134 exposes its Electron window/Document to AT-SPI, but not Monaco
-  source content even with forced accessibility; the matrix reports window-only.
+- Java ATK Wrapper 0.42.1 ignores Value writes despite reporting success, so the
+  runtime returns EIO after readback. Calc exposes Table dimensions but its
+  virtual cells need an unimplemented Table-cell API. VS Code 1.134 exposes its
+  Electron window/Document, but not Monaco source content.
 - IBus/libpinyin commit capture is real-VM tested; Fcitx5 currently has protocol
   coverage only, and Flatpak/portal IM visibility still needs a dedicated host.
   The runtime intentionally observes the user's IME instead of replacing it.
