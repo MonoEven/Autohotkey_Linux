@@ -102,7 +102,7 @@ default. Release tar/deb/RPM payloads include the complete examples catalog.
 | Accessibility/IME | AT-SPI Text/Action/Selection/Value with pending pumping and title-priority; GTK/Qt/Java/LibreOffice/VS Code matrix; IBus commits drive Hotstring/InputHook |
 | Interop | `.so` `DllCall` + libffi callbacks, including Float/Double ABI types; D-Bus adapted COM layer |
 | Desktop | GTK3 GUI/Menu, notifications, AutoHotkey StatusNotifierItem tray icon and `A_TrayMenu` |
-| Developer tooling | VS Code 0.2.0: syntax/run/tasks/diagnostics plus DBGp/DAP breakpoints, paged variables, exceptions, idle Pause and same-PID reconnect |
+| Developer tooling | VS Code 0.2.1: syntax/run/tasks/diagnostics, gutter breakpoints, DBGp/DAP stepping, paged variables, exceptions, idle Pause and same-PID reconnect |
 | Distribution | deb, RPM, tarball, AppImage, VSIX, AUR PKGBUILD, Flatpak manifest and `--pack` |
 
 The authoritative test totals are **1143/1143** X11/headless assertions,

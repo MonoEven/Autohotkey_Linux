@@ -100,7 +100,7 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
   libpinyin commit `你好` drives Hotstring/InputHook after canceled-preedit rollback,
   with normalized ime_commit events. Fcitx5 protocol CI passes; real desktop E2E
   and Flatpak IM visibility remain explicit environment gaps.
-- VSC-1/VSC-2 VS Code 0.2.0: syntax/run/tasks/diagnostics/capabilities plus
+- VSC-1/VSC-2 VS Code 0.2.1: syntax/run/tasks/diagnostics/capabilities plus
   Linux DBGp and inline DAP breakpoint/stack/scopes/scalars/stepping; independent
   protocol/DAP oracles and a real VS Code 1.134 extension-host tracker pass.
 - GUI-1/M6 real host matrix: GTK 3.24.50 and Qt 6.9.2 full tested controls;

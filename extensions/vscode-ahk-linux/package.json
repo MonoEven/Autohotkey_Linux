@@ -2,7 +2,7 @@
   "name": "autohotkey-linux-tools",
   "displayName": "AutoHotkey Linux Tools",
   "description": "Run AutoHotkey v2 Linux scripts and inspect input-backend capabilities from VS Code.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "autohotkey-linux-community",
   "license": "GPL-2.0-or-later",
   "engines": {
@@ -69,6 +69,11 @@
         "language": "ahk2",
         "scopeName": "source.ahk2",
         "path": "./syntaxes/ahk2.tmLanguage.json"
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "ahk2"
       }
     ],
     "debuggers": [

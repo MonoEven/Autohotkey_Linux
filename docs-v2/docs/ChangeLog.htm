@@ -31,6 +31,11 @@
     window unpainted and visually transparent. The default theme background
     is now painted, and <code>Gui.BackColor</code> is applied to the window
     so custom colors render (e.g. a solid green background).</li>
+  <li><b>VS Code 0.2.1 gutter breakpoints.</b> The extension now declares
+    <code>ahk2</code> under <code>contributes.breakpoints</code>, enabling red
+    breakpoint dots for <code>.ahk</code>/<code>.ah2</code> editors. The DBGp
+    adapter already accepted breakpoint requests; 0.2.0 omitted the editor
+    capability declaration.</li>
   <li><b>VS Code debugger teardown.</b> Disconnect/terminate/pause/continue no
     longer report a confusing <code>DBGp is not connected</code> error when a
     short script already exited; the session tears down cleanly instead.

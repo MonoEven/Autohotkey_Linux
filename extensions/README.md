@@ -27,7 +27,7 @@ VM extension-host oracle:
 
 ```bash
 bash tests/oracle/run_vscode_extension_oracle.sh \
-  extensions/vscode-ahk-linux/autohotkey-linux-tools-0.2.0.vsix \
+  extensions/vscode-ahk-linux/autohotkey-linux-tools-0.2.1.vsix \
   build-core/source/linux/core/ahk_core
 ```
 

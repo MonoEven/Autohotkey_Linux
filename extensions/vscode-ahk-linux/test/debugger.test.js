@@ -69,6 +69,7 @@ test('manifest contributes ahk-linux debugger and activation', () => {
   const debuggerContribution = manifest.contributes.debuggers.find((item) => item.type === 'ahk-linux');
   assert.ok(debuggerContribution);
   assert.deepEqual(debuggerContribution.languages, ['ahk2']);
+  assert.deepEqual(manifest.contributes.breakpoints, [{ language: 'ahk2' }]);
   assert.deepEqual(debuggerContribution.configurationAttributes.attach.required, ['processId', 'port']);
   assert.ok(manifest.activationEvents.includes('onDebug:ahk-linux'));
   assert.ok(manifest.activationEvents.includes('onCommand:ahkLinux.reconnectDebugger'));

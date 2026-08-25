@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1
+
+- Declare `ahk2` under `contributes.breakpoints`, enabling gutter breakpoint
+  creation and persistence for `.ahk`/`.ah2` files in VS Code.
+- Use the `ahk` launcher as the default runtime and resolve common system paths.
+- Fail missing-runtime launches immediately and suppress stale
+  `DBGp is not connected` teardown noise after short scripts exit.
+
 ## 0.2.0
 
 - Native inline Debug Adapter Protocol implementation over the Linux DBGp core.
