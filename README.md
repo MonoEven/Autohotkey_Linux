@@ -166,14 +166,14 @@ gh attestation verify <downloaded-package> --repo MonoEven/Autohotkey_Linux
 See [SECURITY.md](SECURITY.md) for the checksum, attestation and OpenPGP trust
 policy.
 
-## Acknowledgements / 致谢
+## Acknowledgements
 
 This independent Linux port stands on the work and support of several projects
 and communities:
 
 - [LinuxDo](https://linux.do/) — a technical community.
 - [AutoHotkey official project](https://github.com/AutoHotkey/AutoHotkey) and
-  [AutoHotkey community](https://www.autohotkey.com/) — this port is derived
+  [AutoHotkey community](https://www.autohotkey.com/boards/) — this port is derived
   from the official AutoHotkey v2.0.26 source and follows its language,
   runtime and documentation semantics. Thanks to Chris Mallett, Lexikos and
   every upstream contributor who made AutoHotkey possible.
