@@ -108,7 +108,14 @@ class AhkDebugAdapterCore {
       this.event('exited', { exitCode: Number.isInteger(code) ? code : -1 });
       this.sendTerminated({ code, signal });
     });
-    this.init = await this.session.waitForInit();
+    // Fail fast when the runtime cannot even be spawned (e.g. ENOENT from a
+    // missing/not-on-PATH executable) instead of waiting for the DBGp timeout.
+    const spawnFailed = new Promise((_, reject) => {
+      this.child.once('error', (error) => reject(
+        new Error(`Failed to start ${config.runtime}: ${error.message}`),
+      ));
+    });
+    this.init = await Promise.race([this.session.waitForInit(), spawnFailed]);
     await this.configureSession();
     this.respond(request, {
       processId: this.processId,
@@ -366,6 +373,11 @@ class AhkDebugAdapterCore {
     this.requireSession();
     this.pendingPause = true;
     this.respond(request);
+    if (!this.session.isConnected()) {
+      // Debuggee already exited; there is nothing to pause.
+      this.pendingPause = false;
+      return;
+    }
     // DBGp emits the outstanding run continuation response first when break
     // enters the stopped state, followed by the break command response.  The
     // continuation handler consumes pendingPause to emit exactly one DAP stop.
@@ -378,7 +390,10 @@ class AhkDebugAdapterCore {
   request_disconnect(request) {
     this.respond(request);
     const terminate = request.arguments?.terminateDebuggee !== false;
-    if (!this.session) {
+    if (!this.session || !this.session.isConnected()) {
+      // The debuggee already exited (e.g. a short script finished): there is
+      // nothing to detach from or stop. Dispose silently instead of printing
+      // a confusing "DBGp is not connected" error.
       this.dispose(!terminate);
       return;
     }
@@ -402,14 +417,17 @@ class AhkDebugAdapterCore {
 
   request_terminate(request) {
     this.respond(request);
-    if (this.session) {
+    if (this.session && this.session.isConnected()) {
       this.session.send('stop').then(() => this.sendTerminated({ processId: this.processId }))
         .catch(() => {}).finally(() => this.dispose(false));
+    } else {
+      this.dispose(false);
     }
   }
 
   startContinuation(command, reason) {
     this.requireSession();
+    if (!this.session.isConnected()) return; // debuggee already exited.
     this.session.send(command).then((packet) => {
       if (packet.attributes.status === 'break') {
         this.variableHandles.clear();

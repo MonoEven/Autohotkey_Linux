@@ -24,7 +24,7 @@ function expandVariables(value, context = {}) {
 }
 
 function buildSpawnSpec(configuration, scriptPath, context = {}) {
-  const runtime = expandVariables(configuration.runtime || 'ahk_core', context);
+  const runtime = expandVariables(configuration.runtime || 'ahk', context);
   const runtimeArgs = Array.isArray(configuration.runtimeArgs)
     ? configuration.runtimeArgs.map((arg) => expandVariables(String(arg), context))
     : [];

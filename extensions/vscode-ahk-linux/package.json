@@ -206,8 +206,8 @@
       "properties": {
         "ahkLinux.runtime": {
           "type": "string",
-          "default": "ahk_core",
-          "description": "Path to the AutoHotkey Linux ahk_core executable."
+          "default": "ahk",
+          "description": "Path to the AutoHotkey Linux launcher/interpreter executable."
         },
         "ahkLinux.runtimeArgs": {
           "type": "array",

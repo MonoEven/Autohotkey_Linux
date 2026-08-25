@@ -178,6 +178,10 @@ class DbgpSession {
     return promise;
   }
 
+  isConnected() {
+    return !!(this.socket && !this.socket.destroyed);
+  }
+
   fail(error) {
     if (this.rejectInit) this.rejectInit(error);
     for (const pending of this.pending.values()) pending.reject(error);

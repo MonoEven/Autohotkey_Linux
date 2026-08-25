@@ -13,6 +13,20 @@ const {
 } = require('./lib/core');
 const { AhkDebugAdapterCore } = require('./lib/debugAdapterCore');
 
+// Resolve a possibly bare runtime name to an existing absolute path. Bare
+// names rely on the extension host PATH; common system installs place `ahk`
+// under /usr or /usr/local, so prefer those when the name is found there.
+function pickRuntime(name) {
+  const value = String(name || 'ahk');
+  if (!value || value.includes('/')) return value;
+  for (const dir of ['/usr/bin', '/usr/local/bin', '/bin']) {
+    try {
+      if (fs.statSync(`${dir}/${value}`).isFile()) return `${dir}/${value}`;
+    } catch (_) { /* keep looking */ }
+  }
+  return value;
+}
+
 class RuntimeManager {
   constructor(output, diagnostics) {
     this.output = output;
@@ -23,7 +37,7 @@ class RuntimeManager {
   configuration(uri) {
     const cfg = vscode.workspace.getConfiguration('ahkLinux', uri);
     return {
-      runtime: cfg.get('runtime', 'ahk_core'),
+      runtime: cfg.get('runtime', 'ahk'),
       runtimeArgs: cfg.get('runtimeArgs', []),
       workingDirectory: cfg.get('workingDirectory', '${workspaceFolder}'),
       inputBackend: cfg.get('inputBackend', 'auto'),
@@ -120,7 +134,7 @@ class RuntimeManager {
   async diagnosticsText(uri) {
     const config = this.configuration(uri);
     const context = this.contextFor(uri);
-    const runtime = expandVariables(config.runtime || 'ahk_core', context);
+    const runtime = expandVariables(config.runtime || 'ahk', context);
     return new Promise((resolve) => {
       cp.execFile(runtime, ['--diag'], {
         cwd: context.workspaceFolder,
@@ -271,7 +285,7 @@ class AhkDebugConfigurationProvider {
       request: 'launch',
       name: config.name || 'Debug AutoHotkey Linux',
       program,
-      runtime: expandVariables(config.runtime || runtimeConfig.runtime, { ...context, file: program }),
+      runtime: pickRuntime(expandVariables(config.runtime || runtimeConfig.runtime, { ...context, file: program })),
       runtimeArgs: config.runtimeArgs || runtimeConfig.runtimeArgs,
       cwd: expandVariables(config.cwd || runtimeConfig.workingDirectory, { ...context, file: program }),
       backend: config.backend || runtimeConfig.inputBackend,
