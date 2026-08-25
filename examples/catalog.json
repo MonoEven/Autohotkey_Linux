@@ -8700,7 +8700,7 @@
       "status": "IMPL",
       "syntax": "Reload",
       "verified_source": {
-        "excerpt": "    FileAppend(\"first-instance`n\", out)\n    FileAppend(\"armed`n\", marker)\n    Reload\n    ; Linux Reload returns after spawning the replacement; terminate the old\n    ; auto-execute thread immediately so it cannot consume the marker.\n    ExitApp",
+        "excerpt": "    FileAppend(\"first-instance`n\", out)\n    FileAppend(\"armed`n\", marker)\n    Reload\n    ; The replacement starts asynchronously and then signals this process.\n    ; Keep the old instance alive until that hand-off; reaching the line after\n    ; Sleep means reload failed and is an explicit example failure.",
         "file": "examples/lifecycle/reload_once.ahk",
         "line": 8
       },

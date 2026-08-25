@@ -22,9 +22,9 @@ This excerpt is executed by the profile command above; surrounding setup and ass
     FileAppend("first-instance`n", out)
     FileAppend("armed`n", marker)
     Reload
-    ; Linux Reload returns after spawning the replacement; terminate the old
-    ; auto-execute thread immediately so it cannot consume the marker.
-    ExitApp
+    ; The replacement starts asynchronously and then signals this process.
+    ; Keep the old instance alive until that hand-off; reaching the line after
+    ; Sleep means reload failed and is an explicit example failure.
 ````
 
 ## Upstream reference example

@@ -31,13 +31,22 @@ run_lifecycle() {
   "$BIN" "$ROOT/examples/lifecycle/exit_current_thread.ahk" "$exit_out"
   exit_rc=$?
   set -e
-  [ "$exit_rc" = 7 ] && grep -q '^before-exit$' "$exit_out" \
-    && ! grep -q '^unreachable$' "$exit_out"
+  if [ "$exit_rc" != 7 ] || ! grep -q '^before-exit$' "$exit_out" \
+     || grep -q '^unreachable$' "$exit_out"; then
+    echo "EXAMPLE_EXIT_FAIL rc=$exit_rc" >&2
+    cat "$exit_out" >&2
+    return 1
+  fi
   timeout -k 3 20 "$BIN" "$ROOT/examples/lifecycle/reload_once.ahk" \
     "$reload_marker" "$reload_out"
-  grep -q '^first-instance$' "$reload_out"
-  grep -q '^replacement-instance$' "$reload_out"
-  [ ! -e "$reload_marker" ]
+  if ! grep -q '^first-instance$' "$reload_out" \
+     || ! grep -q '^replacement-instance$' "$reload_out" \
+     || grep -q '^old-continued$' "$reload_out" \
+     || [ -e "$reload_marker" ]; then
+    echo EXAMPLE_RELOAD_FAIL >&2
+    cat "$reload_out" >&2
+    return 1
+  fi
   echo EXAMPLE_LIFECYCLE_PASS
 }
 
