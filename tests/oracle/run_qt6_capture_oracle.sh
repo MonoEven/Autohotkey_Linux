@@ -42,6 +42,7 @@ sleep 5
 cat >/tmp/qt6_wayland.ahk <<'EOF'
 #Requires AutoHotkey v2.0
 before := ControlGetText("QT6-ENTRY", "AHK Qt6 Probe")
+partialTitle := ControlGetText("QT6-ENTRY", "Qt6 Probe")
 A_ControlSendMode := "atspi"
 ControlSendText("-追加", "QT6-ENTRY", "AHK Qt6 Probe")
 after := ControlGetText("QT6-ENTRY", "AHK Qt6 Probe")
@@ -94,7 +95,7 @@ catch
     missingControlError := A_LastError
 }
 Sleep(400)
-FileAppend("before=" before "`nafter=" after "`nclicked=" clicked
+FileAppend("before=" before "`npartialTitle=" partialTitle "`nafter=" after "`nclicked=" clicked
     "`nitems=" items.Length ":" items[1] ":" items[2] ":" items[3]
     "`nfind=" findBravo "`nchoice3=" choice3 "`nindex3=" index3
     "`nindex0=" index0 "`nnoChoice=" noChoice ":" emptyChoiceError
@@ -160,6 +161,7 @@ pump_slices="$(head -1 /tmp/qt6_pending.dump | sed -n 's/.*pump_slices=\([0-9][0
 [ "$budget_rc" = 0 ] && grep -q '^caught=1 code=110$' /tmp/qt6_budget_error.out \
   || { echo QT6_BUDGET_LASTERROR_FAIL; cat /tmp/qt6_budget_error.out /tmp/qt6_budget_error.log; exit 1; }
 grep -q '^before=你好-Qt6$' /tmp/qt6_wayland.out \
+  && grep -q '^partialTitle=你好-Qt6$' /tmp/qt6_wayland.out \
   || { echo QT6_TEXT_READ_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
 grep -q '^after=你好-Qt6-追加$' /tmp/qt6_wayland.out \
   || { echo QT6_TEXT_WRITE_FAIL; cat /tmp/qt6_wayland.out; exit 1; }
