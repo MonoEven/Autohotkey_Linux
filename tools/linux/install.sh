@@ -12,7 +12,7 @@
 #                     $prefix/share/autohotkey)
 #   --doc DIR         directory for documentation (default:
 #                     $prefix/share/doc/autohotkey)
-#   --version VER     release to stamp into the launcher (e.g. 2.0.26-linux.17;
+#   --version VER     release to stamp into the launcher (e.g. 2.0.26-linux.18;
 #                     default: from AHK_VERSION env or "unknown")
 #   --uninstall       remove an existing installation (needs the same
 #                     --prefix it was installed with)

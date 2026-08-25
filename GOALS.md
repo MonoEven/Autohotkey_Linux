@@ -1,7 +1,7 @@
 # AutoHotkey v2 Linux port — current goals
 
 Baseline: AutoHotkey v2.0.26 · branch: `linux-port` · release:
-`v2.0.26-linux.17` · project status: **technology preview**.
+`v2.0.26-linux.18` · project status: **technology preview**.
 
 This file is the current engineering status, not a chronological diary.
 Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in

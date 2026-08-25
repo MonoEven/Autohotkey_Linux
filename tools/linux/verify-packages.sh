@@ -3,7 +3,7 @@
 # packages (check0819 P2-1): actually installs each package, runs the
 # launcher commands and the interpreter, then removes it again.
 #
-# Usage: verify-packages.sh [version]   (default: 2.0.26-linux.17)
+# Usage: verify-packages.sh [version]   (default: 2.0.26-linux.18)
 # Requires: dist/autohotkey-linux-<ver>-amd64.{deb,tar.gz} and sudo.
 # The updater round-trip uses AHK_RELEASE_DIR, so it is valid before publish.
 #
@@ -14,7 +14,7 @@
 # "echo: I/O error" false failures).
 set -u
 cd "$(dirname "$0")/../.." || exit 1 # repo root
-VER="${1:-2.0.26-linux.17}"
+VER="${1:-2.0.26-linux.18}"
 RELEASE_DIR="$(pwd)/dist"
 DEB="$RELEASE_DIR/autohotkey-linux-${VER}-amd64.deb"
 TAR="$(pwd)/dist/autohotkey-linux-${VER}-amd64.tar.gz"

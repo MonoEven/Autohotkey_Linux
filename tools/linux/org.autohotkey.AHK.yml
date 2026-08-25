@@ -31,4 +31,4 @@ modules:
     sources:
       - type: git
         url: https://github.com/MonoEven/Autohotkey_Linux.git
-        tag: v2.0.26-linux.17
+        tag: v2.0.26-linux.18
