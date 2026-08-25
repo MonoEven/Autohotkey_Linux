@@ -28,10 +28,10 @@ publishes four package formats for 64-bit Linux plus the Arch PKGBUILD:</p>
   <li><code class="no-highlight">autohotkey-linux-&lt;version&gt;-amd64.deb</code>
     &mdash; Debian/Ubuntu package (system-wide; ships the GNOME Shell
     extension, dpkg-managed).</li>
-  <li><code class="no-highlight">autohotkey-linux-&lt;version&gt;-amd64.rpm</code>
+  <li><code class="no-highlight">autohotkey-linux-&lt;version&gt;-x86_64.rpm</code>
     &mdash; Fedora/openSUSE RPM (system-wide; ships the extension,
     dnf-managed).</li>
-  <li><code class="no-highlight">autohotkey-linux-&lt;version&gt;-amd64.AppImage</code>
+  <li><code class="no-highlight">autohotkey-linux-&lt;version&gt;-x86_64.AppImage</code>
     &mdash; portable single file (extension installed per-user with
     <code>--install-extension</code>).</li>
   <li><code class="no-highlight">autohotkey-linux-&lt;version&gt;-amd64.tar.gz</code>
@@ -58,10 +58,33 @@ tree:</p>
 cd autohotkey-linux
 ./tools/linux/install-gui.sh        # graphical wizard (zenity/yad)
 ./tools/linux/install.sh --prefix ~/.local --gnome-extension
-./tools/linux/install.sh --prefix /usr/local --gnome-extension   # system-wide</pre>
+./tools/linux/install.sh --prefix /usr/local --gnome-extension   # system-wide
+sudo ./tools/linux/install.sh --prefix /usr/local --inputd-service --yes</pre>
 <p>The installer places the <code>ahk</code> launcher, the interpreter
-(<code>ahk_core</code>) and the bundled manual; <code>ahk</code> is also
-symlinked into <code>~/.local/bin</code> (or <code>/usr/local/bin</code>).</p>
+(<code>ahk_core</code>), <code>ahk-inputd</code> and the bundled manual;
+<code>ahk</code> is also symlinked into <code>~/.local/bin</code> (or
+<code>/usr/local/bin</code>). The input broker binary is inert unless it is
+started manually or <code>--inputd-service</code> installs its systemd socket.</p>
+
+<h3>Optional native evdev/inputd service</h3>
+<p>The deb and RPM install <code>ahk-inputd.socket</code> but leave this
+keyboard-reading capability opt-in; enable it with the command below. The daemon
+is not running until an authorized client connects. For the generic tarball use the root
+<code>--inputd-service</code> command above. The socket is
+<code>/run/ahk-inputd.sock</code>, owned by <code>root:input</code> with mode
+<code>0660</code>. Grant access only to trusted automation users:</p>
+<pre>sudo systemctl enable --now ahk-inputd.socket
+sudo usermod -aG input "$USER"
+# Log out completely and back in, then:
+AHK_INPUT_BACKEND=evdev ahk script.ahk
+systemctl status ahk-inputd.socket ahk-inputd.service</pre>
+<p>Membership in <code>input</code> permits reading physical keyboard devices;
+the package deliberately does not add users automatically. The daemon exits
+five seconds after the last client disconnects and releases every grab, while
+the socket remains active for the next on-demand start. <code>AHK_INPUTD_SOCKET</code>
+may select an explicitly managed per-user broker. Automatic discovery checks
+<code>$XDG_RUNTIME_DIR</code> and then <code>/run</code>, never <code>/tmp</code>.
+AppImage cannot install a host system service.</p>
 <p>Once installed, the <code>ahk</code> launcher also provides:
 <code>ahk --version</code> (shows the release, e.g. <code>v2.0.26-linux.17</code>),
 <code>ahk --check</code> (integrity / install method / latest release),

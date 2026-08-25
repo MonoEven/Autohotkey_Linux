@@ -148,8 +148,11 @@ and 20 for the D-Bus COM layer). The port has two display backends:</p>
     portal; GNOME &lt;48 without the extension &rarr; portal plus a loud,
     actionable startup error pointing to the extension install (a portal
     selection there could never bind, so silent auto-selection was a trap);
-    other Wayland &rarr; portal; <code>evdev</code> reports
-    &ldquo;backend not installed&rdquo; until ahk-inputd ships).
+    other Wayland &rarr; portal. Selecting <code>evdev</code> first connects to a
+    per-user broker in <code>$XDG_RUNTIME_DIR</code>, then to the packaged
+    socket-activated <code>/run/ahk-inputd.sock</code>; an explicit
+    <code>AHK_INPUTD_SOCKET</code> overrides both. Automatic discovery never
+    trusts <code>/tmp</code>).
     The GNOME/portal decision is made by a <em>functional</em> probe
     (read the <code>org.freedesktop.portal.GlobalShortcuts</code> version
     property on the session bus), not by version sniffing, and is reported by
@@ -490,22 +493,23 @@ Highlights of this release:</p>
       <td>Via at-SPI bus (compositor-independent)</td>
       <td>Via at-SPI bus (compositor-independent)</td></tr>
 </table>
-<p><b>Roadmap (check0819/check0820 reviews; uinput injection, AT-SPI
-minimal path, GNOME Shell backend and permission artifacts are done; the
-full evdev capture lane remains):</b></p>
+<p><b>Native input status and remaining environment gaps:</b></p>
 <ul>
-  <li><b>evdev/uinput</b> &mdash; the injection half is implemented in
-    <code>core_uinput_linux.cpp</code> (a persistent uinput virtual
-    keyboard/pointer used when a compositor lacks the virtual-keyboard
-    protocol; <code>AHK_UINPUT=0</code> disables it).  The full <b>capture</b>
-    side (pass-through, remaps, key-up, custom combos, wildcards on native
-    Wayland) still needs the <code>ahk-inputd</code> broker: a small
-    privileged daemon reads <code>/dev/input/event*</code> (evdev) for key
-    events and mirrors them to the runtime; the permission artifacts
-    (udev rule, <code>input</code> group, polkit action
-    <code>io.github.autohotkey.inputd</code>, install script) are shipped
-    in <code>tools/linux/permissions/</code> (round-37) and VM-verified;
-    hotkey policy stays in the AHK runtime.  Tracked in GOALS.md.</li>
+  <li><b>evdev/uinput and ahk-inputd</b> &mdash; injection, capture, replay,
+    key-up/custom-combo/wildcard matching, multi-client distribution,
+    suppression arbitration and character streams are implemented. Deb/RPM
+    packages ship (but do not auto-enable) <code>ahk-inputd.socket</code> at
+    <code>/run/ahk-inputd.sock</code> as <code>root:input 0660</code>; the generic
+    installer offers <code>--inputd-service</code>. Systemd starts the hardened
+    root daemon only on the first authorized connection. It logs client
+    pid/uid/gid using <code>SO_PEERCRED</code>, drops crashed-client rules
+    fail-open, and exits five seconds after the final client so all grabs are
+    released while the socket remains ready for demand restart. Trusted users
+    must be added to group <code>input</code> explicitly and re-login; installers
+    never grant that keyboard-reading authority silently. The AppImage carries
+    the daemon but cannot install a host system service. The independent VM
+    oracle verifies real uinput distribution/suppression, SIGKILL restart,
+    stable socket inode, idle release and package removal.</li>
   <li><b>IME remaining environment gaps</b> &mdash; IBus commit/preedit and the
     Fcitx5 protocol path are implemented. A real Fcitx5 desktop and Flatpak/
     portal IM visibility are not available in the current VM, so only those
@@ -554,7 +558,9 @@ and feedback of the AutoHotkey-on-Linux community:</p>
     fingerprint-pinned long-term key it emits <code>UNSIGNED.txt</code>.</li>
   <li><b>AppImage</b> &mdash; built by <code>tools/linux/pack-appimage.sh</code>
     (appimagetool; icon handling and no-FUSE extraction fixed in linux.15).
-    Carries the interpreter and a launcher; GUI toolkits come from the host.</li>
+    Carries the interpreter, launcher and optional <code>ahk-inputd</code> binary;
+    a portable read-only image cannot install/enable the host systemd service.
+    GUI toolkits come from the host.</li>
   <li><b>RPM</b> &mdash; built by <code>tools/linux/pack-rpm.sh</code>
     (rpmbuild, private <code>_dbpath</code>, disabled debuginfo so no
     <code>eu-strip</code> is needed).  Suitable for Fedora/openSUSE
@@ -566,7 +572,9 @@ and feedback of the AutoHotkey-on-Linux community:</p>
     would block the global-key injection/capture lanes (grab/uinput/XTEST
     need host access) and require portal plumbing that does not exist yet;
     Snap's confinement has the same problem and needs a store account.
-    Both are re-evaluated once the privilege model (ahk-inputd) lands.</li>
+    The host-side ahk-inputd privilege model is now packaged, but granting a
+    Flatpak access to that host socket still requires an explicit portal/host
+    integration and a real sandbox oracle; it is not claimed here.</li>
   <li><b>A distribution repository</b> (Debian/Fedora/Arch official
     packages) &mdash; not yet; the project is a technology preview.  The
     <code>.deb</code>/RPM/PKGBUILD skeletons are the starting point the

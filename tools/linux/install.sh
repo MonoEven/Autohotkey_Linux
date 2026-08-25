@@ -16,6 +16,8 @@
 #                     default: from AHK_VERSION env or "unknown")
 #   --uninstall       remove an existing installation (needs the same
 #                     --prefix it was installed with)
+#   --inputd-service  install and enable the root systemd socket/service for
+#                     the evdev/uinput broker (root only; idle until connected)
 #   --gnome-extension yes: also install the optional GNOME Shell extension
 #                     (global hotkeys on GNOME Wayland) now, or -- with
 #                     --uninstall -- remove it as well.  Default (auto):
@@ -35,6 +37,7 @@ PREFIX="${PREFIX:-}"
 UNINSTALL=0
 YES=0
 GNOME_EXT=auto
+INPUTD_SERVICE=0
 AHK_VERSION="${AHK_VERSION:-}"
 BIN_SUB=bin
 LIB_SUB=share/autohotkey
@@ -50,6 +53,7 @@ while [ $# -gt 0 ]; do
     --doc) DOC_SUB="$2"; shift 2 ;;
     --version) AHK_VERSION="$2"; shift 2 ;;
     --uninstall) UNINSTALL=1; shift ;;
+    --inputd-service) INPUTD_SERVICE=1; shift ;;
     --gnome-extension) GNOME_EXT=yes; shift ;;
     --yes) YES=1; shift ;;
     --help|-h) usage 0 ;;
@@ -78,6 +82,8 @@ if [ ! -x "$CORE" ]; then
   echo "            tarball or build first: cmake --build build-core)" >&2
   exit 1
 fi
+INPUTD="$REPO_DIR/ahk-inputd"
+[ -x "$INPUTD" ] || INPUTD="$REPO_DIR/build-core/source/linux/inputd/ahk-inputd"
 
 if [ -z "$PREFIX" ]; then
   if [ "$(id -u)" = 0 ]; then
@@ -166,6 +172,52 @@ BINDIR="$PREFIX/$BIN_SUB"
 LIBDIR="$PREFIX/$LIB_SUB"
 DOCDIR="$PREFIX/$DOC_SUB"
 ICONDIR="$PREFIX/share/icons/hicolor/16x16/apps"
+SYSTEMD_DIR=/etc/systemd/system
+
+remove_inputd_service_if_owned() {
+  SVC="$SYSTEMD_DIR/ahk-inputd.service"
+  SOCK="$SYSTEMD_DIR/ahk-inputd.socket"
+  EXPECTED="$OLD_PREFIX/$LIB_SUB/ahk-inputd"
+  if [ -f "$SVC" ] && grep -Fq "ExecStart=$EXPECTED " "$SVC"; then
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl disable --now ahk-inputd.socket >/dev/null 2>&1 || true
+      systemctl stop ahk-inputd.service >/dev/null 2>&1 || true
+    fi
+    rm -f "$SVC" "$SOCK"
+    command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload >/dev/null 2>&1 || true
+    echo "ahk-inputd systemd socket/service removed."
+  fi
+}
+
+install_inputd_service() {
+  [ "$(id -u)" = 0 ] || { echo "install.sh: --inputd-service requires root" >&2; return 1; }
+  [ -x "$LIBDIR/ahk-inputd" ] || { echo "install.sh: ahk-inputd binary is unavailable" >&2; return 1; }
+  case "$LIBDIR" in *[[:space:]]*) echo "install.sh: --inputd-service prefix cannot contain whitespace" >&2; return 1 ;; esac
+  if [ -f "$SYSTEMD_DIR/ahk-inputd.service" ] \
+     && ! grep -Fq "ExecStart=$LIBDIR/ahk-inputd " "$SYSTEMD_DIR/ahk-inputd.service"; then
+    echo "install.sh: refusing to overwrite an ahk-inputd service owned by another prefix" >&2
+    return 1
+  fi
+  [ -f "$REPO_DIR/tools/linux/systemd/ahk-inputd.socket" ] \
+    && [ -f "$REPO_DIR/tools/linux/systemd/ahk-inputd.service.in" ] \
+    || { echo "install.sh: systemd unit templates are missing" >&2; return 1; }
+  if ! getent group input >/dev/null 2>&1 && command -v groupadd >/dev/null 2>&1; then
+    groupadd --system input >/dev/null 2>&1 || true
+  fi
+  mkdir -p "$SYSTEMD_DIR" || return 1
+  install -m 0644 "$REPO_DIR/tools/linux/systemd/ahk-inputd.socket" \
+    "$SYSTEMD_DIR/ahk-inputd.socket" || return 1
+  sed "s|@INPUTD_EXEC@|$LIBDIR/ahk-inputd|g" \
+    "$REPO_DIR/tools/linux/systemd/ahk-inputd.service.in" \
+    > "$SYSTEMD_DIR/ahk-inputd.service" || return 1
+  chmod 0644 "$SYSTEMD_DIR/ahk-inputd.service"
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload || return 1
+    systemctl enable --now ahk-inputd.socket || return 1
+  fi
+  echo "ahk-inputd socket activation installed: /run/ahk-inputd.sock (root:input 0660)."
+  echo "Add each trusted user to group input and re-login: sudo usermod -aG input USER"
+}
 
 # Existing install?  The wrapper embeds the prefix; locate it.  The
 # launcher line is AHK_PREFIX="<path>" (double quotes are sh syntax, not
@@ -177,13 +229,23 @@ if [ -f "$BINDIR/ahk" ]; then
 else
   OLD_PREFIX=
 fi
+# Preserve an installer-managed inputd service across launcher --update: the
+# updater reruns install.sh without optional flags, but the unit hardening and
+# daemon binary must still advance with the owning prefix.
+if [ "$UNINSTALL" != 1 ] && [ "$INPUTD_SERVICE" = 0 ] \
+   && [ -n "$OLD_PREFIX" ] && [ -f "$SYSTEMD_DIR/ahk-inputd.service" ] \
+   && grep -Fq "ExecStart=$OLD_PREFIX/$LIB_SUB/ahk-inputd " \
+      "$SYSTEMD_DIR/ahk-inputd.service"; then
+  INPUTD_SERVICE=1
+fi
 
 if [ "$UNINSTALL" = 1 ]; then
   [ -n "$OLD_PREFIX" ] || { echo "install.sh: no installation found at $BINDIR" >&2; exit 1; }
   echo "Removing AutoHotkey v2 from $OLD_PREFIX ..."
+  remove_inputd_service_if_owned
   rm -f "$OLD_PREFIX/$BIN_SUB/ahk" "$OLD_PREFIX/$BIN_SUB/ahk_core" \
-        "$OLD_PREFIX/$LIB_SUB/ahk_core" "$OLD_PREFIX/$LIB_SUB/ahk.ahk" \
-        "$OLD_PREFIX/$LIB_SUB/icon_main.ico" "$OLD_PREFIX/$LIB_SUB/autohotkey.png" \
+        "$OLD_PREFIX/$LIB_SUB/ahk_core" "$OLD_PREFIX/$LIB_SUB/ahk-inputd" \
+        "$OLD_PREFIX/$LIB_SUB/ahk.ahk" "$OLD_PREFIX/$LIB_SUB/icon_main.ico" "$OLD_PREFIX/$LIB_SUB/autohotkey.png" \
         "$OLD_PREFIX/share/icons/hicolor/16x16/apps/autohotkey.png"
   rm -rf "$OLD_PREFIX/$DOC_SUB"
   rmdir "$OLD_PREFIX/share/icons/hicolor/16x16/apps" 2>/dev/null || true
@@ -215,6 +277,12 @@ mkdir -p "$BINDIR" "$LIBDIR" "$DOCDIR" "$ICONDIR" || { echo "install.sh: cannot 
 # ICO provides SNI IconPixmap; the 16px PNG makes IconName=autohotkey resolve
 # through the freedesktop icon theme.
 install -m 0755 "$CORE" "$LIBDIR/ahk_core" || exit 1
+if [ -x "$INPUTD" ]; then
+  install -m 0755 "$INPUTD" "$LIBDIR/ahk-inputd" || exit 1
+elif [ "$INPUTD_SERVICE" = 1 ]; then
+  echo "install.sh: --inputd-service requested but ahk-inputd was not built/shipped" >&2
+  exit 1
+fi
 for P in "$REPO_DIR/icon_main.ico" "$REPO_DIR/source/resources/icon_main.ico"; do
   [ -f "$P" ] && { install -m 0644 "$P" "$LIBDIR/icon_main.ico"; break; }
 done
@@ -258,6 +326,10 @@ if [ -d "$REPO_DIR/examples" ]; then
 fi
 [ -f "$REPO_DIR/README.md" ] && install -m 0644 "$REPO_DIR/README.md" "$DOCDIR/README.md"
 [ -f "$REPO_DIR/LICENSE" ] && install -m 0644 "$REPO_DIR/LICENSE" "$DOCDIR/LICENSE"
+
+if [ "$INPUTD_SERVICE" = 1 ]; then
+  install_inputd_service || exit 1
+fi
 
 echo
 echo "Installed.  Try:"

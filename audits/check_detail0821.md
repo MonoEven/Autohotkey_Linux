@@ -21,7 +21,7 @@
 >
 > | 节 | 当前结论 | 已有证据 | 未实质完成/不得再宣称完成 |
 > |---|---|---|---|
-> | §1 Wayland 输入模型 | **部分交付** | caps API、逐键路由、portal/GNOME/evdev backend、evdev remap、panic 释放均有场景/VM/CI | 多客户端 systemd `ahk-inputd`、libei/EIS 后端、设备级仲裁未实现 |
+> | §1 Wayland 输入模型 | **部分交付** | caps API、逐键路由、portal/GNOME/evdev backend、evdev remap/panic，以及多客户端systemd socket-activated `ahk-inputd` 均有独立CI/VM/package oracle | libei/EIS receiver仍受上游/宿主边界；纯Wayland broker字符流仍缺compositor布局源 |
 > | §2 Send 等价语义 | **部分交付** | SendEvent/Input 分流、延迟、SendLevel/InputLevel、节流无头不阻塞有断言/CI | 不能把所有 Windows SendInput hook 语义概括为完全等价 |
 > | §3 低级 Hook | **部分交付** | XI2 sourceid、自注入门控、evdev 捕获/抑制已落地 | 没有 Windows WH_KEYBOARD_LL/WH_MOUSE_LL 等价 API；libei receiver 未实现 |
 > | §4 OnClipboardChange | **X11+GNOME 已交付，其他 Wayland 未交付** | XFixes + GNOME Meta.Selection VM 端到端 | ext-data-control/KDE/wlroots 路径仍未通过宿主端到端 |

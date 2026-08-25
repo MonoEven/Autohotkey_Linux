@@ -18,8 +18,13 @@ case "$ARCH" in
 esac
 
 CORE=build-core/source/linux/core/ahk_core
+INPUTD=build-core/source/linux/inputd/ahk-inputd
 if [ ! -x "$CORE" ]; then
   echo "pack-appimage.sh: $CORE not found; build first" >&2
+  exit 1
+fi
+if [ ! -x "$INPUTD" ]; then
+  echo "pack-appimage.sh: $INPUTD not found; build first" >&2
   exit 1
 fi
 
@@ -115,6 +120,7 @@ mkdir -p "$APP/usr/bin" "$APP/usr/share/applications" \
          "$APP/usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org"
 
 install -m 0755 "$CORE" "$APP/usr/bin/ahk_core"
+install -m 0755 "$INPUTD" "$APP/usr/bin/ahk-inputd"
 install -m 0644 source/resources/icon_main.ico "$APP/usr/share/autohotkey/icon_main.ico"
 install -m 0644 docs-v2/docs/static/ahk16.png "$APP/usr/share/autohotkey/autohotkey.png"
 # The GNOME Shell global-hotkey extension ships inside the AppImage (the
@@ -297,8 +303,12 @@ if [ ! -s "$OUT" ]; then
   echo "pack-appimage.sh: appimagetool produced no output" >&2
   exit 1
 fi
-# Build-time sanity: the AppDir must carry the GNOME extension and the
+# Build-time sanity: the AppDir must carry inputd, the GNOME extension and the
 # AppRun commands (guards a future edit that forgets them).
+if [ ! -x "$APP/usr/bin/ahk-inputd" ]; then
+  echo "pack-appimage.sh: AppDir missing ahk-inputd" >&2
+  exit 1
+fi
 if [ ! -f "$APP/usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org/metadata.json" ]; then
   echo "pack-appimage.sh: AppDir missing the GNOME extension" >&2
   exit 1

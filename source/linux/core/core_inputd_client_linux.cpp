@@ -33,23 +33,49 @@ namespace {
 int sFd = -1;
 bool sActive = false;
 bool sConnectAttempted = false;
+unsigned char sRx[4096];
+size_t sRxUsed = 0;
 
-bool SocketPath(char *aBuf, size_t aSize)
+void Disconnect()
 {
+	if (sFd >= 0)
+		close(sFd);
+	sFd = -1;
+	sActive = false;
+	sConnectAttempted = false;
+	sRxUsed = 0;
+}
+
+int SocketPaths(char aPaths[][256], int aMax)
+{
+	if (aMax < 1)
+		return 0;
 	const char *env = getenv("AHK_INPUTD_SOCKET");
 	if (env && *env)
 	{
-		snprintf(aBuf, aSize, "%s", env);
-		return true;
+		snprintf(aPaths[0], 256, "%s", env);
+		return 1; // Explicit configuration never falls through to another daemon.
 	}
+	int count = 0;
+	auto append = [&](const char *path) {
+		if (!path || !*path || count >= aMax)
+			return;
+		for (int i = 0; i < count; ++i)
+			if (!strcmp(aPaths[i], path))
+				return;
+		snprintf(aPaths[count++], 256, "%s", path);
+	};
+	char path[256];
 	const char *rt = getenv("XDG_RUNTIME_DIR");
 	if (rt && *rt)
 	{
-		snprintf(aBuf, aSize, "%s/%s", rt, INPUTD_DEFAULT_SOCKET_NAME);
-		return true;
+		snprintf(path, sizeof(path), "%s/%s", rt, INPUTD_DEFAULT_SOCKET_NAME);
+		append(path); // A manually-started per-user broker remains first.
 	}
-	snprintf(aBuf, aSize, "/tmp/%s", INPUTD_DEFAULT_SOCKET_NAME);
-	return true;
+	append("/run/ahk-inputd.sock"); // Packaged systemd socket activation.
+	// Never auto-connect to /tmp: another user can win the pathname race there.
+	// Legacy/manual brokers remain available through explicit AHK_INPUTD_SOCKET.
+	return count;
 }
 
 bool ReadExactly(int aFd, void *aBuf, size_t aN)
@@ -116,29 +142,38 @@ bool LinuxInputdClientConnect()
 	if (getenv("AHK_INPUTD_DISABLE"))
 		return false;
 
-	char path[256];
-	SocketPath(path, sizeof(path));
-	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-	if (fd < 0)
-		return false;
-	struct sockaddr_un addr;
-	memset(&addr, 0, sizeof(addr));
-	addr.sun_family = AF_UNIX;
-	snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path);
-	if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0)
+	char paths[2][256] = {{0}};
+	int path_count = SocketPaths(paths, 2);
+	for (int path_index = 0; path_index < path_count; ++path_index)
 	{
-		close(fd);
-		return false;
-	}
-	struct timeval tv = { 2, 0 };
-	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	sFd = fd;
-	if (!SendHello())
-	{
+		int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+		if (fd < 0)
+			continue;
+		struct sockaddr_un addr;
+		memset(&addr, 0, sizeof(addr));
+		addr.sun_family = AF_UNIX;
+		size_t path_len = strlen(paths[path_index]);
+		if (path_len >= sizeof(addr.sun_path))
+		{
+			close(fd);
+			continue;
+		}
+		memcpy(addr.sun_path, paths[path_index], path_len + 1);
+		if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0)
+		{
+			close(fd);
+			continue;
+		}
+		struct timeval tv = { 0, 500 * 1000 };
+		setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+		sFd = fd;
+		if (SendHello())
+			break;
 		close(fd);
 		sFd = -1;
-		return false;
 	}
+	if (sFd < 0)
+		return false;
 	int flags = fcntl(sFd, F_GETFL, 0);
 	fcntl(sFd, F_SETFL, flags | O_NONBLOCK);
 	sActive = true;
@@ -152,11 +187,7 @@ bool LinuxInputdClientActive()
 
 void LinuxInputdClientShutdown()
 {
-	if (sFd >= 0)
-		close(sFd);
-	sFd = -1;
-	sActive = false;
-	sConnectAttempted = false; // allow a later reconnect
+	Disconnect();
 }
 
 void LinuxInputdClientUpdateRules()
@@ -239,9 +270,7 @@ void LinuxInputdClientUpdateRules()
 	if (!WriteAll(sFd, frame, 4 + payload_len))
 	{
 		free(frame);
-		sActive = false;
-		close(sFd);
-		sFd = -1;
+		Disconnect();
 		return;
 	}
 	free(frame);
@@ -255,67 +284,57 @@ void LinuxInputdClientDispatch(LinuxInputdEventFn aFn, void *aUser)
 	int pr = poll(&pfd, 1, 0);
 	if (pr <= 0)
 		return;
+	bool peer_closed = false;
 	for (;;)
 	{
-		unsigned char hdr;
-		ssize_t got = read(sFd, &hdr, 1);
-		if (got == 0)
+		if (sRxUsed == sizeof(sRx))
 		{
-			sActive = false; // broker closed: fall back to device lane.
-			close(sFd);
-			sFd = -1;
+			Disconnect();
 			return;
 		}
-		if (got < 0)
+		ssize_t got = read(sFd, sRx + sRxUsed, sizeof(sRx) - sRxUsed);
+		if (got > 0)
+			sRxUsed += (size_t)got;
+		else if (got == 0)
+			peer_closed = true;
+		else if (errno == EINTR)
+			continue;
+		else if (errno != EAGAIN && errno != EWOULDBLOCK)
+			peer_closed = true;
+
+		while (sRxUsed)
 		{
-			if (errno == EINTR)
-				continue;
-			if (errno == EAGAIN || errno == EWOULDBLOCK)
-				break; // drained
-			sActive = false;
-			close(sFd);
-			sFd = -1;
-			return;
-		}
-		switch (hdr)
-		{
-		case INPUTD_S2C_EVENT:
-		{
-			unsigned char rest[13];
-			if (!ReadExactly(sFd, rest, sizeof(rest)))
+			size_t frame_size;
+			switch (sRx[0])
 			{
-				sActive = false;
-				close(sFd);
-				sFd = -1;
+			case INPUTD_S2C_EVENT: frame_size = 14; break;
+			case INPUTD_S2C_ACK: frame_size = 6; break;
+			case INPUTD_S2C_PONG: frame_size = 1; break;
+			default:
+				Disconnect(); // protocol desync; caller may reconnect.
 				return;
 			}
-			unsigned int code;
-			long long ts;
-			memcpy(&code, rest, 4);
-			memcpy(&ts, rest + 5, 8);
-			if (aFn)
-				aFn(code, (int)rest[4], ts, aUser);
-			break;
-		}
-		case INPUTD_S2C_ACK:
-		{
-			unsigned char rest[5];
-			if (!ReadExactly(sFd, rest, sizeof(rest)))
+			if (sRxUsed < frame_size)
+				break; // stream fragment: keep it for the next dispatch.
+			if (sRx[0] == INPUTD_S2C_EVENT)
 			{
-				sActive = false;
-				close(sFd);
-				sFd = -1;
-				return;
+				unsigned int code;
+				long long ts;
+				memcpy(&code, sRx + 1, 4);
+				memcpy(&ts, sRx + 6, 8);
+				if (aFn)
+					aFn(code, (int)sRx[5], ts, aUser);
 			}
-			break;
+			sRxUsed -= frame_size;
+			if (sRxUsed)
+				memmove(sRx, sRx + frame_size, sRxUsed);
 		}
-		case INPUTD_S2C_PONG:
-			break;
-		default:
-			sActive = false; // protocol desync: disconnect.
-			close(sFd);
-			sFd = -1;
+		if (peer_closed)
+		{
+			Disconnect(); // caller starts a bounded reconnect window.
 			return;
 		}
+		if (got < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+			return; // drained for now.
 	}
 }

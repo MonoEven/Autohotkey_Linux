@@ -58,6 +58,8 @@ chk "deb: runs a script" "grep -q 'smoke-ok' /tmp/ahk_smoke_out.txt"
 chk "deb: ships the GNOME extension system-wide" "test -f /usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org/metadata.json"
 chk "deb: ships official AHK SNI pixmap" "test -f /usr/share/autohotkey/autohotkey.png && test -f /usr/share/autohotkey/icon_main.ico"
 chk "deb: installs themed AutoHotkey icon" "test -f /usr/share/icons/hicolor/16x16/apps/autohotkey.png"
+chk "deb: ships ahk-inputd daemon" "test -x /usr/share/autohotkey/ahk-inputd"
+chk "deb: ships socket-activation units" "test -f /usr/lib/systemd/system/ahk-inputd.socket && test -f /usr/lib/systemd/system/ahk-inputd.service && grep -q '^SocketMode=0660$' /usr/lib/systemd/system/ahk-inputd.socket"
 # The deb's postinst enable-hint text is verified on the GNOME VM with
 # `dpkg-deb -e` (it prints exactly the per-user steps); CI cannot read
 # DEBIAN/* through dpkg-deb -c, so the install-side assertions here are
@@ -67,6 +69,7 @@ run_sudo apt-get remove -y autohotkey-linux > /tmp/ahk_deb_remove.log 2>&1
 chk "deb: apt remove cleans /usr/bin/ahk" "test ! -e /usr/bin/ahk"
 chk "deb: apt remove cleans /usr/share/autohotkey" "test ! -e /usr/share/autohotkey"
 chk "deb: apt remove cleans docs" "test ! -e /usr/share/doc/autohotkey"
+chk "deb: apt remove cleans inputd units" "test ! -e /usr/lib/systemd/system/ahk-inputd.socket && test ! -e /usr/lib/systemd/system/ahk-inputd.service"
 chk "deb: apt remove cleans the GNOME extension" "test ! -e /usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org"
 chk "deb: dpkg state clean (no 'ii')" "! dpkg -l autohotkey-linux 2>/dev/null | grep -q '^ii'"
 
@@ -81,6 +84,9 @@ INSTDIR=$(dirname "$INST")
 # can install the plugin from the release itself (docs reference it).
 EXT_META=$(find /tmp/ahk_tar -path '*/extension/ahk-global-hotkeys@autohotkey.org/metadata.json' -print -quit)
 chk "tar: ships the GNOME extension" "test -n '$EXT_META' && test -f '$EXT_META'"
+INPUTD_BIN=$(find /tmp/ahk_tar -maxdepth 2 -name ahk-inputd -type f -print -quit)
+INPUTD_SOCKET=$(find /tmp/ahk_tar -path '*/tools/linux/systemd/ahk-inputd.socket' -print -quit)
+chk "tar: ships ahk-inputd and systemd templates" "test -x '$INPUTD_BIN' && test -f '$INPUTD_SOCKET'"
 bash "$INST" --prefix /tmp/ahk_prefix --yes > /tmp/ahk_tar_install.log 2>&1
 chk "tar: install (launcher present)" "test -x /tmp/ahk_prefix/bin/ahk"
 chk "tar: ahk --version stamps the release" "/tmp/ahk_prefix/bin/ahk --version > /tmp/ahk_ver2.txt 2>&1 && grep -F 'v$VER' /tmp/ahk_ver2.txt"
@@ -90,6 +96,7 @@ chk "tar: ahk --check integrity OK" "/tmp/ahk_prefix/bin/ahk --check > /tmp/ahk_
 chk "tar: runs a script" "grep -q 'smoke-ok' /tmp/ahk_smoke_out.txt"
 chk "tar: installs official AHK SNI pixmap" "test -f /tmp/ahk_prefix/share/autohotkey/autohotkey.png && test -f /tmp/ahk_prefix/share/autohotkey/icon_main.ico"
 chk "tar: installs themed AutoHotkey icon" "test -f /tmp/ahk_prefix/share/icons/hicolor/16x16/apps/autohotkey.png"
+chk "tar: installs ahk-inputd binary" "test -x /tmp/ahk_prefix/share/autohotkey/ahk-inputd"
 # Upgrade/downgrade to the SAME release via the local release asset.  The
 # launcher normally downloads from GitHub; AHK_RELEASE_DIR lets a release
 # prove updater round-trip before its assets are published.

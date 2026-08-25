@@ -38,6 +38,20 @@ fallback when no broker exists) and `run_inputd_charstream_oracle.sh` proves
 the broker character stream (a Hotstring fires from broker-distributed uinput
 events decoded through the X11 layout). All three need root for EVIOCGRAB, so
 they run on the VM rather than GitHub-hosted runners.
+`run_inputd_socket_activation_oracle.sh` is the packaging/lifecycle counterpart:
+its unprivileged CI lane uses the external `systemd-socket-activate` launcher to
+prove LISTEN_FDS adoption, fragmented/coalesced protocol frames, SO_PEERCRED logs
+and socket ownership; `AHK_SYSTEMD_REAL=1` installs temporary runtime units and
+proves on-demand start, SIGKILL restart, five-second idle grab release, stable
+socket inode, demand restart and complete cleanup.
+`run_inputd_packaged_service_oracle.sh` then installs/uses the actual package
+units and `/usr/bin/ahk`: with no socket override the core auto-discovers
+`/run/ahk-inputd.sock`, enters broker mode twice across idle exits, preserves
+socket identity, releases physical grabs and leaves no unit/socket after package
+removal. `run_inputd_reconnect_oracle.sh` holds one AHK PID across a packaged
+broker SIGKILL, requires the bounded 500ms/5s reconnect and rule resubscription,
+and proves independent uinput F12 events fire both before and after the daemon
+PID changes.
 
 `run_atspi_wintitle_oracle.sh` launches two independent GTK applications with
 same-named controls and proves WinTitle confines lookup to the owning app.

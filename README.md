@@ -121,8 +121,10 @@ differential trace gate.
 - Native-Wayland capabilities vary by compositor. wlroots offers the deepest
   direct input path; GNOME/KDE generally require portal, extension, libei or
   evdev/uinput integration.
-- The evdev/uinput chain and multi-client `ahk-inputd` broker are implemented;
-  privileged installation still needs the supplied udev/polkit policy.
+- The evdev/uinput chain and multi-client `ahk-inputd` broker are implemented.
+  Deb/RPM ship an opt-in `root:input 0660` socket-activated service; the tar
+  installer offers `--inputd-service`. Add only trusted users to group `input`
+  and re-login. AppImage carries the daemon but cannot install a host service.
 - Java ATK Wrapper 0.42.1 ignores Value writes despite reporting success, so the
   runtime returns EIO after readback. Calc exposes Table dimensions but its
   virtual cells need an unimplemented Table-cell API. VS Code 1.134 exposes its

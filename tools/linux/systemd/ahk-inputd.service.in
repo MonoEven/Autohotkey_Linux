@@ -1,0 +1,38 @@
+[Unit]
+Description=AutoHotkey Linux evdev/uinput input broker
+Documentation=https://github.com/MonoEven/Autohotkey_Linux/blob/linux-port/docs-v2/docs/linux-port.htm
+BindsTo=ahk-inputd.socket
+After=systemd-udevd.service ahk-inputd.socket
+
+[Service]
+Type=simple
+ExecStart=@INPUTD_EXEC@ --socket /run/ahk-inputd.sock
+Restart=on-failure
+RestartSec=250ms
+User=root
+Group=root
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateTmp=yes
+PrivateNetwork=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+DevicePolicy=closed
+DeviceAllow=char-input r
+DeviceAllow=/dev/uinput rw
+RestrictAddressFamilies=AF_UNIX

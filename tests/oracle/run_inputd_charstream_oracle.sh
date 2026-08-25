@@ -16,12 +16,23 @@ SUDO=""
 [ "$(id -u)" = 0 ] || SUDO="${AHK_SUDO:-sudo}"
 SOCK=/tmp/ahk-inputd-cs.sock
 CMD=/tmp/m4c2_cmd
-rm -f "$SOCK" "$SOCK.lock" "$CMD" /tmp/m4c2_*.ready /tmp/m4c2_*.fire /tmp/m4c2_*.log
-pkill -9 -f 'out/ahk-inputd' 2>/dev/null
-pkill -9 -f 'uinput-inject' 2>/dev/null
+BPID= IPID= APID=
+cleanup() {
+  for pid in "$APID" "$IPID" "$BPID"; do
+    [ -n "$pid" ] && $SUDO kill -9 "$pid" 2>/dev/null || true
+  done
+  $SUDO pkill -9 -f "^$OUT/ahk-inputd( |$)" 2>/dev/null || true
+  $SUDO pkill -9 -f "^$OUT/uinput-inject( |$)" 2>/dev/null || true
+  $SUDO rm -f "$SOCK" "$SOCK.lock" "$CMD" /tmp/m4c2.ready \
+    /tmp/m4c2.fire /tmp/m4c2_broker.log /tmp/m4c2_inject.log \
+    /tmp/m4c2_ahk.log /tmp/m4c2.ahk
+}
+trap cleanup EXIT HUP INT TERM
+cleanup
+$SUDO rm -f "$OUT/inputd-charstream-summary.json"
 sleep .4
 
-$SUDO "$OUT/ahk-inputd" --socket "$SOCK" >/tmp/m4c2_broker.log 2>&1 &
+$SUDO "$OUT/ahk-inputd" --socket "$SOCK" --socket-mode 0666 >/tmp/m4c2_broker.log 2>&1 &
 BPID=$!
 sleep .6
 grep -q 'ready on' /tmp/m4c2_broker.log || { echo BROKER_START_FAIL; cat /tmp/m4c2_broker.log; exit 1; }
@@ -59,11 +70,14 @@ sleep 1.5
 
 kill "$APID" "$IPID" 2>/dev/null
 wait "$APID" 2>/dev/null; wait "$IPID" 2>/dev/null
-$SUDO kill -9 "$BPID" 2>/dev/null; wait "$BPID" 2>/dev/null
-rm -f "$SOCK" "$SOCK.lock" "$CMD"
+{ $SUDO kill -TERM "$BPID"; wait "$BPID" || true; } 2>/dev/null
+APID= IPID= BPID=
+$SUDO rm -f "$SOCK" "$SOCK.lock" "$CMD"
 
 test "$(grep -c '^fire$' /tmp/m4c2.fire 2>/dev/null)" -eq 1 || { echo CHARSTREAM_FIRE_FAIL; cat /tmp/m4c2.fire /tmp/m4c2_ahk.log 2>/dev/null; exit 1; }
 cat >"$OUT/inputd-charstream-summary.json" <<EOF
 {"schema":1,"result":"pass","broker_mode":true,"hotstring_trigger":"pq","fired":true}
 EOF
+trap - EXIT HUP INT TERM
+cleanup
 echo "INPUTD_CHARSTREAM_ORACLE_PASS hotstring=1"

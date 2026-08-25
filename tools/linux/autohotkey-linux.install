@@ -1,0 +1,30 @@
+post_install() {
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  cat <<'EOF'
+
+AutoHotkey optional desktop components:
+  GNOME global hotkeys:
+    gnome-extensions enable ahk-global-hotkeys@autohotkey.org
+    then log out/in (or restart GNOME Shell).
+
+  Socket-activated evdev/uinput broker:
+    sudo systemctl enable --now ahk-inputd.socket
+    sudo usermod -aG input USER
+    then re-login. Only trusted automation users should join group input.
+EOF
+}
+
+post_upgrade() {
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  post_install
+}
+
+pre_remove() {
+  systemctl disable --now ahk-inputd.socket >/dev/null 2>&1 || true
+  systemctl stop ahk-inputd.service >/dev/null 2>&1 || true
+}
+
+post_remove() {
+  rm -f /run/ahk-inputd.sock /run/ahk-inputd.sock.lock >/dev/null 2>&1 || true
+  systemctl daemon-reload >/dev/null 2>&1 || true
+}

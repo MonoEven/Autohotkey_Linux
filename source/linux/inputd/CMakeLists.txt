@@ -4,4 +4,4 @@
 # ahk_core script with AHK_INPUT_BACKEND=evdev) connect over a UNIX socket.
 add_executable(ahk-inputd inputd.c)
 target_compile_options(ahk-inputd PRIVATE -Wall -Wextra)
-install(TARGETS ahk-inputd RUNTIME DESTINATION bin)
+install(TARGETS ahk-inputd RUNTIME DESTINATION libexec)

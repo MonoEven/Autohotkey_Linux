@@ -16,6 +16,19 @@
 
 <h2 id="linux">Linux port changes</h2>
 
+<h2 id="linux-unreleased">Unreleased</h2>
+<ul>
+  <li><b>M4-P socket activation and packaging:</b> deb/RPM and the opt-in tar
+    installer ship a hardened systemd service behind a
+    <code>root:input 0660</code> socket. The daemon validates/inherits
+    LISTEN_FDS, audits SO_PEERCRED, handles fragmented/coalesced protocol
+    frames, restarts after SIGKILL and releases all grabs five seconds after
+    the final client while the socket remains available for demand restart.
+    Automatic core discovery trusts only the private XDG runtime dir and
+    managed <code>/run</code>, never <code>/tmp</code>. External launcher, real
+    systemd, core-client, full evdev/uinput and package lifecycle oracles pass.</li>
+</ul>
+
 <h2 id="linux.17">v2.0.26-linux.17</h2>
 <p><b>Input architecture, real desktop automation, VS Code debugger, differential reliability and complete examples release.</b></p>
 <ul>

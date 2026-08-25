@@ -170,8 +170,8 @@
   崩溃/kill 立即清规则 fail-open；SIGALRM watchdog 卡死 2s 释放全部 grab；
   Backspace-Esc-Enter panic 保留。VM 上独立 oracle 全绿：HELLO/SUBSCRIBE
   ACK、F12 分发+回放、A 分发+抑制、kill -9 客户端后 1s 内规则消失、kill -9
-  broker 后键盘立即可 grab。**未完成**：客户端（ahk_core）连接 broker 并
-  消费事件帧的 M4-C、libei/InputCapture 上游未就绪的接收端。
+  broker 后键盘立即可 grab。客户端接入见下方M4-C；libei/InputCapture接收端
+  仍受上游环境边界限制。
 - **M4-C 已交付（客户端接入 broker）**：新增 `core_inputd_client_linux.{h,cpp}`
   客户端：connect-first（在设备扫描前尝试，避免双路径重复处理），HELLO +
   SUBSCRIBE（从 Hotkey 表计算 EVDEV 分配键 + prefix 键码，tilde 清除
@@ -190,6 +190,17 @@
   VM oracle 通过：`:B0X*:pq` Hotstring 从 broker 分发的 uinput 事件触发。
   **纯 Wayland 无 X 布局源时 broker char_stream 不可用**（如实受限，等待
   compositor 布局接口）；libei/InputCapture 上游未就绪。
+- **M4-P 已交付（systemd/package生命周期）**：daemon校验并继承标准
+  `LISTEN_PID/LISTEN_FDS` UNIX stream fd；deb/RPM安装`root:input 0660`的
+  `/run/ahk-inputd.sock`，tar installer提供显式`--inputd-service`，AppImage只
+  携带binary且不冒充能安装host service。core自动发现仅查用户私有
+  `$XDG_RUNTIME_DIR`再查受管`/run`，不信任`/tmp`（旧手工socket须显式env）。
+  daemon以`SO_PEERCRED`记录pid/uid/gid，长度前缀reader支持分片头/合包且不会
+  阻塞主循环；poll使用构建时client/device快照，修复同轮accept与稀疏slot竞态。
+  socket模式最后客户端退出5秒后正常退出并释放grab，socket仍可按需重启；
+  SIGKILL由systemd换PID重启。VM真实unit oracle精确证明首次连接前PID=0、三次
+  拉起、socket inode稳定、journal身份、idle后`GRAB_OK`、包卸载后binary/unit/
+  socket全消失；独立外部`systemd-socket-activate`协议oracle纳入CI。
 - **落点文件**：`core_inputd_client_linux.cpp`、`core_evdev_linux.cpp`、
   `core_hotkey_linux.cpp`、`input_backend.cpp`、
   `inputd/inputd_proto.h`（规则上限 1024）。

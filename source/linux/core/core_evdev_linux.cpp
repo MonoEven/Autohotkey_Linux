@@ -52,6 +52,11 @@ struct EvdevDevice
 std::vector<EvdevDevice> sDevices;
 bool sScanned = false;
 bool sConnectTried = false; // Broker connect attempted once (connect-first).
+bool sBrokerWasActive = false;
+DWORD sBrokerReconnectStartMs = 0;
+DWORD sBrokerReconnectLastMs = 0;
+#define BROKER_RECONNECT_INTERVAL_MS 500
+#define BROKER_RECONNECT_BUDGET_MS 5000
 bool sAnyGrabbed = false; // At least one device suppressed.
 bool sPanicked = false;   // Panic sequence fired: grabs released, fail-open.
 char sError[256] = { 0 };
@@ -335,8 +340,9 @@ bool ScanDevices()
 	{
 		if (strncmp(ent->d_name, "event", 5) != 0)
 			continue;
-		char path[256];
-		snprintf(path, sizeof(path), "/dev/input/%s", ent->d_name);
+		char path[512];
+		if (snprintf(path, sizeof(path), "/dev/input/%s", ent->d_name) >= (int)sizeof(path))
+			continue;
 		// Skip devices we already hold (compare the fd of the open file).
 		bool have = false;
 		for (auto &dev : sDevices)
@@ -550,11 +556,49 @@ bool LinuxEvdevActive()
 		if (LinuxInputdClientConnect())
 		{
 			LinuxInputdClientUpdateRules();
+			sBrokerWasActive = true;
+			sBrokerReconnectStartMs = 0;
 			fprintf(stderr, "[evdev] broker mode active\n");
 		}
 	}
 	if (LinuxInputdClientActive())
+	{
+		sBrokerWasActive = true;
 		return true;
+	}
+	// If a live broker died, do not immediately open/grab the same physical
+	// devices while systemd is restarting it. Keep fail-open and retry for a
+	// bounded 5s window; after that the existing in-process fallback resumes.
+	if (sBrokerWasActive)
+	{
+		DWORD now = GetTickCount();
+		if (!sBrokerReconnectStartMs)
+		{
+			sBrokerReconnectStartMs = now;
+			sBrokerReconnectLastMs = 0;
+			fprintf(stderr, "[evdev] broker disconnected; retrying for 5000ms\n");
+		}
+		if (now - sBrokerReconnectStartMs <= BROKER_RECONNECT_BUDGET_MS)
+		{
+			LinuxInputdClientShutdown(); // clear one-attempt state before each probe.
+			if (!sBrokerReconnectLastMs
+				|| now - sBrokerReconnectLastMs >= BROKER_RECONNECT_INTERVAL_MS)
+			{
+				sBrokerReconnectLastMs = now;
+				if (LinuxInputdClientConnect())
+				{
+					LinuxInputdClientUpdateRules();
+					sBrokerReconnectStartMs = 0;
+					fprintf(stderr, "[evdev] broker reconnected\n");
+					return true;
+				}
+			}
+			return true; // lane stays alive/fail-open while reconnecting.
+		}
+		fprintf(stderr, "[evdev] broker reconnect timed out; using device lane\n");
+		sBrokerWasActive = false;
+		sBrokerReconnectStartMs = 0;
+	}
 	if (!sScanned)
 	{
 		sScanned = true;
@@ -657,7 +701,17 @@ void LinuxEvdevDispatch()
 	if (LinuxInputdClientActive())
 	{
 		LinuxInputdClientDispatch(EvdevBrokerEventAdapter, nullptr);
+		if (LinuxInputdClientActive())
+			return;
+		// Disconnect detected in Dispatch: enter the bounded reconnect path now.
+		LinuxEvdevActive();
 		return;
+	}
+	if (sBrokerWasActive)
+	{
+		LinuxEvdevActive();
+		if (sBrokerWasActive || LinuxInputdClientActive())
+			return;
 	}
 	// Scan even when there are currently zero devices; otherwise a backend
 	// which started before the first keyboard appeared can never recover.
@@ -735,6 +789,9 @@ void LinuxEvdevShutdown()
 {
 	LinuxInputdClientShutdown();
 	sConnectTried = false;
+	sBrokerWasActive = false;
+	sBrokerReconnectStartMs = 0;
+	sBrokerReconnectLastMs = 0;
 	for (auto &dev : sDevices)
 	{
 		if (dev.grabbed)

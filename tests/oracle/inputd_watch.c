@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <limits.h>
 
 #define REPLAY_VENDOR 0x0FAC
 
@@ -36,8 +37,9 @@ static int probe_grab(void)
 	while ((ent = readdir(dir)) != NULL)
 	{
 		if (strncmp(ent->d_name, "event", 5) != 0) continue;
-		char path[128];
-		snprintf(path, sizeof(path), "/dev/input/%s", ent->d_name);
+		char path[PATH_MAX];
+		if (snprintf(path, sizeof(path), "/dev/input/%s", ent->d_name) >= (int)sizeof(path))
+			continue;
 		int fd = open(path, O_RDONLY | O_NONBLOCK);
 		if (fd < 0) continue;
 		if (is_keyboard_fd(fd) && ioctl(fd, EVIOCGRAB, 1) == 0)
@@ -61,8 +63,9 @@ static int open_replay(void)
 	while ((ent = readdir(dir)) != NULL)
 	{
 		if (strncmp(ent->d_name, "event", 5) != 0) continue;
-		char path[128];
-		snprintf(path, sizeof(path), "/dev/input/%s", ent->d_name);
+		char path[PATH_MAX];
+		if (snprintf(path, sizeof(path), "/dev/input/%s", ent->d_name) >= (int)sizeof(path))
+			continue;
 		int fd = open(path, O_RDONLY | O_NONBLOCK);
 		if (fd < 0) continue;
 		struct input_id id;

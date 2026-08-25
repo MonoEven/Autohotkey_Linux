@@ -29,8 +29,13 @@ case "$ARCH" in
 esac
 
 CORE=build-core/source/linux/core/ahk_core
+INPUTD=build-core/source/linux/inputd/ahk-inputd
 if [ ! -x "$CORE" ]; then
   echo "pack.sh: $CORE not found; build first (cmake --build build-core)" >&2
+  exit 1
+fi
+if [ ! -x "$INPUTD" ]; then
+  echo "pack.sh: $INPUTD not found; build ahk-inputd first" >&2
   exit 1
 fi
 if ! command -v dpkg-deb >/dev/null 2>&1; then
@@ -38,12 +43,16 @@ if ! command -v dpkg-deb >/dev/null 2>&1; then
 fi
 
 rm -rf dist/stage dist/autohotkey-linux-* dist/*.deb dist/*.tar.gz
-mkdir -p dist/stage/autohotkey-linux/tools/linux
+mkdir -p dist/stage/autohotkey-linux/tools/linux/systemd \
+         dist/stage/autohotkey-linux/tools/linux/permissions
 # The stage root itself is the payload dir; docs go directly under it.
 STAGE=dist/stage/autohotkey-linux
 
 # --- stage the payload ------------------------------------------------
 install -m 0755 "$CORE" "$STAGE/ahk_core"
+install -m 0755 "$INPUTD" "$STAGE/ahk-inputd"
+cp -r tools/linux/systemd/. "$STAGE/tools/linux/systemd/"
+cp -r tools/linux/permissions/. "$STAGE/tools/linux/permissions/"
 # Official upstream AutoHotkey icon assets: the installer places the ICO next
 # to ahk_core (SNI IconPixmap) and the PNG in the hicolor theme.
 install -m 0644 source/resources/icon_main.ico "$STAGE/icon_main.ico"
@@ -79,9 +88,17 @@ if command -v dpkg-deb >/dev/null 2>&1; then
            "$DEBROOT/usr/share/icons/hicolor/16x16/apps" \
            "$DEBROOT/usr/share/doc/autohotkey" \
            "$DEBROOT/usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org" \
+           "$DEBROOT/usr/lib/systemd/system" \
            "$DEBROOT/DEBIAN"
   chmod 0755 "$DEBROOT" "$DEBROOT/DEBIAN"
   install -m 0755 "$CORE" "$DEBROOT/usr/share/autohotkey/ahk_core"
+  install -m 0755 "$INPUTD" "$DEBROOT/usr/share/autohotkey/ahk-inputd"
+  install -m 0644 tools/linux/systemd/ahk-inputd.socket \
+    "$DEBROOT/usr/lib/systemd/system/ahk-inputd.socket"
+  sed 's|@INPUTD_EXEC@|/usr/share/autohotkey/ahk-inputd|g' \
+    tools/linux/systemd/ahk-inputd.service.in \
+    > "$DEBROOT/usr/lib/systemd/system/ahk-inputd.service"
+  chmod 0644 "$DEBROOT/usr/lib/systemd/system/ahk-inputd.service"
   install -m 0644 source/resources/icon_main.ico "$DEBROOT/usr/share/autohotkey/icon_main.ico"
   install -m 0644 docs-v2/docs/static/ahk16.png "$DEBROOT/usr/share/autohotkey/autohotkey.png"
   install -m 0644 docs-v2/docs/static/ahk16.png "$DEBROOT/usr/share/icons/hicolor/16x16/apps/autohotkey.png"
@@ -116,11 +133,12 @@ Architecture: $ARCH
 Maintainer: MonoEven <MonoEven@users.noreply.github.com>
 Installed-Size: $DEB_SIZE
 Depends: libx11-6, libxext6, libxrandr2, libxinerama1, libxtst6, libxkbcommon-x11-0, libgtk-3-0, libdbus-1-3, libffi8
-Recommends: zenity | yad
+Recommends: zenity | yad, systemd
 Description: AutoHotkey v2 automation for Linux (X11/Wayland)
  AutoHotkey v2.0.26 interpreter and Linux desktop backends: X11/XWayland
  automation, native Wayland input routes, GTK3 GUI, AT-SPI controls,
- StatusNotifierItem tray, D-Bus and libffi interoperability.
+ StatusNotifierItem tray, D-Bus/libffi interoperability and the socket-activated
+ ahk-inputd evdev/uinput broker.
  .
  AutoHotkey v2 syntax only; v1 is not supported. Documentation and the
  precise capability/limitation matrix are under
@@ -133,6 +151,17 @@ if command -v update-alternatives >/dev/null 2>&1; then
   update-alternatives --install /usr/bin/autohotkey autohotkey /usr/bin/ahk 50 \
     >/dev/null 2>&1 || true
 fi
+# Create the authorization group if the base system lacks it; never add users.
+if ! getent group input >/dev/null 2>&1 && command -v groupadd >/dev/null 2>&1; then
+  groupadd --system input >/dev/null 2>&1 || true
+fi
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  systemctl try-restart ahk-inputd.socket >/dev/null 2>&1 || true
+fi
+echo "Optional ahk-inputd broker: sudo systemctl enable --now ahk-inputd.socket"
+echo "Then add each trusted automation user to group input and re-login:"
+echo "    sudo usermod -aG input USER"
 # The GNOME Shell global-hotkey extension ships system-wide (dpkg-managed).
 # Enabling it is a per-user session choice (gsettings), which a root
 # postinst cannot do for the logged-in user -- print the one-time steps.
@@ -155,6 +184,10 @@ set -e
 if command -v update-alternatives >/dev/null 2>&1; then
   update-alternatives --remove autohotkey /usr/bin/ahk >/dev/null 2>&1 || true
 fi
+if [ "$1" = remove ] && command -v systemctl >/dev/null 2>&1; then
+  systemctl disable --now ahk-inputd.socket >/dev/null 2>&1 || true
+  systemctl stop ahk-inputd.service >/dev/null 2>&1 || true
+fi
 exit 0
 EOF
   chmod 0755 "$DEBROOT/DEBIAN/prerm"
@@ -169,10 +202,14 @@ set -e
 case "$1" in
   remove|purge)
     rm -f /usr/bin/ahk /usr/bin/ahk_core /usr/bin/autohotkey \
-          /usr/share/autohotkey/ahk_core /usr/share/autohotkey/ahk.ahk \
-          /usr/share/autohotkey/icon_main.ico /usr/share/autohotkey/autohotkey.png \
+          /usr/share/autohotkey/ahk_core /usr/share/autohotkey/ahk-inputd \
+          /usr/share/autohotkey/ahk.ahk /usr/share/autohotkey/icon_main.ico /usr/share/autohotkey/autohotkey.png \
           /usr/share/icons/hicolor/16x16/apps/autohotkey.png
     rm -rf /usr/share/autohotkey /usr/share/doc/autohotkey 2>/dev/null || true
+    rm -f /run/ahk-inputd.sock /run/ahk-inputd.sock.lock 2>/dev/null || true
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl daemon-reload >/dev/null 2>&1 || true
+    fi
     ;;
   upgrade|failed-upgrade)
     ;;

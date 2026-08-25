@@ -67,7 +67,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
   via HotkeyBackendGet().mux and --diag.
 - ahk-inputd broker daemon: EVIOCGRAB capture, uinput replay, UNIX-socket v1
   multi-client subscription protocol with suppression arbitration, fail-open
-  cleanup and watchdog/panic recovery (M4-D).
+  cleanup and watchdog/panic recovery (M4-D). Deb/RPM and the opt-in tar
+  installer now ship hardened systemd socket activation (`root:input 0660`),
+  SO_PEERCRED audit logs, SIGKILL restart and five-second idle grab release.
 - Core broker client (M4-C + M4-C2): connect-first subscription, EVENT frames
   through the evdev matcher, in-process fallback, dual-script no-conflict
   acceptance, and broker character stream (X11 layout decode; pure Wayland
@@ -139,8 +141,6 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 These are not marked complete without a matching environment and automated
 result:
 
-- `ahk-inputd` systemd socket-activation/service packaging (daemon/client/
-  arbitration are implemented and VM-verified).
 - Real Fcitx5 desktop and Flatpak/portal IM-context visibility (protocol path is
   CI-tested; the current GNOME VM uses IBus/libpinyin).
 - KDE VM end-to-end matrix and a real Flatpak-host run.

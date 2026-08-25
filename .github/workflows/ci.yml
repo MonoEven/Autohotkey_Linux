@@ -106,6 +106,13 @@ jobs:
         if: matrix.build == 'core'
         run: xvfb-run -a bash tests/oracle/run_input_event_model_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
 
+      - name: Inputd systemd socket activation oracle
+        if: matrix.build == 'core'
+        run: |
+          command -v systemd-socket-activate
+          bash tests/oracle/run_inputd_socket_activation_oracle.sh
+          bash tests/oracle/run_inputd_client_framing_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
+
       - name: Windows v2.0.26 differential trace gate
         if: matrix.build == 'core'
         run: bash tests/differential/run_linux_trace.sh "$BUILD_DIR/source/linux/core/ahk_core"
@@ -492,9 +499,17 @@ jobs:
           grep -q 'autohotkey-linux/examples/generated/ControlClick.md' /tmp/ahk-tar-contents.txt
           grep -q 'usr/share/doc/autohotkey/examples/FUNCTION_COVERAGE.md' /tmp/ahk-deb-contents.txt
           grep -q '/usr/share/doc/autohotkey/examples/FUNCTION_COVERAGE.md' /tmp/ahk-rpm-contents.txt
+          # M4 packaging: daemon + exact systemd socket/service lifecycle.
+          grep -q 'autohotkey-linux/ahk-inputd' /tmp/ahk-tar-contents.txt
+          grep -q 'autohotkey-linux/tools/linux/systemd/ahk-inputd.socket' /tmp/ahk-tar-contents.txt
+          grep -q 'usr/share/autohotkey/ahk-inputd' /tmp/ahk-deb-contents.txt
+          grep -q 'usr/lib/systemd/system/ahk-inputd.socket' /tmp/ahk-deb-contents.txt
+          grep -q '/usr/share/autohotkey/ahk-inputd' /tmp/ahk-rpm-contents.txt
+          grep -q '/usr/lib/systemd/system/ahk-inputd.socket' /tmp/ahk-rpm-contents.txt
           dist/*.AppImage --appimage-extract >/tmp/appimage_extract.log 2>&1
           test -f squashfs-root/usr/share/autohotkey/icon_main.ico
           test -f squashfs-root/usr/share/autohotkey/autohotkey.png
+          test -x squashfs-root/usr/bin/ahk-inputd
           rm -rf squashfs-root
           ls dist/*.AppImage dist/*.rpm dist/*.vsix
           grep -q 'autohotkey-linux-tools-0.2.0.vsix' dist/CKSUMS.txt

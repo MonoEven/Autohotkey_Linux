@@ -15,13 +15,24 @@ SUDO=""
 [ "$(id -u)" = 0 ] || SUDO="${AHK_SUDO:-sudo}"
 SOCK=/tmp/ahk-inputd-m4c.sock
 CMD=/tmp/m4c_cmd
-rm -f "$SOCK" "$SOCK.lock" "$CMD" /tmp/m4c_*.ready /tmp/m4c_*.fire /tmp/m4c_*.log
-pkill -9 -f 'out/ahk-inputd' 2>/dev/null
-pkill -9 -f 'uinput-inject' 2>/dev/null
-pkill -9 -f 'ahk_core.*m4c_' 2>/dev/null
+BPID= IPID= APID= BPID2=
+cleanup() {
+  for pid in "$APID" "$BPID2" "$IPID" "$BPID"; do
+    [ -n "$pid" ] && $SUDO kill -9 "$pid" 2>/dev/null || true
+  done
+  $SUDO pkill -9 -f "^$OUT/ahk-inputd( |$)" 2>/dev/null || true
+  $SUDO pkill -9 -f "^$OUT/uinput-inject( |$)" 2>/dev/null || true
+  $SUDO rm -f "$SOCK" "$SOCK.lock" "$CMD" /tmp/m4c_a.ready \
+    /tmp/m4c_b.ready /tmp/m4c_a.fire /tmp/m4c_b.fire /tmp/m4c_a.log \
+    /tmp/m4c_b.log /tmp/m4c_broker.log /tmp/m4c_inject.log \
+    /tmp/m4c_a.ahk /tmp/m4c_b.ahk
+}
+trap cleanup EXIT HUP INT TERM
+cleanup
+$SUDO rm -f "$OUT/inputd-client-summary.json"
 sleep .4
 
-$SUDO "$OUT/ahk-inputd" --socket "$SOCK" >/tmp/m4c_broker.log 2>&1 &
+$SUDO "$OUT/ahk-inputd" --socket "$SOCK" --socket-mode 0666 >/tmp/m4c_broker.log 2>&1 &
 BPID=$!
 sleep .6
 grep -q 'ready on' /tmp/m4c_broker.log || { echo BROKER_START_FAIL; cat /tmp/m4c_broker.log; exit 1; }
@@ -82,8 +93,9 @@ sleep 1
 kill "$APID" "$BPID2" "$IPID" 2>/dev/null
 wait "$APID" 2>/dev/null; wait "$BPID2" 2>/dev/null
 wait "$IPID" 2>/dev/null
-$SUDO kill -9 "$BPID" 2>/dev/null; wait "$BPID" 2>/dev/null
-rm -f "$SOCK" "$SOCK.lock" "$CMD"
+{ $SUDO kill -TERM "$BPID"; wait "$BPID" || true; } 2>/dev/null
+APID= BPID2= IPID= BPID=
+$SUDO rm -f "$SOCK" "$SOCK.lock" "$CMD"
 
 test "$(grep -c '^fire=1$' /tmp/m4c_a.fire 2>/dev/null)" -eq 1 || { echo "A_FIRE_FAIL"; cat /tmp/m4c_a.fire /tmp/m4c_a.log 2>/dev/null; exit 1; }
 test "$(grep -c '^fire=1$' /tmp/m4c_b.fire 2>/dev/null)" -eq 1 || { echo "B_FIRE_FAIL"; cat /tmp/m4c_b.fire /tmp/m4c_b.log 2>/dev/null; exit 1; }
@@ -91,4 +103,6 @@ test "$(grep -c '^fire=1$' /tmp/m4c_b.fire 2>/dev/null)" -eq 1 || { echo "B_FIRE
 cat >"$OUT/inputd-client-summary.json" <<EOF
 {"schema":1,"result":"pass","clients":2,"broker_mode":true,"combo_A_fired":true,"combo_B_fired":true,"badaccess":false}
 EOF
+trap - EXIT HUP INT TERM
+cleanup
 echo "INPUTD_CLIENT_ORACLE_PASS clients=2 combos=2"

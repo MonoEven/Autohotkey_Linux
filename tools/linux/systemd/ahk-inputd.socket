@@ -1,0 +1,15 @@
+[Unit]
+Description=AutoHotkey Linux input broker socket
+Documentation=https://github.com/MonoEven/Autohotkey_Linux/blob/linux-port/docs-v2/docs/linux-port.htm
+
+[Socket]
+ListenStream=/run/ahk-inputd.sock
+SocketMode=0660
+SocketUser=root
+SocketGroup=input
+DirectoryMode=0755
+RemoveOnStop=yes
+FlushPending=yes
+
+[Install]
+WantedBy=sockets.target

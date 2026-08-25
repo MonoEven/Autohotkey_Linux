@@ -25,8 +25,13 @@ if ! command -v rpmbuild >/dev/null 2>&1; then
 fi
 
 CORE=build-core/source/linux/core/ahk_core
+INPUTD=build-core/source/linux/inputd/ahk-inputd
 if [ ! -x "$CORE" ]; then
   echo "pack-rpm.sh: $CORE not found; build first" >&2
+  exit 1
+fi
+if [ ! -x "$INPUTD" ]; then
+  echo "pack-rpm.sh: $INPUTD not found; build first" >&2
   exit 1
 fi
 
@@ -38,6 +43,10 @@ mkdir -p "$RPMROOT/BUILD" "$RPMROOT/RPMS" "$RPMROOT/SOURCES" "$RPMROOT/SPECS" \
 SRCTREE="$RPMROOT/src/ahk-$VER"
 mkdir -p "$SRCTREE"
 install -m 0755 "$CORE" "$SRCTREE/ahk_core"
+install -m 0755 "$INPUTD" "$SRCTREE/ahk-inputd"
+mkdir -p "$SRCTREE/systemd"
+cp tools/linux/systemd/ahk-inputd.socket tools/linux/systemd/ahk-inputd.service.in \
+  "$SRCTREE/systemd/"
 install -m 0644 source/resources/icon_main.ico "$SRCTREE/icon_main.ico"
 install -m 0644 docs-v2/docs/static/ahk16.png "$SRCTREE/autohotkey.png"
 cp -r docs-v2 "$SRCTREE/docs-v2"
@@ -66,7 +75,7 @@ SRC="autohotkey-linux-$VER.tar.gz"
 cat > "$RPMROOT/SPECS/autohotkey-linux.spec" <<EOF
 Name:           autohotkey-linux
 Version:        ${VER%%-*}
-Release:        1%{?dist}
+Release:        ${VER##*.}.1%{?dist}
 Summary:        AutoHotkey v2 automation for Linux (X11/Wayland)
 License:        GPL-2.0-only
 URL:            https://github.com/MonoEven/Autohotkey_Linux
@@ -98,7 +107,14 @@ install -d %{buildroot}%{_datadir}/autohotkey
 install -d %{buildroot}%{_datadir}/icons/hicolor/16x16/apps
 install -d %{buildroot}%{_docdir}/autohotkey
 install -d %{buildroot}%{_datadir}/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org
+install -d %{buildroot}/usr/lib/systemd/system
 install -m 0755 %{_builddir}/ahk-$VER/ahk_core %{buildroot}%{_datadir}/autohotkey/ahk_core
+install -m 0755 %{_builddir}/ahk-$VER/ahk-inputd %{buildroot}%{_datadir}/autohotkey/ahk-inputd
+install -m 0644 %{_builddir}/ahk-$VER/systemd/ahk-inputd.socket %{buildroot}/usr/lib/systemd/system/ahk-inputd.socket
+sed 's|@INPUTD_EXEC@|%{_datadir}/autohotkey/ahk-inputd|g' \
+  %{_builddir}/ahk-$VER/systemd/ahk-inputd.service.in \
+  > %{buildroot}/usr/lib/systemd/system/ahk-inputd.service
+chmod 0644 %{buildroot}/usr/lib/systemd/system/ahk-inputd.service
 install -m 0644 %{_builddir}/ahk-$VER/icon_main.ico %{buildroot}%{_datadir}/autohotkey/icon_main.ico
 install -m 0644 %{_builddir}/ahk-$VER/autohotkey.png %{buildroot}%{_datadir}/autohotkey/autohotkey.png
 install -m 0644 %{_builddir}/ahk-$VER/autohotkey.png %{buildroot}%{_datadir}/icons/hicolor/16x16/apps/autohotkey.png
@@ -113,6 +129,16 @@ install -m 0644 %{_builddir}/ahk-$VER/extension/ahk-global-hotkeys@autohotkey.or
   %{buildroot}%{_datadir}/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org/
 
 %post
+# Create only the empty authorization group; never grant membership.
+if ! getent group input >/dev/null 2>&1 && command -v groupadd >/dev/null 2>&1; then
+  groupadd -r input >/dev/null 2>&1 || true
+fi
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  systemctl try-restart ahk-inputd.socket >/dev/null 2>&1 || true
+fi
+echo "Optional ahk-inputd broker: systemctl enable --now ahk-inputd.socket"
+echo "Then add only trusted users to group input and re-login."
 if [ -d %{_datadir}/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org ]; then
   echo
   echo "AutoHotkey GNOME Shell extension installed system-wide."
@@ -124,9 +150,26 @@ if [ -d %{_datadir}/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org ]; 
   echo
 fi
 
+%preun
+if [ "\$1" -eq 0 ] && command -v systemctl >/dev/null 2>&1; then
+  systemctl disable --now ahk-inputd.socket >/dev/null 2>&1 || true
+  systemctl stop ahk-inputd.service >/dev/null 2>&1 || true
+fi
+
+%postun
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload >/dev/null 2>&1 || true
+fi
+if [ "\$1" -eq 0 ]; then
+  rm -f /run/ahk-inputd.sock /run/ahk-inputd.sock.lock >/dev/null 2>&1 || true
+fi
+
 %files
 %{_bindir}/ahk
 %{_datadir}/autohotkey/ahk_core
+%{_datadir}/autohotkey/ahk-inputd
+/usr/lib/systemd/system/ahk-inputd.socket
+/usr/lib/systemd/system/ahk-inputd.service
 %{_datadir}/autohotkey/icon_main.ico
 %{_datadir}/autohotkey/autohotkey.png
 %{_datadir}/icons/hicolor/16x16/apps/autohotkey.png
@@ -135,8 +178,8 @@ fi
 %license LICENSE
 
 %changelog
-* $(date +'%a %b %d %Y') MonoEven <MonoEven@users.noreply.github.com> - ${VER%%-*}-1
-- Initial Linux port package.
+* $(date +'%a %b %d %Y') MonoEven <MonoEven@users.noreply.github.com> - ${VER%%-*}-${VER##*.}.1
+- Linux port release with socket-activated ahk-inputd broker.
 EOF
 
 # A private rpmdb in the temp tree avoids touching /var/lib/rpm (which is
@@ -163,6 +206,13 @@ if [ ! -f "$SRCTREE/ahk-launcher" ] \
    || ! grep -q -- '--update' "$SRCTREE/ahk-launcher" \
    || ! grep -q 'RPM package (rpm/dnf)' "$SRCTREE/ahk-launcher"; then
   echo "pack-rpm.sh: launcher in the source tree is not the full launcher" >&2
+  rm -rf "$RPMROOT"
+  exit 1
+fi
+if [ ! -x "$SRCTREE/ahk-inputd" ] \
+   || [ ! -f "$SRCTREE/systemd/ahk-inputd.socket" ] \
+   || [ ! -f "$SRCTREE/systemd/ahk-inputd.service.in" ]; then
+  echo "pack-rpm.sh: ahk-inputd daemon/systemd assets missing from source tree" >&2
   rm -rf "$RPMROOT"
   exit 1
 fi

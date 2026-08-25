@@ -71,7 +71,7 @@
 | Hotstring | ✅ | XI2.1 raw multi-client 字符流；原始 trigger 到达目标，按精确 Backspace 数回删再替换；C/*/O/X/B0、大小写、inside-word、HotIf、Unicode；双进程外部 oracle |
 | InputHook | ✅ | XI2 raw 观察 + KeyOpt/visibility 精确 keycode suppression grabs；运行时重配；多脚本/目标可见；缓冲/EndKey/Match/退格、canonical VK/SC、Unicode/回调 |
 | IME commit/preedit | ✅ IBus E2E / Fcitx5协议 | `ImeStatus` engine/preedit/listener；preedit冻结、commit→Hotstring/InputHook、统一IME_COMMIT事件；真实Fcitx/Flatpak可见性保留 |
-| ahk-inputd broker | ✅ (M4-D) | 独立守护进程：EVIOCGRAB 捕获 + uinput 0x0FAC 回放 + UNIX socket v1 多客户端订阅/抑制仲裁 + 崩溃清理/watchdog/panic；root oracle 全绿（客户端消费接 M4-C） |
+| ahk-inputd broker | ✅ (M4-D/C) | EVIOCGRAB + uinput 0x0FAC、多客户端订阅/抑制/字符流；deb/RPM与tar opt-in systemd socket activation（root:input 0660）、SO_PEERCRED审计、SIGKILL重启、5秒idle释放grab；真实systemd/root/core-client oracle全绿 |
 
 ## 6. GUI(有画面 / 无画面)
 
@@ -120,7 +120,7 @@
 - Examples：370/370 IMPL生成页、703个Linux实测source链接、230个官方参考代码；环境profile与互动/安全边界明确，CI零遗漏/漂移门禁
 - 场景门禁覆盖 X11、纯 Wayland、GNOME 会话、evdev/uinput、打包和 SNI；CI 另跑四发行版容器、no-XWayland、pack 容器、TSan、混合soak与官方Windows v2.0.26首批20行严格差分
 - Unicode 文本发送（round-34 + round-36）:X11/XWayland 非 ASCII 经 keysym 传输（借键码重映射 + 跨进程 X Selection 租约），纯 Wayland 走剪贴板粘贴回退（等待目标实际消费、恢复空原剪贴板、`AHK_WAYLAND_PASTE=0` 可禁、uinput 通道），无注入路径明确报错
-- 主要限制：ComObjArray、跨进程 Win32 消息和纯 Wayland 窗口枚举没有 Linux 等价物；inputd系统服务打包、真实Fcitx/KDE/Flatpak宿主矩阵仍是后续项；SoundGet*/SoundSet* 依赖 pactl/amixer
+- 主要限制：ComObjArray、跨进程 Win32 消息和纯 Wayland 窗口枚举没有 Linux 等价物；真实Fcitx/KDE/Flatpak宿主矩阵仍是后续项；SoundGet*/SoundSet* 依赖 pactl/amixer
 - 完整逐模块报告:`tests/doccheck/CHECK_REPORT.md`
 
 > 本矩阵为现状快照;状态随移植进度更新,以 CHECK_REPORT.md 与 worklist.tsv 为准。
