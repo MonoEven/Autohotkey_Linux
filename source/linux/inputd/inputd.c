@@ -42,6 +42,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <stdbool.h>
 
 #define INPUTD_PROTO_VERSION 1u
 #define PANIC_TIMEOUT_MS 1500
