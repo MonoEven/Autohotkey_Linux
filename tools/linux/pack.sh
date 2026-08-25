@@ -21,7 +21,7 @@ fi
 if [ -z "$VER" ] && command -v git >/dev/null 2>&1; then
   VER=$(git describe --tags --abbrev=0 --match 'v2.0.26-linux.*' 2>/dev/null | sed 's/^v//')
 fi
-VER="${VER:-2.0.26-linux.18}"
+VER="${VER:-2.0.26-linux.19}"
 ARCH=$(uname -m)
 case "$ARCH" in
   x86_64) ARCH=amd64 ;;

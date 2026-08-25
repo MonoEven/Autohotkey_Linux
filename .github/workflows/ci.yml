@@ -483,7 +483,7 @@ jobs:
           set -e
           [ $tar_rc -eq 0 ] || [ $tar_rc -eq 141 ]
           dpkg-deb --info dist/autohotkey-linux-*.deb | head -8
-          # linux.18: every package must carry AutoHotkey's official tray
+          # linux.19: every package must carry AutoHotkey's official tray
           # assets (runtime IconPixmap + freedesktop IconName theme lookup).
           tar tzf dist/autohotkey-linux-*.tar.gz | grep -q 'autohotkey-linux/icon_main.ico'
           tar tzf dist/autohotkey-linux-*.tar.gz | grep -q 'autohotkey-linux/autohotkey.png'

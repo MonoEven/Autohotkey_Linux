@@ -16,6 +16,33 @@
 
 <h2 id="linux">Linux port changes</h2>
 
+<h2 id="linux.19">v2.0.26-linux.19</h2>
+<p><b>GTK GUI event and rendering fixes; VS Code debugger reliability fixes.</b></p>
+<ul>
+  <li><b>GTK GUI events now fire.</b> Button Click, window Close and menu
+    activation were routed through the no-op Linux <code>PostMessage()</code>
+    stub, so every <code>Gui.OnEvent</code> callback was silently dropped.
+    They now always enqueue on the native GTK queue drained by
+    <code>GtkPump()</code>. Control event callbacks also receive the correct
+    <code>GuiControl</code> first argument (previously the <code>Gui</code>),
+    so <code>OnEvent("Click", (ctrl, *) =&gt; ctrl.Gui.Destroy())</code> works.</li>
+  <li><b>Opaque window background.</b> Windows were marked
+    <code>app_paintable</code> without a draw handler, leaving the whole
+    window unpainted and visually transparent. The default theme background
+    is now painted, and <code>Gui.BackColor</code> is applied to the window
+    so custom colors render (e.g. a solid green background).</li>
+  <li><b>VS Code debugger teardown.</b> Disconnect/terminate/pause/continue no
+    longer report a confusing <code>DBGp is not connected</code> error when a
+    short script already exited; the session tears down cleanly instead.
+    A missing/not-on-PATH runtime now fails the launch immediately with a
+    clear message instead of waiting for the DBGp init timeout.</li>
+  <li><b>VS Code runtime resolution.</b> The default runtime is the
+    <code>ahk</code> launcher instead of <code>ahk_core</code>, and bare
+    names are resolved against <code>/usr/bin</code>,
+    <code>/usr/local/bin</code> and <code>/bin</code>, so system installs
+    debug out of the box.</li>
+</ul>
+
 <h2 id="linux.18">v2.0.26-linux.18</h2>
 <p><b>Hardened socket-activated ahk-inputd service release.</b></p>
 <ul>

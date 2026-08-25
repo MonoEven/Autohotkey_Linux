@@ -7,13 +7,13 @@ body:
       value: |
         Thanks for taking the time to fill out this bug report. Please include the
         output of `ahk --diag` (one command, paste the whole block) and a minimal
-        reproduction script â€” most bugs can be reproduced with a few lines.
+        reproduction script â€?most bugs can be reproduced with a few lines.
   - type: textarea
     id: diag
     attributes:
       label: Environment diagnostic (`ahk --diag`)
       description: Run `ahk --diag` and paste the complete output. This is the single
-        most useful piece of information â€” it reports version, session type, the
+        most useful piece of information â€?it reports version, session type, the
         active input backend and its capabilities, GNOME/portal reachability,
         clipboard watch state and uinput access.
       placeholder: "=== AutoHotkey Linux diagnostic === ..."
@@ -24,8 +24,8 @@ body:
     id: version
     attributes:
       label: Port version
-      description: Output of `ahk --version` (e.g. v2.0.26-linux.18) or the commit you built from
-      placeholder: v2.0.26-linux.18
+      description: Output of `ahk --version` (e.g. v2.0.26-linux.19) or the commit you built from
+      placeholder: v2.0.26-linux.19
     validations:
       required: true
   - type: dropdown
