@@ -166,6 +166,26 @@ gh attestation verify <downloaded-package> --repo MonoEven/Autohotkey_Linux
 See [SECURITY.md](SECURITY.md) for the checksum, attestation and OpenPGP trust
 policy.
 
+## Acknowledgements / 致谢
+
+This independent Linux port stands on the work and support of several projects
+and communities:
+
+- [LinuxDo](https://linux.do/) — a technical community.
+- [AutoHotkey official project](https://github.com/AutoHotkey/AutoHotkey) and
+  [AutoHotkey community](https://www.autohotkey.com/) — this port is derived
+  from the official AutoHotkey v2.0.26 source and follows its language,
+  runtime and documentation semantics. Thanks to Chris Mallett, Lexikos and
+  every upstream contributor who made AutoHotkey possible.
+- [AHK_X11](https://github.com/phil294/AHK_X11) by phil294 — the pioneering,
+  widely used AutoHotkey-on-Linux implementation whose X11 capture and
+  injection behavior provided valuable prior art and comparison points for
+  this independent v2 source port.
+
+The full upstream and Linux-port credits are preserved in the
+[acknowledgements](docs-v2/docs/misc/Acknowledgements.htm) and
+[Linux-port credits](docs-v2/docs/linux-port.htm#credits).
+
 ## Project links
 
 - [Linux documentation](https://monoeven.github.io/Autohotkey_Linux/)
