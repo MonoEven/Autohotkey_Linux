@@ -12,7 +12,7 @@ uinput, GTK3, AT-SPI, D-Bus and StatusNotifierItem.
 > than an official upstream release. Read the
 > [Linux capability matrix](docs-v2/docs/linux-port.htm) before production use.
 
-**Current release:** [`v2.0.26-linux.16`](https://github.com/MonoEven/Autohotkey_Linux/releases/latest)
+**Current release:** [`v2.0.26-linux.17`](https://github.com/MonoEven/Autohotkey_Linux/releases/latest)
 · **Docs:** [GitHub Pages](https://monoeven.github.io/Autohotkey_Linux/)
 · **Detailed results:** [CHECK_REPORT.md](tests/doccheck/CHECK_REPORT.md)
 · **Changelog:** [ChangeLog.htm](docs-v2/docs/ChangeLog.htm)
@@ -24,14 +24,14 @@ Download the package for your system from
 
 ```bash
 # Debian / Ubuntu
-sudo apt install ./autohotkey-linux-2.0.26-linux.16-amd64.deb
+sudo apt install ./autohotkey-linux-2.0.26-linux.17-amd64.deb
 
 # Fedora / openSUSE
-sudo dnf install ./autohotkey-linux-2.0.26-linux.16-x86_64.rpm
+sudo dnf install ./autohotkey-linux-2.0.26-linux.17-x86_64.rpm
 
 # AppImage
-chmod +x autohotkey-linux-2.0.26-linux.16-x86_64.AppImage
-./autohotkey-linux-2.0.26-linux.16-x86_64.AppImage script.ahk
+chmod +x autohotkey-linux-2.0.26-linux.17-x86_64.AppImage
+./autohotkey-linux-2.0.26-linux.17-x86_64.AppImage script.ahk
 
 # Generic tarball
 ./tools/linux/install.sh --prefix ~/.local --yes
@@ -149,9 +149,9 @@ xvfb-run -a bash tests/oracle/run_x11_oracle.sh build-core/source/linux/core/ahk
 Release packages are built with:
 
 ```bash
-VER=2.0.26-linux.16 bash tools/linux/pack.sh
-bash tools/linux/pack-rpm.sh 2.0.26-linux.16
-bash tools/linux/pack-appimage.sh 2.0.26-linux.16
+VER=2.0.26-linux.17 bash tools/linux/pack.sh
+bash tools/linux/pack-rpm.sh 2.0.26-linux.17
+bash tools/linux/pack-appimage.sh 2.0.26-linux.17
 ```
 
 Release-tag packages carry Sigstore/GitHub build provenance. After downloading

@@ -1,6 +1,6 @@
 #!/bin/bash
-# Parameterized reliability soak. CI uses a short profile; a nightly VM sets
-# AHK_SOAK_SECONDS=86400 and runs the identical workload/oracle for 24 hours.
+# Parameterized reliability soak. CI uses a short profile; an optional manual
+# run can set AHK_SOAK_SECONDS=86400. No 24-hour result is claimed for linux.17.
 set -u
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 BIN="${1:-$ROOT/build-core/source/linux/core/ahk_core}"

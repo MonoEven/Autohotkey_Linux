@@ -602,9 +602,10 @@
   两次Activated；连续3轮通过。
 - **M6-T4 mixed soak基建已交付**：同一参数化hotkey+Hotstring+clipboard+Timer
   负载在CI跑30s并上传事件数/RSS slope JSON；夜跑入口接受
-  `AHK_SOAK_SECONDS=86400`。GNOME VM 5分钟1408轮，三类事件最终一致，无丢失；
-  X11 clipboard发布以≤200ms有界等待，记录535次重试；warm-up后RSS仅+148KB，
-  斜率29.60KB/min。**未完成**：实际24h结果。
+  `AHK_SOAK_SECONDS=86400`手工入口。GNOME VM 5分钟1408轮，三类事件最终一致，
+  无丢失；X11 clipboard发布以≤200ms有界等待，记录535次重试；warm-up后RSS
+  仅+148KB，斜率29.60KB/min。24h执行按用户要求取消，不再作为linux.17验收项，
+  且不宣称24h证据。
 - **M6-T4 compositor STOP/CONT已交付**：CI私有headless sway；STOP前同一AHK
   通过虚拟键盘触发`b`，SIGSTOP 3s期间每100ms Timer继续执行并发F24（30/31 tick），
   SIGCONT后同一PID再触发`a`且sway IPC恢复。连续3轮通过，证明Wayland dispatch

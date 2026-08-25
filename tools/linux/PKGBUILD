@@ -4,7 +4,7 @@
 # Bump pkgver+source to the newest release tag when packaging a new
 # release; the pinned tag keeps the build reproducible (check0820).
 pkgname=autohotkey-linux
-pkgver=2.0.26.linux.16
+pkgver=2.0.26.linux.17
 pkgrel=1
 pkgdesc="AutoHotkey v2 automation for Linux (X11/Wayland, v2 only)"
 arch=('x86_64' 'aarch64')
@@ -13,7 +13,7 @@ license=('GPL2')
 depends=('libx11' 'libxext' 'libxrandr' 'libxinerama' 'libxtst'
          'libxi' 'wayland' 'libxkbcommon' 'libxkbcommon-x11')
 makedepends=('cmake' 'ninja' 'gcc' 'wayland-protocols')
-source=("$pkgname-$pkgver.tar.gz::https://github.com/MonoEven/Autohotkey_Linux/archive/refs/tags/v2.0.26-linux.16.tar.gz")
+source=("$pkgname-$pkgver.tar.gz::https://github.com/MonoEven/Autohotkey_Linux/archive/refs/tags/v2.0.26-linux.17.tar.gz")
 sha256sums=('SKIP')
 
 build() {
@@ -45,6 +45,7 @@ package() {
   # docs
   install -d "$pkgdir/usr/share/doc/autohotkey"
   cp -r "$srcdir"/docs-v2 "$pkgdir/usr/share/doc/autohotkey/docs-v2"
+  cp -r "$srcdir"/examples "$pkgdir/usr/share/doc/autohotkey/examples"
   install -Dm644 "$srcdir/README.md" "$pkgdir/usr/share/doc/autohotkey/README.md"
   install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   # GNOME Shell global-hotkey extension (system-wide; pacman lifecycle:

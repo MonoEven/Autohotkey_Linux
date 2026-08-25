@@ -1,7 +1,7 @@
 # AutoHotkey v2 Linux port — current goals
 
 Baseline: AutoHotkey v2.0.26 · branch: `linux-port` · release:
-`v2.0.26-linux.16` · project status: **technology preview**.
+`v2.0.26-linux.17` · project status: **technology preview**.
 
 This file is the current engineering status, not a chronological diary.
 Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
@@ -119,8 +119,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
   wildcard, case-sensitive and inside-word negative/positive plus A_EndChar) and
   fixed five real parity defects. Physical-Windows pass-through, remap and wider option matrices remain open.
 - M6 mixed soak: one parameterized hotkey/Hotstring/clipboard/Timer workload runs
-  30s in CI and accepts 86400s nightly. A 5-minute VM profile passed 1408 rounds;
-  warm RSS grew 148KB (29.60KB/min). The actual 24h run remains open.
+  30s in CI and retains an optional 86400s manual profile. A 5-minute VM profile
+  passed 1408 rounds; warm RSS grew 148KB (29.60KB/min). The 24h run was cancelled
+  by user request and is not a linux.17 completion/release criterion.
 - M6 evdev hotplug: zero-device rescans recover; removed device fds are ungrabbed,
   closed and pruned. Three uinput add/fire/remove cycles returned fd count 5→6→5
   with one stable runtime PID, no stale descriptor and no held-prefix ghost state.

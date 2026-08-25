@@ -211,7 +211,7 @@ jobs:
           bash examples/run.sh all-curated "$BUILD_DIR/source/linux/core/ahk_core"
 
       # M6-T4: the same parameterized hotkey+Hotstring+clipboard+Timer workload
-      # runs for 30s in CI and accepts AHK_SOAK_SECONDS=86400 on the nightly VM.
+      # runs for 30s in CI; AHK_SOAK_SECONDS=86400 remains optional/manual.
       - name: Mixed soak (RSS slope + event counts)
         run: AHK_SOAK_SECONDS=30 xvfb-run -a bash tests/oracle/run_mixed_soak.sh "$BUILD_DIR/source/linux/core/ahk_core"
 
@@ -476,7 +476,7 @@ jobs:
           set -e
           [ $tar_rc -eq 0 ] || [ $tar_rc -eq 141 ]
           dpkg-deb --info dist/autohotkey-linux-*.deb | head -8
-          # linux.16: every package must carry AutoHotkey's official tray
+          # linux.17: every package must carry AutoHotkey's official tray
           # assets (runtime IconPixmap + freedesktop IconName theme lookup).
           tar tzf dist/autohotkey-linux-*.tar.gz | grep -q 'autohotkey-linux/icon_main.ico'
           tar tzf dist/autohotkey-linux-*.tar.gz | grep -q 'autohotkey-linux/autohotkey.png'

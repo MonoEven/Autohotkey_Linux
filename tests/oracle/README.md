@@ -92,8 +92,9 @@ drives the real CSV Import OK action, then proves one-app WinTitle cache and
 Calc's 1,048,576 by 16,384 Table metadata; virtual cells are an explicit API gap.
 
 `run_mixed_soak.sh` runs one parameterized hotkey/Hotstring/clipboard/Timer
-workload. CI uses 30 seconds; `AHK_SOAK_SECONDS=86400` is the unchanged nightly
-profile. It gates exact event counts and bounded clipboard convergence, samples
+workload. CI uses 30 seconds; `AHK_SOAK_SECONDS=86400` remains an optional manual
+profile, but the scheduled 24-hour run was cancelled by user request. It gates
+exact event counts and bounded clipboard convergence, samples
 warm RSS and emits a slope summary. Native builds gate warm RSS at 20MiB; ASan
 still gates all event counts but records (does not gate) its intentional quarantine
 RSS ramp. The current VM evidence is 1408 matching

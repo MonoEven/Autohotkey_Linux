@@ -16,7 +16,8 @@
 
 <h2 id="linux">Linux port changes</h2>
 
-<h2 id="linux-unreleased">Unreleased (check_detail0824 M0)</h2>
+<h2 id="linux.17">v2.0.26-linux.17</h2>
+<p><b>Input architecture, real desktop automation, VS Code debugger, differential reliability and complete examples release.</b></p>
 <ul>
   <li><b>Versioned input capability contract:</b>
     <code>HotkeyBackendGet()</code> and <code>ahk_core --diag</code> now expose
@@ -213,7 +214,8 @@
     seconds on the nightly VM. A 5-minute VM profile completed 1408 matching
     rounds; warm RSS grew 148KB (29.60KB/min). Native CI gates warm RSS; ASan
     gates event consistency while recording its intentional quarantine ramp.
-    The actual 24-hour result remains explicitly open.</li>
+    The scheduled 24-hour run was cancelled by user request; the manual profile
+    remains available, but linux.17 makes no 24-hour claim.</li>
   <li><b>M6 Windows v2.0.26 differential gate (first slice):</b> the official
     x64 archive, executable and repeated byte-identical golden trace are hash
     pinned. An independent Linux XTEST replay strictly matches all 20 rows of
