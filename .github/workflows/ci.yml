@@ -512,7 +512,8 @@ jobs:
           test -x squashfs-root/usr/bin/ahk-inputd
           rm -rf squashfs-root
           ls dist/*.AppImage dist/*.rpm dist/*.vsix
-          grep -q 'autohotkey-linux-tools-0.2.0.vsix' dist/CKSUMS.txt
+          vsix_version=$(node -p "require('./extensions/vscode-ahk-linux/package.json').version")
+          grep -q "autohotkey-linux-tools-${vsix_version}.vsix" dist/CKSUMS.txt
 
       # check0820: every release ships a CKSUMS.txt (SHA-256) so
       # `ahk --update <VER>` can be verified against the published hashes
