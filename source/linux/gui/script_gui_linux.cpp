@@ -530,12 +530,12 @@ static void dispatch_gui_event(const GuiEventEntry &e)
     INT_PTR rv = 0;
     ExprTokenType args[6];
     int n = 0;
-    args[n].SetValue((IObject *)gui);
-    ++n;
     GuiEventType ev = static_cast<GuiEventType>(LOBYTE(e.event));
     if (e.control == NO_CONTROL_INDEX)
     {
         // Window-level events (Close, Escape, Size, ContextMenu, DropFiles).
+        args[n].SetValue((IObject *)gui);
+        ++n;
         IObject *drop_array = nullptr;
         switch (ev)
         {
@@ -589,6 +589,10 @@ static void dispatch_gui_event(const GuiEventEntry &e)
     }
     GuiControlType *ctrl = gui->mControl[e.control];
     ctrl->AddRef();
+    // Control events follow the v2 contract: the first parameter is the
+    // GuiControl object (the Gui is only passed for window-level events).
+    args[n].SetValue((IObject *)ctrl);
+    ++n;
     if (ev == GUI_EVENT_WM_COMMAND)
     {
         ctrl->events.Call(&args[0], 1, (UINT)e.info, GUI_EVENTKIND_COMMAND, gui, &rv);
@@ -2319,7 +2323,9 @@ FResult GuiType::set_BackColor(ExprTokenType &aValue)
     p->background = color;
     p->has_background = true;
     char *s = gdk_rgba_to_string(&color);
-    apply_css(p->fixed, p->css, std::string("*{background-color:") + (s ? s : "white") + ";}");
+    // Paint the whole window (not just the fixed child): a provider attached
+    // to a plain container does not reliably render its own background.
+    apply_css(p->window, p->css, std::string("*{background-color:") + (s ? s : "white") + ";}");
     g_free(s);
     gtk_widget_queue_draw(p->window);
     pump_events();
@@ -2720,13 +2726,9 @@ static void signal_menu_activate(GtkWidget *, gpointer data)
 {
     MenuBinding *binding = static_cast<MenuBinding *>(data);
     if (!binding) return;
-#ifdef POST_AHK_USER_MENU
-    POST_AHK_USER_MENU(binding->gui->mHwnd, binding->id, binding->menu);
-#else
-# if defined(__GNUC__)
+    // Same rule as queue_gui_event(): never route through the no-op
+    // PostMessage() stub; enqueue on the native queue drained by GtkPump().
     if (AhkGtkQueueMenuItem) AhkGtkQueueMenuItem(binding->gui, binding->menu, binding->id);
-# endif
-#endif
 }
 
 static void append_menu_items(GuiPeer &gp, GtkWidget *shell, UserMenu &menu)
@@ -2906,16 +2908,11 @@ static void apply_gui_options(GuiPeer &p)
 
 static void queue_gui_event(GuiType *gui, GuiIndexType control, USHORT event, UINT_PTR info)
 {
-#ifdef POST_AHK_GUI_ACTION
-    POST_AHK_GUI_ACTION(gui->mHwnd, control, event, static_cast<LPARAM>(info));
-#else
-    // A Linux host which does not retain AutoHotkey's internal message queue
-    // can provide this symbol and enqueue the callback on the interpreter
-    // thread.  Weak linkage keeps this backend usable with either host model.
-# if defined(__GNUC__)
+    // Linux has no Win32 message queue: POST_AHK_GUI_ACTION would fall through
+    // to the no-op PostMessage() stub and silently drop every GUI event.
+    // Always enqueue on the native GTK queue drained by GtkPump() on the
+    // interpreter thread.
     if (AhkGtkQueueGuiEvent) AhkGtkQueueGuiEvent(gui, control, event, info);
-# endif
-#endif
 }
 
 } // namespace ahk_gtk
@@ -3420,7 +3417,10 @@ FResult GuiType::Create(LPCTSTR aTitle)
     gtk_box_pack_start(GTK_BOX(gp->root), gp->fixed, TRUE, TRUE, 0);
     gtk_window_set_title(GTK_WINDOW(gp->window), to_utf8(aTitle).c_str());
     gtk_window_set_default_size(GTK_WINDOW(gp->window), 320, 200);
-    gtk_widget_set_app_paintable(gp->window, TRUE);
+    // Keep the default (opaque) theme background: app_paintable=TRUE without a
+    // draw handler leaves the whole window unpainted and shows through as
+    // transparent.  Script-controlled BackColor is applied via CSS below.
+    gtk_widget_set_app_paintable(gp->window, FALSE);
 
     g_signal_connect(gp->window, "delete-event", G_CALLBACK(signal_window_delete), gp.get());
     g_signal_connect(gp->window, "key-press-event", G_CALLBACK(signal_window_key), gp.get());
