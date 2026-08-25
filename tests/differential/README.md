@@ -35,7 +35,10 @@ Current gated cases are:
 1. external `a`, Shift+A and physical F13 into InputHook, including exact
    down/char/up order and VK/SC;
 2. modified `^F11` and `F12 Up` hotkey activation;
-3. dynamic `:B0*:zxq` Hotstring activation and `A_ThisHotkey`.
+3. dynamic `:B0*:zxq` Hotstring activation and `A_ThisHotkey`;
+4. wildcard `*F10` while Shift is held;
+5. case-sensitive `:C*B0:zXc`, with lowercase `zxc` as a negative prefix and
+   exact `zXc` as the single positive activation.
 
 The Linux sender is an independent XTEST C tool with explicit physical keycodes,
 not the Linux runtime's Send implementation. This avoids a same-codebase oracle.
@@ -59,8 +62,10 @@ a blocking CI gate for this declared slice.
 
 ## Explicitly remaining
 
-This does not complete all Windows differential work. Modifier wildcards,
-pass-through variants, custom combos/remaps, SendInput/SendPlay timing and the
-full Hotstring option matrix still need golden cases. New cases must first be
+This does not complete all Windows differential work. Pass-through variants
+need a genuinely physical Windows injector (SendEvent/keybd_event both triggered
+`~a` but were not delivered to the target and therefore were rejected as an
+oracle). Custom combos/remaps, SendInput/SendPlay timing and the remaining
+Hotstring option matrix still need golden cases. New cases must first be
 stable across repeated official-Windows runs; platform-specific fields may only
 be ignored by changing this document, the comparator and the manifest together.

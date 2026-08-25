@@ -115,8 +115,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
   receives two activations. Session-bus reconnect retries are throttled to 500ms.
 - M6 Windows differential gate (first slice): official v2.0.26 x64 archive/exe/
   trace hashes are pinned; three Windows runs are byte-identical. Linux's external
-  XTEST replay exactly matches 16 VK/SC/Unicode/Hotkey/Hotstring rows and fixed
-  four real parity defects. Wildcard/remap/full option matrices remain open.
+  XTEST replay exactly matches 18 VK/SC/Unicode/Hotkey/Hotstring rows (including
+  wildcard and case-sensitive negative/positive cases) and fixed four real parity
+  defects. Physical-Windows pass-through, remap and wider option matrices remain open.
 - M6 mixed soak: one parameterized hotkey/Hotstring/clipboard/Timer workload runs
   30s in CI and accepts 86400s nightly. A 5-minute VM profile passed 1408 rounds;
   warm RSS grew 148KB (29.60KB/min). The actual 24h run remains open.

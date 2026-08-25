@@ -55,6 +55,21 @@ wait_phase hotstring || { cat "$LOG"; exit 1; }
 "$INJECTOR" inject-keycode-x11 52 25
 "$INJECTOR" inject-keycode-x11 53 25
 "$INJECTOR" inject-keycode-x11 24 25
+wait_phase wildcard || { cat "$LOG"; exit 1; }
+"$INJECTOR" inject-keycode-state-x11 50 down
+"$INJECTOR" inject-keycode-x11 76 40
+"$INJECTOR" inject-keycode-state-x11 50 up
+wait_phase case-hotstring || { cat "$LOG"; exit 1; }
+# Lowercase zxc must not fire the case-sensitive trigger; zXc must fire once.
+"$INJECTOR" inject-keycode-x11 52 25
+"$INJECTOR" inject-keycode-x11 53 25
+"$INJECTOR" inject-keycode-x11 54 25
+"$INJECTOR" inject-keycode-x11 65 25
+"$INJECTOR" inject-keycode-x11 52 25
+"$INJECTOR" inject-keycode-state-x11 50 down
+"$INJECTOR" inject-keycode-x11 53 25
+"$INJECTOR" inject-keycode-state-x11 50 up
+"$INJECTOR" inject-keycode-x11 54 25
 
 wait "$runtime"; rc=$?
 trap - EXIT HUP INT TERM

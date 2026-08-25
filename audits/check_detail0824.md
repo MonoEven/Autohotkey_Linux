@@ -578,11 +578,13 @@
 - **M6-T2 第一批已交付并转blocking gate**：从官方v2.0.26 x64 zip收集黄金，
   固定官方archive SHA-256、解压exe SHA-256、trace SHA-256；Windows独立sender
   连续3次字节一致。JSONL v1严格比较seq/VK/SC/Unicode/回调名/结束原因，仅不记录
-  timestamp/device id。Linux用独立XTEST C injector回放16行：`a`、Shift+A、物理
-  F13、`^F11`、`F12 Up`、动态Hotstring全部与Windows精确一致，连续5轮通过并
-  纳入CI/artifact。该差分直接发现并修复modifier OnKeyDown缺失、F13 release
-  VK=0、键盘up variant丢release、Hotstring `A_ThisHotkey`为空。**剩余T2**：
-  wildcard/~、custom combo/remap、SendInput/Play时序与完整Hotstring选项矩阵。
+  timestamp/device id。Linux用独立XTEST C injector回放18行：`a`、Shift+A、物理
+  F13、`^F11`、`F12 Up`、动态Hotstring、Shift下`*F10`、大小写敏感
+  `:C*B0:zXc`（lowercase负例+精确正例）均与Windows一致，连续5轮通过并纳入
+  CI/artifact。该差分直接发现并修复modifier OnKeyDown缺失、F13 release VK=0、
+  键盘up variant丢release、Hotstring `A_ThisHotkey`为空。**剩余T2**：真正物理
+  Windows injector下的`~`透传（SendEvent/keybd_event均触发回调却不进目标，故
+  拒绝作为oracle）、custom combo/remap、SendInput/Play时序与其余Hotstring选项。
 - **T3 真桌面矩阵**：GitHub runner 支持 KVM 嵌套的 job 跑 GNOME/KDE cloud
   image（项目已有 `vmctl.py` 资产）；每夜跑，白天 CI 维持 headless。skip
   改为**显式预算**：`SUPPORT_MATRIX.md` 声明每场景"必须运行的环境集合"，

@@ -73,5 +73,17 @@ Hotstring(":B0*:zxq", HotstringHit)
 StartSender("hotstring")
 Sleep(1200)
 Hotstring(":B0*:zxq", "Off")
+
+WildHit(*) => Emit("wildcard", "fire", 0, 0, 0, A_ThisHotkey)
+Hotkey("*F10", WildHit, "I0")
+StartSender("wildcard")
+Sleep(1200)
+Hotkey("*F10", "Off")
+
+CaseHotstring(*) => Emit("hotstring-case", "fire", 0, 0, 0, A_ThisHotkey)
+Hotstring(":C*B0:zXc", CaseHotstring)
+StartSender("case-hotstring")
+Sleep(1200)
+Hotstring(":C*B0:zXc", "Off")
 Emit("meta", "complete")
 ExitApp

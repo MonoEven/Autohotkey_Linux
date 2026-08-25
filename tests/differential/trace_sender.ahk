@@ -9,6 +9,10 @@ case "hotkeys":
     SendEvent("^{F11}{F12}")
 case "hotstring":
     SendEvent("zxq")
+case "wildcard":
+    SendEvent("+{F10}")
+case "case-hotstring":
+    SendEvent("zxc zXc")
 default:
     ExitApp(2)
 }

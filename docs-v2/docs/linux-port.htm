@@ -434,8 +434,9 @@ Highlights of this release:</p>
     polkit action, install script — VM-verified).</li>
   <li><b>Windows differential:</b> official v2.0.26 x64 archive/executable/
     trace hashes are pinned. An independent Linux XTEST replay strictly matches
-    the first 16-row VK/SC/Unicode/Hotkey/Hotstring golden slice; wider wildcard,
-    remap and option matrices remain open. CI also runs a parameterized mixed
+    the first 18-row VK/SC/Unicode/Hotkey/Hotstring golden slice, including wildcard
+    Shift+F10 and case-sensitive positive/negative Hotstring input. Pass-through
+    still needs a physical Windows injector; remap and wider option matrices remain open. CI also runs a parameterized mixed
     hotkey/Hotstring/clipboard/Timer soak with RSS slope evidence.</li>
   <li>Doc-check: 1143/1143 assertions pass on both the normal and the ASan
     builds; regression 27/27, Wayland 17/17, XWayland 234/234. (The
