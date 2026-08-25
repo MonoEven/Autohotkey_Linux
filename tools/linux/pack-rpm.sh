@@ -41,6 +41,7 @@ install -m 0755 "$CORE" "$SRCTREE/ahk_core"
 install -m 0644 source/resources/icon_main.ico "$SRCTREE/icon_main.ico"
 install -m 0644 docs-v2/docs/static/ahk16.png "$SRCTREE/autohotkey.png"
 cp -r docs-v2 "$SRCTREE/docs-v2"
+cp -r examples "$SRCTREE/examples"
 install -m 0644 README.md "$SRCTREE/README.md"
 [ -f LICENSE ] && install -m 0644 LICENSE "$SRCTREE/LICENSE"
 # The GNOME Shell extension ships system-wide with the RPM (dpkg-style
@@ -103,6 +104,7 @@ install -m 0644 %{_builddir}/ahk-$VER/autohotkey.png %{buildroot}%{_datadir}/aut
 install -m 0644 %{_builddir}/ahk-$VER/autohotkey.png %{buildroot}%{_datadir}/icons/hicolor/16x16/apps/autohotkey.png
 install -m 0755 %{_builddir}/ahk-$VER/ahk-launcher %{buildroot}%{_bindir}/ahk
 cp -r %{_builddir}/ahk-$VER/docs-v2 %{buildroot}%{_docdir}/autohotkey/
+cp -r %{_builddir}/ahk-$VER/examples %{buildroot}%{_docdir}/autohotkey/
 install -m 0644 %{_builddir}/ahk-$VER/README.md %{buildroot}%{_docdir}/autohotkey/README.md
 [ -f %{_builddir}/ahk-$VER/LICENSE ] && install -m 0644 %{_builddir}/ahk-$VER/LICENSE %{buildroot}%{_docdir}/autohotkey/LICENSE
 install -m 0644 %{_builddir}/ahk-$VER/extension/ahk-global-hotkeys@autohotkey.org/metadata.json \

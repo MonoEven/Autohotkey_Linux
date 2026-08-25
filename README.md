@@ -74,6 +74,23 @@ ahk_core --pack my-script script.ahk
 ./my-script
 ```
 
+## Complete examples
+
+[`examples/FUNCTION_COVERAGE.md`](examples/FUNCTION_COVERAGE.md) maps every one
+of the **370 Linux IMPL functions** to a generated function page and an exact
+Linux-verified source line; 230 also include upstream reference code. Environment
+profiles separate headless, X11, Wayland, D-Bus, real desktop, interactive,
+lifecycle and destructive-safety boundaries.
+
+```bash
+python3 tools/gen_examples_catalog.py --check
+bash examples/run.sh all-curated build-core/source/linux/core/ahk_core
+bash examples/run.sh all-verified build-core/source/linux/core/ahk_core
+```
+
+The unattended runner never opts into `Shutdown`; that example refuses by
+default. Release tar/deb/RPM payloads include the complete examples catalog.
+
 ## What works
 
 | Area | Linux implementation |

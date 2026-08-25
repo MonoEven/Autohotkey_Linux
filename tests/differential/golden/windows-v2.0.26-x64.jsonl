@@ -15,4 +15,6 @@
 {"schema":1,"seq":15,"case":"hotstring","kind":"fire","vk":0,"sc":0,"text":0,"name":":B0*:zxq"}
 {"schema":1,"seq":16,"case":"wildcard","kind":"fire","vk":0,"sc":0,"text":0,"name":"*F10"}
 {"schema":1,"seq":17,"case":"hotstring-case","kind":"fire","vk":0,"sc":0,"text":0,"name":":C*B0:zXc"}
-{"schema":1,"seq":18,"case":"meta","kind":"complete","vk":0,"sc":0,"text":0,"name":""}
+{"schema":1,"seq":18,"case":"hotstring-inside","kind":"fire","vk":0,"sc":0,"text":0,"name":":?B0*:yes"}
+{"schema":1,"seq":19,"case":"hotstring-end","kind":"fire","vk":0,"sc":0,"text":32,"name":":B0O:omx"}
+{"schema":1,"seq":20,"case":"meta","kind":"complete","vk":0,"sc":0,"text":0,"name":""}

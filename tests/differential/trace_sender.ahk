@@ -13,6 +13,10 @@ case "wildcard":
     SendEvent("+{F10}")
 case "case-hotstring":
     SendEvent("zxc zXc")
+case "inside-hotstring":
+    SendEvent("xnom xyes")
+case "end-hotstring":
+    SendEvent(" omx ")
 default:
     ExitApp(2)
 }

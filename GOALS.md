@@ -115,9 +115,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
   receives two activations. Session-bus reconnect retries are throttled to 500ms.
 - M6 Windows differential gate (first slice): official v2.0.26 x64 archive/exe/
   trace hashes are pinned; three Windows runs are byte-identical. Linux's external
-  XTEST replay exactly matches 18 VK/SC/Unicode/Hotkey/Hotstring rows (including
-  wildcard and case-sensitive negative/positive cases) and fixed four real parity
-  defects. Physical-Windows pass-through, remap and wider option matrices remain open.
+  XTEST replay exactly matches 20 VK/SC/Unicode/Hotkey/Hotstring rows (including
+  wildcard, case-sensitive and inside-word negative/positive plus A_EndChar) and
+  fixed five real parity defects. Physical-Windows pass-through, remap and wider option matrices remain open.
 - M6 mixed soak: one parameterized hotkey/Hotstring/clipboard/Timer workload runs
   30s in CI and accepts 86400s nightly. A 5-minute VM profile passed 1408 rounds;
   warm RSS grew 148KB (29.60KB/min). The actual 24h run remains open.
@@ -127,6 +127,9 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - M6 compositor pause: private sway receives input before STOP, remains stopped 3s
   while the same AHK runs 30+ Timer/input ticks, then receives input after CONT and
   restores IPC; three runs pass and the runtime PID never changes.
+- Complete examples: all 370 worklist IMPL functions map to generated pages and
+  executable Linux evidence; 230 include upstream code. Curated headless/X11/
+  lifecycle/safety profiles pass, CI rejects omissions/drift, and packages ship them.
 - Machine totals: 1143/1143 X11/headless, 17/17 Wayland and 234/234
   XWayland assertions; 27/27 headless regression tests.
 

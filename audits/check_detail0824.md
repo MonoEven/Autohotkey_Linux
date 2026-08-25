@@ -578,11 +578,12 @@
 - **M6-T2 第一批已交付并转blocking gate**：从官方v2.0.26 x64 zip收集黄金，
   固定官方archive SHA-256、解压exe SHA-256、trace SHA-256；Windows独立sender
   连续3次字节一致。JSONL v1严格比较seq/VK/SC/Unicode/回调名/结束原因，仅不记录
-  timestamp/device id。Linux用独立XTEST C injector回放18行：`a`、Shift+A、物理
+  timestamp/device id。Linux用独立XTEST C injector回放20行：`a`、Shift+A、物理
   F13、`^F11`、`F12 Up`、动态Hotstring、Shift下`*F10`、大小写敏感
-  `:C*B0:zXc`（lowercase负例+精确正例）均与Windows一致，连续5轮通过并纳入
-  CI/artifact。该差分直接发现并修复modifier OnKeyDown缺失、F13 release VK=0、
-  键盘up variant丢release、Hotstring `A_ThisHotkey`为空。**剩余T2**：真正物理
+  `:C*B0:zXc`（lowercase负例+精确正例）、inside-word默认负例/`?`正例、
+  `:B0O:omx`的`A_EndChar=Space`均与Windows一致，连续5轮通过并纳入CI/artifact。
+  差分直接发现并修复modifier OnKeyDown缺失、F13 release VK=0、键盘up variant
+  丢release、Hotstring `A_ThisHotkey`与`A_EndChar`为空。**剩余T2**：真正物理
   Windows injector下的`~`透传（SendEvent/keybd_event均触发回调却不进目标，故
   拒绝作为oracle）、custom combo/remap、SendInput/Play时序与其余Hotstring选项。
 - **T3 真桌面矩阵**：GitHub runner 支持 KVM 嵌套的 job 跑 GNOME/KDE cloud
@@ -910,6 +911,21 @@
   `run_gui_host_matrix.sh`。
 
 ---
+
+## C. EX-1 全功能 examples 覆盖（已交付）
+
+- `tests/doccheck/worklist.tsv` 的370个 `IMPL` 是唯一权威；生成器要求370个唯一
+  映射且每项有可执行调用或人工curated映射，缺1项即失败。
+- `examples/generated/<Function>.md` 每页包含Linux profile、parity/适配说明、
+  精确实测源文件+行号+摘录+运行命令；官方有代码的230项另保留reference，不能
+  单独算Linux验证。`catalog.json`提供schema-1机器索引，coverage/profile索引
+  分环境汇总；同一功能可列出多环境source。
+- 新增可直接运行的Array/Class/Enumerator/Func/String、GuiControl/ListView/
+  TreeView、InputBox、Exit、单次Reload和Shutdown safety-boundary脚本。VM无人值守
+  headless/X11/lifecycle/safety全部通过；Shutdown默认拒绝，CI绝不opt-in。
+- CI运行`gen_examples_catalog.py --check`与`examples/run.sh all-curated`，新增IMPL
+  未映射、source行消失、生成漂移、curated脚本不可运行都会gate。tar/deb/RPM与
+  install.sh均携带完整examples。
 
 # 第四部分 执行顺序与依赖图
 

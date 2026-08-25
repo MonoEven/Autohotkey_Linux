@@ -70,6 +70,16 @@ wait_phase case-hotstring || { cat "$LOG"; exit 1; }
 "$INJECTOR" inject-keycode-x11 53 25
 "$INJECTOR" inject-keycode-state-x11 50 up
 "$INJECTOR" inject-keycode-x11 54 25
+wait_phase inside-hotstring || { cat "$LOG"; exit 1; }
+# Default :nom must not fire inside xnom; ?-enabled :yes must fire inside xyes.
+for keycode in 53 57 32 58 65 53 29 26 39; do
+  "$INJECTOR" inject-keycode-x11 "$keycode" 25
+done
+wait_phase end-hotstring || { cat "$LOG"; exit 1; }
+# Leading space creates a word boundary; trailing space is A_EndChar and O omits it.
+for keycode in 65 32 58 53 65; do
+  "$INJECTOR" inject-keycode-x11 "$keycode" 25
+done
 
 wait "$runtime"; rc=$?
 trap - EXIT HUP INT TERM

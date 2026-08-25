@@ -2,14 +2,14 @@
     "schema":  1,
     "runtime":  "AutoHotkey v2.0.26 x64",
     "platform":  "windows-x64",
-    "collected_utc":  "2026-08-25T01:09:42Z",
+    "collected_utc":  "2026-08-25T01:23:59Z",
     "official_release_url":  "https://github.com/AutoHotkey/AutoHotkey/releases/tag/v2.0.26",
     "archive_url":  "https://github.com/AutoHotkey/AutoHotkey/releases/download/v2.0.26/AutoHotkey_2.0.26.zip",
     "archive_sha256":  "43522AA3122A57784AC5DB30ABF85C2244475C36ACD7796E2C993355F9E926AE",
     "executable":  "AutoHotkey64.exe",
     "executable_sha256":  "A2A54B8ABC476D7671D4DE0771BB54BF5F2373D79FF6871D0BA6A62C3B88AE00",
     "trace":  "windows-v2.0.26-x64.jsonl",
-    "trace_sha256":  "0D96F3DAD2D655D439000FCE1BA31DFD9493518BC162BBAEAF8A3C4771BE2B0A",
+    "trace_sha256":  "1293920B478153211BE83EB51A6800110567C3C90BB2143B0198CEFDF91CD584",
     "repeat_runs":  3,
     "byte_identical":  true,
     "scope":  [
@@ -19,6 +19,8 @@
                   "key-up hotkey activation",
                   "Hotstring activation",
                   "wildcard hotkey under Shift",
-                  "case-sensitive Hotstring positive and negative sequence"
+                  "case-sensitive Hotstring positive and negative sequence",
+                  "inside-word Hotstring negative and positive sequence",
+                  "omit-end-character Hotstring with A_EndChar"
               ]
 }

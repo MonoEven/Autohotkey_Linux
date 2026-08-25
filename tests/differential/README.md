@@ -38,7 +38,9 @@ Current gated cases are:
 3. dynamic `:B0*:zxq` Hotstring activation and `A_ThisHotkey`;
 4. wildcard `*F10` while Shift is held;
 5. case-sensitive `:C*B0:zXc`, with lowercase `zxc` as a negative prefix and
-   exact `zXc` as the single positive activation.
+   exact `zXc` as the single positive activation;
+6. default inside-word rejection vs `?`-enabled inside-word activation;
+7. end-character-required `O` Hotstring with exact `A_EndChar = Space`.
 
 The Linux sender is an independent XTEST C tool with explicit physical keycodes,
 not the Linux runtime's Send implementation. This avoids a same-codebase oracle.

@@ -85,5 +85,21 @@ Hotstring(":C*B0:zXc", CaseHotstring)
 StartSender("case-hotstring")
 Sleep(1200)
 Hotstring(":C*B0:zXc", "Off")
+
+InsideUnexpected(*) => Emit("hotstring-inside", "unexpected", 0, 0, 0, A_ThisHotkey)
+InsideHit(*) => Emit("hotstring-inside", "fire", 0, 0, 0, A_ThisHotkey)
+Hotstring(":B0*:nom", InsideUnexpected)
+Hotstring(":?B0*:yes", InsideHit)
+StartSender("inside-hotstring")
+Sleep(1200)
+Hotstring(":B0*:nom", "Off")
+Hotstring(":?B0*:yes", "Off")
+
+EndHotstring(*) => Emit("hotstring-end", "fire", 0, 0,
+    StrLen(A_EndChar) ? Ord(A_EndChar) : 0, A_ThisHotkey)
+Hotstring(":B0O:omx", EndHotstring)
+StartSender("end-hotstring")
+Sleep(1200)
+Hotstring(":B0O:omx", "Off")
 Emit("meta", "complete")
 ExitApp

@@ -43,16 +43,21 @@ examples fall into three groups on Linux:</p>
     example block at the top of their Examples section that uses native
     <b>.so</b> libraries or the <b>D-Bus</b> bus; the original Windows
     examples are kept for reference only.</li>
-  <li><b>Not available on Linux.</b> Examples using Windows-only features
-    (tray icon via <code>TrayTip</code>/<code>TraySetIcon</code>, SafeArray
-    creation via <code>ComObjArray</code>, <code>SendMessage</code>/
-    <code>PostMessage</code>/<code>OnMessage</code>, the Windows registry,
-    ...) are kept for reference; calling those functions raises a clear
-    error.  Many examples elsewhere are also short <em>snippets</em> that
-    depend on context (a preceding variable, a hotkey label, a window with
-    a specific title); they illustrate syntax rather than being standalone
-    programs.</li>
+  <li><b>Explicit migration/error boundaries.</b> SafeArray/vtable/Win32-message
+    examples such as <code>ComObjArray</code>, <code>ComCall</code>,
+    <code>SendMessage</code> and <code>OnMessage</code> are kept for reference;
+    their Linux wrappers raise a documented error. Adapted features such as
+    TrayTip/TraySetIcon and the file-backed registry have Linux examples instead
+    of being mislabeled unavailable. Many examples are short snippets that need
+    surrounding setup; the generated catalog links that setup.</li>
 </ul>
+<p><b>Complete Linux catalog:</b> <a href="../../examples/FUNCTION_COVERAGE.md">FUNCTION_COVERAGE.md</a>
+ maps all 370 <code>IMPL</code> entries to exact Linux-executed source lines and
+ environment profiles; <code>examples/generated/</code> contains one function
+ page each (case-insensitive filenames included), and 230 pages also retain an
+ upstream code example. CI rejects omissions and generator drift and runs every
+ unattended curated example. Interactive and destructive operations have explicit
+ interaction/safety-boundary examples.</p>
 
 <h2>What works on Linux</h2>
 <p>The generated worklist records <b>370 implemented functions</b> and three
@@ -434,8 +439,8 @@ Highlights of this release:</p>
     polkit action, install script — VM-verified).</li>
   <li><b>Windows differential:</b> official v2.0.26 x64 archive/executable/
     trace hashes are pinned. An independent Linux XTEST replay strictly matches
-    the first 18-row VK/SC/Unicode/Hotkey/Hotstring golden slice, including wildcard
-    Shift+F10 and case-sensitive positive/negative Hotstring input. Pass-through
+    the first 20-row VK/SC/Unicode/Hotkey/Hotstring golden slice, including wildcard,
+    case-sensitive/inside-word positive-negative input and exact A_EndChar. Pass-through
     still needs a physical Windows injector; remap and wider option matrices remain open. CI also runs a parameterized mixed
     hotkey/Hotstring/clipboard/Timer soak with RSS slope evidence.</li>
   <li>Doc-check: 1143/1143 assertions pass on both the normal and the ASan

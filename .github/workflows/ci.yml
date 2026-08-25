@@ -204,6 +204,12 @@ jobs:
       - name: Scenario runner (Xvfb)
         run: xvfb-run -a bash tests/scenarios/run_scenarios.sh "$BUILD_DIR/source/linux/core/ahk_core" --env x11
 
+      - name: Complete examples catalog and curated profiles
+        if: matrix.build == 'core'
+        run: |
+          python3 tools/gen_examples_catalog.py --check
+          bash examples/run.sh all-curated "$BUILD_DIR/source/linux/core/ahk_core"
+
       # M6-T4: the same parameterized hotkey+Hotstring+clipboard+Timer workload
       # runs for 30s in CI and accepts AHK_SOAK_SECONDS=86400 on the nightly VM.
       - name: Mixed soak (RSS slope + event counts)
@@ -478,6 +484,14 @@ jobs:
           dpkg-deb --contents dist/autohotkey-linux-*.deb | grep -q 'usr/share/icons/hicolor/16x16/apps/autohotkey.png'
           rpm -qlp dist/*.rpm | grep -q '/usr/share/autohotkey/icon_main.ico'
           rpm -qlp dist/*.rpm | grep -q '/usr/share/icons/hicolor/16x16/apps/autohotkey.png'
+          # EX-1: full generated examples must ship in tar/deb/rpm payloads.
+          tar tzf dist/autohotkey-linux-*.tar.gz > /tmp/ahk-tar-contents.txt
+          dpkg-deb --contents dist/autohotkey-linux-*.deb > /tmp/ahk-deb-contents.txt
+          rpm -qlp dist/*.rpm > /tmp/ahk-rpm-contents.txt
+          grep -q 'autohotkey-linux/examples/FUNCTION_COVERAGE.md' /tmp/ahk-tar-contents.txt
+          grep -q 'autohotkey-linux/examples/generated/ControlClick.md' /tmp/ahk-tar-contents.txt
+          grep -q 'usr/share/doc/autohotkey/examples/FUNCTION_COVERAGE.md' /tmp/ahk-deb-contents.txt
+          grep -q '/usr/share/doc/autohotkey/examples/FUNCTION_COVERAGE.md' /tmp/ahk-rpm-contents.txt
           dist/*.AppImage --appimage-extract >/tmp/appimage_extract.log 2>&1
           test -f squashfs-root/usr/share/autohotkey/icon_main.ico
           test -f squashfs-root/usr/share/autohotkey/autohotkey.png

@@ -1,0 +1,28 @@
+# SendText
+
+- Linux status: `IMPL` (P1)
+- Example kind: `verified`
+- Environment profile: `x11`
+- Verified source: [tests/doccheck/assert_hotstring.ahk:40](../../tests/doccheck/assert_hotstring.ahk#L40)
+- Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
+
+## Additional verified environments
+
+- `x11`: [tests/doccheck/assert_input.ahk:82](../../tests/doccheck/assert_input.ahk#L82)
+- `x11`: [tests/doccheck/assert_inputhook.ahk:98](../../tests/doccheck/assert_inputhook.ahk#L98)
+- `x11`: [tests/doccheck/assert_repeat.ahk:48](../../tests/doccheck/assert_repeat.ahk#L48)
+- `x11`: [tests/doccheck/assert_unicode_lease.ahk:26](../../tests/doccheck/assert_unicode_lease.ahk#L26)
+- `wayland`: [tests/doccheck/assert_wayland.ahk:60](../../tests/doccheck/assert_wayland.ahk#L60)
+
+## Linux-verified example excerpt
+
+This excerpt is executed by the profile command above; surrounding setup and assertions remain in the linked source.
+
+````ahk
+Send("abz")                 ; -> "W" + 'z'.
+Send("hello ")              ; no match -> passthrough.
+SendText("你好")             ; CJK raw trigger -> Backspace x2 + "nn".
+Send("gh")                   ; B0 -> original "gh" remains, then R.
+Send("xij ")                ; inside-word guard: no replacement.
+Send(" ij ")                ; boundary match: Backspace x3 + S + space.
+````

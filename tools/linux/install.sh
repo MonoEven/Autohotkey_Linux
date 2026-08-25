@@ -24,8 +24,9 @@
 #   --yes             do not prompt
 #   --help            show this help
 #
-# The installer copies the ahk_core interpreter, a small "ahk" wrapper
-# script, the AutoHotkey v2 include files and this README.  It can be
+# The installer copies the ahk_core interpreter, a small "ahk" wrapper,
+# AutoHotkey v2 include files, documentation, the complete examples catalog
+# and this README.  It can be
 # used both from a release tarball (run from the unpacked tree) and from
 # a source checkout after `cmake --build build-core`.
 set -u
@@ -251,6 +252,9 @@ fi
 # Docs.
 if [ -d "$REPO_DIR/docs-v2" ]; then
   cp -r "$REPO_DIR/docs-v2" "$DOCDIR/" 2>/dev/null || true
+fi
+if [ -d "$REPO_DIR/examples" ]; then
+  cp -r "$REPO_DIR/examples" "$DOCDIR/" 2>/dev/null || true
 fi
 [ -f "$REPO_DIR/README.md" ] && install -m 0644 "$REPO_DIR/README.md" "$DOCDIR/README.md"
 [ -f "$REPO_DIR/LICENSE" ] && install -m 0644 "$REPO_DIR/LICENSE" "$DOCDIR/LICENSE"

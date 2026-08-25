@@ -334,13 +334,14 @@ int LinuxCaseMode(const wchar_t *aText, int aLen)
 	return 0;
 }
 
-void LinuxPrepareHotstringThread(Hotstring *aHotstring)
+void LinuxPrepareHotstringThread(Hotstring *aHotstring, wchar_t aEndChar)
 {
 	g_script.mPriorHotkeyName = g_script.mThisHotkeyName;
 	g_script.mPriorHotkeyStartTime = g_script.mThisHotkeyStartTime;
 	g_script.mThisHotkeyName = aHotstring->mName;
 	g_script.mThisHotkeyStartTime = GetTickCount();
 	g_script.mThisHotkeyModifiersLR = 0;
+	g_script.mEndChar = aEndChar;
 }
 
 void LinuxRawSendBackspaces(Display *d, int aCount)
@@ -363,7 +364,7 @@ void LinuxRawFireHotstring(Display *d, Hotstring *aHs, int aCaseMode
 		LinuxRawSendBackspaces(d, aEraseCount);
 	if (aHs->mCallback)
 	{
-		LinuxPrepareHotstringThread(aHs);
+		LinuxPrepareHotstringThread(aHs, aViaEnd ? aEndChar : 0);
 		++g_nThreads;
 		++g;
 		InitNewThread(aHs->mPriority, false, false);
@@ -470,7 +471,8 @@ void LinuxRawFeedHotstrings(Display *d, const AhkLinuxKeyIdentity &aKey, int aSe
 	}
 }
 
-void LinuxCaptureFire(Display *d, Hotstring *aHs, int aCaseMode, bool aForwardEndChar, XEvent &aEndEv)
+void LinuxCaptureFire(Display *d, Hotstring *aHs, int aCaseMode, wchar_t aEndChar
+	, bool aForwardEndChar, XEvent &aEndEv)
 {
 	// The held trigger events are discarded: nothing was ever sent to the
 	// target, so no backspaces are needed (Windows sends backspaces over
@@ -479,7 +481,7 @@ void LinuxCaptureFire(Display *d, Hotstring *aHs, int aCaseMode, bool aForwardEn
 	sBufLen = 0;
 	if (aHs->mCallback)
 	{
-		LinuxPrepareHotstringThread(aHs);
+		LinuxPrepareHotstringThread(aHs, aEndChar);
 		++g_nThreads;
 		++g;
 		InitNewThread(aHs->mPriority, false, false);
@@ -1140,7 +1142,7 @@ bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel)
 		// COMPLETED the trigger and is part of it (Windows suppresses the
 		// completing key too), so it is never forwarded.
 		bool forward_cur = best_endchar ? !best_omit : false;
-		LinuxCaptureFire(d, best, case_mode, forward_cur, ev);
+		LinuxCaptureFire(d, best, case_mode, best_endchar ? ch : 0, forward_cur, ev);
 		return true;
 	}
 

@@ -9,7 +9,7 @@
     "schema": { "const": 1 },
     "seq": { "type": "integer", "minimum": 1 },
     "case": { "type": "string" },
-    "kind": { "enum": ["runtime", "down", "up", "char", "end", "fire", "complete"] },
+    "kind": { "enum": ["runtime", "down", "up", "char", "end", "fire", "unexpected", "complete"] },
     "vk": { "type": "integer", "minimum": 0 },
     "sc": { "type": "integer", "minimum": 0 },
     "text": { "type": "integer", "minimum": 0, "maximum": 1114111 },

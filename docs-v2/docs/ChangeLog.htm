@@ -202,6 +202,12 @@
     root/uinput VM oracle performs three add/fire/remove cycles in one runtime,
     returning the event-fd count from 6 to the baseline 5 every time. Removing a
     keyboard while a custom-combo prefix is down also clears ghost key state.</li>
+  <li><b>Complete examples catalog:</b> every one of 370 Linux IMPL worklist
+    entries now has a generated page linked to exact executable Linux evidence;
+    230 also preserve upstream code examples. Headless, X11, Wayland, D-Bus,
+    desktop-session, interactive, lifecycle and safety-boundary profiles are
+    explicit. CI gates zero omissions/generator drift and runs all unattended
+    curated examples; release tar/deb/RPM payloads include the catalog.</li>
   <li><b>M6 mixed reliability soak:</b> one parameterized hotkey, Hotstring,
     clipboard and Timer workload runs for 30 seconds in CI and accepts 86400
     seconds on the nightly VM. A 5-minute VM profile completed 1408 matching
@@ -210,11 +216,12 @@
     The actual 24-hour result remains explicitly open.</li>
   <li><b>M6 Windows v2.0.26 differential gate (first slice):</b> the official
     x64 archive, executable and repeated byte-identical golden trace are hash
-    pinned. An independent Linux XTEST replay strictly matches all 18 rows of
-    VK/SC/down-up/Unicode/Hotkey/Hotstring observations, including wildcard and
-    case-sensitive positive/negative cases. This exposed and fixed
-    modifier OnKeyDown, F13 release VK, keyboard-up hotkey and Hotstring
-    A_ThisHotkey defects; wider wildcard/remap/options matrices remain open.</li>
+    pinned. An independent Linux XTEST replay strictly matches all 20 rows of
+    VK/SC/down-up/Unicode/Hotkey/Hotstring observations, including wildcard,
+    case-sensitive and inside-word positive/negative cases plus A_EndChar. This
+    exposed and fixed modifier OnKeyDown, F13 release VK, keyboard-up hotkey,
+    Hotstring A_ThisHotkey and A_EndChar defects; wider remap/options matrices
+    remain open.</li>
   <li><b>M6 portal restart fault gate:</b> GlobalShortcuts now watches the
     portal name owner, clears stale session/bind state and automatically creates
     and binds against a replacement owner. An independent two-process fake

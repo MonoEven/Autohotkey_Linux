@@ -53,6 +53,7 @@ install -m 0755 tools/linux/install-gui.sh "$STAGE/tools/linux/install-gui.sh"
 install -m 0644 tools/linux/ahk-launcher.in "$STAGE/tools/linux/ahk-launcher.in"
 printf '%s' "$VER" > "$STAGE/tools/linux/VERSION"
 cp -r docs-v2 "$STAGE/docs-v2"
+cp -r examples "$STAGE/examples"
 install -m 0644 README.md "$STAGE/README.md"
 if [ -f LICENSE ]; then
   install -m 0644 LICENSE "$STAGE/LICENSE"
@@ -85,6 +86,7 @@ if command -v dpkg-deb >/dev/null 2>&1; then
   install -m 0644 docs-v2/docs/static/ahk16.png "$DEBROOT/usr/share/autohotkey/autohotkey.png"
   install -m 0644 docs-v2/docs/static/ahk16.png "$DEBROOT/usr/share/icons/hicolor/16x16/apps/autohotkey.png"
   cp -r docs-v2 "$DEBROOT/usr/share/doc/autohotkey/docs-v2"
+  cp -r examples "$DEBROOT/usr/share/doc/autohotkey/examples"
   install -m 0644 README.md "$DEBROOT/usr/share/doc/autohotkey/README.md"
   [ -f LICENSE ] && install -m 0644 LICENSE "$DEBROOT/usr/share/doc/autohotkey/LICENSE"
   # The GNOME Shell extension ships system-wide with the deb (unlike the
