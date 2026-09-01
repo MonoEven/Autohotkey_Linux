@@ -655,7 +655,7 @@ static void EvdevBrokerEventAdapter(unsigned int aCode, int aValue, long long aT
 				| (mods & MOD_ALT ? Mod1Mask : 0)
 				| (mods & MOD_WIN ? Mod4Mask : 0);
 			LinuxCaptureRawKeyEvent(d, xk, down, (Time)(aTsUs / 1000), state,
-				-1, false, AhkInputSource::PHYSICAL, 0);
+				-1, false, false, AhkInputSource::PHYSICAL, 0);
 		}
 	}
 }

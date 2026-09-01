@@ -21,6 +21,7 @@
 #include "core_keymodel_linux.h"
 #include "core_ime_linux.h"
 #include "input_event.h"
+#include "input_semantics.h" // unified synthetic-level policy (check0901 P0-2).
 #include "../../application.h"
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
@@ -367,9 +368,16 @@ void LinuxRawFireHotstring(Display *d, Hotstring *aHs, int aCaseMode
 		LinuxPrepareHotstringThread(aHs, aViaEnd ? aEndChar : 0);
 		++g_nThreads;
 		++g;
+		// Windows: a hotstring thread starts with SendLevel equal to the
+		// hotstring's InputLevel (official SendLevel docs); set it AFTER
+		// InitNewThread (which resets thread settings).  The erase
+		// backspaces above and the end-char resend below stay at level 0
+		// (auto-replace output is always level 0).
 		InitNewThread(aHs->mPriority, false, false);
+		g->SendLevel = aHs->mInputLevel;
 		aHs->PerformInNewThreadMadeByCaller();
 		ResumeUnderlyingThread();
+		g->SendLevel = 0;
 	}
 	else
 	{
@@ -401,6 +409,12 @@ void LinuxRawFeedHotstrings(Display *d, const AhkLinuxKeyIdentity &aKey, int aSe
 		return;
 	if (!Hotstring::sEnabledCount || !aKey.text)
 		return;
+	// Official SendLevel docs: "hotstring recognition works by collecting
+	// input from all levels except level 0 into a single global buffer".
+	// Physical/non-AHK input is -1 and always enters; auto-replace output is
+	// generated at level 0 and must never pollute the buffer.
+	if (aSelfLevel == 0)
+		return;
 	wchar_t ch = (wchar_t)aKey.text;
 	if (ch == L'\b')
 	{
@@ -427,10 +441,12 @@ void LinuxRawFeedHotstrings(Display *d, const AhkLinuxKeyIdentity &aKey, int aSe
 			continue;
 		if (hs->mHotCriterion && !HotCriterionAllowsFiring(hs->mHotCriterion, hs->mName))
 			continue;
-		// Windows rule: a synthetic event can trigger only when its SendLevel is
-		// strictly greater than the Hotstring's input level. Physical/other-
-		// process input is represented by -1 and always qualifies.
-		if (aSelfLevel >= 0 && aSelfLevel <= (int)hs->mInputLevel)
+		// Windows rule (input_semantics.h): a synthetic event can trigger only
+		// when its SendLevel is strictly greater than the Hotstring's input
+		// level.  Physical/other-process input is represented by -1 and always
+		// qualifies.
+		if (!AhkSyntheticMayTrigger(AhkConsumerKind::HOTSTRING
+			, AhkSendTransportClass::EVENT, aSelfLevel, (int)hs->mInputLevel))
 			continue;
 		int sl = (int)wcslen(hs->mString);
 		int text_len = (int)sRawBuffer.size() - (hs->mEndCharRequired ? 1 : 0);
@@ -752,7 +768,7 @@ void LinuxCaptureDispatchInputNotifies()
 
 void LinuxCaptureRawKeyEvent(Display *d, KeyCode aKeycode, bool aIsPress,
 	Time aTime, unsigned int aCoreState, int aSelfLevel, bool aIsSendInput,
-	AhkInputSource aSource, uint32_t aDeviceId)
+	bool aIsSendPlay, AhkInputSource aSource, uint32_t aDeviceId)
 {
 	bool capture = LinuxCaptureUsesRaw();
 	if (!capture && !LinuxInputEventTraceEnabled())
@@ -774,7 +790,10 @@ void LinuxCaptureRawKeyEvent(Display *d, KeyCode aKeycode, bool aIsPress,
 		(int16_t)aSelfLevel, aDeviceId, AhkInputOrigin::X11
 	};
 	LinuxInputEventTrace(normalized);
-	if (!capture || aIsSendInput)
+	// SendInput/SendPlay self copies never feed the Hotstring/InputHook
+	// buffers (Windows unloads its own hook during SendInput; SendPlay uses
+	// the journal) -- check0901 P1-3.
+	if (!capture || aIsSendInput || aIsSendPlay)
 		return;
 	if (g_input && g_input->InProgress())
 	{
@@ -782,9 +801,10 @@ void LinuxCaptureRawKeyEvent(Display *d, KeyCode aKeycode, bool aIsPress,
 		// raw must stand aside or callbacks/buffer would receive them twice.
 		if (LinuxCaptureKeycodeNeedsGrab(d, aKeycode))
 			return;
-		if (aSelfLevel >= 0 && g_input->MinSendLevel > 0
-			&& aSelfLevel < (int)g_input->MinSendLevel)
-			return;
+		if (!AhkSyntheticMayTrigger(AhkConsumerKind::INPUTHOOK
+			, AhkSendTransportClass::EVENT, aSelfLevel
+			, (int)g_input->MinSendLevel))
+			return; // MinSendLevel: SendEvent-class collects when level >= min.
 		LinuxCaptureFeedInput(d, ev, &identity);
 		return;
 	}
@@ -1039,12 +1059,14 @@ bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel)
 	// hotstrings while in progress, like Windows.
 	if (g_input && g_input->InProgress())
 	{
-		// MinSendLevel (InputHook "I" option, check_detail0821 §2-C): input
-		// this process generated at a SendLevel below the hook's MinSendLevel
-		// is ignored (consumed by the capture grab but not fed); physical
-		// input (aSelfLevel < 0) always feeds.
-		if (aSelfLevel >= 0 && g_input->MinSendLevel > 0
-			&& aSelfLevel < (int)g_input->MinSendLevel)
+		// MinSendLevel (InputHook "I" option): input this process generated at
+		// a SendLevel below the hook's MinSendLevel is ignored (consumed by
+		// the capture grab but not fed); physical input (aSelfLevel < 0)
+		// always feeds.  SendInput/SendPlay copies never reach this grab path
+		// (LinuxHandleKeyEvent re-injects them first).
+		if (!AhkSyntheticMayTrigger(AhkConsumerKind::INPUTHOOK
+			, AhkSendTransportClass::EVENT, aSelfLevel
+			, (int)g_input->MinSendLevel))
 			return true;
 		LinuxCaptureFeedInput(d, ev);
 		return true;
@@ -1080,6 +1102,15 @@ bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel)
 		// Navigation/function key: the text stream ends here.
 		LinuxCaptureFlush(d);
 		return false; // The normal flow forwards the key (and can fire hotkeys).
+	}
+	// Official SendLevel docs: hotstring recognition collects input from all
+	// levels except level 0.  Level-0 synthetic chars are invisible to the
+	// buffer but still reach the target (this key was grabbed only for
+	// capture visibility).
+	if (aSelfLevel == 0)
+	{
+		LinuxInjectKey(d, ev);
+		return true;
 	}
 
 	// Working buffer = held text + this character.
@@ -1120,6 +1151,11 @@ bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel)
 		}
 		else if (LinuxBufEndsWith(buf, blen, hs->mString, hs->mCaseSensitive))
 			full = true;
+		// Windows trigger rule: the current (ending) character only fires the
+		// hotstring when send_level > input_level (input_semantics.h).
+		if (full && !AhkSyntheticMayTrigger(AhkConsumerKind::HOTSTRING
+			, AhkSendTransportClass::EVENT, aSelfLevel, (int)hs->mInputLevel))
+			full = false;
 		if (full && sl >= best_len)
 		{
 			// Prefer the longest trigger; ties keep the first (registration

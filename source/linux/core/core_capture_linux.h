@@ -29,9 +29,12 @@ bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel = -1);
 // Feed one XI2 raw key event (physical or injected). aCoreState is an X11
 // core modifier/group state synthesized at event time. Raw observation never
 // suppresses the original event; Hotstring replacement uses backspacing.
+// SendInput/SendPlay self copies are excluded from the Hotstring/InputHook
+// buffers (Windows unloads its own hook during SendInput; SendPlay uses the
+// journal) -- check0901 P1-3.
 void LinuxCaptureRawKeyEvent(Display *d, KeyCode aKeycode, bool aIsPress,
 	Time aTime, unsigned int aCoreState, int aSelfLevel, bool aIsSendInput,
-	AhkInputSource aSource, uint32_t aDeviceId);
+	bool aIsSendPlay, AhkInputSource aSource, uint32_t aDeviceId);
 
 // Hotstring state changed: recompute the active flag.
 void LinuxCaptureStateChanged();

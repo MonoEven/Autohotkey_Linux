@@ -429,27 +429,26 @@ static void LinuxReleaseAllMods(Display *d, LinuxHeldMods &aHeld)
 //   LSE_PLAY:  LSE_EVENT + the SetKeyDelay ,, Play variants.  X11 has no
 //              journal, so the injection depth is the same as Event; this is
 //              a documented platform adaptation (parity tier "adapted").
-//   LSE_TEXT:  SendText -- raw literal delivery, no pacing, no suppression
-//              (keeps the historical fast behavior).
+//   LSE_TEXT:  internal text-interpretation marker (SendText/{Text}).  It is
+//              NOT a fourth transport: SendText uses the CURRENT SendMode's
+//              transport exactly like Send does (check0901 P1-3 /
+//              check_detail0901 §6.1); the raw flag only switches the parser
+//              to literal interpretation.
 enum { LSE_EVENT = 0, LSE_INPUT, LSE_PLAY, LSE_TEXT };
 static int s_send_mode = LSE_EVENT;
-// True only for an explicit SendInput() call: it is the only path that
-// implements the "unload the hook during SendInput" self-suppression
-// (check_detail0821 §2-B).  `Send` resolves by SendMode (default "Input")
-// but keeps the historical XTEST trigger semantics -- its events still
-// activate the script's own grabs (as the doc-check suite and many macro
-// scripts rely on).  Documented deviation: SendMode("Input") + `Send`
-// does not self-suppress on Linux; use SendInput() for that semantic.
-static bool s_send_explicit_input = false;
 
-static void LinuxSetSendMode(int aMode, bool aExplicitSendInput)
+// Send-mode transport + interpretation classification (check0901 P1-3):
+// the effective transport decides self-suppression -- Windows unloads its own
+// keyboard hook for SendInput, so both explicit SendInput() and plain Send /
+// SendText under SendMode "Input" must suppress own hotkeys/hotstrings.
+// Explicit SendInput() keeps no special-cased semantic path anymore.
+static void LinuxSetSendMode(int aMode)
 {
 	switch (aMode)
 	{
 	case LSE_INPUT: case LSE_PLAY: case LSE_TEXT: s_send_mode = aMode; break;
 	default: s_send_mode = LSE_EVENT; break;
 	}
-	s_send_explicit_input = aExplicitSendInput;
 }
 
 static int LinuxModeKeyDelayMs()
@@ -472,21 +471,31 @@ static int LinuxModePressDurationMs()
 	}
 }
 
-// True only in an explicit SendInput batch: the batch's events must not
-// re-fire this process's own hotkeys/hotstrings.
+// True for the Input transport: SendInput (and Send/SendText under SendMode
+// "Input") unload the script's own hook on Windows, so the self copies of
+// these events must not fire own hotkeys/hotstrings (check0901 P1-3).  The
+// effective transport -- not the BIF name -- decides suppression.
 static bool LinuxModeSuppressSelf()
 {
-	return s_send_mode == LSE_INPUT && s_send_explicit_input;
+	return s_send_mode == LSE_INPUT;
 }
 
-// Send one key phase and record it as self-injected (SendLevel + explicit
-// SendInput flag) so the hotkey/capture machinery can suppress or level-gate
-// its own copy (check_detail0821 §2-B / §2-C).
+// True for the Play transport: SendPlay uses the Windows journal, which never
+// reaches AHK hooks, so its self copies are excluded the same way.
+static bool LinuxModeIsPlay()
+{
+	return s_send_mode == LSE_PLAY;
+}
+
+// Send one key phase and record it as self-injected (SendLevel + transport
+// class) so the hotkey/capture machinery can suppress or level-gate its own
+// copy (check0901 P0-2 / P1-3).
 static void LinuxTapKey(Display *d, vk_type aVK, KeyCode aTrackKc, bool aDown)
 {
 	LinuxFakeKey(d, aVK, aDown);
 	if (aTrackKc)
-		LinuxSelfTrack((unsigned int)aTrackKc, aDown, g->SendLevel, LinuxModeSuppressSelf());
+		LinuxSelfTrack((unsigned int)aTrackKc, aDown, g->SendLevel
+			, LinuxModeSuppressSelf(), LinuxModeIsPlay());
 }
 
 // Send one key press+release; count times (for "{Enter 3}").
@@ -834,14 +843,16 @@ static bool LinuxSendCharUnicode(Display *d, wchar_t aChar)
 		return false;
 	}
 	XTestFakeKeyEvent(d, kc, True, CurrentTime);
-	LinuxSelfTrack((unsigned int)kc, true, g->SendLevel, LinuxModeSuppressSelf());
+	LinuxSelfTrack((unsigned int)kc, true, g->SendLevel
+		, LinuxModeSuppressSelf(), LinuxModeIsPlay());
 	XFlush(d);
 	int press_ms = LinuxModePressDurationMs();
 	int gap_ms = LinuxModeKeyDelayMs();
 	if (press_ms > 0)
 		usleep((useconds_t)press_ms * 1000);
 	XTestFakeKeyEvent(d, kc, False, CurrentTime);
-	LinuxSelfTrack((unsigned int)kc, false, g->SendLevel, LinuxModeSuppressSelf());
+	LinuxSelfTrack((unsigned int)kc, false, g->SendLevel
+		, LinuxModeSuppressSelf(), LinuxModeIsPlay());
 	XFlush(d);
 	if (gap_ms > 0)
 		usleep((useconds_t)gap_ms * 1000);
@@ -1006,14 +1017,16 @@ static void LinuxSendChar(Display *d, wchar_t aChar, LinuxHeldMods &aHeld)
 				added_altgr = false;
 		}
 		XTestFakeKeyEvent(d, stroke.keycode, True, CurrentTime);
-		LinuxSelfTrack((unsigned int)stroke.keycode, true, g->SendLevel, LinuxModeSuppressSelf());
+		LinuxSelfTrack((unsigned int)stroke.keycode, true, g->SendLevel
+			, LinuxModeSuppressSelf(), LinuxModeIsPlay());
 		XFlush(d);
 		int press_ms = LinuxModePressDurationMs();
 		int gap_ms = LinuxModeKeyDelayMs();
 		if (press_ms > 0)
 			usleep((useconds_t)press_ms * 1000);
 		XTestFakeKeyEvent(d, stroke.keycode, False, CurrentTime);
-		LinuxSelfTrack((unsigned int)stroke.keycode, false, g->SendLevel, LinuxModeSuppressSelf());
+		LinuxSelfTrack((unsigned int)stroke.keycode, false, g->SendLevel
+			, LinuxModeSuppressSelf(), LinuxModeIsPlay());
 		XFlush(d);
 		if (added_altgr)
 		{
@@ -1304,10 +1317,11 @@ static void LinuxMouseCoords(Display *d, int aX, int aY, int &aOutX, int &aOutY)
 // Send / SendEvent / SendInput / SendPlay / SendText
 // ---------------------------------------------------------------------------
 
-// aMode is one of LSE_*; aExplicitSendInput marks an explicit SendInput()
-// call (the only path with self-suppression).  BIF_Linux_Send resolves the
-// current SendMode itself.
-static void LinuxSendWrapper(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount, bool aRaw, int aMode, bool aExplicitSendInput)
+// aMode is one of LSE_* (the resolved effective transport).  BIF_Linux_Send
+// and BIF_Linux_SendText resolve the current SendMode themselves; SendText is
+// literal-text interpretation over the SAME transport as Send (check0901
+// P1-3), not a fourth mode.
+static void LinuxSendWrapper(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount, bool aRaw, int aMode)
 {
 	Display *d = LinuxInputDisplay();
 	if (!d && !LinuxWaylandActive())
@@ -1320,8 +1334,7 @@ static void LinuxSendWrapper(ResultToken &aResultToken, ExprTokenType *aParam[],
 	if (!keys)
 		keys = keys_buf;
 	int saved_mode = s_send_mode;
-	bool saved_explicit = s_send_explicit_input;
-	LinuxSetSendMode(aMode, aExplicitSendInput);
+	LinuxSetSendMode(aMode);
 	sLastUnsendable = 0;
 	bool ok = true;
 	if (aRaw)
@@ -1333,7 +1346,6 @@ static void LinuxSendWrapper(ResultToken &aResultToken, ExprTokenType *aParam[],
 	else
 		ok = LinuxSendKeys(d, keys);
 	s_send_mode = saved_mode;
-	s_send_explicit_input = saved_explicit;
 	if (!ok && sLastUnsendable)
 	{
 		TCHAR buf[256];
@@ -1362,11 +1374,14 @@ static int LinuxResolveSendMode()
 	}
 }
 
-BIF_DECL(BIF_Linux_Send)      { LinuxSendWrapper(aResultToken, aParam, aParamCount, false, LinuxResolveSendMode(), false); }
-BIF_DECL(BIF_Linux_SendEvent) { LinuxSendWrapper(aResultToken, aParam, aParamCount, false, LSE_EVENT, false); }
-BIF_DECL(BIF_Linux_SendInput) { LinuxSendWrapper(aResultToken, aParam, aParamCount, false, LSE_INPUT, true); }
-BIF_DECL(BIF_Linux_SendPlay)  { LinuxSendWrapper(aResultToken, aParam, aParamCount, false, LSE_PLAY, false); }
-BIF_DECL(BIF_Linux_SendText)  { LinuxSendWrapper(aResultToken, aParam, aParamCount, true, LSE_TEXT, false); }
+BIF_DECL(BIF_Linux_Send)      { LinuxSendWrapper(aResultToken, aParam, aParamCount, false, LinuxResolveSendMode()); }
+BIF_DECL(BIF_Linux_SendEvent) { LinuxSendWrapper(aResultToken, aParam, aParamCount, false, LSE_EVENT); }
+BIF_DECL(BIF_Linux_SendInput) { LinuxSendWrapper(aResultToken, aParam, aParamCount, false, LSE_INPUT); }
+BIF_DECL(BIF_Linux_SendPlay)  { LinuxSendWrapper(aResultToken, aParam, aParamCount, false, LSE_PLAY); }
+// SendText: literal-text interpretation over the current SendMode's transport
+// (official SendText = "similar to Send, except literal"); Windows SendText
+// under default Input mode therefore self-suppresses like Send/SendInput.
+BIF_DECL(BIF_Linux_SendText)  { LinuxSendWrapper(aResultToken, aParam, aParamCount, true, LinuxResolveSendMode()); }
 
 // ---------------------------------------------------------------------------
 // Accessors for the control module (core_ctrl_linux.cpp): ControlClick and

@@ -58,17 +58,20 @@ void LinuxInjectMarked(Display *d, unsigned int aKeycode, bool aIsPress);
 // core_capture_linux.cpp) to aDesired.  No-op when capture is inactive.
 void LinuxCaptureAddSpecs(std::set<GrabSpec> &aDesired);
 
-// Self-injection tracking (check_detail0821 §2-B + §2-C): record a key this
-// process injected (Send/SendEvent/SendInput/SendPlay/SendText) with its
-// SendLevel and whether it came from an explicit SendInput.  LinuxHandleKeyEvent
-// drops SendInput copies entirely (Windows "unload the hook during SendInput",
-// §2-B) and level-gates the rest by #InputLevel / InputHook MinSendLevel (§2-C).
-void LinuxSelfTrack(unsigned int aKeycode, bool aIsPress, int aLevel, bool aIsSendInput);
+// Self-injection tracking (check_detail0821 §2-B + §2-C, check0901 P0-2/P1-3):
+// record a key this process injected (Send/SendEvent/SendInput/SendPlay/
+// SendText) with its SendLevel and transport class (SendInput = hook-unloaded,
+// SendPlay = journal).  LinuxHandleKeyEvent re-injects SendInput/SendPlay
+// copies so the focused window still receives them (X11 passive grabs
+// redirect the injected event here) without firing own hotkeys; the rest are
+// level-gated by #InputLevel / InputHook MinSendLevel via input_semantics.h.
+void LinuxSelfTrack(unsigned int aKeycode, bool aIsPress, int aLevel
+	, bool aIsSendInput, bool aIsSendPlay = false);
 void LinuxSelfClear();
 // Raw XI2 sees the event in parallel with normal grabs, so it consumes a
 // dedicated copy of each self mark and cannot steal provenance from hotkeys.
 bool LinuxSelfLookupRaw(unsigned int aKeycode, bool aIsPress
-	, int &aLevel, bool &aIsSendInput);
+	, int &aLevel, bool &aIsSendInput, bool &aIsSendPlay);
 
 // XTEST device detection + raw-event source tap (check_detail0821 §2.2-A / §3).
 // The XTEST devices carry the "XTEST Device" property; raw events they produce

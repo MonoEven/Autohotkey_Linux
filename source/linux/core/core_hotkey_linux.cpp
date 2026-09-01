@@ -66,6 +66,7 @@
 #include "core_capture_linux.h"
 #include "core_gshortcut_linux.h"
 #include "input_backend.h"
+#include "input_semantics.h" // unified synthetic-level policy (check0901 P0-2).
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/keysym.h>
@@ -87,7 +88,7 @@ extern "C" bool LinuxRestartRequested();
 bool LinuxIsPassthruCopy(XEvent &ev);
 
 // Self-injection lookup (defined below; the event handler needs it before).
-static bool LinuxSelfLookup(XEvent &ev, int &aLevel, bool &aIsSendInput);
+static bool LinuxSelfLookup(XEvent &ev, int &aLevel, bool &aIsSendInput, bool &aIsSendPlay);
 
 namespace {
 
@@ -721,6 +722,7 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 	bool is_physical = LinuxXTestTapClassify((unsigned int)ev.xkey.keycode, ev.type == KeyPress) == 0;
 	int self_level = -1;
 	bool self_sendinput = false;
+	bool self_sendplay = false;
 	bool self_injected = false;
 	if (is_physical)
 	{
@@ -730,14 +732,21 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 	{
 		if (LinuxIsPassthruCopy(ev))
 			return;
-		// Self-injection (Send/SendEvent/SendInput/SendPlay/SendText)?  An
-		// explicit SendInput copy is dropped entirely (Windows unloads the
-		// hook during SendInput: no own hotkey/hotstring may fire); other
-		// self-sent copies are level-gated by #InputLevel / InputHook
-		// MinSendLevel below.
-		self_injected = LinuxSelfLookup(ev, self_level, self_sendinput);
-		if (self_injected && self_sendinput)
+		// Self-injection (Send/SendEvent/SendInput/SendPlay/SendText)?
+		// SendInput and SendPlay copies must not fire own hotkeys/hotstrings
+		// (Windows unloads its own hook during SendInput and SendPlay uses
+		// the journal), but the injected event itself must still reach the
+		// focused window: X11 passive grabs redirect the injected event to
+		// this handler, so re-inject it once (the passthru mark drops the
+		// re-grabbed copy on the next round).  The remaining self-sent
+		// copies are level-gated by #InputLevel / InputHook MinSendLevel via
+		// input_semantics.h (check0901 P0-2 / check_detail0901 §2).
+		self_injected = LinuxSelfLookup(ev, self_level, self_sendinput, self_sendplay);
+		if (self_injected && (self_sendinput || self_sendplay))
+		{
+			LinuxInjectKey(d, ev);
 			return;
+		}
 	}
 
 	bool is_up = ev.type == KeyRelease;
@@ -754,9 +763,13 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 	// release is a repeat artifact, not a physical release.
 	if (hk_fire && is_up && !sDetectableAutoRepeat && LinuxIsSyntheticRelease(ev))
 		hk_fire = nullptr, vp_fire = nullptr;
-	// #InputLevel gate (check_detail0821 §2-C / S4): input generated at a
-	// given SendLevel can only trigger hotkeys whose InputLevel is >= it.
-	if (hk_fire && self_injected && (int)vp_fire->mInputLevel < self_level)
+	// #InputLevel gate (official HotInputLevelAllowsFiring): a synthetic
+	// event triggers only when send_level > input_level; equal levels do
+	// NOT fire, and physical/non-AHK input (level < 0) is never filtered.
+	if (hk_fire && self_injected
+		&& !AhkSyntheticMayTrigger(AhkConsumerKind::HOTKEY
+			, AhkSendTransportClass::EVENT, self_level
+			, (int)vp_fire->mInputLevel))
 		hk_fire = nullptr, vp_fire = nullptr;
 
 	if (hk_fire)
@@ -770,12 +783,19 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 		if (!suppress)
 			LinuxInjectKey(d, ev);
 		// Fire in a new quasi-thread (same pattern as the timer loop).
+		// Windows: every hotkey/hotstring thread starts with SendLevel equal
+		// to the hotkey's InputLevel (official SendLevel docs).  Set it AFTER
+		// InitNewThread (which resets thread settings to the auto-execute
+		// defaults).
 		++g_nThreads;
 		++g;
+		SendLevelType saved_send_level = g->SendLevel;
 		InitNewThread(vp_fire->mPriority, false, false);
+		g->SendLevel = vp_fire->mInputLevel;
 		LinuxTrackHotkey(hk_fire);
 		hk_fire->PerformInNewThreadMadeByCaller(*vp_fire);
 		ResumeUnderlyingThread();
+		g->SendLevel = saved_send_level;
 	}
 	else
 	{
@@ -868,12 +888,17 @@ void LinuxHandleButtonEvent(Display *d, XEvent &ev)
 
 	if (hk_fire)
 	{
+		// Windows: the button hotkey thread starts at its InputLevel (set
+		// after InitNewThread resets thread settings).
 		++g_nThreads;
 		++g;
+		SendLevelType saved_send_level = g->SendLevel;
 		InitNewThread(vp_fire->mPriority, false, false);
+		g->SendLevel = vp_fire->mInputLevel;
 		LinuxTrackHotkey(hk_fire);
 		hk_fire->PerformInNewThreadMadeByCaller(*vp_fire);
 		ResumeUnderlyingThread();
+		g->SendLevel = saved_send_level;
 	}
 }
 
@@ -1101,7 +1126,8 @@ struct SelfMark
 	unsigned int id;   // KeyCode.
 	DWORD when;        // GetTickCount() at injection.
 	bool is_up;
-	bool is_sendinput; // explicit SendInput() (hook-unloaded semantic).
+	bool is_sendinput; // SendInput transport (hook-unloaded semantic).
+	bool is_sendplay;  // SendPlay transport (journal semantic).
 	int  level;        // g->SendLevel at injection.
 	bool consumed;
 };
@@ -1109,7 +1135,8 @@ static std::vector<SelfMark> sSelfLog;
 static std::vector<SelfMark> sRawSelfLog;
 #define SELF_MARK_MS_WINDOW 1000
 
-void LinuxSelfTrack(unsigned int aKeycode, bool aIsPress, int aLevel, bool aIsSendInput)
+void LinuxSelfTrack(unsigned int aKeycode, bool aIsPress, int aLevel
+	, bool aIsSendInput, bool aIsSendPlay)
 {
 	DWORD now = GetTickCount();
 	// Opportunistic prune of expired marks (keeps the list bounded).
@@ -1127,6 +1154,7 @@ void LinuxSelfTrack(unsigned int aKeycode, bool aIsPress, int aLevel, bool aIsSe
 	m.when = now;
 	m.is_up = !aIsPress;
 	m.is_sendinput = aIsSendInput;
+	m.is_sendplay = aIsSendPlay;
 	m.level = aLevel;
 	m.consumed = false;
 	sSelfLog.push_back(m);
@@ -1145,7 +1173,7 @@ void LinuxSelfClear()
 // stale mark from an earlier send of the same key+phase can never shadow the
 // current injection.  Only keys that carry a passive grab ever reach this
 // check, so an unconsumed mark can never swallow a non-grabbed key's traffic.
-static bool LinuxSelfLookup(XEvent &ev, int &aLevel, bool &aIsSendInput)
+static bool LinuxSelfLookup(XEvent &ev, int &aLevel, bool &aIsSendInput, bool &aIsSendPlay)
 {
 	unsigned int id = (unsigned int)ev.xkey.keycode;
 	bool is_up = ev.type == KeyRelease;
@@ -1160,13 +1188,14 @@ static bool LinuxSelfLookup(XEvent &ev, int &aLevel, bool &aIsSendInput)
 		m.consumed = true;
 		aLevel = m.level;
 		aIsSendInput = m.is_sendinput;
+		aIsSendPlay = m.is_sendplay;
 		return true;
 	}
 	return false;
 }
 
 bool LinuxSelfLookupRaw(unsigned int aKeycode, bool aIsPress
-	, int &aLevel, bool &aIsSendInput)
+	, int &aLevel, bool &aIsSendInput, bool &aIsSendPlay)
 {
 	bool is_up = !aIsPress;
 	DWORD now = GetTickCount();
@@ -1183,6 +1212,7 @@ bool LinuxSelfLookupRaw(unsigned int aKeycode, bool aIsPress
 		m.consumed = true;
 		aLevel = m.level;
 		aIsSendInput = m.is_sendinput;
+		aIsSendPlay = m.is_sendplay;
 		return true;
 	}
 	return false;
@@ -1467,14 +1497,15 @@ void LinuxDispatchHotkeys()
 					{
 						int raw_level = -1;
 						bool raw_sendinput = false;
+						bool raw_sendplay = false;
 						bool is_self = LinuxSelfLookupRaw((unsigned int)raw_keycode, is_press
-							, raw_level, raw_sendinput);
+							, raw_level, raw_sendinput, raw_sendplay);
 						AhkInputSource source = is_self ? AhkInputSource::SELF_INJECT
 							: (is_xtest ? AhkInputSource::OTHER_INJECT : AhkInputSource::PHYSICAL);
 						unsigned int core_state = XkbBuildCoreState(
 							sRawDepressedMods | sRawLockedMods, sRawGroup);
 						LinuxCaptureRawKeyEvent(d, raw_keycode, is_press, re->time
-							, core_state, raw_level, raw_sendinput, source
+							, core_state, raw_level, raw_sendinput, raw_sendplay, source
 							, (uint32_t)re->sourceid);
 					}
 				}
