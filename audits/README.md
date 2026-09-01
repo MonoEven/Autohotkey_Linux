@@ -36,6 +36,20 @@ Closures since check0901 (evidence in the linked oracles):
   (22/22 documented Windows golden matrix). Scenario runner + mixed soak
   re-encoded to the same golden self-trigger path (SendMode Event +
   SendLevel 1); examples catalog regenerated accordingly.
+- **P0-3 (protocol v2 — M3 slice: identity + authorization + negotiation)** —
+  v2 wire format on the same socket, discriminated by the `AHK2` magic (a v1
+  u32 length can never equal it); HELLO/HELLO_ACK negotiation with protocol
+  range, capability grants (OBSERVE always; SUPPRESS owner/root only;
+  EXCLUSIVE/INJECT reserved for M4), and a per-process script nonce bound to
+  a broker-assigned client_id; strictly monotonic client_seq; every broker-
+  lane event carries an authoritative envelope (authority + generation +
+  event_seq, source/confidence, send_level); machine-readable ERROR codes;
+  v1 clients keep legacy semantics on the same socket; the client negotiates
+  v2 first and falls back to v1 transparently. Oracles:
+  [run_inputd_v2_protocol_oracle.sh](../tests/oracle/run_inputd_v2_protocol_oracle.sh)
+  (25/25) and the extended
+  [client framing oracle](../tests/oracle/run_inputd_client_framing_oracle.sh).
+  Broker-owned injection/arbitration (M4) is the next step.
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),

@@ -16,6 +16,16 @@
  *   - SIGALRM watchdog: if the main loop is stuck >2s all grabs are released;
  *   - Backspace->Escape->Enter remains the physical panic escape.
  *
+ * Protocol v2 (check0901 P0-3, milestone M3) shares the same socket: frames
+ * begin with the "AHK2" magic and carry an explicit LE header (version,
+ * header/message length, type, flags, request_id, monotonic client_seq).
+ * v2 HELLO negotiates capability grants (OBSERVE/SUPPRESS; EXCLUSIVE/INJECT
+ * are M4) and binds a per-process script nonce to a broker-assigned
+ * client_id; events carry an authoritative provenance envelope
+ * (authority+generation+event_seq, source/confidence, send_level).  v1
+ * clients keep the legacy frames and semantics; a v1 u32 payload_len can
+ * never equal the magic, so both protocols coexist without length guessing.
+ *
  * Build:  cc -O2 -Wall -o ahk-inputd inputd.c   (no X11/AHK dependency)
  * Usage:  ahk-inputd [--socket PATH] [--socket-mode OCTAL]
  * Manual sockets default to 0600; packaged systemd sockets are root:input 0660.
@@ -53,7 +63,7 @@
 #define PANIC_ESCAPE 1
 #define PANIC_ENTER 28
 
-/* ---- protocol v1 (see inputd_proto.h) ------------------------------------ */
+/* ---- protocol v1 / v2 (see inputd_proto.h) -------------------------------- */
 
 struct rule { unsigned int code; unsigned char suppress; };
 
@@ -62,13 +72,61 @@ struct client {
 	pid_t pid;
 	uid_t uid;
 	gid_t gid;
-	unsigned char rx[INPUTD_MAX_FRAME];
+	unsigned char rx[INPUTD_V2_MAX_FRAME];
 	size_t rx_used;
 	struct rule rules[INPUTD_MAX_RULES];
 	int rule_count;
-	char hello_ok;
+	char hello_ok;   /* v1 HELLO accepted */
 	char dead;
+	/* protocol v2 state (check0901 P0-3) */
+	char v2;                     /* magic "AHK2" seen on this connection */
+	char v2_hello_ok;            /* v2 HELLO accepted (must be first) */
+	unsigned long long v2_client_seq_last;
+	unsigned long long client_id;
+	unsigned char nonce[16];     /* per-process script nonce, not a PID */
+	unsigned int caps_granted;
 };
+
+/* ---- little-endian wire helpers ------------------------------------------- */
+
+static void st_le16(unsigned char *p, unsigned int v)
+{
+	p[0] = (unsigned char)(v & 0xff);
+	p[1] = (unsigned char)((v >> 8) & 0xff);
+}
+
+static unsigned int ld_le16(const unsigned char *p)
+{
+	return (unsigned int)p[0] | ((unsigned int)p[1] << 8);
+}
+
+static void st_le32(unsigned char *p, unsigned int v)
+{
+	p[0] = (unsigned char)(v & 0xff);
+	p[1] = (unsigned char)((v >> 8) & 0xff);
+	p[2] = (unsigned char)((v >> 16) & 0xff);
+	p[3] = (unsigned char)((v >> 24) & 0xff);
+}
+
+static unsigned int ld_le32(const unsigned char *p)
+{
+	return (unsigned int)p[0]
+		| ((unsigned int)p[1] << 8)
+		| ((unsigned int)p[2] << 16)
+		| ((unsigned int)p[3] << 24);
+}
+
+static void st_le64(unsigned char *p, unsigned long long v)
+{
+	st_le32(p, (unsigned int)(v & 0xffffffffu));
+	st_le32(p + 4, (unsigned int)(v >> 32));
+}
+
+static unsigned long long ld_le64(const unsigned char *p)
+{
+	return (unsigned long long)ld_le32(p)
+		| ((unsigned long long)ld_le32(p + 4) << 32);
+}
 
 /* ---- state -------------------------------------------------------------- */
 
@@ -82,6 +140,17 @@ static int sAnyGrabbed = 0;
 static int sPanicked = 0;
 static int sPanicStage = 0;
 static long long sPanicStageMs = 0;
+/* check0901 P0-3: broker-side event identity and provenance.  One authority
+ * per broker process: a restarted broker gets a fresh authority+generation,
+ * so stale event_seq / transaction claims from the previous incarnation are
+ * never accepted.  The evdev lane is broker-owned, so its provenance is
+ * AUTHORITATIVE (source=PHYSICAL, send_level=-1). */
+static unsigned char sAuthorityId[16];
+static unsigned long long sGeneration;
+static unsigned long long sEventSeq;
+static unsigned long long sNextClientId;
+static unsigned long long sNextDeviceId = 1;
+static unsigned long long sDevIds[MAX_DEVICES];
 /* check0901 P0-1: replay-lane health is separate from the panic path.  Once
  * the replay device fails (create or write), every physical grab is released
  * and the broker becomes observe/listen-only; it never grabs again. */
@@ -107,6 +176,7 @@ static long long now_us(void)
 }
 
 static int write_full(int fd, const void *buf, size_t n); /* fwd */
+static void send_degraded_v2(struct client *c); /* fwd (defined with the v2 writers) */
 
 static void logmsg(const char *fmt, ...)
 {
@@ -153,12 +223,18 @@ static void replay_dead(void)
 	for (int i = 0; i < MAX_CLIENTS; ++i)
 	{
 		struct client *cl = &sClients[i];
-		if (cl->fd >= 0 && !cl->dead && cl->hello_ok)
+		if (cl->fd >= 0 && !cl->dead
+			&& (cl->hello_ok || (cl->v2 && cl->v2_hello_ok)))
 		{
-			unsigned char frame[1];
-			frame[0] = INPUTD_S2C_BACKEND_DEGRADED;
-			if (write_full(cl->fd, frame, sizeof(frame)) != 0)
-				cl->dead = 1;
+			if (cl->v2 && cl->v2_hello_ok)
+				send_degraded_v2(cl);
+			else
+			{
+				unsigned char frame[1];
+				frame[0] = INPUTD_S2C_BACKEND_DEGRADED;
+				if (write_full(cl->fd, frame, sizeof(frame)) != 0)
+					cl->dead = 1;
+			}
 		}
 	}
 	fprintf(stderr, "[inputd] replay lane failed: grabs released, "
@@ -350,6 +426,274 @@ static void send_pong(struct client *c)
 		c->dead = 1;
 }
 
+/* ---- protocol v2 frame writers -------------------------------------------- */
+
+/* One v2 frame = magic + header + payload.  Every multi-byte field is
+ * serialized little-endian; no C struct is ever written raw (check_detail0901
+ * §3.2).  request_id/client_seq are 0 on unsolicited broker frames. */
+static int send_frame_v2(struct client *c, unsigned int mtype, unsigned int flags
+	, const unsigned char *payload, size_t payload_len)
+{
+	if (c->dead)
+		return -1;
+	unsigned char frame[INPUTD_V2_MAX_FRAME];
+	if (4 + INPUTD_V2_HEADER_LEN + payload_len > sizeof(frame))
+		return -1;
+	unsigned char *p = frame;
+	st_le32(p, INPUTD_V2_MAGIC); p += 4;
+	st_le16(p, INPUTD_V2_PROTO_VERSION); p += 2;
+	st_le16(p, INPUTD_V2_HEADER_LEN); p += 2;
+	st_le32(p, INPUTD_V2_HEADER_LEN + (unsigned int)payload_len); p += 4;
+	st_le16(p, mtype); p += 2;
+	st_le16(p, flags); p += 2;
+	st_le64(p, 0); p += 8; /* request_id */
+	st_le64(p, 0); p += 8; /* client_seq (S2C frames carry none) */
+	if (payload_len)
+		memcpy(p, payload, payload_len);
+	if (write_full(c->fd, frame, 4 + INPUTD_V2_HEADER_LEN + payload_len) != 0)
+	{
+		c->dead = 1;
+		return -1;
+	}
+	return 0;
+}
+
+static void send_error_v2(struct client *c, unsigned int code, const char *detail)
+{
+	size_t dlen = detail ? strlen(detail) : 0;
+	if (dlen > 96)
+		dlen = 96;
+	unsigned char payload[4 + 2 + 96];
+	st_le32(payload, code);
+	st_le16(payload + 4, (unsigned int)dlen);
+	if (dlen)
+		memcpy(payload + 6, detail, dlen);
+	send_frame_v2(c, INPUTD_V2_ERROR, 0, payload, 6 + dlen);
+}
+
+static void send_hello_ack_v2(struct client *c, unsigned int caps_granted
+	, unsigned int caps_denied)
+{
+	unsigned char payload[INPUTD_V2_HELLO_ACK_PAYLOAD_LEN];
+	memset(payload, 0, sizeof(payload));
+	st_le16(payload, INPUTD_V2_PROTO_VERSION);
+	st_le64(payload + 2, c->client_id);
+	memcpy(payload + 10, sAuthorityId, 16);
+	st_le64(payload + 26, sGeneration);
+	st_le32(payload + 34, caps_granted);
+	st_le32(payload + 38, caps_denied);
+	st_le64(payload + 42, sEventSeq);
+	st_le16(payload + 50, sReplayDead ? INPUTD_V2_ACK_FLAG_DEGRADED : 0);
+	send_frame_v2(c, INPUTD_V2_HELLO_ACK, 0, payload, sizeof(payload));
+}
+
+static void send_event_v2(struct client *c, unsigned int code, int value
+	, long long ts, unsigned long long device_id)
+{
+	unsigned char payload[INPUTD_V2_ENVELOPE_LEN + INPUTD_V2_KEY_PAYLOAD_LEN];
+	unsigned char *p = payload;
+	memcpy(p, sAuthorityId, 16); p += 16;
+	st_le64(p, sGeneration); p += 8;
+	st_le64(p, sEventSeq); p += 8;
+	st_le64(p, (unsigned long long)ts); p += 8;
+	st_le64(p, device_id); p += 8;
+	*p++ = INPUTD_V2_SOURCE_PHYSICAL;  /* broker-owned evdev lane */
+	*p++ = INPUTD_V2_ORIGIN_EVDEV;
+	*p++ = INPUTD_V2_CONF_AUTHORITATIVE;
+	*p++ = 0;                          /* reserved */
+	st_le16(p, (unsigned int)(int)-1); p += 2; /* send_level: not synthetic */
+	st_le16(p, INPUTD_V2_PAYLOAD_KEY); p += 2;
+	st_le16(p, INPUTD_V2_KEY_PAYLOAD_LEN); p += 2;
+	st_le32(p, code); p += 4;
+	st_le16(p, 0); p += 2;  /* vk: not mapped by the broker */
+	st_le16(p, 0); p += 2;  /* sc: not mapped by the broker */
+	st_le32(p, 0); p += 4;  /* unicode_scalar */
+	*p++ = value == 2 ? INPUTD_V2_PHASE_REPEAT
+		: (value ? INPUTD_V2_PHASE_DOWN : INPUTD_V2_PHASE_UP);
+	*p++ = (unsigned char)value;
+	st_le16(p, 0); p += 2;  /* reserved */
+	send_frame_v2(c, INPUTD_V2_EVENT, 0, payload, sizeof(payload));
+}
+
+static void send_degraded_v2(struct client *c)
+{
+	send_frame_v2(c, INPUTD_V2_BACKEND_DEGRADED, 0, NULL, 0);
+}
+
+static void send_device_added_v2(struct client *c, unsigned long long device_id
+	, const char *name)
+{
+	size_t nlen = strlen(name);
+	if (nlen > 255)
+		nlen = 255;
+	unsigned char payload[8 + 2 + 256];
+	st_le64(payload, device_id);
+	st_le16(payload + 8, (unsigned int)nlen);
+	memcpy(payload + 10, name, nlen);
+	send_frame_v2(c, INPUTD_V2_DEVICE_ADDED, 0, payload, 10 + nlen);
+}
+
+static void send_device_removed_v2(struct client *c, unsigned long long device_id)
+{
+	unsigned char payload[8];
+	st_le64(payload, device_id);
+	send_frame_v2(c, INPUTD_V2_DEVICE_REMOVED, 0, payload, sizeof(payload));
+}
+
+static void broadcast_device_added(unsigned long long device_id, const char *name)
+{
+	for (int i = 0; i < MAX_CLIENTS; ++i)
+	{
+		struct client *cl = &sClients[i];
+		if (cl->fd >= 0 && !cl->dead && cl->v2 && cl->v2_hello_ok)
+			send_device_added_v2(cl, device_id, name);
+	}
+}
+
+static void broadcast_device_removed(unsigned long long device_id)
+{
+	for (int i = 0; i < MAX_CLIENTS; ++i)
+	{
+		struct client *cl = &sClients[i];
+		if (cl->fd >= 0 && !cl->dead && cl->v2 && cl->v2_hello_ok)
+			send_device_removed_v2(cl, device_id);
+	}
+}
+
+/* ---- protocol v2 command handling ------------------------------------------ */
+
+static void handle_client_cmd_v2(struct client *c, unsigned int mtype
+	, const unsigned char *payload, size_t n, unsigned long long client_seq)
+{
+	if (c->v2_hello_ok)
+	{
+		if (mtype == INPUTD_V2_HELLO)
+		{
+			send_error_v2(c, INPUTD_V2_ERR_DUPLICATE_HELLO, "HELLO already accepted");
+			c->dead = 1;
+			return;
+		}
+		/* Monotonic client sequence: duplicates/replays are rejected. */
+		if (client_seq <= c->v2_client_seq_last)
+		{
+			send_error_v2(c, INPUTD_V2_ERR_SEQUENCE_VIOLATION, "client_seq must increase");
+			c->dead = 1;
+			return;
+		}
+	}
+	else if (mtype != INPUTD_V2_HELLO)
+	{
+		send_error_v2(c, INPUTD_V2_ERR_NOT_HELLOED, "HELLO must be the first frame");
+		c->dead = 1;
+		return;
+	}
+	c->v2_client_seq_last = client_seq;
+
+	switch (mtype)
+	{
+	case INPUTD_V2_HELLO:
+	{
+		if (n != INPUTD_V2_HELLO_PAYLOAD_LEN)
+		{
+			send_error_v2(c, INPUTD_V2_ERR_BAD_FRAME, "bad HELLO payload length");
+			c->dead = 1;
+			return;
+		}
+		unsigned int min_proto = ld_le16(payload);
+		unsigned int max_proto = ld_le16(payload + 2);
+		if (max_proto < INPUTD_V2_PROTO_VERSION
+			|| min_proto > INPUTD_V2_PROTO_VERSION)
+		{
+			send_error_v2(c, INPUTD_V2_ERR_PROTO_UNSUPPORTED, "protocol range excludes v2");
+			c->dead = 1;
+			return;
+		}
+		memcpy(c->nonce, payload + 4, 16);
+		unsigned int caps_requested = ld_le32(payload + 20);
+		/* Capability grants (check_detail0901 §3.5): OBSERVE for every
+		 * socket-authorized client; SUPPRESS only for the socket owner
+		 * (or root); EXCLUSIVE/INJECT are M4 and never granted yet.
+		 * caps_denied reports every requested-but-not-granted bit so
+		 * denials stay machine-readable. */
+		unsigned int caps_granted = INPUTD_V2_CAP_OBSERVE;
+		if (c->uid == 0 || c->uid == geteuid())
+			caps_granted |= INPUTD_V2_CAP_SUPPRESS;
+		unsigned int caps_denied = caps_requested & ~caps_granted;
+		c->client_id = ++sNextClientId;
+		c->caps_granted = caps_granted;
+		c->v2_hello_ok = 1;
+		send_hello_ack_v2(c, caps_granted, caps_denied);
+		logmsg("client %d v2 hello uid=%ld client_id=%llu caps=0x%x denied=0x%x",
+			c->fd, (long)c->uid, c->client_id, caps_granted, caps_denied);
+		break;
+	}
+	case INPUTD_V2_SUBSCRIBE:
+	{
+		if (n < 4)
+		{
+			send_error_v2(c, INPUTD_V2_ERR_BAD_FRAME, "bad SUBSCRIBE payload");
+			c->dead = 1;
+			return;
+		}
+		unsigned int count = ld_le32(payload);
+		if (count > INPUTD_MAX_RULES || n != 4 + (size_t)count * 5)
+		{
+			send_error_v2(c, INPUTD_V2_ERR_BAD_FRAME, "bad SUBSCRIBE rule count");
+			c->dead = 1;
+			return;
+		}
+		for (unsigned int i = 0; i < count; ++i)
+		{
+			const unsigned char *r = payload + 4 + (size_t)i * 5;
+			unsigned int code = ld_le32(r);
+			if (!code || code > KEY_MAX || r[4] > 1)
+			{
+				send_error_v2(c, INPUTD_V2_ERR_BAD_FRAME, "bad SUBSCRIBE rule");
+				c->dead = 1;
+				return;
+			}
+			if (r[4] && !(c->caps_granted & INPUTD_V2_CAP_SUPPRESS))
+			{
+				/* Machine-readable denial: the whole update is rejected and
+				 * the previous rule set stays active. */
+				send_error_v2(c, INPUTD_V2_ERR_CAPABILITY_DENIED
+					, "SUPPRESS capability not granted");
+				c->dead = 1;
+				return;
+			}
+		}
+		c->rule_count = 0;
+		for (unsigned int i = 0; i < count; ++i)
+		{
+			const unsigned char *r = payload + 4 + (size_t)i * 5;
+			c->rules[c->rule_count].code = ld_le32(r);
+			c->rules[c->rule_count].suppress = r[4];
+			++c->rule_count;
+		}
+		unsigned char ack[5];
+		ack[0] = 1;
+		st_le32(ack + 1, (unsigned int)c->rule_count);
+		send_frame_v2(c, INPUTD_V2_SUBSCRIBE_ACK, 0, ack, sizeof(ack));
+		break;
+	}
+	case INPUTD_V2_UNSUBSCRIBE:
+	{
+		c->rule_count = 0;
+		unsigned char ack[1];
+		ack[0] = 1;
+		send_frame_v2(c, INPUTD_V2_UNSUBSCRIBE_ACK, 0, ack, sizeof(ack));
+		break;
+	}
+	case INPUTD_V2_PING:
+		send_frame_v2(c, INPUTD_V2_PONG, 0, NULL, 0);
+		break;
+	default:
+		send_error_v2(c, INPUTD_V2_ERR_BAD_FRAME, "unknown message type");
+		c->dead = 1;
+		break;
+	}
+}
+
 /* ---- client handling ----------------------------------------------------- */
 
 static void close_client(struct client *c)
@@ -368,6 +712,12 @@ static void close_client(struct client *c)
 	c->rule_count = 0;
 	c->hello_ok = 0;
 	c->dead = 0;
+	c->v2 = 0;
+	c->v2_hello_ok = 0;
+	c->v2_client_seq_last = 0;
+	c->client_id = 0;
+	c->caps_granted = 0;
+	memset(c->nonce, 0, sizeof(c->nonce));
 }
 
 static int active_client_count(void)
@@ -476,12 +826,20 @@ static void handle_client_cmd(struct client *c, const unsigned char *cmd, size_t
 
 /* ---- device scanning ------------------------------------------------------ */
 
+static void drain_client_v2(struct client *c); /* fwd */
+
 static void drain_client(struct client *c)
 {
+	/* A connection already classified as v2 stays on the v2 parser. */
+	if (c->v2)
+	{
+		drain_client_v2(c);
+		return;
+	}
 	/* One authorized client must not monopolize the grab/replay loop by keeping
 	 * its stream perpetually readable. Four maximum frames per poll turn is
 	 * enough for normal rule updates while preserving fairness. */
-	size_t read_budget = INPUTD_MAX_FRAME * 4u;
+	size_t read_budget = INPUTD_V2_MAX_FRAME * 4u;
 	while (read_budget)
 	{
 		if (c->rx_used == sizeof(c->rx))
@@ -509,6 +867,15 @@ static void drain_client(struct client *c)
 		}
 		c->rx_used += (size_t)got;
 		read_budget -= (size_t)got;
+		/* Protocol discrimination (check0901 P0-3): a v2 frame starts with
+		 * the "AHK2" magic, which can never be a valid v1 u32 payload_len
+		 * (v1 frames are bounded by INPUTD_MAX_FRAME << 0x324B4841). */
+		if (!c->v2 && c->rx_used >= 4 && ld_le32(c->rx) == INPUTD_V2_MAGIC)
+		{
+			c->v2 = 1;
+			drain_client_v2(c);
+			return;
+		}
 		for (;;)
 		{
 			if (c->rx_used < 4)
@@ -531,6 +898,82 @@ static void drain_client(struct client *c)
 				memmove(c->rx, c->rx + frame_size, c->rx_used);
 		}
 		/* Edge-trigger independence: continue read until EAGAIN. */
+	}
+}
+
+/* v2 framing: magic + header + payload, validated field by field.  The rx
+ * buffer already holds buffered bytes when called from drain_client, so
+ * parse BEFORE reading more. */
+static void drain_client_v2(struct client *c)
+{
+	size_t read_budget = INPUTD_V2_MAX_FRAME * 4u;
+	for (;;)
+	{
+		for (;;)
+		{
+			if (c->rx_used < 4)
+				break;
+			if (ld_le32(c->rx) != INPUTD_V2_MAGIC)
+			{
+				send_error_v2(c, INPUTD_V2_ERR_BAD_FRAME, "bad magic");
+				close_client(c);
+				return;
+			}
+			if (c->rx_used < 4 + INPUTD_V2_HEADER_LEN)
+				break;
+			const unsigned char *h = c->rx + 4;
+			unsigned int ver = ld_le16(h);
+			unsigned int hlen = ld_le16(h + 2);
+			unsigned int mlen = ld_le32(h + 4);
+			unsigned int mtype = ld_le16(h + 8);
+			unsigned long long client_seq = ld_le64(h + 20); /* request_id@12..19 */
+			if (ver != INPUTD_V2_PROTO_VERSION
+				|| hlen != INPUTD_V2_HEADER_LEN
+				|| mlen < INPUTD_V2_HEADER_LEN
+				|| mlen > INPUTD_V2_MAX_FRAME - 4)
+			{
+				send_error_v2(c, INPUTD_V2_ERR_BAD_FRAME, "bad v2 header");
+				close_client(c);
+				return;
+			}
+			size_t frame_size = 4 + (size_t)mlen;
+			if (c->rx_used < frame_size)
+				break;
+			handle_client_cmd_v2(c, mtype, c->rx + 4 + INPUTD_V2_HEADER_LEN
+				, (size_t)mlen - INPUTD_V2_HEADER_LEN, client_seq);
+			if (c->fd < 0 || c->dead)
+				return;
+			c->rx_used -= frame_size;
+			if (c->rx_used)
+				memmove(c->rx, c->rx + frame_size, c->rx_used);
+		}
+		if (c->fd < 0 || c->dead)
+			return;
+		if (c->rx_used == sizeof(c->rx))
+		{
+			close_client(c);
+			return;
+		}
+		size_t room = sizeof(c->rx) - c->rx_used;
+		if (room > read_budget)
+			room = read_budget;
+		ssize_t got = read(c->fd, c->rx + c->rx_used, room);
+		if (got == 0)
+		{
+			close_client(c);
+			return;
+		}
+		if (got < 0)
+		{
+			if (errno == EINTR)
+				continue;
+			if (errno == EAGAIN || errno == EWOULDBLOCK)
+				return;
+			close_client(c);
+			return;
+		}
+		c->rx_used += (size_t)got;
+		read_budget -= (size_t)got;
 	}
 }
 
@@ -572,8 +1015,10 @@ static void scan_devices(void)
 			fprintf(stderr, "[inputd] replay not ready; deferring grabs\n");
 		return;
 	}
-	/* Test oracle hook: limit grabs to one specific device (a uinput
-	 * fixture), so fault tests never touch the host keyboard. */
+	/* Test oracle hook: limit grabs to specific devices (uinput fixtures),
+	 * so fault/protocol tests never touch the host keyboard.  Accepts a
+	 * comma-separated list of node names or paths (check0901 P0-3 oracles
+	 * hot-add a second fixture while the broker is running). */
 	const char *test_device = getenv("AHK_INPUTD_TEST_DEVICE");
 	if (test_device && !*test_device)
 		test_device = NULL;
@@ -598,14 +1043,39 @@ static void scan_devices(void)
 		char path[PATH_MAX];
 		if (snprintf(path, sizeof(path), "/dev/input/%s", ent->d_name) >= (int)sizeof(path))
 			continue;
-		if (test_device)
-		{
-			if (strcmp(test_device, ent->d_name) != 0
-				&& strcmp(test_device, path) != 0)
-				continue; /* not the device under test */
-		}
 		int fd = open(path, O_RDONLY | O_NONBLOCK);
 		if (fd < 0) continue;
+		if (test_device)
+		{
+			/* comma-separated allow-list: node name, path, or "name:" device
+			 * name substring (fixtures use predictable names, so hot-add
+			 * oracles can pre-authorize devices that do not exist yet). */
+			char list[512];
+			snprintf(list, sizeof(list), "%s", test_device);
+			int matched = 0;
+			char *save = NULL;
+			char *tok = strtok_r(list, ",", &save);
+			while (tok && !matched)
+			{
+				while (*tok == ' ' || *tok == '\t') ++tok;
+				if (!strncmp(tok, "name:", 5))
+				{
+					char devname[UINPUT_MAX_NAME_SIZE];
+					memset(devname, 0, sizeof(devname));
+					if (ioctl(fd, EVIOCGNAME(sizeof(devname) - 1), devname) >= 0
+						&& strstr(devname, tok + 5) != NULL)
+						matched = 1;
+				}
+				else if (!strcmp(tok, ent->d_name) || !strcmp(tok, path))
+					matched = 1;
+				tok = strtok_r(NULL, ",", &save);
+			}
+			if (!matched)
+			{
+				close(fd);
+				continue; /* not a device under test */
+			}
+		}
 		if (is_self_device(fd)) { close(fd); continue; }
 		if (!is_keyboard(fd)) { close(fd); continue; }
 		if (sDevCount < MAX_DEVICES)
@@ -640,11 +1110,14 @@ static void scan_devices(void)
 					close(fd);
 					sDevFds[slot] = -1;
 					sGrabbedNames[slot][0] = '\0';
+					sDevIds[slot] = 0;
 				}
 				else
 				{
 					sAnyGrabbed = 1;
+					sDevIds[slot] = sNextDeviceId++;
 					logmsg("grabbed %s", path);
+					broadcast_device_added(sDevIds[slot], ent->d_name);
 				}
 			}
 			else
@@ -654,6 +1127,7 @@ static void scan_devices(void)
 				close(fd); // EBADF is harmless if SIGALRM already closed it.
 				sDevFds[slot] = -1;
 				sGrabbedNames[slot][0] = '\0';
+				sDevIds[slot] = 0;
 			}
 		}
 		else
@@ -675,6 +1149,7 @@ static void prune_removed_devices(void)
 			sDevFds[write_index] = sDevFds[read_index];
 			memcpy(sGrabbedNames[write_index], sGrabbedNames[read_index],
 				sizeof(sGrabbedNames[write_index]));
+			sDevIds[write_index] = sDevIds[read_index];
 		}
 		++write_index;
 	}
@@ -682,6 +1157,7 @@ static void prune_removed_devices(void)
 	{
 		sDevFds[i] = -1;
 		sGrabbedNames[i][0] = '\0';
+		sDevIds[i] = 0;
 	}
 	sDevCount = write_index;
 	sAnyGrabbed = sDevCount > 0;
@@ -873,6 +1349,31 @@ int main(int argc, char **argv)
 			return 1;
 		}
 	}
+	/* check0901 P0-3: broker event identity.  Fresh authority+generation per
+	 * process so a restarted broker can never be confused with its previous
+	 * incarnation (old event_seq / transaction claims are inherently stale). */
+	{
+		int ur = open("/dev/urandom", O_RDONLY);
+		unsigned char identity[24];
+		ssize_t rd = 0;
+		if (ur >= 0)
+		{
+			rd = read(ur, identity, sizeof(identity));
+			close(ur);
+		}
+		if (rd != (ssize_t)sizeof(identity))
+		{
+			/* urandom unavailable: degrade to a per-boot-ish mixture. */
+			unsigned long long mix = (unsigned long long)now_us()
+				^ ((unsigned long long)getpid() << 32) ^ 0x9e3779b97f4a7c15ULL;
+			for (int i = 0; i < 24; ++i)
+				identity[i] = (unsigned char)(mix >> ((i % 8) * 8));
+		}
+		memcpy(sAuthorityId, identity, 16);
+		memcpy(&sGeneration, identity + 16, 8);
+		if (!sGeneration)
+			sGeneration = 1;
+	}
 	for (int i = 0; i < MAX_CLIENTS; ++i)
 	{
 		sClients[i].fd = -1;
@@ -882,8 +1383,18 @@ int main(int argc, char **argv)
 		sClients[i].rx_used = 0;
 		sClients[i].hello_ok = 0;
 		sClients[i].rules[0].code = 0;
+		sClients[i].v2 = 0;
+		sClients[i].v2_hello_ok = 0;
+		sClients[i].v2_client_seq_last = 0;
+		sClients[i].client_id = 0;
+		sClients[i].caps_granted = 0;
+		memset(sClients[i].nonce, 0, sizeof(sClients[i].nonce));
 	}
-	for (int i = 0; i < MAX_DEVICES; ++i) sDevFds[i] = -1;
+	for (int i = 0; i < MAX_DEVICES; ++i)
+	{
+		sDevFds[i] = -1;
+		sDevIds[i] = 0;
+	}
 	memset(sGrabbedNames, 0, sizeof(sGrabbedNames));
 
 	signal(SIGTERM, on_sig);
@@ -993,6 +1504,12 @@ int main(int argc, char **argv)
 					if (panic_step((unsigned int)ev.code, ev.value != 0))
 						continue;
 					if (sPanicked) continue; /* fail-open: pass through */
+					/* Stamp the broker-lane identity once per event (check0901
+					 * P0-3): authority+generation+seq are shared by every
+					 * recipient, so A/B scripts observe identical provenance. */
+					++sEventSeq;
+					long long ev_ts = now_us();
+					unsigned long long ev_dev_id = sDevIds[i];
 					/* distribute to subscribed clients first */
 					int any_suppress = 0;
 					for (int c = 0; c < MAX_CLIENTS; ++c)
@@ -1004,7 +1521,10 @@ int main(int argc, char **argv)
 							{
 								if (cl->rules[r].suppress)
 									any_suppress = 1;
-								send_event_to(cl, (unsigned int)ev.code, ev.value, now_us());
+								if (cl->v2 && cl->v2_hello_ok)
+									send_event_v2(cl, (unsigned int)ev.code, ev.value, ev_ts, ev_dev_id);
+								else
+									send_event_to(cl, (unsigned int)ev.code, ev.value, ev_ts);
 								break;
 							}
 					}
@@ -1023,9 +1543,12 @@ int main(int argc, char **argv)
 			{
 				ioctl(sDevFds[i], EVIOCGRAB, 0);
 				fprintf(stderr, "[inputd] hot-remove %s\n", sGrabbedNames[i]);
+				if (sDevIds[i])
+					broadcast_device_removed(sDevIds[i]);
 				close(sDevFds[i]);
 				sDevFds[i] = -1;
 				sGrabbedNames[i][0] = '\0';
+				sDevIds[i] = 0;
 			}
 		}
 		prune_removed_devices();

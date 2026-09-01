@@ -27,8 +27,7 @@ import os, socket, struct, sys, time
 path = sys.argv[1]
 server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 server.bind(path)
-server.listen(1)
-conn, _ = server.accept()
+server.listen(2)
 def read_exact(n):
     data = b""
     while len(data) < n:
@@ -40,6 +39,14 @@ def read_exact(n):
 def read_frame():
     length = struct.unpack("=I", read_exact(4))[0]
     return read_exact(length)
+# Connection 1: the client leads with protocol v2 (magic "AHK2").  A v1-only
+# broker cannot parse that and closes; the client must transparently fall
+# back to the legacy v1 HELLO on a fresh connection (check0901 P0-3).
+conn, _ = server.accept()
+magic = read_exact(4)
+assert magic == b"AHK2", magic
+conn.close()
+conn, _ = server.accept()
 hello = read_frame()
 assert hello[0] == 1 and struct.unpack("=I", hello[1:])[0] == 1
 hello_ack = struct.pack("=BBI", 2, 1, 1)
@@ -87,8 +94,8 @@ grep -q '^\[evdev\] broker mode active$' "$AHK_LOG"
 wait "$SERVER_PID"
 SERVER_PID=
 cat >"$OUT/inputd-client-framing-summary.json" <<EOF
-{"schema":1,"result":"pass","hello_ack_fragmented":true,"subscribe_ack_event_coalesced":true,"event_fragmented":true,"f12_fired":true}
+{"schema":1,"result":"pass","v2_leading_magic":true,"v1_fallback":true,"hello_ack_fragmented":true,"subscribe_ack_event_coalesced":true,"event_fragmented":true,"f12_fired":true}
 EOF
 trap - EXIT HUP INT TERM
 cleanup
-echo "INPUTD_CLIENT_FRAMING_ORACLE_PASS fragmented=true coalesced=true"
+echo "INPUTD_CLIENT_FRAMING_ORACLE_PASS v2-fallback=true fragmented=true coalesced=true"

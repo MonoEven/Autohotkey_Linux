@@ -25,6 +25,7 @@
 #include "input_backend.h" // AhkBackendHotkeyEnabled
 #include "input_event.h"
 #include "core_inputd_client_linux.h"
+#include "../inputd/inputd_proto.h" // INPUTD_V2_SOURCE_* provenance enums
 #include "core_capture_linux.h" // LinuxCaptureRawKeyEvent / LinuxCaptureUsesRaw
 #include "core_win_linux.h"     // LinuxX11Display
 #include <linux/input.h>
@@ -624,15 +625,39 @@ bool EvdevPanicStep(unsigned int aCode, bool aDown);
 
 // Broker-mode event adapter: broker owns grabs/replay/arbitration, so the
 // client only normalizes and matches (no panic, no uinput replay here).
-static void EvdevBrokerEventAdapter(unsigned int aCode, int aValue, long long aTsUs, void *aUser)
+// v2 events carry authoritative provenance (check0901 P0-3): source,
+// send_level and the broker device id flow into the normalized trace and the
+// raw capture lane; broker-lane physical events stay send_level = -1.
+static AhkInputSource BrokerSource(unsigned char aSource)
+{
+	switch (aSource)
+	{
+	case INPUTD_V2_SOURCE_SELF: return AhkInputSource::SELF_INJECT;
+	case INPUTD_V2_SOURCE_OTHER: return AhkInputSource::OTHER_INJECT;
+	case INPUTD_V2_SOURCE_IME: return AhkInputSource::IME_COMMIT;
+	case INPUTD_V2_SOURCE_PHYSICAL: return AhkInputSource::PHYSICAL;
+	default:
+		// UNKNOWN: conservative producer-unknown label (never asserted as
+		// physical; gates key off send_level, not source).
+		return AhkInputSource::OTHER_INJECT;
+	}
+}
+
+static void EvdevBrokerEventAdapter(const LinuxInputdEvent &aEvent, void *aUser)
 {
 	(void)aUser;
+	unsigned int aCode = aEvent.code;
+	int aValue = aEvent.value;
+	long long aTsUs = aEvent.tsUs;
+	int send_level = aEvent.sendLevel;
+	AhkInputSource source = aEvent.v2 ? BrokerSource(aEvent.source) : AhkInputSource::PHYSICAL;
 	unsigned int event_vk = VkForEvdev(aCode);
 	AhkInputEvent normalized = {
 		aTsUs > 0 ? (uint64_t)aTsUs : LinuxInputEventMonotonicUs(),
 		aCode, (vk_type)(event_vk <= 0xff ? event_vk : 0),
 		LinuxScanCodeForEvdev(aCode), 0, aValue == 0, aValue == 2,
-		AhkInputSource::PHYSICAL, -1, 0, AhkInputOrigin::BROKER
+		source, (int16_t)send_level, aEvent.v2 ? aEvent.deviceId : 0,
+		AhkInputOrigin::BROKER
 	};
 	LinuxInputEventTrace(normalized);
 	bool down = aValue != 0;
@@ -655,7 +680,7 @@ static void EvdevBrokerEventAdapter(unsigned int aCode, int aValue, long long aT
 				| (mods & MOD_ALT ? Mod1Mask : 0)
 				| (mods & MOD_WIN ? Mod4Mask : 0);
 			LinuxCaptureRawKeyEvent(d, xk, down, (Time)(aTsUs / 1000), state,
-				-1, false, false, AhkInputSource::PHYSICAL, 0);
+				send_level, false, false, source, aEvent.v2 ? aEvent.deviceId : 0);
 		}
 	}
 }

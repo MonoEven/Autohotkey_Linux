@@ -117,6 +117,10 @@ jobs:
         if: matrix.build == 'core'
         run: bash tests/oracle/run_inputd_replay_failure_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd"
 
+      - name: Inputd protocol v2 oracle (check0901 P0-3)
+        if: matrix.build == 'core'
+        run: bash tests/oracle/run_inputd_v2_protocol_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd"
+
       - name: SendLevel/InputLevel policy oracle (check0901 P0-2/P1-3)
         if: matrix.build == 'core'
         run: bash tests/oracle/run_sendlevel_policy_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
