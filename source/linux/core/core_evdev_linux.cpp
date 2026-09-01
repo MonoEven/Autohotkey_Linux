@@ -545,22 +545,17 @@ bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat, int aSendLeve
 {
 	if (aOutHotkey) *aOutHotkey = nullptr;
 	if (aOutVariant) *aOutVariant = nullptr;
+	(void)isRepeat;
 	EvTraceStart();
 	unsigned int vk = VkForEvdev(evcode);
 	if (vk > 0xFF)
 		vk = 0;
-	// Track modifier state first so the matcher sees the updated state. A key
-	// without a VK may still match an explicit physical scXXX hotkey.
-	SetModifierFromEvdev(evcode, down);
-	if (vk)
-		SetDown(vk, down);
+	// Modifier/held state and custom-combo ownership are updated by the
+	// adapter/pipeline before this legacy ordinary matcher is called.
 	unsigned int mods = ActiveMods();
 	modLR_type mods_lr = ActiveModsLR();
 	EvTrace("ev %u vk=%u down=%d mods=%u lr=%u", evcode, vk, (int)down,
 		mods, (unsigned)mods_lr);
-	int combo_result = HandleEvdevCombo(evcode, down, isRepeat, mods);
-	if (combo_result >= 0)
-		return combo_result != 0;
 	if (vk == 0x10 || vk == 0x11 || vk == 0x12 || vk == 0x5B || vk == 0x5C
 		|| (vk >= 0xA0 && vk <= 0xA5))
 		return false;
@@ -641,8 +636,25 @@ bool HandleEvdevNormalized(const AhkInputEvent &event,
 	AhkInputAcceptance accepted = LinuxInputPipelineAccept(event, context);
 	if (aOutAccepted) *aOutAccepted = accepted;
 	bool down = !accepted.event.is_release;
+	// Adapter compatibility state is still required by the raw character
+	// decoder and by the rollback matcher, but combo semantics live below in
+	// the pipeline when active.
+	SetModifierFromEvdev(event.evdev_code, down);
+	if (event.vk) SetDown((unsigned)event.vk, down);
+
 	if (!LinuxInputPipelineActive())
 	{
+		AhkInputComboResult combo_shadow;
+		LinuxInputPipelineProcessCombo(accepted, AhkInputBackendKind::EVDEV,
+			backend_can_suppress, combo_shadow, false);
+		int legacy_combo = HandleEvdevCombo(event.evdev_code, down,
+			accepted.event.is_repeat, ActiveMods());
+		if (combo_shadow.handled || legacy_combo >= 0)
+		{
+			LinuxInputPipelineTraceComboComparison(accepted, combo_shadow,
+				legacy_combo);
+			return legacy_combo > 0;
+		}
 		AhkInputMatch mirror_match;
 		AhkInputDecision mirror_decision;
 		bool new_found = LinuxInputPipelineMatchSingleHotkey(accepted,
@@ -659,24 +671,10 @@ bool HandleEvdevNormalized(const AhkInputEvent &event,
 		return suppressed;
 	}
 
-	// Combo/remap migration is M5b. Maintain the old prefix state machine,
-	// but ordinary single-key matching/dispatch below is exclusively pipeline.
-	SetModifierFromEvdev(event.evdev_code, down);
-	if (event.vk) SetDown((unsigned)event.vk, down);
-	unsigned int mods = ActiveMods();
-	int combo_result = HandleEvdevCombo(event.evdev_code, down,
-		accepted.event.is_repeat, mods);
-	if (combo_result >= 0)
-	{
-		AhkInputDecision combo = {accepted.state.acceptance_seq, 0,
-			combo_result ? AhkInputDecisionAction::SUPPRESS_ORIGINAL
-				: AhkInputDecisionAction::PASS_ORIGINAL,
-			AhkInputDecisionReason::LEGACY_COMBO, backend_can_suppress};
-		LinuxInputPipelineTraceDecision(accepted, combo);
-		LinuxInputPipelineTraceOutcome(accepted, combo,
-			combo_result ? "legacy_combo_suppressed" : "legacy_combo_passed");
-		return combo_result != 0;
-	}
+	AhkInputComboResult combo;
+	if (LinuxInputPipelineProcessCombo(accepted, AhkInputBackendKind::EVDEV,
+		backend_can_suppress, combo, true))
+		return combo.suppress_original;
 
 	AhkInputMatch match;
 	AhkInputDecision decision;

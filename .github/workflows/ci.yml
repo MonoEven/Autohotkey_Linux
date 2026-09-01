@@ -118,6 +118,14 @@ jobs:
         if: matrix.build == 'core'
         run: bash tests/oracle/run_input_consumer_pipeline_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd" "$BUILD_DIR/source/linux/core/ahk_core"
 
+      - name: Custom combo normalized pipeline oracle (check0901 M5b)
+        if: matrix.build == 'core'
+        run: bash tests/oracle/run_input_combo_pipeline_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd" "$BUILD_DIR/source/linux/core/ahk_core"
+
+      - name: Broker remap transaction pipeline oracle (check0901 M5b)
+        if: matrix.build == 'core'
+        run: bash tests/oracle/run_input_remap_pipeline_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd" "$BUILD_DIR/source/linux/core/ahk_core"
+
       - name: Inputd systemd socket activation oracle
         if: matrix.build == 'core'
         run: |

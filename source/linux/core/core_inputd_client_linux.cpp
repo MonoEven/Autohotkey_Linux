@@ -725,6 +725,13 @@ void DispatchFrameV2(LinuxInputdEventFn aFn, void *aUser)
 				"registration ACK received; waiting for health confirmation");
 		}
 		break;
+	case INPUTD_V2_ARB_DECISION:
+		if (payload_len == INPUTD_V2_ARB_DECISION_PAYLOAD_LEN)
+			LinuxInputPipelineTraceBrokerDecision(sGeneration,
+				ld_le64(payload), ld_le64(payload + 8), ld_le32(payload + 16),
+				payload[20], payload[21], ld_le64(payload + 22),
+				ld_le64(payload + 30), (int)(short)ld_le16(payload + 38));
+		break;
 	case INPUTD_V2_HELLO_ACK:
 	case INPUTD_V2_PONG:
 	case INPUTD_V2_DEVICE_ADDED:
@@ -732,7 +739,6 @@ void DispatchFrameV2(LinuxInputdEventFn aFn, void *aUser)
 	case INPUTD_V2_INJECT_ACK:
 	case INPUTD_V2_ARB_REGISTER_ACK:
 	case INPUTD_V2_CONFLICT:
-	case INPUTD_V2_ARB_DECISION:
 		break; // bookkeeping/sideband frames (owned by broker diagnostics)
 	default:
 		Disconnect("protocol desync"); // caller may reconnect.

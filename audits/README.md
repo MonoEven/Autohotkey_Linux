@@ -135,8 +135,24 @@ Closures since check0901 (evidence in the linked oracles):
   validates active/mirror/legacy X11 callbacks and level matrices, selected
   grab handoff/EndKey, broker physical InputHook callbacks with exactly two
   acceptances, and broker physical Hotstring with six acceptances/one trigger.
-  IME composition/focus transactions remain M8; custom combo/remap and dynamic
-  broker HotIf suppression remain later M5b.
+  IME composition/focus transactions remain M8; dynamic broker HotIf
+  suppression remains a later M5b slice.
+- **M5b-3 (custom combo + remap transaction pipeline)** — custom prefix/suffix
+  state, wildcard-like modifier matching, prefix passthrough/native action,
+  suffix key-up ownership and balanced suppression now live in the common
+  normalized pipeline; EVDEV legacy state remains only as mirror/rollback and
+  every event compares handled/suppress decisions. Standalone prefix callbacks
+  and combo callbacks dispatch through the common InputLevel/ThisHotkey path.
+  Broker ARB_DECISION sidebands are recorded in the same trace; a remap child
+  EVENT links replacement transaction to its physical parent. Oracles:
+  [run_input_combo_pipeline_oracle.sh](../tests/oracle/run_input_combo_pipeline_oracle.sh)
+  validates the full A&B/A&C-up/~A&D/scan-code E&F/standalone-E corpus in
+  active/mirror/legacy with zero decision mismatch; and
+  [run_input_remap_pipeline_oracle.sh](../tests/oracle/run_input_remap_pipeline_oracle.sh)
+  proves physical A→authoritative B child transaction, SendLevel 7 > InputLevel
+  5 trigger, parent/child trace linkage, original suppression and a target
+  sequence containing exactly B-down/B-up. Dynamic broker HotIf deadlines are
+  the remaining M5b decision slice.
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),

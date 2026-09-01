@@ -87,6 +87,10 @@ enum class AhkInputDecisionReason : uint8_t
 	NONE,
 	ORDINARY_HOTKEY,
 	KEYUP_OWNERSHIP,
+	COMBO_PREFIX_HELD,
+	COMBO_SUFFIX,
+	COMBO_RELEASE,
+	COMBO_STANDALONE,
 	LEVEL_FILTERED,
 	BACKEND_LIMIT,
 	LEGACY_COMBO,
@@ -109,6 +113,15 @@ struct AhkInputDecision
 	AhkInputDecisionAction action;
 	AhkInputDecisionReason reason;
 	bool backend_can_suppress;
+};
+
+struct AhkInputComboResult
+{
+	bool handled;
+	bool suppress_original;
+	AhkInputMatch matches[4];
+	unsigned int match_count;
+	AhkInputDecision decision;
 };
 
 enum class AhkInputConsumerKind : uint8_t
@@ -164,6 +177,11 @@ AhkInputAcceptance LinuxInputPipelineAccept(const AhkInputEvent &aEvent,
 bool LinuxInputPipelineMatchSingleHotkey(const AhkInputAcceptance &aAccepted,
 	AhkInputBackendKind aBackend, AhkInputMatch &aMatch,
 	AhkInputDecision &aDecision, bool aBackendCanSuppress);
+bool LinuxInputPipelineProcessCombo(const AhkInputAcceptance &aAccepted,
+	AhkInputBackendKind aBackend, bool aBackendCanSuppress,
+	AhkInputComboResult &aResult, bool aDispatch);
+void LinuxInputPipelineTraceComboComparison(const AhkInputAcceptance &aAccepted,
+	const AhkInputComboResult &aNewResult, int aLegacyResult);
 
 void LinuxInputPipelineTraceLegacyComparison(const AhkInputAcceptance &aAccepted,
 	const AhkInputMatch *aNewMatch, Hotkey *aLegacyHotkey,
@@ -178,6 +196,10 @@ void LinuxInputPipelineTraceConsumerDecision(const AhkInputAcceptance &aAccepted
 	const AhkInputConsumerDecision &aDecision);
 void LinuxInputPipelineTraceConsumerOutcome(const AhkInputAcceptance &aAccepted,
 	const AhkInputConsumerDecision &aDecision, const char *aOutcome);
+void LinuxInputPipelineTraceBrokerDecision(uint64_t aAuthorityGeneration,
+	uint64_t aSourceEventSeq, uint64_t aSourceTransactionId, uint32_t aCode,
+	uint8_t aAction, uint8_t aReason, uint64_t aWinnerRegistrationId,
+	uint64_t aReplacementTransactionId, int aPriority);
 
 bool LinuxInputPipelineHasState(AhkInputSourceDomain aDomain,
 	uint64_t aAuthorityGeneration, uint32_t aSeatId);

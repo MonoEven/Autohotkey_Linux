@@ -5,6 +5,9 @@
 #include "../../script.h"
 #include "input_pipeline.h"
 #include "input_semantics.h"
+#include "core_keymodel_linux.h"
+#include "core_wayland_linux.h"
+#include "../inputd/inputd_proto.h"
 #include <linux/input.h>
 #include <cstdio>
 #include <cstdlib>
@@ -39,6 +42,13 @@ struct SeatState
 	unsigned char physical_evdev[KEY_CNT / 8];
 	uint64_t keyup_owner[KEY_CNT];
 	unsigned char keyup_suppress[KEY_CNT];
+	unsigned char prefix_down[KEY_CNT];
+	unsigned char prefix_used[KEY_CNT];
+	unsigned char prefix_passthrough[KEY_CNT];
+	unsigned int prefix_mods[KEY_CNT];
+	modLR_type prefix_mods_lr[KEY_CNT];
+	unsigned char combo_suppressed[KEY_CNT];
+	uint64_t combo_owner[KEY_CNT];
 };
 
 SeatState sSeats[16] = {};
@@ -268,6 +278,10 @@ const char *ReasonName(AhkInputDecisionReason r)
 	{
 	case AhkInputDecisionReason::ORDINARY_HOTKEY: return "ordinary_hotkey";
 	case AhkInputDecisionReason::KEYUP_OWNERSHIP: return "keyup_ownership";
+	case AhkInputDecisionReason::COMBO_PREFIX_HELD: return "combo_prefix_held";
+	case AhkInputDecisionReason::COMBO_SUFFIX: return "combo_suffix";
+	case AhkInputDecisionReason::COMBO_RELEASE: return "combo_release";
+	case AhkInputDecisionReason::COMBO_STANDALONE: return "combo_standalone";
 	case AhkInputDecisionReason::LEVEL_FILTERED: return "level_filtered";
 	case AhkInputDecisionReason::BACKEND_LIMIT: return "backend_limit";
 	case AhkInputDecisionReason::LEGACY_COMBO: return "legacy_combo";
@@ -612,6 +626,254 @@ bool LinuxInputPipelineMatchSingleHotkey(const AhkInputAcceptance &a,
 	return false;
 }
 
+static unsigned int ComboKeyCode(Hotkey *hk, bool prefix)
+{
+	if (!hk) return 0;
+	vk_type vk = prefix ? hk->mModifierVK : hk->mVK;
+	sc_type sc = prefix ? hk->mModifierSC : hk->mSC;
+	if (sc) return LinuxEvdevCodeForScanCode(sc);
+	return vk ? LinuxWaylandKeycodeForVk(vk) : 0;
+}
+
+static bool ComboVariant(Hotkey *hk, HotkeyVariant *&vp)
+{
+	vp = nullptr;
+	if (!hk || !AhkBackendHotkeyEnabled(hk)) return false;
+	vp = hk->FindVariant();
+	return vp && vp->mEnabled && hk->PerformIsAllowed(*vp);
+}
+
+static bool NativePrefix(unsigned int code)
+{
+	switch (code)
+	{
+	case KEY_LEFTSHIFT: case KEY_RIGHTSHIFT: case KEY_LEFTCTRL: case KEY_RIGHTCTRL:
+	case KEY_LEFTALT: case KEY_RIGHTALT: case KEY_LEFTMETA: case KEY_RIGHTMETA:
+	case KEY_CAPSLOCK: case KEY_NUMLOCK: case KEY_SCROLLLOCK:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool PrefixProperties(unsigned int code, AhkInputBackendKind backend,
+	bool &passthrough)
+{
+	passthrough = NativePrefix(code);
+	bool found = false;
+	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
+	{
+		Hotkey *hk = Hotkey::shk[i];
+		if (!hk || (!hk->mModifierVK && !hk->mModifierSC)
+			|| !LinuxInputBackendHotkeyAssigned(hk, backend)
+			|| ComboKeyCode(hk, true) != code)
+			continue;
+		HotkeyVariant *vp = nullptr;
+		if (!ComboVariant(hk, vp)) continue;
+		found = true;
+		if (hk->mNoSuppress & AT_LEAST_ONE_COMBO_HAS_TILDE)
+			passthrough = true;
+	}
+	return found;
+}
+
+static void AppendStandalone(const AhkInputAcceptance &a,
+	AhkInputBackendKind backend, unsigned int mods, modLR_type mods_lr,
+	int phase, AhkInputComboResult &result)
+{
+	AhkInputAcceptance view = a;
+	view.state.modifiers = mods;
+	view.state.modifiers_lr = mods_lr;
+	bool phases[2] = {phase != 1, phase != 0}; // down, up
+	for (int p = 0; p < 2 && result.match_count < _countof(result.matches); ++p)
+	{
+		if (!phases[p]) continue;
+		AhkInputMatch match;
+		bool filtered = false;
+		if (FindBestHotkey(view, backend, p == 1, match, filtered))
+			result.matches[result.match_count++] = match;
+	}
+}
+
+bool LinuxInputPipelineProcessCombo(const AhkInputAcceptance &a,
+	AhkInputBackendKind backend, bool can_suppress,
+	AhkInputComboResult &result, bool dispatch)
+{
+	memset(&result, 0, sizeof(result));
+	result.decision = AhkInputDecision{a.state.acceptance_seq, 0,
+		AhkInputDecisionAction::NO_MATCH, AhkInputDecisionReason::NONE,
+		can_suppress};
+	unsigned int code = a.event.evdev_code;
+	if (!code || code >= KEY_CNT || a.duplicate)
+		return false;
+	SeatState &seat = Seat(a.context);
+	bool down = !a.event.is_release;
+
+	if (!down && seat.prefix_down[code])
+	{
+		bool passthrough = seat.prefix_passthrough[code] != 0;
+		if (passthrough)
+			AppendStandalone(a, backend, seat.prefix_mods[code],
+				seat.prefix_mods_lr[code], 1, result);
+		else if (!seat.prefix_used[code])
+			AppendStandalone(a, backend, seat.prefix_mods[code],
+				seat.prefix_mods_lr[code], -1, result);
+		seat.prefix_down[code] = 0;
+		seat.prefix_used[code] = 0;
+		result.handled = true;
+		result.suppress_original = can_suppress && !passthrough;
+		result.decision.registration_id = result.match_count
+			? result.matches[0].registration_id : 0;
+		result.decision.action = result.suppress_original
+			? AhkInputDecisionAction::SUPPRESS_ORIGINAL
+			: AhkInputDecisionAction::PASS_ORIGINAL;
+		result.decision.reason = result.match_count
+			? AhkInputDecisionReason::COMBO_STANDALONE
+			: AhkInputDecisionReason::COMBO_RELEASE;
+	}
+	else
+	{
+		bool prefix_passthrough = false;
+		bool is_prefix = PrefixProperties(code, backend, prefix_passthrough);
+		if (is_prefix)
+		{
+			if (down && !a.event.is_repeat)
+			{
+				seat.prefix_down[code] = 1;
+				seat.prefix_used[code] = 0;
+				seat.prefix_passthrough[code] = prefix_passthrough ? 1 : 0;
+				seat.prefix_mods[code] = a.state.modifiers;
+				seat.prefix_mods_lr[code] = a.state.modifiers_lr;
+				if (prefix_passthrough)
+					AppendStandalone(a, backend, a.state.modifiers,
+						a.state.modifiers_lr, 0, result);
+			}
+			else if (!down)
+				seat.prefix_down[code] = 0;
+			result.handled = true;
+			result.suppress_original = can_suppress && !prefix_passthrough;
+			result.decision.registration_id = result.match_count
+				? result.matches[0].registration_id : 0;
+			result.decision.action = result.suppress_original
+				? AhkInputDecisionAction::SUPPRESS_ORIGINAL
+				: AhkInputDecisionAction::PASS_ORIGINAL;
+			result.decision.reason = AhkInputDecisionReason::COMBO_PREFIX_HELD;
+		}
+		else
+		{
+			bool release_suppressed = !down && seat.combo_suppressed[code];
+			uint64_t stored_owner = code < KEY_CNT ? seat.combo_owner[code] : 0;
+			Hotkey *combo = nullptr;
+			HotkeyVariant *variant = nullptr;
+			uint64_t combo_id = 0;
+			for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
+			{
+				Hotkey *hk = Hotkey::shk[i];
+				if (!hk || (!hk->mModifierVK && !hk->mModifierSC)
+					|| !LinuxInputBackendHotkeyAssigned(hk, backend)
+					|| ComboKeyCode(hk, false) != code)
+					continue;
+				unsigned int prefix = ComboKeyCode(hk, true);
+				if (!prefix || prefix >= KEY_CNT || !seat.prefix_down[prefix])
+					continue;
+				unsigned int required = (unsigned)hk->mModifiers
+					| GenericFromLR(hk->mModifiersLR);
+				if ((a.state.modifiers & required) != required
+					|| (a.state.modifiers_lr & hk->mModifiersLR) != hk->mModifiersLR)
+					continue; // custom combos accept unrelated extra modifiers.
+				HotkeyVariant *vp = nullptr;
+				if (!ComboVariant(hk, vp)) continue;
+				if (a.event.send_level >= 0
+					&& !AhkSyntheticMayTrigger(AhkConsumerKind::HOTKEY,
+						AhkSendTransportClass::EVENT, a.event.send_level,
+						(int)vp->mInputLevel))
+					continue;
+				uint64_t id = (uint64_t)i + 1;
+				if (!down && stored_owner && id != stored_owner)
+					continue;
+				if ((bool)hk->mKeyUp != a.event.is_release)
+				{
+					if (!(down && hk->mKeyUp)) continue;
+				}
+				combo = hk; variant = vp; combo_id = id;
+				seat.prefix_used[prefix] = 1;
+				break;
+			}
+			if (combo && down && combo->mKeyUp)
+			{
+				bool pass = IsPassthrough(combo, variant);
+				seat.combo_owner[code] = combo_id;
+				seat.combo_suppressed[code] = can_suppress && !pass ? 1 : 0;
+				result.handled = true;
+				result.suppress_original = seat.combo_suppressed[code] != 0;
+				result.decision.registration_id = combo_id;
+				result.decision.action = result.suppress_original
+					? AhkInputDecisionAction::SUPPRESS_ORIGINAL
+					: AhkInputDecisionAction::PASS_ORIGINAL;
+				result.decision.reason = AhkInputDecisionReason::KEYUP_OWNERSHIP;
+			}
+			else if (combo && (bool)combo->mKeyUp == a.event.is_release)
+			{
+				bool pass = IsPassthrough(combo, variant);
+				result.matches[result.match_count++] = AhkInputMatch{
+					combo, variant, combo_id};
+				result.handled = true;
+				result.suppress_original = release_suppressed
+					|| (can_suppress && !pass);
+				result.decision.registration_id = combo_id;
+				result.decision.action = result.suppress_original
+					? AhkInputDecisionAction::TRIGGER_SUPPRESS
+					: AhkInputDecisionAction::TRIGGER_PASS;
+				result.decision.reason = AhkInputDecisionReason::COMBO_SUFFIX;
+				if (down && result.suppress_original)
+				{
+					seat.combo_owner[code] = combo_id;
+					seat.combo_suppressed[code] = 1;
+				}
+				if (!down) { seat.combo_owner[code] = 0; seat.combo_suppressed[code] = 0; }
+			}
+			else if (release_suppressed)
+			{
+				seat.combo_owner[code] = 0; seat.combo_suppressed[code] = 0;
+				result.handled = true;
+				result.suppress_original = true;
+				result.decision.registration_id = stored_owner;
+				result.decision.action = AhkInputDecisionAction::SUPPRESS_ORIGINAL;
+				result.decision.reason = AhkInputDecisionReason::COMBO_RELEASE;
+			}
+			else if (down && !a.event.is_repeat)
+				for (unsigned int p = 0; p < KEY_CNT; ++p)
+					if (seat.prefix_down[p] && p != code) seat.prefix_used[p] = 1;
+		}
+	}
+
+	if (!result.handled) return false;
+	LinuxInputPipelineTraceDecision(a, result.decision);
+	if (dispatch)
+		for (unsigned int i = 0; i < result.match_count; ++i)
+			LinuxInputPipelineDispatch(a, result.matches[i], result.decision);
+	LinuxInputPipelineTraceOutcome(a, result.decision,
+		result.match_count
+			? (dispatch ? "combo_callback_dispatched" : "combo_shadow_matched")
+			: (result.suppress_original ? "combo_suppressed" : "combo_passed"));
+	return true;
+}
+
+void LinuxInputPipelineTraceComboComparison(const AhkInputAcceptance &a,
+	const AhkInputComboResult &new_result, int legacy_result)
+{
+	bool legacy_handled = legacy_result >= 0;
+	bool legacy_suppress = legacy_result > 0;
+	bool equivalent = new_result.handled == legacy_handled
+		&& (!legacy_handled || new_result.suppress_original == legacy_suppress);
+	AhkInputDecision d = new_result.decision;
+	d.action = equivalent ? AhkInputDecisionAction::PASS_ORIGINAL
+		: AhkInputDecisionAction::CONFLICT;
+	d.reason = equivalent ? AhkInputDecisionReason::MIRROR_MATCH
+		: AhkInputDecisionReason::MIRROR_MISMATCH;
+	Trace("combo_mirror", a, &d, nullptr, equivalent ? 1 : 0);
+}
+
 void LinuxInputPipelineTraceLegacyComparison(const AhkInputAcceptance &a,
 	const AhkInputMatch *new_match, Hotkey *legacy_hk, HotkeyVariant *legacy_vp)
 {
@@ -666,6 +928,35 @@ void LinuxInputPipelineTraceConsumerOutcome(const AhkInputAcceptance &a,
 	const AhkInputConsumerDecision &d, const char *outcome)
 {
 	TraceConsumer("consumer_outcome", a, d, outcome ? outcome : "unknown");
+}
+
+void LinuxInputPipelineTraceBrokerDecision(uint64_t authority_generation,
+	uint64_t source_event_seq, uint64_t source_txn, uint32_t code,
+	uint8_t action, uint8_t reason, uint64_t winner,
+	uint64_t replacement_txn, int priority)
+{
+	const char *path = getenv("AHK_INPUT_PIPELINE_TRACE");
+	if (!path || !*path) return;
+	const char *action_name = action == INPUTD_V2_DECISION_SUPPRESS ? "suppress"
+		: (action == INPUTD_V2_DECISION_REMAP ? "remap"
+			: (action == INPUTD_V2_DECISION_REPLACEMENT_FAILED
+				? "replacement_failed" : "replay"));
+	FILE *f = fopen(path, "a");
+	if (!f) return;
+	fprintf(f,
+		"{\"schema\":1,\"stage\":\"broker_decision\","
+		"\"acceptance_seq\":0,\"backend_seq\":%llu,"
+		"\"authority_generation\":%llu,\"domain\":\"inputd\","
+		"\"source_transaction_id\":%llu,\"evdev_code\":%u,"
+		"\"broker_action\":\"%s\",\"broker_action_id\":%u,"
+		"\"broker_reason_id\":%u,\"winner_registration_id\":%llu,"
+		"\"replacement_transaction_id\":%llu,\"priority\":%d}\n",
+		(unsigned long long)source_event_seq,
+		(unsigned long long)authority_generation,
+		(unsigned long long)source_txn, code, action_name, (unsigned)action,
+		(unsigned)reason, (unsigned long long)winner,
+		(unsigned long long)replacement_txn, priority);
+	fclose(f);
 }
 
 bool LinuxInputPipelineHasState(AhkInputSourceDomain domain,
