@@ -18,6 +18,10 @@
 OUT := "/tmp/ahk_dc_hotkeypt_out.txt"
 FileDelete(OUT)
 Log(line) => FileAppend(line "`n", OUT)
+; Official SendLevel rule (check0901 P0-2): drive own hotkeys with
+; SendEvent-class input at level 1 (the Windows-golden trigger path).
+SendLevel(1)
+SendMode("Event")
 cnt1 := 0
 cnt2 := 0
 cnt3 := 0

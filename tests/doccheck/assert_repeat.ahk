@@ -13,6 +13,10 @@
 OUT := "/tmp/ahk_dc_repeat_out.txt"
 FileDelete(OUT)
 Log(line) => FileAppend(line "`n", OUT)
+; Official SendLevel rule (check0901 P0-2): the auto-exec driver triggers own
+; hotkeys with SendEvent-class input at level 1 (the Windows-golden path).
+SendLevel(1)
+SendMode("Event")
 
 KCFILE := "/tmp/ahk_dc_keycap_repeat.txt"
 FileDelete(KCFILE)

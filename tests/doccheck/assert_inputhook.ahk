@@ -10,6 +10,11 @@ OUT := "/tmp/ahk_dc_inputhook_out.txt"
 FileDelete(OUT)
 Log(line) => FileAppend(line "`n", OUT)
 
+; check0901 P1-3: plain Send uses the current SendMode's transport, and
+; SendInput-class self input never reaches InputHook.  Pin Event mode so the
+; hook is fed by SendEvent-class self input (collected at level >= MinSendLevel).
+SendMode("Event")
+
 KCFILE := "/tmp/ahk_dc_keycap_ih.txt"
 FileDelete(KCFILE)
 Run('out/xkeycap -out ' KCFILE ' -ms 300000')

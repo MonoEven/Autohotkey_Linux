@@ -9,6 +9,13 @@ WINOUT := "/tmp/ahk_dc_input_out.txt"
 FileDelete(WINOUT)
 Log(line) => FileAppend(line "`n", WINOUT)
 
+; check0901 P1-3: Send (and SendText) use the current SendMode's transport.
+; The self-trigger and InputHook MinSendLevel sections below need
+; SendEvent-class self input (SendInput-class never fires own hooks), so pin
+; Event mode for plain Send; explicit SendEvent/SendInput/SendPlay calls keep
+; their own transports.
+SendMode("Event")
+
 KEYCAP := "/tmp/ahk_dc_keycap.txt"
 FileDelete(KEYCAP)
 prev_bytes := 0
@@ -167,11 +174,12 @@ Log("sendinput_100_keys=" (downs(next_lines()) = exp100 ? 1 : 0))
 
 ; --- §2-B: SendInput must not re-fire the script's own hotkeys (Windows
 ; unloads the hook during SendInput).  SendEvent of the same key DOES fire
-; the hotkey (Windows SendEvent can trigger).  Note: a grabbed key that
-; SendInput injects is consumed, not delivered to the target -- on X11 the
-; passive grab intercepts every press of it (same limitation as `~`
-; passthrough on servers that re-activate the grab; documented in
-; core_hotkey_linux.cpp). ---
+; the hotkey, but only at a SendLevel strictly greater than the hotkey's
+; InputLevel (official rule, check0901 P0-2): use level 1 over InputLevel 0.
+; Note: a grabbed key that SendInput injects is consumed, not delivered to
+; the target -- on X11 the passive grab intercepts every press of it (same
+; limitation as `~` passthrough on servers that re-activate the grab;
+; documented in core_hotkey_linux.cpp). ---
 self_fired := 0
 HotkeyXCB(ThisHotkey) {   ; named fn: hotkey threads need `global` inside.
     global self_fired
@@ -182,15 +190,17 @@ Sleep(150)   ; let the grab install + reconcile run
 SendInput("x")
 Sleep(150)
 Log("sendinput_self_no_fire=" (self_fired = 0 ? 1 : 0))
+SendLevel(1)
 SendEvent("x")
+SendLevel(0)
 Sleep(150)
 Log("sendevent_self_fire=" (self_fired = 1 ? 1 : 0))
 Hotkey("x", "Off")
 
-; --- §2-C (check_detail0821 §2-C / S4): SendLevel gating. ---
-; A self-sent event at SendLevel L only fires hotkeys whose #InputLevel is
-; >= L (the default #InputLevel is 0).  SendLevel 1 + Send "y" must NOT fire
-; the (InputLevel 0) "y" hotkey; SendLevel 0 + Send "y" must fire it.
+; --- §2-C (check0901 P0-2): SendLevel gating, official rule. ---
+; A synthetic event only fires a hotkey when send_level > input_level (the
+; default #InputLevel is 0).  SendEvent-class level 0 must NOT fire the
+; (InputLevel 0) "y" hotkey (0 > 0 is false); level 1 must fire.
 level_fired := 0
 HotkeyLevelCB(ThisHotkey) {
     global level_fired
@@ -198,11 +208,11 @@ HotkeyLevelCB(ThisHotkey) {
 }
 Hotkey("y", HotkeyLevelCB)
 Sleep(150)   ; let the grab install + reconcile run
-SendLevel(1)
+SendLevel(0)
 Send("y")
 Sleep(150)
 Log("sendlevel_gate=" (level_fired = 0 ? 1 : 0))
-SendLevel(0)
+SendLevel(1)
 Send("y")
 Sleep(150)
 Log("sendlevel_nogate=" (level_fired = 1 ? 1 : 0))

@@ -30,8 +30,11 @@ Hotstring("::ij", "S")      ; default: must not match inside a word.
 Sleep(300)
 
 ; Synthetic test input needs level > the default Hotstring input level 0.
-; Auto-replacement itself is forced to level 0 and cannot recurse.
+; Auto-replacement itself is forced to level 0 and cannot recurse.  Pin Event
+; mode so plain Send feeds the hotstring stream (SendInput-class self input
+; never enters the buffer -- check0901 P1-3).
 SendLevel(1)
+SendMode("Event")
 Send("xq ")                 ; -> "ZZ" + space.
 Send("cd ")                 ; -> "Q", space omitted.
 Send("ef.")                 ; callback fires; '.' forwarded.

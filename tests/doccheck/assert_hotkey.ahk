@@ -8,6 +8,13 @@ WINOUT := "/tmp/ahk_dc_hotkey_out.txt"
 FileDelete(WINOUT)
 Log(line) => FileAppend(line "`n", WINOUT)
 
+; Official SendLevel rule (check0901 P0-2): a synthetic event only fires own
+; hotkeys when send_level > input_level.  The auto-exec driver uses
+; SendEvent-class input at level 1 (the Windows-golden way to trigger own
+; hotkeys) so these assertions test hotkey semantics, not the level gate.
+SendLevel(1)
+SendMode("Event")
+
 ; --- Simple hotkey fires when its key is pressed. ---
 cnt1 := 0
 CB1(ThisHotkey) {
