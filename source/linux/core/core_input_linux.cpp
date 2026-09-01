@@ -23,6 +23,9 @@
 #include "core_uinput_linux.h" // uinput injection lane (check0820)
 #include "core_hotkey_linux.h" // LinuxSendInputTrack/Clear (SendInput self-suppression)
 #include "core_keymodel_linux.h"
+#include "input_backend.h"
+#include "input_pipeline.h"
+#include "core_inputd_client_linux.h"
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
@@ -206,21 +209,41 @@ static unsigned int LinuxLockModifierMask(vk_type aVK)
 // Win32 compat shims used by ScriptGetKeyState() / GetKeyState() / KeyWait.
 // ---------------------------------------------------------------------------
 
+static bool PipelinePhysicalKeyState(int aVK, bool &aDown)
+{
+	if (!aVK || LinuxInputBackendKind() != AhkInputBackendKind::EVDEV)
+		return false;
+	AhkInputSourceDomain domain = LinuxInputdClientActive()
+		? AhkInputSourceDomain::INPUTD : AhkInputSourceDomain::EVDEV_LOCAL;
+	uint64_t generation = LinuxInputdClientActive()
+		? LinuxInputdClientAuthorityGeneration()
+		: LinuxInputBackendHealthFor(AhkInputBackendKind::EVDEV)->generation;
+	if (!LinuxInputPipelineHasState(domain, generation, 0))
+		return false;
+	aDown = LinuxInputPipelineVkDown(domain, generation, 0, (unsigned)aVK);
+	return true;
+}
+
 SHORT GetKeyState(int aVK)
 {
+	bool pipeline_down = false;
+	bool have_pipeline = PipelinePhysicalKeyState(aVK, pipeline_down);
 	Display *d = LinuxInputDisplay();
-	if (!d || !aVK)
+	if (!aVK)
 		return 0;
 	SHORT r = 0;
-	if (LinuxKeyIsDown(d, (vk_type)aVK))
+	if (have_pipeline ? pipeline_down : (d && LinuxKeyIsDown(d, (vk_type)aVK)))
 		r |= 0x8000;
-	if (LinuxLockModifierMask((vk_type)aVK) && LinuxLockToggled(d, (vk_type)aVK))
+	if (d && LinuxLockModifierMask((vk_type)aVK) && LinuxLockToggled(d, (vk_type)aVK))
 		r |= 0x01;
 	return r;
 }
 
 SHORT GetAsyncKeyState(int aVK)
 {
+	bool pipeline_down = false;
+	if (PipelinePhysicalKeyState(aVK, pipeline_down))
+		return pipeline_down ? (SHORT)0x8000 : 0;
 	Display *d = LinuxInputDisplay();
 	if (!d || !aVK)
 		return 0;

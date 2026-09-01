@@ -49,6 +49,7 @@ void LinuxCaptureKeymapChanged();
 // accented text typed through Unicode keysyms (IME-composed keys, borrowed
 // keycodes from the Send engine) can be matched and notified.
 wchar_t LinuxCharFromKeySym(KeySym aKs);
+vk_type LinuxKeysymToVk(KeySym aKs);
 
 // Fire the queued InputHook notifications (OnChar/OnKeyDown/OnKeyUp).  The
 // capture engine only QUEUES notifications while feeding raw X events; the

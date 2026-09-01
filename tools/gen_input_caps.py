@@ -92,9 +92,10 @@ def generated_block() -> str:
         lines.append(f"  <tr>{cells}</tr>")
     lines.extend([
         "</table>",
-        "<p><code>heuristic</code> provenance means process-local/device heuristics; "
-        "only a future broker/compositor-stamped origin may claim "
-        "<code>authoritative</code>. A <code>no</code> value remains no until a matching "
+        "<p><code>heuristic</code> provenance means process-local/device heuristics. "
+        "The inputd v2 broker stamps authority/generation/event and transaction identity "
+        "and therefore reports <code>authoritative</code>; XTEST without broker sideband "
+        "remains heuristic or unknown. A <code>no</code> value remains no until a matching "
         "behavior test is added.</p>",
         END,
     ])

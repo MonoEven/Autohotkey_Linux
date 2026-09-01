@@ -35,6 +35,7 @@ extern "C" const char *LinuxParityLookup(const char *aName, int &aLevel);
 #include "core_hotkey_linux.h"
 #include "core_pack_linux.h"
 #include "input_backend.h"
+#include "input_pipeline.h"
 #include "core_inputd_client_linux.h"
 #include "input_event.h"
 #include "core_clipboard_linux.h"
@@ -2346,6 +2347,24 @@ BIF_DECL(BIF_Linux_HotkeyBackendGet)
 	set_utf8(_T("compatibility_outcome"), LinuxInputBackendOutcomeName(outcome));
 	obj->SetOwnProp(_T("requires_level_gate"), (__int64)require_level_gate);
 	obj->SetOwnProp(_T("requires_suppression"), (__int64)require_suppression);
+	obj->SetOwnProp(_T("pipeline_version"), (__int64)AHK_INPUT_PIPELINE_VERSION);
+	set_utf8(_T("pipeline_mode"), LinuxInputPipelineModeName());
+	AhkInputSourceDomain state_domain = AhkInputSourceDomain::UNKNOWN;
+	uint64_t state_generation = health->generation;
+	if (kind == AhkInputBackendKind::EVDEV)
+	{
+		state_domain = LinuxInputdClientActive() ? AhkInputSourceDomain::INPUTD
+			: AhkInputSourceDomain::EVDEV_LOCAL;
+		if (LinuxInputdClientActive())
+			state_generation = LinuxInputdClientAuthorityGeneration();
+	}
+	else if (kind == AhkInputBackendKind::X11)
+		state_domain = AhkInputSourceDomain::X11_GRAB;
+	set_utf8(_T("state_source"), kind == AhkInputBackendKind::X11
+		? "x11_server" : LinuxInputPipelineStateSourceName(state_domain));
+	obj->SetOwnProp(_T("reducer_generation"),
+		(__int64)LinuxInputPipelineReducerGeneration(state_domain,
+			state_generation, 0));
 	aResultToken.SetValue(obj);
 }
 

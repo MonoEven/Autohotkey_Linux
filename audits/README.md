@@ -88,6 +88,24 @@ Closures since check0901 (evidence in the linked oracles):
   (23/23: available/degraded/healthy, coverage, held-state recovery and the
   same AHK PID across broker SIGKILL/restart with generation++ and new
   authority). Portal/GNOME/Wayland service-owner generations remain M7.
+- **P1-1 / M5a (normalized reducer + ordinary hotkey pipeline)** — adds a
+  typed pipeline which keeps `InputEvent` facts, reducer snapshot,
+  `InputDecision` and injection transactions separate.  Broker EVDEV,
+  in-process EVDEV and X11 passive-grab ordinary hotkeys now pass through the
+  same acceptance identity, generation-aware logical/physical reducer,
+  consumer level policy, matcher, decision and dispatch code; callback
+  threads inherit InputLevel as SendLevel uniformly. X11 adapter modifier
+  snapshots cover modifiers not delivered as separate grabbed events.
+  `GetKeyState(..., "P")`/KeyWait's compat shim reads the authoritative
+  reducer for EVDEV; `HotkeyBackendGet` reports pipeline mode, state source and
+  reducer generation. `AHK_INPUT_PIPELINE=active|mirror|legacy` provides a
+  rollback/equivalence gate; JSONL trace links capture→reduce→match→decision→
+  outcome→dispatch with backend/transaction identity. Oracle:
+  [run_input_pipeline_oracle.sh](../tests/oracle/run_input_pipeline_oracle.sh)
+  proves active/mirror/legacy callback equivalence on broker EVDEV and X11
+  Ctrl+F8, authoritative physical GetKeyState, and zero mirror mismatch.
+  Custom combo/remap suppression and Hotstring/InputHook callback migration
+  remain M5b.
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),

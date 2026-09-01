@@ -178,8 +178,9 @@ and 20 for the D-Bus COM layer). The port has two display backends:</p>
   <tr><td>gnome-shell</td><td>yes</td><td>yes</td><td>no</td><td>no</td><td>no</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>no</td><td>no</td><td>no</td><td>none</td><td>no</td><td>no</td></tr>
   <tr><td>evdev</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>authoritative</td><td>yes</td><td>no</td></tr>
 </table>
-<p><code>heuristic</code> provenance means process-local/device heuristics; only a future broker/compositor-stamped origin may claim <code>authoritative</code>. A <code>no</code> value remains no until a matching behavior test is added.</p>
+<p><code>heuristic</code> provenance means process-local/device heuristics. The inputd v2 broker stamps authority/generation/event and transaction identity and therefore reports <code>authoritative</code>; XTEST without broker sideband remains heuristic or unknown. A <code>no</code> value remains no until a matching behavior test is added.</p>
 <!-- INPUT_CAPS:END -->
+<p><b>Normalized input pipeline:</b> ordinary X11-grab, inputd broker and in-process evdev hotkeys use the same versioned event acceptance, generation-aware logical/physical state reducer, consumer level gate, matcher, decision and dispatch path. <code>HotkeyBackendGet()</code> exposes <code>pipeline_version</code>, <code>pipeline_mode</code>, <code>state_source</code> and <code>reducer_generation</code>. The default is <code>AHK_INPUT_PIPELINE=active</code>; <code>mirror</code> keeps legacy dispatch while emitting equivalence traces, and <code>legacy</code> is the rollback path. Set <code>AHK_INPUT_PIPELINE_TRACE=/path/events.jsonl</code> to record capture→reduce→match→decision→dispatch→outcome. Custom combos/remaps and Hotstring/InputHook suppression are still migrated separately.</p>
     X11 and evdev now share a three-layer key model: Linux evdev physical code
     ↔ AutoHotkey/Windows set-1 <code>scXXX</code>, logical VK/keysym, and
     Unicode text. X11 keymap/state comes from xkbcommon-x11 and refreshes on

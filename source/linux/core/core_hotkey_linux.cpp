@@ -66,6 +66,8 @@
 #include "core_capture_linux.h"
 #include "core_gshortcut_linux.h"
 #include "input_backend.h"
+#include "input_event.h"
+#include "input_pipeline.h"
 #include "input_semantics.h" // unified synthetic-level policy (check0901 P0-2).
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -91,6 +93,8 @@ bool LinuxIsPassthruCopy(XEvent &ev);
 static bool LinuxSelfLookup(XEvent &ev, int &aLevel, bool &aIsSendInput, bool &aIsSendPlay);
 
 namespace {
+
+uint64_t sX11PipelineSeq = 0;
 
 static optl<StrArg> LinuxHotkeyOptStr(ExprTokenType *aParam[], int aParamCount, int aIndex, TCHAR *aBuf, size_t aBufSize)
 {
@@ -750,6 +754,44 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 	}
 
 	bool is_up = ev.type == KeyRelease;
+	AhkLinuxKeyIdentity pipeline_identity;
+	memset(&pipeline_identity, 0, sizeof(pipeline_identity));
+	if (!LinuxKeyModelX11Decode(d, (KeyCode)ev.xkey.keycode,
+			ev.xkey.state, pipeline_identity))
+	{
+		pipeline_identity.evdev_code = ev.xkey.keycode >= 8
+			? (uint32_t)ev.xkey.keycode - 8 : 0;
+		pipeline_identity.sc = LinuxScanCodeForEvdev(pipeline_identity.evdev_code);
+		pipeline_identity.keysym = XLookupKeysym(&ev.xkey, 0);
+		pipeline_identity.vk = LinuxKeysymToVk(pipeline_identity.keysym);
+	}
+	AhkInputSource pipeline_source = is_physical ? AhkInputSource::PHYSICAL
+		: (self_injected ? AhkInputSource::SELF_INJECT
+			: AhkInputSource::OTHER_INJECT);
+	AhkInputEvent pipeline_event = {
+		LinuxInputEventMonotonicUs(), pipeline_identity.evdev_code,
+		pipeline_identity.vk, pipeline_identity.sc,
+		(char32_t)pipeline_identity.text, is_up, false, pipeline_source,
+		(int16_t)(self_injected ? self_level : -1), 0, AhkInputOrigin::X11
+	};
+	unsigned int pipeline_mods = (ev.xkey.state & ShiftMask ? MOD_SHIFT : 0)
+		| (ev.xkey.state & ControlMask ? MOD_CONTROL : 0)
+		| (ev.xkey.state & sAltMask ? MOD_ALT : 0)
+		| (ev.xkey.state & sSuperMask ? MOD_WIN : 0);
+	AhkInputContext pipeline_context = {AhkInputBackendKind::X11,
+		AhkInputSourceDomain::X11_GRAB,
+		is_physical ? AhkProvenanceConfidence::DEVICE_DERIVED
+			: (self_injected ? AhkProvenanceConfidence::TIME_CORRELATED
+				: AhkProvenanceConfidence::UNKNOWN),
+		1, ++sX11PipelineSeq, 0, 0, 0, 0,
+		pipeline_mods, true, is_physical};
+	AhkInputAcceptance pipeline_accepted = LinuxInputPipelineAccept(
+		pipeline_event, pipeline_context);
+	AhkInputMatch pipeline_match;
+	AhkInputDecision pipeline_decision;
+	bool pipeline_found = LinuxInputPipelineMatchSingleHotkey(
+		pipeline_accepted, AhkInputBackendKind::X11, pipeline_match,
+		pipeline_decision, true);
 
 	// The grab may activate on any lock state; the event's state then
 	// carries those bits.  Compare only the primary modifier slots.
@@ -771,6 +813,21 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 			, AhkSendTransportClass::EVENT, self_level
 			, (int)vp_fire->mInputLevel))
 		hk_fire = nullptr, vp_fire = nullptr;
+
+	LinuxInputPipelineTraceLegacyComparison(pipeline_accepted,
+		pipeline_found ? &pipeline_match : nullptr, hk_fire, vp_fire);
+	if (LinuxInputPipelineActive() && pipeline_found)
+	{
+		LinuxInputPipelineTraceDecision(pipeline_accepted, pipeline_decision);
+		if (pipeline_decision.action == AhkInputDecisionAction::TRIGGER_PASS)
+			LinuxInjectKey(d, ev);
+		LinuxInputPipelineDispatch(pipeline_accepted, pipeline_match,
+			pipeline_decision);
+		LinuxInputPipelineTraceOutcome(pipeline_accepted, pipeline_decision,
+			pipeline_decision.action == AhkInputDecisionAction::TRIGGER_PASS
+				? "triggered_pass" : "triggered_suppressed");
+		return;
+	}
 
 	if (hk_fire)
 	{

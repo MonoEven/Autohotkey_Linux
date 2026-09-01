@@ -16,6 +16,7 @@
 #include "../../hotkey.h"
 #include "core_inputd_client_linux.h"
 #include "input_backend.h"
+#include "input_pipeline.h"
 #include "core_keymodel_linux.h"
 #include "core_wayland_linux.h"
 #include "core_capture_linux.h" // LinuxCaptureUsesRaw
@@ -78,6 +79,8 @@ void Disconnect(const char *aReason = "broker disconnected")
 	bool had_connection = sFd >= 0 || sActive;
 	if (had_connection)
 	{
+		LinuxInputPipelineResetDomain(AhkInputSourceDomain::INPUTD,
+			sGeneration);
 		sReplayAvailable = false;
 		sRegistrationsReconciled = false;
 		sHeldStateReconciled = false;
@@ -626,6 +629,8 @@ void DispatchFrameV2(LinuxInputdEventFn aFn, void *aUser)
 		ev.source = env[48];
 		ev.confidence = env[50];
 		ev.deviceId = (unsigned int)ld_le64(env + 40);
+		ev.authorityGeneration = ld_le64(env + 16);
+		ev.eventSeq = ld_le64(env + 24);
 		ev.producerClientId = ld_le64(env + 58);
 		ev.transactionId = ld_le64(env + 66);
 		ev.parentTransactionId = ld_le64(env + 74);
@@ -815,6 +820,8 @@ void LinuxInputdClientDispatch(LinuxInputdEventFn aFn, void *aUser)
 				ev.source = INPUTD_V2_SOURCE_UNKNOWN;
 				ev.confidence = INPUTD_V2_CONF_UNKNOWN;
 				ev.deviceId = 0;
+				ev.authorityGeneration = 0;
+				ev.eventSeq = 0;
 				ev.producerClientId = 0;
 				ev.transactionId = 0;
 				ev.parentTransactionId = 0;

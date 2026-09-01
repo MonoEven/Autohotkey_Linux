@@ -27,6 +27,7 @@
 #include "core_inputd_client_linux.h"
 #include "../inputd/inputd_proto.h" // INPUTD_V2_SOURCE_* provenance enums
 #include "input_semantics.h"       // AhkSyntheticMayTrigger (P0-2/P0-3)
+#include "input_pipeline.h"        // M5a normalized reducer/matcher
 #include "core_capture_linux.h" // LinuxCaptureRawKeyEvent / LinuxCaptureUsesRaw
 #include "core_win_linux.h"     // LinuxX11Display
 #include <linux/input.h>
@@ -67,6 +68,7 @@ DWORD sLastRescanMs = 0;  // Periodic device discovery (check0820 direction-B:
                           // broker must pick them up without a restart).
 uint64_t sLocalHealthGeneration = 0;
 uint64_t sLocalHealthSeq = 0;
+uint64_t sLocalEventSeq = 0;
 
 void ReportLocalEvdevHealth(AhkBackendState aState, const char *aReason,
 	AhkPermissionState aPermission, bool aHeldReconciled)
@@ -170,13 +172,25 @@ bool EvdevVariantFor(Hotkey *aHotkey, HotkeyVariant *&aVariant)
 	return true;
 }
 
+void TrackEvdevHotkey(Hotkey *aHotkey)
+{
+	g_script.mPriorHotkeyName = g_script.mThisHotkeyName;
+	g_script.mPriorHotkeyStartTime = g_script.mThisHotkeyStartTime;
+	g_script.mThisHotkeyName = aHotkey->mName;
+	g_script.mThisHotkeyStartTime = GetTickCount();
+}
+
 void FireEvdevVariant(Hotkey *aHotkey, HotkeyVariant *aVariant)
 {
+	SendLevelType saved_send_level = g->SendLevel;
 	++g_nThreads;
 	++g;
 	InitNewThread(aVariant->mPriority, false, false);
+	g->SendLevel = aVariant->mInputLevel;
+	TrackEvdevHotkey(aHotkey);
 	aHotkey->PerformInNewThreadMadeByCaller(*aVariant);
 	ResumeUnderlyingThread();
+	g->SendLevel = saved_send_level;
 }
 
 void FireEvdevStandalonePrefix(unsigned int aCode, unsigned int aMods, int aPhase)
@@ -494,8 +508,12 @@ int HandleEvdevCombo(unsigned int aCode, bool aDown, bool aRepeat, unsigned int 
 	return release_suppressed ? 1 : -1;
 }
 
-bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat, int aSendLevel = -1)
+bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat, int aSendLevel = -1,
+	Hotkey **aOutHotkey = nullptr, HotkeyVariant **aOutVariant = nullptr,
+	bool aDispatch = true)
 {
+	if (aOutHotkey) *aOutHotkey = nullptr;
+	if (aOutVariant) *aOutVariant = nullptr;
 	EvTraceStart();
 	unsigned int vk = VkForEvdev(evcode);
 	if (vk > 0xFF)
@@ -559,19 +577,84 @@ bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat, int aSendLeve
 	}
 
 	if (!hk_fire || !vp_fire) { EvTrace("no-match vk=%u", vk); return false; }
+	if (aOutHotkey) *aOutHotkey = hk_fire;
+	if (aOutVariant) *aOutVariant = vp_fire;
+	if (!aDispatch)
+		return sAnyGrabbed;
 
-
-	// Fire in a new quasi-thread (same pattern as the other backends).
+	// Fire in a new quasi-thread; each hotkey thread inherits InputLevel as
+	// SendLevel (same contract as X11 and the normalized pipeline).
+	SendLevelType saved_send_level = g->SendLevel;
 	++g_nThreads;
 	++g;
 	EvTrace("FIRE vk=%u mods=%u", vk, mods);
 	InitNewThread(vp_fire->mPriority, false, false);
+	g->SendLevel = vp_fire->mInputLevel;
+	TrackEvdevHotkey(hk_fire);
 	hk_fire->PerformInNewThreadMadeByCaller(*vp_fire);
 	ResumeUnderlyingThread();
+	g->SendLevel = saved_send_level;
 
 	// Suppress mode: a matching hotkey consumes the key; listen mode
 	// always passes through (stream still reaches the app).
 	return sAnyGrabbed;
+}
+
+bool HandleEvdevNormalized(const AhkInputEvent &event,
+	const AhkInputContext &context, bool backend_can_suppress)
+{
+	AhkInputAcceptance accepted = LinuxInputPipelineAccept(event, context);
+	bool down = !accepted.event.is_release;
+	if (!LinuxInputPipelineActive())
+	{
+		AhkInputMatch mirror_match;
+		AhkInputDecision mirror_decision;
+		bool new_found = LinuxInputPipelineMatchSingleHotkey(accepted,
+			AhkInputBackendKind::EVDEV, mirror_match, mirror_decision,
+			backend_can_suppress);
+		Hotkey *legacy_hk = nullptr;
+		HotkeyVariant *legacy_vp = nullptr;
+		bool suppressed = HandleEvdevKey(event.evdev_code, down,
+			event.is_repeat, event.send_level, &legacy_hk, &legacy_vp, false);
+		LinuxInputPipelineTraceLegacyComparison(accepted,
+			new_found ? &mirror_match : nullptr, legacy_hk, legacy_vp);
+		if (legacy_hk && legacy_vp)
+			FireEvdevVariant(legacy_hk, legacy_vp);
+		return suppressed;
+	}
+
+	// Combo/remap migration is M5b. Maintain the old prefix state machine,
+	// but ordinary single-key matching/dispatch below is exclusively pipeline.
+	SetModifierFromEvdev(event.evdev_code, down);
+	if (event.vk) SetDown((unsigned)event.vk, down);
+	unsigned int mods = ActiveMods();
+	int combo_result = HandleEvdevCombo(event.evdev_code, down,
+		accepted.event.is_repeat, mods);
+	if (combo_result >= 0)
+	{
+		AhkInputDecision combo = {accepted.state.acceptance_seq, 0,
+			combo_result ? AhkInputDecisionAction::SUPPRESS_ORIGINAL
+				: AhkInputDecisionAction::PASS_ORIGINAL,
+			AhkInputDecisionReason::LEGACY_COMBO, backend_can_suppress};
+		LinuxInputPipelineTraceDecision(accepted, combo);
+		LinuxInputPipelineTraceOutcome(accepted, combo,
+			combo_result ? "legacy_combo_suppressed" : "legacy_combo_passed");
+		return combo_result != 0;
+	}
+
+	AhkInputMatch match;
+	AhkInputDecision decision;
+	bool found = LinuxInputPipelineMatchSingleHotkey(accepted,
+		AhkInputBackendKind::EVDEV, match, decision, backend_can_suppress);
+	LinuxInputPipelineTraceDecision(accepted, decision);
+	const char *planned_outcome = found
+		? (decision.action == AhkInputDecisionAction::TRIGGER_SUPPRESS
+			? "triggered_suppressed" : "triggered_pass")
+		: "passed_no_match";
+	if (found)
+		LinuxInputPipelineDispatch(accepted, match, decision);
+	LinuxInputPipelineTraceOutcome(accepted, decision, planned_outcome);
+	return found && decision.action == AhkInputDecisionAction::TRIGGER_SUPPRESS;
 }
 
 } // namespace
@@ -703,9 +786,25 @@ static void EvdevBrokerEventAdapter(const LinuxInputdEvent &aEvent, void *aUser)
 		source, (int16_t)send_level, aEvent.v2 ? aEvent.deviceId : 0,
 		AhkInputOrigin::BROKER
 	};
-	LinuxInputEventTrace(normalized);
+	AhkProvenanceConfidence confidence = AhkProvenanceConfidence::UNKNOWN;
+	if (aEvent.v2)
+		confidence = aEvent.confidence == INPUTD_V2_CONF_AUTHORITATIVE
+			? AhkProvenanceConfidence::AUTHORITATIVE
+			: (aEvent.confidence == INPUTD_V2_CONF_DEVICE_DERIVED
+				? AhkProvenanceConfidence::DEVICE_DERIVED
+				: AhkProvenanceConfidence::TIME_CORRELATED);
+	AhkInputContext context = {AhkInputBackendKind::EVDEV,
+		AhkInputSourceDomain::INPUTD, confidence,
+		aEvent.v2 ? aEvent.authorityGeneration
+			: LinuxInputdClientConnectionGeneration(),
+		aEvent.v2 ? aEvent.eventSeq : 0,
+		aEvent.producerClientId, aEvent.transactionId,
+		aEvent.parentTransactionId, 0, 0, false,
+		aEvent.v2 && source == AhkInputSource::PHYSICAL};
+	bool can_suppress = aEvent.v2
+		&& (LinuxInputdClientCapsGranted() & INPUTD_V2_CAP_SUPPRESS);
+	HandleEvdevNormalized(normalized, context, can_suppress);
 	bool down = aValue != 0;
-	HandleEvdevKey(aCode, down, aValue == 2, send_level);
 	// Broker character stream: when the script needs Hotstring/InputHook
 	// capture and an X11 layout source exists, decode through the same
 	// three-layer model and feed the capture engine (M2-R backspace model:
@@ -830,14 +929,19 @@ void LinuxEvdevDispatch()
 					ev.value == 0, ev.value == 2, AhkInputSource::PHYSICAL, -1,
 					(uint32_t)(i + 1), AhkInputOrigin::EVDEV
 				};
-				LinuxInputEventTrace(normalized);
 				// Panic escape key: Backspace->Escape->Enter releases the grabs
 				// (check_detail0821 §1-B / R4).  Checked before hotkey dispatch so
 				// the sequence always wins.
 				EvdevPanicStep((unsigned int)ev.code, ev.value != 0);
 				if (sPanicked)
 					continue; // Fail-open: everything passes through.
-				bool suppressed = HandleEvdevKey(ev.code, ev.value != 0, ev.value == 2);
+				AhkInputContext context = {AhkInputBackendKind::EVDEV,
+					AhkInputSourceDomain::EVDEV_LOCAL,
+					AhkProvenanceConfidence::DEVICE_DERIVED,
+					sLocalHealthGeneration ? sLocalHealthGeneration : 1,
+					++sLocalEventSeq, 0, 0, 0, 0, 0, false, true};
+				bool suppressed = HandleEvdevNormalized(normalized, context,
+					sDevices[i].grabbed);
 				// Suppression cover: when this device is grabbed and the key
 				// was not consumed, replay it through /dev/uinput so the
 				// compositor still receives the key.

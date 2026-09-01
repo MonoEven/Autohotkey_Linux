@@ -1152,6 +1152,11 @@ static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 		ack[0] = 1;
 		st_le32(ack + 1, (unsigned int)c->rule_count);
 		c->rules_confirmed = 1;
+		if (c->rule_count)
+			logmsg("client %d v2 subscribed %d rule(s), first=%u", c->fd,
+				c->rule_count, c->rules[0].code);
+		else
+			logmsg("client %d v2 subscribed 0 rules", c->fd);
 		send_frame_v2(c, INPUTD_V2_SUBSCRIBE_ACK, 0, ack, sizeof(ack));
 		broadcast_backend_health();
 		break;

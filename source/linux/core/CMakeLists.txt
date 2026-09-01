@@ -112,6 +112,7 @@ add_executable(ahk_core
     core_capture_linux.cpp
     core_gshortcut_linux.cpp
     input_event.cpp
+    input_pipeline.cpp
     input_semantics.cpp
     core_inputd_client_linux.cpp
     input_backend.cpp

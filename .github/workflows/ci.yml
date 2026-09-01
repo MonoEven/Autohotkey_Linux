@@ -106,6 +106,10 @@ jobs:
         if: matrix.build == 'core'
         run: xvfb-run -a bash tests/oracle/run_input_event_model_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
 
+      - name: Normalized input pipeline equivalence oracle (check0901 M5a)
+        if: matrix.build == 'core'
+        run: bash tests/oracle/run_input_pipeline_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd" "$BUILD_DIR/source/linux/core/ahk_core"
+
       - name: Inputd systemd socket activation oracle
         if: matrix.build == 'core'
         run: |
