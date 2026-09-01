@@ -84,9 +84,14 @@
 #define INPUTD_V2_INJECT_COMMIT 16u   /* C2S */
 #define INPUTD_V2_INJECT_ABORT 17u    /* C2S */
 #define INPUTD_V2_INJECT_ACK 18u      /* S2C */
-/* M4 arbitration (check_detail0901 §7): DECISION_REQUEST/DECISION_REPLY,
- * CONFLICT, REPLACEMENT_ACK land with P1-4; EXCLUSIVE/REMAP capabilities are
- * still denied until then. */
+/* M4b static arbitration (check_detail0901 §7): registration/lease ownership
+ * and decision traces.  Dynamic HotIf DECISION_REQUEST/REPLY is intentionally
+ * deferred to M5's unified event pipeline; keyboard default remains fail-open. */
+#define INPUTD_V2_ARB_REGISTER 19u    /* C2S */
+#define INPUTD_V2_ARB_REGISTER_ACK 20u /* S2C */
+#define INPUTD_V2_ARB_UNREGISTER 21u  /* C2S */
+#define INPUTD_V2_CONFLICT 22u        /* S2C */
+#define INPUTD_V2_ARB_DECISION 23u    /* S2C */
 
 /* capability bits (HELLO caps_requested / HELLO_ACK caps_granted|denied) */
 #define INPUTD_V2_CAP_OBSERVE 0x1u
@@ -225,5 +230,74 @@
 #define INPUTD_V2_INJECT_MAX_TOTAL 16u
 #define INPUTD_V2_INJECT_MAX_EVENTS 256u
 #define INPUTD_V2_INJECT_DEFAULT_TTL_MS 2000u
+
+/* M4b static arbitration registrations (check_detail0901 §7):
+ * C2S ARB_REGISTER payload, 30 bytes:
+ *   0  registration_id u64   client-chosen, unique per connection
+ *   8  code u32              KEY_* selector (keyboard-only v2 schema)
+ *   12 mode u8               OBSERVE/SUPPRESS/EXCLUSIVE/REMAP
+ *   13 conflict_policy u8    REJECT or PREEMPT_LOWER
+ *   14 priority i16          higher wins inside one authorized principal
+ *   16 input_level i16       documented policy metadata (0..100)
+ *   18 replacement_send_level i16 (REMAP output; 0..100)
+ *   20 lease_ms u32          0=30s default; bounded to 300s
+ *   24 replacement_code u32  REMAP only, otherwise 0
+ *   28 flags u16             0 for now
+ * C2S ARB_UNREGISTER payload, 8 bytes: registration_id u64.
+ * S2C ARB_REGISTER_ACK payload, 33 bytes:
+ *   registration_id u64, status u8, owner_registration_id u64,
+ *   acceptance_seq u64, lease_expiry_ms u64.
+ * S2C CONFLICT payload, 33 bytes:
+ *   requested_id u64, owner_registration_id u64, owner_client_id u64,
+ *   code u32, reason u8, owner_priority i16, requester_priority i16.
+ * S2C ARB_DECISION payload, 40 bytes:
+ *   source_event_seq u64, source_transaction_id u64, code u32,
+ *   action u8, reason u8, winner_registration_id u64,
+ *   replacement_transaction_id u64, winner_priority i16.
+ */
+#define INPUTD_V2_ARB_REGISTER_PAYLOAD_LEN 30u
+#define INPUTD_V2_ARB_REGISTER_ACK_PAYLOAD_LEN 33u
+#define INPUTD_V2_CONFLICT_PAYLOAD_LEN 33u
+#define INPUTD_V2_ARB_DECISION_PAYLOAD_LEN 40u
+
+#define INPUTD_V2_ARB_OBSERVE 0u
+#define INPUTD_V2_ARB_SUPPRESS 1u
+#define INPUTD_V2_ARB_EXCLUSIVE 2u
+#define INPUTD_V2_ARB_REMAP 3u
+
+#define INPUTD_V2_ARB_CONFLICT_REJECT 0u
+#define INPUTD_V2_ARB_CONFLICT_PREEMPT_LOWER 1u
+
+#define INPUTD_V2_ARB_GRANTED 0u
+#define INPUTD_V2_ARB_REFRESHED 1u
+#define INPUTD_V2_ARB_UNREGISTERED 2u
+#define INPUTD_V2_ARB_CONFLICTED 3u
+#define INPUTD_V2_ARB_DENIED 4u
+#define INPUTD_V2_ARB_BAD_FRAME 5u
+#define INPUTD_V2_ARB_QUOTA 6u
+#define INPUTD_V2_ARB_EXPIRED 7u
+
+#define INPUTD_V2_CONFLICT_OWNER_EXISTS 0u
+#define INPUTD_V2_CONFLICT_PREEMPTED 1u
+#define INPUTD_V2_CONFLICT_LEASE_EXPIRED 2u
+#define INPUTD_V2_CONFLICT_OWNER_GONE 3u
+#define INPUTD_V2_CONFLICT_CROSS_UID 4u
+
+#define INPUTD_V2_DECISION_REPLAY 0u
+#define INPUTD_V2_DECISION_SUPPRESS 1u
+#define INPUTD_V2_DECISION_REMAP 2u
+#define INPUTD_V2_DECISION_REPLACEMENT_FAILED 3u
+
+#define INPUTD_V2_DECISION_NONE 0u
+#define INPUTD_V2_DECISION_LEGACY_SUPPRESS 1u
+#define INPUTD_V2_DECISION_STATIC_SUPPRESS 2u
+#define INPUTD_V2_DECISION_EXCLUSIVE 3u
+#define INPUTD_V2_DECISION_STATIC_REMAP 4u
+#define INPUTD_V2_DECISION_STICKY_KEYUP 5u
+
+#define INPUTD_V2_ARB_MAX_RULES 256u
+#define INPUTD_V2_ARB_MAX_PER_CLIENT 64u
+#define INPUTD_V2_ARB_DEFAULT_LEASE_MS 30000u
+#define INPUTD_V2_ARB_MAX_LEASE_MS 300000u
 
 #endif /* AHK_INPUTD_PROTO_H */

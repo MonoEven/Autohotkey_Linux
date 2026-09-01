@@ -125,6 +125,10 @@ jobs:
         if: matrix.build == 'core'
         run: bash tests/oracle/run_inputd_injection_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd" "$BUILD_DIR/source/linux/core/ahk_core"
 
+      - name: Inputd multi-client arbitration oracle (check0901 P1-4 M4)
+        if: matrix.build == 'core'
+        run: bash tests/oracle/run_inputd_arbitration_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd"
+
       - name: SendLevel/InputLevel policy oracle (check0901 P0-2/P1-3)
         if: matrix.build == 'core'
         run: bash tests/oracle/run_sendlevel_policy_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"

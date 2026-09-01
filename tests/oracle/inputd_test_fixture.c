@@ -105,9 +105,11 @@ int main(int argc, char **argv)
 	int seq = strcmp(argv[1], "--seq") == 0;
 	int seq_delayed = strcmp(argv[1], "--seq-delayed") == 0;
 	int seq_trigger = strcmp(argv[1], "--seq-trigger") == 0;
+	int split_trigger = strcmp(argv[1], "--split-trigger") == 0;
 	int release_after = strcmp(argv[1], "--release-after") == 0;
 	int idle = strcmp(argv[1], "--idle") == 0;
-	if (!hold && !tap && !seq && !seq_delayed && !seq_trigger && !release_after && !idle)
+	if (!hold && !tap && !seq && !seq_delayed && !seq_trigger && !split_trigger
+		&& !release_after && !idle)
 		return 2;
 	int seq_count = 0;
 	if (seq || seq_delayed || seq_trigger)
@@ -126,6 +128,15 @@ int main(int argc, char **argv)
 	const char *seq_trigger_path = NULL;
 	if (seq_trigger)
 		seq_trigger_path = argv[4];
+	const char *split_down_path = NULL, *split_up_path = NULL;
+	int split_code = 0;
+	if (split_trigger)
+	{
+		if (argc < 5) return 2;
+		split_code = atoi(argv[2]);
+		split_down_path = argv[3];
+		split_up_path = argv[4];
+	}
 	int release_ms = 0;
 	if (release_after)
 	{
@@ -185,6 +196,18 @@ int main(int argc, char **argv)
 		}
 		for (;;)
 			pause();
+	}
+	if (split_trigger)
+	{
+		/* --split-trigger CODE DOWN_PATH UP_PATH: deterministic down/up
+		 * separation for arbitration key-up ownership/crash tests. */
+		while (access(split_down_path, F_OK) != 0) usleep(20000);
+		emit(fd, EV_KEY, split_code, 1);
+		emit(fd, EV_SYN, SYN_REPORT, 0);
+		while (access(split_up_path, F_OK) != 0) usleep(20000);
+		emit(fd, EV_KEY, split_code, 0);
+		emit(fd, EV_SYN, SYN_REPORT, 0);
+		for (;;) pause();
 	}
 	if (idle)
 	{

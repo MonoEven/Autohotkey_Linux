@@ -226,7 +226,14 @@ done
 
 event_lines_A=$(grep -c '^EVENT ' "$WORK/probeA.out" || true)
 expect v2_events_four_A 4 "$event_lines_A"
-expect_contains v2_events_physical "src=0 conf=0 level=-1 txn=0 prod=0 parent=0 code=30" "$(grep '^EVENT ' "$WORK/probeA.out" | head -1)"
+expect_contains v2_events_physical "src=0 conf=0 level=-1" "$(grep '^EVENT ' "$WORK/probeA.out" | head -1)"
+expect_contains v2_events_physical_owner "prod=0 parent=0 code=30" "$(grep '^EVENT ' "$WORK/probeA.out" | head -1)"
+physical_txns=$(grep '^EVENT ' "$WORK/probeA.out" | sed -E 's/.* txn=([0-9]+) prod=.*/\1/' | head -4 | tr '\n' ' ')
+set -- $physical_txns
+physical_txn_ok=0
+[ "$#" = 4 ] && [ "$1" != 0 ] && [ "$1" = "$2" ] && [ "$3" = "$4" ] \
+  && [ "$1" != "$3" ] && physical_txn_ok=1
+expect v2_physical_txn_pairs 1 "$physical_txn_ok"
 seqs_A=$(grep '^EVENT ' "$WORK/probeA.out" | sed -E 's/EVENT seq=([0-9]+).*/\1/' | tr '\n' ' ')
 seqs_B=$(grep '^EVENT ' "$WORK/probeB.out" | sed -E 's/EVENT seq=([0-9]+).*/\1/' | tr '\n' ' ')
 expect v2_events_shared_seq 1 "$([ "$seqs_A" = "$seqs_B" ] && [ -n "$seqs_A" ] && echo 1 || echo 0)"

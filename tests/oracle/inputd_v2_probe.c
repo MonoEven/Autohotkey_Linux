@@ -65,10 +65,31 @@
 #define MSG_INJECT_COMMIT 16u
 #define MSG_INJECT_ABORT 17u
 #define MSG_INJECT_ACK 18u
+#define MSG_ARB_REGISTER 19u
+#define MSG_ARB_REGISTER_ACK 20u
+#define MSG_ARB_UNREGISTER 21u
+#define MSG_CONFLICT 22u
+#define MSG_ARB_DECISION 23u
 
 #define CAP_OBSERVE 0x1u
 #define CAP_SUPPRESS 0x2u
+#define CAP_EXCLUSIVE 0x4u
 #define CAP_INJECT 0x8u
+
+#define ARB_OBSERVE 0u
+#define ARB_SUPPRESS 1u
+#define ARB_EXCLUSIVE 2u
+#define ARB_REMAP 3u
+#define ARB_POLICY_REJECT 0u
+#define ARB_POLICY_PREEMPT 1u
+#define ARB_GRANTED 0u
+#define ARB_REFRESHED 1u
+#define ARB_UNREGISTERED 2u
+#define ARB_CONFLICTED 3u
+#define ARB_DENIED 4u
+#define ARB_BAD_FRAME 5u
+#define ARB_QUOTA 6u
+#define ARB_EXPIRED 7u
 
 #define INJECT_OK_BEGIN 0u
 #define INJECT_OK_COMMIT 1u
@@ -232,6 +253,35 @@ static void print_inject_ack(const unsigned char *p, size_t n)
 	if (dlen > n - 11) dlen = (unsigned int)(n - 11);
 	printf("INJECT_ACK txn=%llu status=%u detail=%.*s\n",
 		ld_le64(p), (unsigned)p[8], (int)dlen, (const char *)p + 11);
+	fflush(stdout);
+}
+
+static void print_arb_ack(const unsigned char *p, size_t n)
+{
+	if (n < 33u) { printf("ARB_ACK_SHORT\n"); return; }
+	printf("ARB_ACK reg=%llu status=%u owner=%llu acceptance=%llu expiry=%llu\n",
+		ld_le64(p), (unsigned)p[8], ld_le64(p + 9), ld_le64(p + 17),
+		ld_le64(p + 25));
+	fflush(stdout);
+}
+
+static void print_conflict(const unsigned char *p, size_t n)
+{
+	if (n < 33u) { printf("CONFLICT_SHORT\n"); return; }
+	printf("CONFLICT requested=%llu owner=%llu owner_client=%llu code=%u reason=%u owner_priority=%d requester_priority=%d\n",
+		ld_le64(p), ld_le64(p + 8), ld_le64(p + 16), ld_le32(p + 24),
+		(unsigned)p[28], (int)(short)ld_le16(p + 29),
+		(int)(short)ld_le16(p + 31));
+	fflush(stdout);
+}
+
+static void print_decision(const unsigned char *p, size_t n)
+{
+	if (n < 40u) { printf("DECISION_SHORT\n"); return; }
+	printf("DECISION seq=%llu source_txn=%llu code=%u action=%u reason=%u winner=%llu replacement_txn=%llu priority=%d\n",
+		ld_le64(p), ld_le64(p + 8), ld_le32(p + 16),
+		(unsigned)p[20], (unsigned)p[21], ld_le64(p + 22),
+		ld_le64(p + 30), (int)(short)ld_le16(p + 38));
 	fflush(stdout);
 }
 
@@ -521,6 +571,15 @@ int main(int argc, char **argv)
 			case MSG_ERROR:
 				print_error(rp, rp_len);
 				break;
+			case MSG_ARB_REGISTER_ACK:
+				print_arb_ack(rp, rp_len);
+				break;
+			case MSG_CONFLICT:
+				print_conflict(rp, rp_len);
+				break;
+			case MSG_ARB_DECISION:
+				print_decision(rp, rp_len);
+				break;
 			default:
 				printf("UNEXPECTED_TYPE=%u\n", mtype);
 				break;
@@ -530,6 +589,76 @@ int main(int argc, char **argv)
 		printf("WATCH_END events=%d\n", events);
 		fflush(stdout);
 		return until_events ? (events >= until_events ? 0 : 1) : 0;
+	}
+
+	if (!strcmp(mode, "arb"))
+	{
+		/* arb CODE MODE REG_ID PRIORITY LEASE_MS REPLACEMENT_CODE
+		 *     REPLACEMENT_LEVEL POLICY [--stay MS]
+		 * MODE/POLICY are numeric INPUTD_V2_ARB_* ids. */
+		if (argc < 11)
+		{
+			fprintf(stderr, "usage: %s SOCKET arb CODE MODE REG_ID PRIORITY LEASE_MS REPLACEMENT_CODE REPLACEMENT_LEVEL POLICY [--stay MS]\n", argv[0]);
+			return 2;
+		}
+		unsigned int code = (unsigned int)strtoul(argv[3], NULL, 0);
+		unsigned int arb_mode = (unsigned int)strtoul(argv[4], NULL, 0);
+		unsigned long long reg_id = strtoull(argv[5], NULL, 0);
+		int priority = atoi(argv[6]);
+		unsigned int lease_ms = (unsigned int)strtoul(argv[7], NULL, 0);
+		unsigned int replacement_code = (unsigned int)strtoul(argv[8], NULL, 0);
+		int replacement_level = atoi(argv[9]);
+		unsigned int policy = (unsigned int)strtoul(argv[10], NULL, 0);
+		caps = CAP_OBSERVE | CAP_SUPPRESS | CAP_EXCLUSIVE | CAP_INJECT;
+		if (send_hello(fd, proto, caps, 0, nonce, have_nonce) != 0) return 1;
+		if (read_one_print(fd, &mtype, rp, &rp_len) != 1 || mtype != MSG_HELLO_ACK) return 1;
+		print_ack(rp, rp_len);
+		unsigned char ap[30];
+		memset(ap, 0, sizeof(ap));
+		st_le64(ap, reg_id);
+		st_le32(ap + 8, code);
+		ap[12] = (unsigned char)arb_mode;
+		ap[13] = (unsigned char)policy;
+		st_le16(ap + 14, (unsigned int)(unsigned short)priority);
+		st_le16(ap + 16, 0); /* input_level policy metadata */
+		st_le16(ap + 18, (unsigned int)(unsigned short)replacement_level);
+		st_le32(ap + 20, lease_ms);
+		st_le32(ap + 24, replacement_code);
+		st_le16(ap + 28, 0);
+		if (send_frame(fd, MSG_ARB_REGISTER, 1, ap, sizeof(ap)) != 0) return 1;
+		if (read_one_print(fd, &mtype, rp, &rp_len) != 1
+			|| mtype != MSG_ARB_REGISTER_ACK) return 1;
+		print_arb_ack(rp, rp_len);
+		unsigned int status = rp_len >= 9 ? rp[8] : ARB_BAD_FRAME;
+		long stay_ms = inject_stay_ms;
+		/* Conflicts are followed by a CONFLICT sideband.  A granted rule
+		 * stays connected for --stay so the broker retains ownership. */
+		if (status == ARB_CONFLICTED)
+		{
+			if (read_one_print(fd, &mtype, rp, &rp_len) == 1
+				&& mtype == MSG_CONFLICT)
+				print_conflict(rp, rp_len);
+			return 0;
+		}
+		if (status != ARB_GRANTED && status != ARB_REFRESHED)
+			return 1;
+		while (stay_ms > 0)
+		{
+			struct pollfd pfd = { fd, POLLIN, 0 };
+			int step = stay_ms > 200 ? 200 : (int)stay_ms;
+			int pr = poll(&pfd, 1, step);
+			stay_ms -= step;
+			if (pr <= 0) continue;
+			int r = read_frame(fd, &mtype, rp, &rp_len);
+			if (r <= 0) break;
+			if (mtype == MSG_CONFLICT) print_conflict(rp, rp_len);
+			else if (mtype == MSG_ARB_DECISION) print_decision(rp, rp_len);
+			else if (mtype == MSG_EVENT && rp_len == 98) print_event(rp);
+			else if (mtype == MSG_ARB_REGISTER_ACK) print_arb_ack(rp, rp_len);
+			else if (mtype == MSG_ERROR) print_error(rp, rp_len);
+		}
+		close(fd);
+		return 0;
 	}
 
 	if (!strcmp(mode, "inject") || !strcmp(mode, "inject-event"))

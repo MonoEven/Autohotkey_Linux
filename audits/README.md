@@ -57,8 +57,22 @@ Closures since check0901 (evidence in the linked oracles):
   [run_inputd_injection_oracle.sh](../tests/oracle/run_inputd_injection_oracle.sh)
   (24/24) and the extended
   [client framing oracle](../tests/oracle/run_inputd_client_framing_oracle.sh).
-  P1-4 arbitration (remap ownership/conflict/priority corpus) is the next
-  step.
+- **P1-4 / M4b (static multi-client arbitration)** — typed registrations for
+  OBSERVE/SUPPRESS/EXCLUSIVE/REMAP with registration_id, priority,
+  broker acceptance sequence, lease, conflict policy, replacement key and
+  replacement SendLevel; EXCLUSIVE/REMAP conflicts are deterministic,
+  equal-priority ties keep the first accepted owner, and higher-priority
+  PREEMPT_LOWER sends a machine-readable CONFLICT to the displaced owner.
+  Disconnect/lease expiry releases ownership; replacement keys are
+  neutralized; a suppressed physical down retains sticky key-up ownership.
+  Every physical decision emits a DECISION trace and every capture gets a
+  broker source transaction.  An independent target watcher reads the
+  broker's uinput event node, proving OBSERVE replay, SUPPRESS zero-output,
+  A/B/C single replacement, preemption, owner-crash/lease recovery and
+  balanced key-up behavior. Oracle:
+  [run_inputd_arbitration_oracle.sh](../tests/oracle/run_inputd_arbitration_oracle.sh)
+  (29/29). Dynamic HotIf deadlines and logind active-seat ownership remain
+  M5/M7 work; keyboard default remains fail-open.
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),

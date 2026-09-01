@@ -169,6 +169,33 @@ struct inject_txn {
 };
 static struct inject_txn sTxns[INPUTD_V2_INJECT_MAX_TOTAL];
 static long long sLastTtlSweepMs = 0;
+
+/* M4b static arbitration rules (check_detail0901 §7). */
+struct arb_rule {
+	struct client *owner;  /* NULL = free */
+	unsigned long long registration_id;
+	unsigned long long acceptance_seq;
+	long long lease_expiry_ms;
+	unsigned int code;
+	unsigned int replacement_code;
+	int priority;
+	int input_level;
+	int replacement_send_level;
+	unsigned char mode;
+	unsigned char conflict_policy;
+	unsigned long long active_replacement_txn;
+	unsigned long long active_parent_txn;
+	unsigned char replacement_down;
+};
+static struct arb_rule sArbRules[INPUTD_V2_ARB_MAX_RULES];
+static unsigned long long sNextArbAcceptanceSeq;
+static unsigned long long sNextBrokerTxnId = 0x8000000000000000ULL;
+/* Per-key physical press identity + sticky suppression ownership: if a down
+ * was suppressed/remapped, the corresponding up stays suppressed even if the
+ * owner crashes or its lease expires before release. */
+static unsigned long long sPhysicalTxn[KEY_CNT];
+static unsigned long long sPhysicalOwnerAcceptance[KEY_CNT];
+static unsigned char sPhysicalSuppressed[KEY_CNT];
 /* check0901 P0-1: replay-lane health is separate from the panic path.  Once
  * the replay device fails (create or write), every physical grab is released
  * and the broker becomes observe/listen-only; it never grabs again. */
@@ -721,6 +748,181 @@ static void sweep_inject_ttl(void)
 	}
 }
 
+/* ---- M4b static arbitration ----------------------------------------------- */
+
+static void send_arb_ack(struct client *c, unsigned long long reg_id
+	, unsigned char status, unsigned long long owner_id
+	, unsigned long long acceptance_seq, unsigned long long lease_expiry_ms)
+{
+	unsigned char payload[INPUTD_V2_ARB_REGISTER_ACK_PAYLOAD_LEN];
+	st_le64(payload, reg_id);
+	payload[8] = status;
+	st_le64(payload + 9, owner_id);
+	st_le64(payload + 17, acceptance_seq);
+	st_le64(payload + 25, lease_expiry_ms);
+	send_frame_v2(c, INPUTD_V2_ARB_REGISTER_ACK, 0, payload, sizeof(payload));
+}
+
+static void send_conflict(struct client *c, unsigned long long requested_id
+	, unsigned long long owner_id, unsigned long long owner_client_id
+	, unsigned int code, unsigned char reason
+	, int owner_priority, int requester_priority)
+{
+	if (!c || c->fd < 0 || c->dead || !c->v2_hello_ok)
+		return;
+	unsigned char payload[INPUTD_V2_CONFLICT_PAYLOAD_LEN];
+	st_le64(payload, requested_id);
+	st_le64(payload + 8, owner_id);
+	st_le64(payload + 16, owner_client_id);
+	st_le32(payload + 24, code);
+	payload[28] = reason;
+	st_le16(payload + 29, (unsigned int)(unsigned short)owner_priority);
+	st_le16(payload + 31, (unsigned int)(unsigned short)requester_priority);
+	send_frame_v2(c, INPUTD_V2_CONFLICT, 0, payload, sizeof(payload));
+}
+
+static void broadcast_decision(unsigned long long event_seq
+	, unsigned long long source_txn, unsigned int code, unsigned char action
+	, unsigned char reason, unsigned long long winner_reg
+	, unsigned long long replacement_txn, int priority)
+{
+	unsigned char payload[INPUTD_V2_ARB_DECISION_PAYLOAD_LEN];
+	st_le64(payload, event_seq);
+	st_le64(payload + 8, source_txn);
+	st_le32(payload + 16, code);
+	payload[20] = action;
+	payload[21] = reason;
+	st_le64(payload + 22, winner_reg);
+	st_le64(payload + 30, replacement_txn);
+	st_le16(payload + 38, (unsigned int)(unsigned short)priority);
+	for (int i = 0; i < MAX_CLIENTS; ++i)
+	{
+		struct client *cl = &sClients[i];
+		if (cl->fd >= 0 && !cl->dead && cl->v2 && cl->v2_hello_ok)
+			send_frame_v2(cl, INPUTD_V2_ARB_DECISION, 0, payload, sizeof(payload));
+	}
+}
+
+static struct arb_rule *find_arb_rule(struct client *c, unsigned long long id)
+{
+	for (int i = 0; i < INPUTD_V2_ARB_MAX_RULES; ++i)
+		if (sArbRules[i].owner == c && sArbRules[i].registration_id == id)
+			return &sArbRules[i];
+	return NULL;
+}
+
+static int arb_client_count(struct client *c)
+{
+	int count = 0;
+	for (int i = 0; i < INPUTD_V2_ARB_MAX_RULES; ++i)
+		if (sArbRules[i].owner == c)
+			++count;
+	return count;
+}
+
+static int arb_better(const struct arb_rule *a, const struct arb_rule *b)
+{
+	if (!b)
+		return 1;
+	if (a->priority != b->priority)
+		return a->priority > b->priority;
+	return a->acceptance_seq < b->acceptance_seq;
+}
+
+/* EXCLUSIVE/REMAP outrank ordinary SUPPRESS.  OBSERVE never changes delivery. */
+static struct arb_rule *arb_by_acceptance(unsigned long long acceptance_seq)
+{
+	if (!acceptance_seq)
+		return NULL;
+	for (int i = 0; i < INPUTD_V2_ARB_MAX_RULES; ++i)
+		if (sArbRules[i].owner && sArbRules[i].acceptance_seq == acceptance_seq)
+			return &sArbRules[i];
+	return NULL;
+}
+
+static struct arb_rule *arb_winner(unsigned int code)
+{
+	struct arb_rule *exclusive = NULL;
+	struct arb_rule *suppress = NULL;
+	for (int i = 0; i < INPUTD_V2_ARB_MAX_RULES; ++i)
+	{
+		struct arb_rule *r = &sArbRules[i];
+		if (!r->owner || r->code != code)
+			continue;
+		if (r->mode == INPUTD_V2_ARB_EXCLUSIVE || r->mode == INPUTD_V2_ARB_REMAP)
+		{
+			if (arb_better(r, exclusive)) exclusive = r;
+		}
+		else if (r->mode == INPUTD_V2_ARB_SUPPRESS)
+		{
+			if (arb_better(r, suppress)) suppress = r;
+		}
+	}
+	return exclusive ? exclusive : suppress;
+}
+
+static void arb_neutralize(struct arb_rule *r)
+{
+	if (!r || !r->owner || !r->replacement_down || !r->replacement_code)
+		return;
+	struct inject_txn synthetic;
+	memset(&synthetic, 0, sizeof(synthetic));
+	synthetic.owner = r->owner;
+	synthetic.id = r->active_replacement_txn;
+	synthetic.parent = r->active_parent_txn;
+	synthetic.send_level = r->replacement_send_level;
+	(void)replay_key(r->replacement_code, 0);
+	inject_publish(r->owner, &synthetic, r->replacement_code, 0);
+	r->replacement_down = 0;
+	r->active_replacement_txn = 0;
+	r->active_parent_txn = 0;
+}
+
+static void arb_remove(struct arb_rule *r)
+{
+	if (!r || !r->owner)
+		return;
+	arb_neutralize(r);
+	memset(r, 0, sizeof(*r));
+}
+
+static void abort_client_arb_rules(struct client *c)
+{
+	for (int i = 0; i < INPUTD_V2_ARB_MAX_RULES; ++i)
+	{
+		struct arb_rule *r = &sArbRules[i];
+		if (r->owner == c)
+		{
+			fprintf(stderr, "[inputd] arb registration %llu client %llu released "
+				"(owner gone)\n", r->registration_id, c->client_id);
+			arb_remove(r);
+		}
+	}
+}
+
+static void sweep_arb_leases(void)
+{
+	long long now = now_ms();
+	for (int i = 0; i < INPUTD_V2_ARB_MAX_RULES; ++i)
+	{
+		struct arb_rule *r = &sArbRules[i];
+		if (r->owner && now >= r->lease_expiry_ms)
+		{
+			struct client *owner = r->owner;
+			unsigned long long id = r->registration_id;
+			unsigned int code = r->code;
+			int priority = r->priority;
+			fprintf(stderr, "[inputd] arb registration %llu client %llu lease expired\n",
+				id, owner->client_id);
+			send_arb_ack(owner, id, INPUTD_V2_ARB_EXPIRED, 0,
+				r->acceptance_seq, (unsigned long long)r->lease_expiry_ms);
+			send_conflict(owner, id, 0, 0, code, INPUTD_V2_CONFLICT_LEASE_EXPIRED,
+				0, priority);
+			arb_remove(r);
+		}
+	}
+}
+
 /* ---- protocol v2 command handling ------------------------------------------ */
 
 static void handle_client_cmd_v2(struct client *c, unsigned int mtype
@@ -771,14 +973,14 @@ static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 		}
 		memcpy(c->nonce, payload + 4, 16);
 		unsigned int caps_requested = ld_le32(payload + 20);
-		/* Capability grants (check_detail0901 §3.5): OBSERVE for every
-		 * socket-authorized client; SUPPRESS/INJECT only for the socket
-		 * owner (or root); EXCLUSIVE/REMAP are P1-4 and never granted yet.
-		 * caps_denied reports every requested-but-not-granted bit so
-		 * denials stay machine-readable. */
+		/* Capability grants (check_detail0901 §3.5/§7): OBSERVE for every
+		 * socket-authorized client; SUPPRESS/EXCLUSIVE/INJECT only for the
+		 * socket owner (or root). REMAP requires both EXCLUSIVE and INJECT.
+		 * caps_denied reports every requested-but-not-granted bit. */
 		unsigned int caps_granted = INPUTD_V2_CAP_OBSERVE;
 		if (c->uid == 0 || c->uid == geteuid())
-			caps_granted |= INPUTD_V2_CAP_SUPPRESS | INPUTD_V2_CAP_INJECT;
+			caps_granted |= INPUTD_V2_CAP_SUPPRESS | INPUTD_V2_CAP_EXCLUSIVE
+				| INPUTD_V2_CAP_INJECT;
 		unsigned int caps_denied = caps_requested & ~caps_granted;
 		c->client_id = ++sNextClientId;
 		c->caps_granted = caps_granted;
@@ -848,6 +1050,159 @@ static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 	case INPUTD_V2_PING:
 		send_frame_v2(c, INPUTD_V2_PONG, 0, NULL, 0);
 		break;
+	case INPUTD_V2_ARB_REGISTER:
+	{
+		unsigned long long reg_id = n >= 8 ? ld_le64(payload) : 0;
+		if (n != INPUTD_V2_ARB_REGISTER_PAYLOAD_LEN)
+		{
+			send_arb_ack(c, reg_id, INPUTD_V2_ARB_BAD_FRAME, 0, 0, 0);
+			break;
+		}
+		unsigned int code = ld_le32(payload + 8);
+		unsigned char mode = payload[12];
+		unsigned char conflict_policy = payload[13];
+		int priority = (int)(short)ld_le16(payload + 14);
+		int input_level = (int)(short)ld_le16(payload + 16);
+		int replacement_level = (int)(short)ld_le16(payload + 18);
+		unsigned int lease_ms = ld_le32(payload + 20);
+		unsigned int replacement_code = ld_le32(payload + 24);
+		unsigned int flags = ld_le16(payload + 28);
+		if (!reg_id || !code || code > KEY_MAX || mode > INPUTD_V2_ARB_REMAP
+			|| conflict_policy > INPUTD_V2_ARB_CONFLICT_PREEMPT_LOWER
+			|| input_level < 0 || input_level > 100
+			|| replacement_level < 0 || replacement_level > 100
+			|| lease_ms > INPUTD_V2_ARB_MAX_LEASE_MS || flags
+			|| (mode == INPUTD_V2_ARB_REMAP
+				&& (!replacement_code || replacement_code > KEY_MAX
+					|| replacement_code == code))
+			|| (mode != INPUTD_V2_ARB_REMAP && replacement_code))
+		{
+			send_arb_ack(c, reg_id, INPUTD_V2_ARB_BAD_FRAME, 0, 0, 0);
+			break;
+		}
+		unsigned int need = INPUTD_V2_CAP_OBSERVE;
+		if (mode == INPUTD_V2_ARB_SUPPRESS)
+			need = INPUTD_V2_CAP_SUPPRESS;
+		else if (mode == INPUTD_V2_ARB_EXCLUSIVE)
+			need = INPUTD_V2_CAP_EXCLUSIVE;
+		else if (mode == INPUTD_V2_ARB_REMAP)
+			need = INPUTD_V2_CAP_EXCLUSIVE | INPUTD_V2_CAP_INJECT;
+		if ((c->caps_granted & need) != need)
+		{
+			send_arb_ack(c, reg_id, INPUTD_V2_ARB_DENIED, 0, 0, 0);
+			break;
+		}
+		if (!lease_ms)
+			lease_ms = INPUTD_V2_ARB_DEFAULT_LEASE_MS;
+		struct arb_rule *existing = find_arb_rule(c, reg_id);
+		if (existing)
+		{
+			/* Stable id refreshes only the lease; changing selector/policy
+			 * under the same id is rejected to avoid ownership confusion. */
+			if (existing->code != code || existing->mode != mode
+				|| existing->replacement_code != replacement_code
+				|| existing->priority != priority)
+			{
+				send_arb_ack(c, reg_id, INPUTD_V2_ARB_BAD_FRAME, 0,
+					existing->acceptance_seq,
+					(unsigned long long)existing->lease_expiry_ms);
+				break;
+			}
+			existing->lease_expiry_ms = now_ms() + lease_ms;
+			send_arb_ack(c, reg_id, INPUTD_V2_ARB_REFRESHED, reg_id,
+				existing->acceptance_seq,
+				(unsigned long long)existing->lease_expiry_ms);
+			break;
+		}
+		if (arb_client_count(c) >= (int)INPUTD_V2_ARB_MAX_PER_CLIENT)
+		{
+			send_arb_ack(c, reg_id, INPUTD_V2_ARB_QUOTA, 0, 0, 0);
+			break;
+		}
+		if (mode == INPUTD_V2_ARB_EXCLUSIVE || mode == INPUTD_V2_ARB_REMAP)
+		{
+			struct arb_rule *owner = NULL;
+			for (int i = 0; i < INPUTD_V2_ARB_MAX_RULES; ++i)
+			{
+				struct arb_rule *r = &sArbRules[i];
+				if (r->owner && r->code == code
+					&& (r->mode == INPUTD_V2_ARB_EXCLUSIVE
+						|| r->mode == INPUTD_V2_ARB_REMAP)
+					&& arb_better(r, owner))
+					owner = r;
+			}
+			if (owner)
+			{
+				unsigned char reason = owner->owner->uid == c->uid
+					? INPUTD_V2_CONFLICT_OWNER_EXISTS
+					: INPUTD_V2_CONFLICT_CROSS_UID;
+				if (owner->owner->uid == c->uid
+					&& conflict_policy == INPUTD_V2_ARB_CONFLICT_PREEMPT_LOWER
+					&& priority > owner->priority)
+				{
+					struct client *old_client = owner->owner;
+					unsigned long long old_id = owner->registration_id;
+					int old_priority = owner->priority;
+					send_conflict(old_client, old_id, reg_id, c->client_id, code,
+						INPUTD_V2_CONFLICT_PREEMPTED, priority, old_priority);
+					arb_remove(owner);
+				}
+				else
+				{
+					send_arb_ack(c, reg_id, INPUTD_V2_ARB_CONFLICTED,
+						owner->registration_id, owner->acceptance_seq,
+						(unsigned long long)owner->lease_expiry_ms);
+					send_conflict(c, reg_id, owner->registration_id,
+						owner->owner->client_id, code, reason, owner->priority, priority);
+					break;
+				}
+			}
+		}
+		struct arb_rule *slot = NULL;
+		for (int i = 0; i < INPUTD_V2_ARB_MAX_RULES; ++i)
+			if (!sArbRules[i].owner) { slot = &sArbRules[i]; break; }
+		if (!slot)
+		{
+			send_arb_ack(c, reg_id, INPUTD_V2_ARB_QUOTA, 0, 0, 0);
+			break;
+		}
+		memset(slot, 0, sizeof(*slot));
+		slot->owner = c;
+		slot->registration_id = reg_id;
+		slot->acceptance_seq = ++sNextArbAcceptanceSeq;
+		slot->lease_expiry_ms = now_ms() + lease_ms;
+		slot->code = code;
+		slot->replacement_code = replacement_code;
+		slot->priority = priority;
+		slot->input_level = input_level;
+		slot->replacement_send_level = replacement_level;
+		slot->mode = mode;
+		slot->conflict_policy = conflict_policy;
+		send_arb_ack(c, reg_id, INPUTD_V2_ARB_GRANTED, reg_id,
+			slot->acceptance_seq, (unsigned long long)slot->lease_expiry_ms);
+		break;
+	}
+	case INPUTD_V2_ARB_UNREGISTER:
+	{
+		unsigned long long reg_id = n >= 8 ? ld_le64(payload) : 0;
+		if (n != 8)
+		{
+			send_arb_ack(c, reg_id, INPUTD_V2_ARB_BAD_FRAME, 0, 0, 0);
+			break;
+		}
+		struct arb_rule *r = find_arb_rule(c, reg_id);
+		if (!r)
+		{
+			send_arb_ack(c, reg_id, INPUTD_V2_ARB_BAD_FRAME, 0, 0, 0);
+			break;
+		}
+		unsigned long long acceptance = r->acceptance_seq;
+		unsigned long long expiry = (unsigned long long)r->lease_expiry_ms;
+		arb_remove(r);
+		send_arb_ack(c, reg_id, INPUTD_V2_ARB_UNREGISTERED, 0,
+			acceptance, expiry);
+		break;
+	}
 	case INPUTD_V2_INJECT_BEGIN:
 	{
 		unsigned long long id = n >= 8 ? ld_le64(payload) : 0;
@@ -981,9 +1336,10 @@ static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 
 static void close_client(struct client *c)
 {
-	/* M4: a crashed/disconnected owner auto-aborts its open transactions and
-	 * balances any still-held keys (check_detail0901 §3.6 case 6). */
+	/* M4: a crashed/disconnected owner auto-aborts its open transactions,
+	 * balances held keys and releases arbitration ownership/leases. */
 	abort_client_txns(c);
+	abort_client_arb_rules(c);
 	if (c->fd >= 0)
 	{
 		fprintf(stderr, "[inputd] client pid=%ld uid=%ld disconnected; rules dropped\n",
@@ -1767,6 +2123,7 @@ int main(int argc, char **argv)
 		{
 			sLastTtlSweepMs = now;
 			sweep_inject_ttl();
+			sweep_arb_leases();
 		}
 		int idx = 0;
 		if (pfds[idx].revents & POLLIN)
@@ -1800,30 +2157,129 @@ int main(int argc, char **argv)
 					 * P0-3): authority+generation+seq are shared by every
 					 * recipient, so A/B scripts observe identical provenance. */
 					++sEventSeq;
+					unsigned long long source_event_seq = sEventSeq;
 					long long ev_ts = now_us();
 					unsigned long long ev_dev_id = sDevIds[i];
+					unsigned int code = (unsigned int)ev.code;
+					int down = ev.value != 0;
+					if (code < KEY_CNT)
+					{
+						if (down && ev.value != 2 && !sPhysicalTxn[code])
+							sPhysicalTxn[code] = ++sNextBrokerTxnId;
+					}
+					unsigned long long source_txn = code < KEY_CNT ? sPhysicalTxn[code] : 0;
 					/* distribute to subscribed clients first */
-					int any_suppress = 0;
+					int legacy_suppress = 0;
 					for (int c = 0; c < MAX_CLIENTS; ++c)
 					{
 						struct client *cl = &sClients[c];
 						if (cl->fd < 0 || cl->dead) continue;
 						for (int r = 0; r < cl->rule_count; ++r)
-							if (cl->rules[r].code == (unsigned int)ev.code)
+							if (cl->rules[r].code == code)
 							{
 								if (cl->rules[r].suppress)
-									any_suppress = 1;
+									legacy_suppress = 1;
 								if (cl->v2 && cl->v2_hello_ok)
-									send_event_v2(cl, (unsigned int)ev.code, ev.value, ev_ts, ev_dev_id
-										, 0, 0, 0, -1, INPUTD_V2_SOURCE_PHYSICAL);
+									send_event_v2(cl, code, ev.value, ev_ts, ev_dev_id
+										, 0, source_txn, 0, -1, INPUTD_V2_SOURCE_PHYSICAL);
 								else
-									send_event_to(cl, (unsigned int)ev.code, ev.value, ev_ts);
+									send_event_to(cl, code, ev.value, ev_ts);
 								break;
 							}
 					}
-					if (!any_suppress)
+					struct arb_rule *winner = arb_winner(code);
+					if (code < KEY_CNT && sPhysicalSuppressed[code]
+						&& (ev.value == 2 || !down))
+						winner = arb_by_acceptance(sPhysicalOwnerAcceptance[code]);
+					int suppress = legacy_suppress;
+					unsigned char action = legacy_suppress
+						? INPUTD_V2_DECISION_SUPPRESS : INPUTD_V2_DECISION_REPLAY;
+					unsigned char reason = legacy_suppress
+						? INPUTD_V2_DECISION_LEGACY_SUPPRESS : INPUTD_V2_DECISION_NONE;
+					unsigned long long winner_id = 0;
+					unsigned long long replacement_txn = 0;
+					int winner_priority = 0;
+					/* A suppressed down owns its matching up even if the registration
+					 * disappears before release (balanced target sequence). */
+					if (code < KEY_CNT && sPhysicalSuppressed[code]
+						&& (ev.value == 2 || !down) && !winner)
 					{
-						if (replay_key((unsigned int)ev.code, ev.value) != 0)
+						suppress = 1;
+						action = INPUTD_V2_DECISION_SUPPRESS;
+						reason = INPUTD_V2_DECISION_STICKY_KEYUP;
+					}
+					else if (winner)
+					{
+						suppress = 1;
+						winner_id = winner->registration_id;
+						winner_priority = winner->priority;
+						if (winner->mode == INPUTD_V2_ARB_REMAP)
+						{
+							action = INPUTD_V2_DECISION_REMAP;
+							reason = INPUTD_V2_DECISION_STATIC_REMAP;
+							if (down && ev.value != 2)
+							{
+								replacement_txn = ++sNextBrokerTxnId;
+								winner->active_replacement_txn = replacement_txn;
+								winner->active_parent_txn = source_txn;
+								winner->replacement_down = 1;
+							}
+							else
+								replacement_txn = winner->active_replacement_txn;
+							if (replacement_txn)
+							{
+								struct inject_txn synthetic;
+								memset(&synthetic, 0, sizeof(synthetic));
+								synthetic.owner = winner->owner;
+								synthetic.id = replacement_txn;
+								synthetic.parent = winner->active_parent_txn
+									? winner->active_parent_txn : source_txn;
+								synthetic.send_level = winner->replacement_send_level;
+								if (replay_key(winner->replacement_code, ev.value) != 0)
+								{
+									action = INPUTD_V2_DECISION_REPLACEMENT_FAILED;
+									reason = INPUTD_V2_DECISION_STATIC_REMAP;
+									remove_device = true;
+								}
+								else
+									inject_publish(winner->owner, &synthetic,
+										winner->replacement_code, ev.value);
+							}
+							if (!down)
+							{
+								winner->replacement_down = 0;
+								winner->active_replacement_txn = 0;
+								winner->active_parent_txn = 0;
+							}
+						}
+						else
+						{
+							action = INPUTD_V2_DECISION_SUPPRESS;
+							reason = winner->mode == INPUTD_V2_ARB_EXCLUSIVE
+								? INPUTD_V2_DECISION_EXCLUSIVE
+								: INPUTD_V2_DECISION_STATIC_SUPPRESS;
+						}
+					}
+					if (code < KEY_CNT)
+					{
+						if (down && ev.value != 2)
+						{
+							sPhysicalSuppressed[code] = suppress ? 1 : 0;
+							sPhysicalOwnerAcceptance[code] = winner
+								? winner->acceptance_seq : 0;
+						}
+						else if (!down)
+						{
+							sPhysicalSuppressed[code] = 0;
+							sPhysicalOwnerAcceptance[code] = 0;
+							sPhysicalTxn[code] = 0;
+						}
+					}
+					broadcast_decision(source_event_seq, source_txn, code, action, reason,
+						winner_id, replacement_txn, winner_priority);
+					if (!suppress)
+					{
+						if (replay_key(code, ev.value) != 0)
 						{
 							/* replay_dead() already released every grab and
 							 * closed the device fds; drop this slot too. */
