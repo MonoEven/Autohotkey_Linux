@@ -119,8 +119,24 @@ Closures since check0901 (evidence in the linked oracles):
   runs wrong/correct-side Ctrl+F7, Shift exact-vs-wildcard F8, Alt extra-modifier
   wildcard, and F9-up through inputd and X11 in active/mirror/legacy modes,
   checking callback/SendLevel equality, decision traces and zero mirror
-  mismatch. Broker dynamic HotIf suppression execution, custom combo/remap,
-  Hotstring and InputHook callback decisions remain later M5b slices.
+  mismatch. Broker dynamic HotIf suppression execution and custom combo/remap
+  remain later M5b slices.
+- **M5b-2 (InputHook/Hotstring normalized consumers)** — InputHook key/char
+  callback queues and Hotstring raw/held match outcomes now consume a typed
+  `AhkInputAcceptance` and emit consumer decisions/outcomes with the same
+  authority/backend/transaction identity as hotkeys. Broker EVDEV enriches and
+  reuses the hotkey adapter's acceptance (no duplicate reducer); X11 raw creates
+  an explicit X11_RAW acceptance, while a selected suppression grab owns a
+  separate X11_GRAB acceptance and raw records the handoff. InputHook
+  MinSendLevel, SendInput/Play exclusion, queued/stale callback outcome,
+  Hotstring level-zero exclusion, equal-level filtering, buffer update and
+  matched callback are traceable. Oracle:
+  [run_input_consumer_pipeline_oracle.sh](../tests/oracle/run_input_consumer_pipeline_oracle.sh)
+  validates active/mirror/legacy X11 callbacks and level matrices, selected
+  grab handoff/EndKey, broker physical InputHook callbacks with exactly two
+  acceptances, and broker physical Hotstring with six acceptances/one trigger.
+  IME composition/focus transactions remain M8; custom combo/remap and dynamic
+  broker HotIf suppression remain later M5b.
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),

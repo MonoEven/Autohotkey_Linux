@@ -111,6 +111,47 @@ struct AhkInputDecision
 	bool backend_can_suppress;
 };
 
+enum class AhkInputConsumerKind : uint8_t
+{
+	INPUTHOOK,
+	HOTSTRING,
+};
+
+enum class AhkInputConsumerAction : uint8_t
+{
+	IGNORED,
+	COLLECTED,
+	CALLBACK_QUEUED,
+	TRIGGERED,
+	REPLACED,
+	SUPPRESSED,
+	PASSED,
+};
+
+enum class AhkInputConsumerReason : uint8_t
+{
+	NONE,
+	LEVEL_FILTERED,
+	TRANSPORT_FILTERED,
+	KEY_CALLBACK,
+	CHAR_BUFFERED,
+	END_KEY,
+	HOTSTRING_BUFFERED,
+	HOTSTRING_MATCHED,
+	LEVEL_ZERO_EXCLUDED,
+	SELECTED_GRAB_OWNS_EVENT,
+};
+
+struct AhkInputConsumerDecision
+{
+	uint64_t acceptance_seq;
+	uint64_t registration_id;
+	AhkInputConsumerKind consumer;
+	AhkInputConsumerAction action;
+	AhkInputConsumerReason reason;
+	bool suppress_original;
+};
+
 // Default active. AHK_INPUT_PIPELINE=legacy runs the old EVDEV matcher while
 // mirroring into the new pipeline; =mirror keeps legacy dispatch with full
 // comparison trace; =active (or unset) makes the pipeline authoritative.
@@ -133,6 +174,10 @@ void LinuxInputPipelineDispatch(const AhkInputAcceptance &aAccepted,
 	const AhkInputMatch &aMatch, AhkInputDecision &aDecision);
 void LinuxInputPipelineTraceOutcome(const AhkInputAcceptance &aAccepted,
 	const AhkInputDecision &aDecision, const char *aOutcome);
+void LinuxInputPipelineTraceConsumerDecision(const AhkInputAcceptance &aAccepted,
+	const AhkInputConsumerDecision &aDecision);
+void LinuxInputPipelineTraceConsumerOutcome(const AhkInputAcceptance &aAccepted,
+	const AhkInputConsumerDecision &aDecision, const char *aOutcome);
 
 bool LinuxInputPipelineHasState(AhkInputSourceDomain aDomain,
 	uint64_t aAuthorityGeneration, uint32_t aSeatId);

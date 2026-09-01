@@ -635,9 +635,11 @@ bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat, int aSendLeve
 }
 
 bool HandleEvdevNormalized(const AhkInputEvent &event,
-	const AhkInputContext &context, bool backend_can_suppress)
+	const AhkInputContext &context, bool backend_can_suppress,
+	AhkInputAcceptance *aOutAccepted = nullptr)
 {
 	AhkInputAcceptance accepted = LinuxInputPipelineAccept(event, context);
+	if (aOutAccepted) *aOutAccepted = accepted;
 	bool down = !accepted.event.is_release;
 	if (!LinuxInputPipelineActive())
 	{
@@ -844,7 +846,8 @@ static void EvdevBrokerEventAdapter(const LinuxInputdEvent &aEvent, void *aUser)
 		aEvent.v2 && source == AhkInputSource::PHYSICAL};
 	bool can_suppress = aEvent.v2
 		&& (LinuxInputdClientCapsGranted() & INPUTD_V2_CAP_SUPPRESS);
-	HandleEvdevNormalized(normalized, context, can_suppress);
+	AhkInputAcceptance accepted;
+	HandleEvdevNormalized(normalized, context, can_suppress, &accepted);
 	bool down = aValue != 0;
 	// Broker character stream: when the script needs Hotstring/InputHook
 	// capture and an X11 layout source exists, decode through the same
@@ -863,8 +866,8 @@ static void EvdevBrokerEventAdapter(const LinuxInputdEvent &aEvent, void *aUser)
 				| (mods & MOD_CONTROL ? ControlMask : 0)
 				| (mods & MOD_ALT ? Mod1Mask : 0)
 				| (mods & MOD_WIN ? Mod4Mask : 0);
-			LinuxCaptureRawKeyEvent(d, xk, down, (Time)(aTsUs / 1000), state,
-				send_level, false, false, source, aEvent.v2 ? aEvent.deviceId : 0);
+			LinuxCaptureAcceptedRawKeyEvent(d, xk, down,
+				(Time)(aTsUs / 1000), state, false, false, accepted);
 		}
 	}
 }

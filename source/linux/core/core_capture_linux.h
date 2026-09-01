@@ -5,6 +5,8 @@
 #include "input_event.h"
 
 struct GrabSpec;
+struct AhkInputAcceptance;
+struct AhkLinuxKeyIdentity;
 
 // Capture state/mode. Hotstrings and visible InputHook use XI2.1 raw events;
 // only an InputHook which asks for suppression retains the compatibility
@@ -24,7 +26,8 @@ void LinuxCaptureAddSpecs(std::set<GrabSpec> &aDesired);
 // (I option) filters self-injected events by it (check_detail0821 §2-C).
 // Returns true when the event was consumed (held toward a match, matched, or
 // forwarded by the engine); false when the normal hotkey flow should handle it.
-bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel = -1);
+bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel = -1,
+	const AhkInputAcceptance *aAccepted = nullptr);
 
 // Feed one XI2 raw key event (physical or injected). aCoreState is an X11
 // core modifier/group state synthesized at event time. Raw observation never
@@ -35,6 +38,12 @@ bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel = -1);
 void LinuxCaptureRawKeyEvent(Display *d, KeyCode aKeycode, bool aIsPress,
 	Time aTime, unsigned int aCoreState, int aSelfLevel, bool aIsSendInput,
 	bool aIsSendPlay, AhkInputSource aSource, uint32_t aDeviceId);
+// Reuse an acceptance already produced by the broker/EVDEV hotkey adapter;
+// only enrich it with layout text before feeding InputHook/Hotstring.
+void LinuxCaptureAcceptedRawKeyEvent(Display *d, KeyCode aKeycode,
+	bool aIsPress, Time aTime, unsigned int aCoreState, bool aIsSendInput,
+	bool aIsSendPlay, const AhkInputAcceptance &aAccepted,
+	const AhkLinuxKeyIdentity *aPredecoded = nullptr);
 
 // Hotstring state changed: recompute the active flag.
 void LinuxCaptureStateChanged();

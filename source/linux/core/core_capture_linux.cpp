@@ -21,6 +21,7 @@
 #include "core_keymodel_linux.h"
 #include "core_ime_linux.h"
 #include "input_event.h"
+#include "input_pipeline.h"
 #include "input_semantics.h" // unified synthetic-level policy (check0901 P0-2).
 #include "../../application.h"
 #include <X11/Xlib.h>
@@ -37,11 +38,13 @@
 wchar_t LinuxCharFromKeySym(KeySym aKs);
 vk_type LinuxKeysymToVk(KeySym aKs);
 bool LinuxCaptureFeedInput(Display *d, XEvent &ev
-	, const AhkLinuxKeyIdentity *aPredecoded = nullptr);
+	, const AhkLinuxKeyIdentity *aPredecoded = nullptr
+	, const AhkInputAcceptance *aAccepted = nullptr);
 
 namespace {
 
 bool sActive = false;
+uint64_t sRawPipelineSeq = 0;
 bool sNeedsGrabs = false;
 bool sGrabKeycodesDirty = true;
 std::set<KeyCode> sGrabKeycodes;
@@ -163,18 +166,30 @@ struct InputNotify
 	wchar_t ch;
 	uint64_t ready_us;
 	bool ime_candidate;
+	bool has_acceptance;
+	AhkInputAcceptance acceptance;
 };
 std::vector<InputNotify> sInputNotifies;
 
 static void LinuxInputNotifyQueue(input_type *aInput, int aKind
-	, vk_type aVk, sc_type aSc, wchar_t aCh, bool aImeCandidate = false)
+	, vk_type aVk, sc_type aSc, wchar_t aCh, bool aImeCandidate = false
+	, const AhkInputAcceptance *aAccepted = nullptr)
 {
 	if (!aInput || !aInput->ScriptObject)
 		return;
 	uint64_t ready = LinuxInputEventMonotonicUs();
 	if (aImeCandidate)
 		ready += 500000ULL; // Let a slow toolkit's first preedit signal win the race.
-	InputNotify n = { aInput, aKind, aVk, aSc, aCh, ready, aImeCandidate };
+	InputNotify n = {};
+	n.input = aInput;
+	n.kind = aKind;
+	n.vk = aVk;
+	n.sc = aSc;
+	n.ch = aCh;
+	n.ready_us = ready;
+	n.ime_candidate = aImeCandidate;
+	n.has_acceptance = aAccepted != nullptr;
+	if (aAccepted) n.acceptance = *aAccepted;
 	sInputNotifies.push_back(n);
 }
 
@@ -403,29 +418,32 @@ void LinuxRawFireHotstring(Display *d, Hotstring *aHs, int aCaseMode
 	g->SendLevel = saved_level;
 }
 
-void LinuxRawFeedHotstrings(Display *d, const AhkLinuxKeyIdentity &aKey, int aSelfLevel)
+Hotstring *LinuxRawFeedHotstrings(Display *d, const AhkLinuxKeyIdentity &aKey,
+	int aSelfLevel, const AhkInputAcceptance *aAccepted = nullptr,
+	bool *aLevelFiltered = nullptr)
 {
+	if (aLevelFiltered) *aLevelFiltered = false;
 	if (sImePreeditActive)
-		return;
+		return nullptr;
 	if (!Hotstring::sEnabledCount || !aKey.text)
-		return;
+		return nullptr;
 	// Official SendLevel docs: "hotstring recognition works by collecting
 	// input from all levels except level 0 into a single global buffer".
 	// Physical/non-AHK input is -1 and always enters; auto-replace output is
 	// generated at level 0 and must never pollute the buffer.
 	if (aSelfLevel == 0)
-		return;
+		return nullptr;
 	wchar_t ch = (wchar_t)aKey.text;
 	if (ch == L'\b')
 	{
 		if (!sRawBuffer.empty())
 			sRawBuffer.pop_back();
-		return;
+		return nullptr;
 	}
 	if (ch < 0x20 && ch != L'\n' && ch != L'\t')
 	{
 		sRawBuffer.clear();
-		return;
+		return nullptr;
 	}
 	if (sRawBuffer.size() >= 512)
 		sRawBuffer.erase(0, sRawBuffer.size() - 511);
@@ -441,18 +459,11 @@ void LinuxRawFeedHotstrings(Display *d, const AhkLinuxKeyIdentity &aKey, int aSe
 			continue;
 		if (hs->mHotCriterion && !HotCriterionAllowsFiring(hs->mHotCriterion, hs->mName))
 			continue;
-		// Windows rule (input_semantics.h): a synthetic event can trigger only
-		// when its SendLevel is strictly greater than the Hotstring's input
-		// level.  Physical/other-process input is represented by -1 and always
-		// qualifies.
-		if (!AhkSyntheticMayTrigger(AhkConsumerKind::HOTSTRING
-			, AhkSendTransportClass::EVENT, aSelfLevel, (int)hs->mInputLevel))
-			continue;
 		int sl = (int)wcslen(hs->mString);
 		int text_len = (int)sRawBuffer.size() - (hs->mEndCharRequired ? 1 : 0);
-		if (sl < 1 || text_len < sl || (hs->mEndCharRequired && !is_endchar))
-			continue;
-		if (!LinuxBufEndsWith(sRawBuffer.c_str(), text_len, hs->mString, hs->mCaseSensitive))
+		if (sl < 1 || text_len < sl || (hs->mEndCharRequired && !is_endchar)
+			|| !LinuxBufEndsWith(sRawBuffer.c_str(), text_len, hs->mString,
+				hs->mCaseSensitive))
 			continue;
 		int start = text_len - sl;
 		if (!hs->mDetectWhenInsideWord && start > 0)
@@ -460,6 +471,15 @@ void LinuxRawFeedHotstrings(Display *d, const AhkLinuxKeyIdentity &aKey, int aSe
 			wchar_t prev = sRawBuffer[(size_t)start - 1];
 			if (iswalnum(prev) || prev == L'_')
 				continue;
+		}
+		// Windows rule (input_semantics.h): a synthetic event can trigger only
+		// when its SendLevel is strictly greater than the Hotstring's input
+		// level. Physical/non-AHK input (-1) always qualifies.
+		if (!AhkSyntheticMayTrigger(AhkConsumerKind::HOTSTRING
+			, AhkSendTransportClass::EVENT, aSelfLevel, (int)hs->mInputLevel))
+		{
+			if (aLevelFiltered) *aLevelFiltered = true;
+			continue;
 		}
 		if (sl >= best_len)
 		{
@@ -469,11 +489,23 @@ void LinuxRawFeedHotstrings(Display *d, const AhkLinuxKeyIdentity &aKey, int aSe
 		}
 	}
 	if (!best)
-		return;
+		return nullptr;
 	int typed_len = (int)sRawBuffer.size() - (best_via_end ? 1 : 0);
 	int case_mode = best->mConformToCase
 		? LinuxCaseMode(sRawBuffer.c_str(), typed_len) : 0;
 	int erase_count = best_len + (best_via_end ? 1 : 0);
+	AhkInputConsumerDecision trace_decision = {};
+	if (aAccepted)
+	{
+		uint64_t best_id = 0;
+		for (int i = 0; i < Hotstring::sHotstringCount; ++i)
+			if (Hotstring::shs[i] == best) { best_id = (uint64_t)i + 1; break; }
+		trace_decision = AhkInputConsumerDecision{aAccepted->state.acceptance_seq,
+			best_id, AhkInputConsumerKind::HOTSTRING,
+			AhkInputConsumerAction::TRIGGERED,
+			AhkInputConsumerReason::HOTSTRING_MATCHED, false};
+		LinuxInputPipelineTraceConsumerDecision(*aAccepted, trace_decision);
+	}
 	LinuxRawFireHotstring(d, best, case_mode, erase_count, ch, best_via_end);
 	if (best->mDoReset)
 		sRawBuffer.clear();
@@ -485,6 +517,10 @@ void LinuxRawFeedHotstrings(Display *d, const AhkLinuxKeyIdentity &aKey, int aSe
 		if (best_via_end && !best->mOmitEndChar)
 			sRawBuffer.push_back(ch);
 	}
+	if (aAccepted)
+		LinuxInputPipelineTraceConsumerOutcome(*aAccepted, trace_decision,
+			"hotstring_dispatched");
+	return best;
 }
 
 void LinuxCaptureFire(Display *d, Hotstring *aHs, int aCaseMode, wchar_t aEndChar
@@ -734,17 +770,48 @@ void LinuxCaptureDispatchInputNotifies()
 		InputNotify &n = batch[i];
 		// Only the CURRENT hook may be notified (see the queue comment).
 		if (n.input != g_input || !n.input->InProgress() || !n.input->ScriptObject)
+		{
+			if (n.has_acceptance)
+			{
+				AhkInputConsumerDecision dropped = {n.acceptance.state.acceptance_seq,
+					0, AhkInputConsumerKind::INPUTHOOK,
+					AhkInputConsumerAction::IGNORED,
+					AhkInputConsumerReason::KEY_CALLBACK, false};
+				LinuxInputPipelineTraceConsumerOutcome(n.acceptance, dropped,
+					"stale_hook_dropped");
+			}
 			continue;
+		}
 		if (n.kind == NOTIFY_CHAR && n.ime_candidate)
 		{
 			LinuxInputCollectAndNotify(n.input, n.ch);
+			if (n.has_acceptance)
+			{
+				AhkInputConsumerDecision done = {n.acceptance.state.acceptance_seq,
+					0, AhkInputConsumerKind::INPUTHOOK,
+					AhkInputConsumerAction::COLLECTED,
+					AhkInputConsumerReason::CHAR_BUFFERED, false};
+				LinuxInputPipelineTraceConsumerOutcome(n.acceptance, done,
+					"ime_candidate_collected");
+			}
 			continue;
 		}
 		IObject *cb = n.kind == NOTIFY_CHAR ? n.input->ScriptObject->onChar
 			: (n.kind == NOTIFY_KEYDOWN ? n.input->ScriptObject->onKeyDown
 			                            : n.input->ScriptObject->onKeyUp);
 		if (!cb)
+		{
+			if (n.has_acceptance)
+			{
+				AhkInputConsumerDecision removed = {n.acceptance.state.acceptance_seq,
+					0, AhkInputConsumerKind::INPUTHOOK,
+					AhkInputConsumerAction::IGNORED,
+					AhkInputConsumerReason::KEY_CALLBACK, false};
+				LinuxInputPipelineTraceConsumerOutcome(n.acceptance, removed,
+					"callback_removed_before_dispatch");
+			}
 			continue;
+		}
 		if (n.kind == NOTIFY_CHAR)
 		{
 			// Windows semantics: OnChar(This, Char).
@@ -763,6 +830,128 @@ void LinuxCaptureDispatchInputNotifies()
 			};
 			IObjectPtr(cb)->ExecuteInNewThread(_T("InputHook"), params, _countof(params));
 		}
+		if (n.has_acceptance)
+		{
+			AhkInputConsumerDecision done = {n.acceptance.state.acceptance_seq,
+				0, AhkInputConsumerKind::INPUTHOOK,
+				AhkInputConsumerAction::CALLBACK_QUEUED,
+				(n.kind == NOTIFY_CHAR ? AhkInputConsumerReason::CHAR_BUFFERED
+					: AhkInputConsumerReason::KEY_CALLBACK), false};
+			LinuxInputPipelineTraceConsumerOutcome(n.acceptance, done,
+				"callback_dispatched");
+		}
+	}
+}
+
+void LinuxCaptureAcceptedRawKeyEvent(Display *d, KeyCode aKeycode,
+	bool aIsPress, Time aTime, unsigned int aCoreState, bool aIsSendInput,
+	bool aIsSendPlay, const AhkInputAcceptance &aAccepted,
+	const AhkLinuxKeyIdentity *aPredecoded)
+{
+	bool capture = LinuxCaptureUsesRaw();
+	if (!capture && !LinuxInputEventTraceEnabled()
+		&& !getenv("AHK_INPUT_PIPELINE_TRACE"))
+		return;
+	XEvent ev;
+	memset(&ev, 0, sizeof(ev));
+	ev.type = aIsPress ? KeyPress : KeyRelease;
+	ev.xkey.type = ev.type;
+	ev.xkey.display = d;
+	ev.xkey.keycode = aKeycode;
+	ev.xkey.state = aCoreState;
+	ev.xkey.time = aTime;
+	ev.xkey.same_screen = True;
+	AhkLinuxKeyIdentity decoded;
+	if (!aPredecoded)
+	{
+		LinuxEventKeyIdentity(d, ev, decoded);
+		aPredecoded = &decoded;
+	}
+	const AhkLinuxKeyIdentity &identity = *aPredecoded;
+	AhkInputAcceptance accepted = aAccepted;
+	accepted.event.evdev_code = identity.evdev_code;
+	accepted.event.vk = identity.vk;
+	accepted.event.sc = identity.sc;
+	accepted.event.text = (char32_t)identity.text;
+	accepted.event.is_release = !aIsPress;
+	// SendInput/SendPlay self copies never feed the Hotstring/InputHook
+	// buffers (Windows unloads its own hook during SendInput; SendPlay uses
+	// the journal) -- check0901 P1-3.
+	if (!capture || aIsSendInput || aIsSendPlay)
+	{
+		AhkInputConsumerDecision ignored = {accepted.state.acceptance_seq, 0,
+			AhkInputConsumerKind::INPUTHOOK, AhkInputConsumerAction::IGNORED,
+			AhkInputConsumerReason::TRANSPORT_FILTERED, false};
+		LinuxInputPipelineTraceConsumerDecision(accepted, ignored);
+		return;
+	}
+	if (g_input && g_input->InProgress())
+	{
+		// Selected suppression keys are fed by their normal passive-grab event;
+		// raw must stand aside or callbacks/buffer would receive them twice.
+		if (LinuxCaptureKeycodeNeedsGrab(d, aKeycode))
+		{
+			AhkInputConsumerDecision owned = {accepted.state.acceptance_seq, 0,
+				AhkInputConsumerKind::INPUTHOOK, AhkInputConsumerAction::IGNORED,
+				AhkInputConsumerReason::SELECTED_GRAB_OWNS_EVENT, false};
+			LinuxInputPipelineTraceConsumerDecision(accepted, owned);
+			return;
+		}
+		if (!AhkSyntheticMayTrigger(AhkConsumerKind::INPUTHOOK
+			, AhkSendTransportClass::EVENT, accepted.event.send_level
+			, (int)g_input->MinSendLevel))
+		{
+			AhkInputConsumerDecision filtered = {accepted.state.acceptance_seq, 0,
+				AhkInputConsumerKind::INPUTHOOK, AhkInputConsumerAction::IGNORED,
+				AhkInputConsumerReason::LEVEL_FILTERED, false};
+			LinuxInputPipelineTraceConsumerDecision(accepted, filtered);
+			return;
+		}
+		LinuxCaptureFeedInput(d, ev, &identity, &accepted);
+		return;
+	}
+	if (!aIsPress || accepted.event.send_level == 0)
+	{
+		AhkInputConsumerDecision ignored = {accepted.state.acceptance_seq, 0,
+			AhkInputConsumerKind::HOTSTRING, AhkInputConsumerAction::IGNORED,
+			accepted.event.send_level == 0
+				? AhkInputConsumerReason::LEVEL_ZERO_EXCLUDED
+				: AhkInputConsumerReason::NONE, false};
+		LinuxInputPipelineTraceConsumerDecision(accepted, ignored);
+		return;
+	}
+	if (identity.text && LinuxInputEventMonotonicUs() < sImePhysicalSuppressUntilUs)
+		return;
+	if (!identity.text)
+	{
+		if (!LinuxIsModifierKey(identity.keysym))
+		{
+			sRawBuffer.clear();
+			sPendingImeHotstringChars.clear();
+		}
+		return;
+	}
+	if (LinuxImeCommitCaptureActive())
+	{
+		sPendingImeHotstringChars.push_back(PendingImeHotstringChar{
+			identity, accepted.event.send_level, LinuxInputEventMonotonicUs() + 500000ULL
+		});
+		return;
+	}
+	bool level_filtered = false;
+	Hotstring *matched = LinuxRawFeedHotstrings(d, identity,
+		accepted.event.send_level, &accepted, &level_filtered);
+	if (!matched)
+	{
+		AhkInputConsumerDecision hs_decision = {accepted.state.acceptance_seq,
+			0, AhkInputConsumerKind::HOTSTRING,
+			level_filtered ? AhkInputConsumerAction::IGNORED
+				: AhkInputConsumerAction::COLLECTED,
+			level_filtered ? AhkInputConsumerReason::LEVEL_FILTERED
+				: AhkInputConsumerReason::HOTSTRING_BUFFERED, false};
+		LinuxInputPipelineTraceConsumerDecision(accepted, hs_decision);
+		LinuxInputPipelineTraceConsumerOutcome(accepted, hs_decision,
+			level_filtered ? "hotstring_level_filtered" : "buffer_updated");
 	}
 }
 
@@ -770,9 +959,6 @@ void LinuxCaptureRawKeyEvent(Display *d, KeyCode aKeycode, bool aIsPress,
 	Time aTime, unsigned int aCoreState, int aSelfLevel, bool aIsSendInput,
 	bool aIsSendPlay, AhkInputSource aSource, uint32_t aDeviceId)
 {
-	bool capture = LinuxCaptureUsesRaw();
-	if (!capture && !LinuxInputEventTraceEnabled())
-		return;
 	XEvent ev;
 	memset(&ev, 0, sizeof(ev));
 	ev.type = aIsPress ? KeyPress : KeyRelease;
@@ -789,46 +975,18 @@ void LinuxCaptureRawKeyEvent(Display *d, KeyCode aKeycode, bool aIsPress,
 		identity.sc, (char32_t)identity.text, !aIsPress, false, aSource,
 		(int16_t)aSelfLevel, aDeviceId, AhkInputOrigin::X11
 	};
-	LinuxInputEventTrace(normalized);
-	// SendInput/SendPlay self copies never feed the Hotstring/InputHook
-	// buffers (Windows unloads its own hook during SendInput; SendPlay uses
-	// the journal) -- check0901 P1-3.
-	if (!capture || aIsSendInput || aIsSendPlay)
-		return;
-	if (g_input && g_input->InProgress())
-	{
-		// Selected suppression keys are fed by their normal passive-grab event;
-		// raw must stand aside or callbacks/buffer would receive them twice.
-		if (LinuxCaptureKeycodeNeedsGrab(d, aKeycode))
-			return;
-		if (!AhkSyntheticMayTrigger(AhkConsumerKind::INPUTHOOK
-			, AhkSendTransportClass::EVENT, aSelfLevel
-			, (int)g_input->MinSendLevel))
-			return; // MinSendLevel: SendEvent-class collects when level >= min.
-		LinuxCaptureFeedInput(d, ev, &identity);
-		return;
-	}
-	if (!aIsPress || aSelfLevel == 0)
-		return;
-	if (identity.text && LinuxInputEventMonotonicUs() < sImePhysicalSuppressUntilUs)
-		return;
-	if (!identity.text)
-	{
-		if (!LinuxIsModifierKey(identity.keysym))
-		{
-			sRawBuffer.clear();
-			sPendingImeHotstringChars.clear();
-		}
-		return;
-	}
-	if (LinuxImeCommitCaptureActive())
-	{
-		sPendingImeHotstringChars.push_back(PendingImeHotstringChar{
-			identity, aSelfLevel, LinuxInputEventMonotonicUs() + 500000ULL
-		});
-		return;
-	}
-	LinuxRawFeedHotstrings(d, identity, aSelfLevel);
+	AhkInputContext context = {AhkInputBackendKind::X11,
+		AhkInputSourceDomain::X11_RAW,
+		aSource == AhkInputSource::PHYSICAL
+			? AhkProvenanceConfidence::DEVICE_DERIVED
+			: (aSource == AhkInputSource::SELF_INJECT
+				? AhkProvenanceConfidence::TIME_CORRELATED
+				: AhkProvenanceConfidence::UNKNOWN),
+		1, ++sRawPipelineSeq, 0, 0, 0, 0, 0, 0, false,
+		aSource == AhkInputSource::PHYSICAL};
+	AhkInputAcceptance accepted = LinuxInputPipelineAccept(normalized, context);
+	LinuxCaptureAcceptedRawKeyEvent(d, aKeycode, aIsPress, aTime, aCoreState,
+		aIsSendInput, aIsSendPlay, accepted, &identity);
 }
 
 bool LinuxInputHookKeyNeedsGrab(Display *d, KeyCode aKeycode)
@@ -971,7 +1129,8 @@ wchar_t LinuxInputHookChar(const AhkLinuxKeyIdentity &aKey)
 // VK/SC arguments remain documented limitations (single-char end keys and
 // the default end behaviour are covered).
 bool LinuxCaptureFeedInput(Display *d, XEvent &ev
-	, const AhkLinuxKeyIdentity *aPredecoded)
+	, const AhkLinuxKeyIdentity *aPredecoded
+	, const AhkInputAcceptance *aAccepted)
 {
 	input_type *active = g_input;
 	if (!active || !active->InProgress())
@@ -983,19 +1142,44 @@ bool LinuxCaptureFeedInput(Display *d, XEvent &ev
 		aPredecoded = &decoded;
 	}
 	const AhkLinuxKeyIdentity &key = *aPredecoded;
+	auto trace_consumer = [&](AhkInputConsumerAction action,
+		AhkInputConsumerReason reason) {
+		if (!aAccepted) return;
+		AhkInputConsumerDecision d = {aAccepted->state.acceptance_seq, 0,
+			AhkInputConsumerKind::INPUTHOOK, action, reason,
+			aAccepted->context.domain == AhkInputSourceDomain::X11_GRAB};
+		LinuxInputPipelineTraceConsumerDecision(*aAccepted, d);
+	};
 	if (ev.type != KeyPress)
 	{
 		// KeyRelease: notify canonical logical VK + set-1 scan code.
 		if (ev.type == KeyRelease && active->ScriptObject && active->ScriptObject->onKeyUp)
-			LinuxInputNotifyQueue(active, NOTIFY_KEYUP, key.vk, key.sc, 0);
+		{
+			LinuxInputNotifyQueue(active, NOTIFY_KEYUP, key.vk, key.sc, 0,
+				false, aAccepted);
+			trace_consumer(AhkInputConsumerAction::CALLBACK_QUEUED,
+				AhkInputConsumerReason::KEY_CALLBACK);
+		}
+		else
+			trace_consumer(AhkInputConsumerAction::COLLECTED,
+				AhkInputConsumerReason::KEY_CALLBACK);
 		return true; // Releases are consumed while the input is active.
 	}
 	if (active->ScriptObject && active->ScriptObject->onKeyDown)
-		LinuxInputNotifyQueue(active, NOTIFY_KEYDOWN, key.vk, key.sc, 0);
+	{
+		LinuxInputNotifyQueue(active, NOTIFY_KEYDOWN, key.vk, key.sc, 0,
+			false, aAccepted);
+		trace_consumer(AhkInputConsumerAction::CALLBACK_QUEUED,
+			AhkInputConsumerReason::KEY_CALLBACK);
+	}
 	// Modifier keys do not join the character stream, but Windows InputHook
 	// still reports them through OnKeyDown/OnKeyUp.
 	if (LinuxIsModifierKey(key.keysym))
+	{
+		trace_consumer(AhkInputConsumerAction::COLLECTED,
+			AhkInputConsumerReason::KEY_CALLBACK);
 		return true;
+	}
 	wchar_t ch = LinuxInputHookChar(key);
 	// KeyDown/EndKey above remain physical-key driven, but preedit text and its
 	// Backspaces never mutate the character buffer. CommitText is fed later.
@@ -1009,6 +1193,8 @@ bool LinuxCaptureFeedInput(Display *d, XEvent &ev
 			--active->BufferLength;
 			active->Buffer[active->BufferLength] = L'\0';
 		}
+		trace_consumer(AhkInputConsumerAction::COLLECTED,
+			AhkInputConsumerReason::CHAR_BUFFERED);
 		return true;
 	}
 	// End keys configured by the InputHook's end-keys argument are stored as
@@ -1025,6 +1211,8 @@ bool LinuxCaptureFeedInput(Display *d, XEvent &ev
 		{
 			bool by_sc = (sc_flags & flag) && (key.sc || !(vk_flags & flag));
 			active->EndByKey(key.vk, key.sc, by_sc, with_shift);
+			trace_consumer(AhkInputConsumerAction::COLLECTED,
+				AhkInputConsumerReason::END_KEY);
 			return true;
 		}
 	}
@@ -1035,19 +1223,29 @@ bool LinuxCaptureFeedInput(Display *d, XEvent &ev
 		// toolkit emits preedit. Preedit/commit drops this candidate; no signal
 		// within 500ms turns it back into an ordinary physical character.
 		if (LinuxImeCommitCaptureActive())
-			LinuxInputNotifyQueue(active, NOTIFY_CHAR, 0, 0, ch, true);
+			LinuxInputNotifyQueue(active, NOTIFY_CHAR, 0, 0, ch, true,
+				aAccepted);
 		else
 		{
 			if (active->ScriptObject && active->ScriptObject->onChar)
-				LinuxInputNotifyQueue(active, NOTIFY_CHAR, 0, 0, ch);
+				LinuxInputNotifyQueue(active, NOTIFY_CHAR, 0, 0, ch, false,
+					aAccepted);
 			TCHAR cbuf[2] = { (TCHAR)ch, 0 };
 			active->CollectChar(cbuf, 1); // Ends on end char/match/limit internally.
 		}
+		trace_consumer(active->ScriptObject && active->ScriptObject->onChar
+			? AhkInputConsumerAction::CALLBACK_QUEUED
+			: AhkInputConsumerAction::COLLECTED,
+			AhkInputConsumerReason::CHAR_BUFFERED);
 	}
+	else
+		trace_consumer(AhkInputConsumerAction::COLLECTED,
+			AhkInputConsumerReason::KEY_CALLBACK);
 	return true;
 }
 
-bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel)
+bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel,
+	const AhkInputAcceptance *aAccepted)
 {
 	if (!LinuxCaptureActive())
 		return false;
@@ -1067,8 +1265,18 @@ bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel)
 		if (!AhkSyntheticMayTrigger(AhkConsumerKind::INPUTHOOK
 			, AhkSendTransportClass::EVENT, aSelfLevel
 			, (int)g_input->MinSendLevel))
+		{
+			if (aAccepted)
+			{
+				AhkInputConsumerDecision filtered = {aAccepted->state.acceptance_seq,
+					0, AhkInputConsumerKind::INPUTHOOK,
+					AhkInputConsumerAction::IGNORED,
+					AhkInputConsumerReason::LEVEL_FILTERED, true};
+				LinuxInputPipelineTraceConsumerDecision(*aAccepted, filtered);
+			}
 			return true;
-		LinuxCaptureFeedInput(d, ev);
+		}
+		LinuxCaptureFeedInput(d, ev, nullptr, aAccepted);
 		return true;
 	}
 
@@ -1169,6 +1377,19 @@ bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel)
 
 	if (best)
 	{
+		if (aAccepted)
+		{
+			uint64_t best_id = 0;
+			for (int i = 0; i < Hotstring::sHotstringCount; ++i)
+				if (Hotstring::shs[i] == best) { best_id = (uint64_t)i + 1; break; }
+			AhkInputConsumerDecision hs = {aAccepted->state.acceptance_seq,
+				best_id, AhkInputConsumerKind::HOTSTRING,
+				AhkInputConsumerAction::TRIGGERED,
+				AhkInputConsumerReason::HOTSTRING_MATCHED, true};
+			LinuxInputPipelineTraceConsumerDecision(*aAccepted, hs);
+			LinuxInputPipelineTraceConsumerOutcome(*aAccepted, hs,
+				"hotstring_held_dispatched");
+		}
 		// The typed trigger text is the buffer (minus the end char when the
 		// match was completed by one).
 		int typed_len = best_endchar ? blen - 1 : blen;
@@ -1214,12 +1435,31 @@ bool LinuxCaptureKeyEvent(Display *d, XEvent &ev, int aSelfLevel)
 					sBuffer[sBufLen++] = ch;
 					sBuffer[sBufLen] = L'\0';
 				}
+				if (aAccepted)
+				{
+					AhkInputConsumerDecision hs = {aAccepted->state.acceptance_seq,
+						0, AhkInputConsumerKind::HOTSTRING,
+						AhkInputConsumerAction::COLLECTED,
+						AhkInputConsumerReason::HOTSTRING_BUFFERED, true};
+					LinuxInputPipelineTraceConsumerDecision(*aAccepted, hs);
+					LinuxInputPipelineTraceConsumerOutcome(*aAccepted, hs,
+						"hotstring_prefix_held");
+				}
 				return true;
 			}
 		}
 	}
 
 	// No match possible: forward everything typed so far and this key.
+	if (aAccepted)
+	{
+		AhkInputConsumerDecision hs = {aAccepted->state.acceptance_seq, 0,
+			AhkInputConsumerKind::HOTSTRING, AhkInputConsumerAction::PASSED,
+			AhkInputConsumerReason::NONE, false};
+		LinuxInputPipelineTraceConsumerDecision(*aAccepted, hs);
+		LinuxInputPipelineTraceConsumerOutcome(*aAccepted, hs,
+			"hotstring_no_match_forwarded");
+	}
 	LinuxCaptureFlush(d);
 	LinuxCaptureForward(d, ev);
 	return true;

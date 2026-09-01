@@ -226,6 +226,42 @@ const char *ActionName(AhkInputDecisionAction a)
 	}
 }
 
+const char *ConsumerName(AhkInputConsumerKind c)
+{
+	return c == AhkInputConsumerKind::INPUTHOOK ? "inputhook" : "hotstring";
+}
+
+const char *ConsumerActionName(AhkInputConsumerAction a)
+{
+	switch (a)
+	{
+	case AhkInputConsumerAction::COLLECTED: return "collected";
+	case AhkInputConsumerAction::CALLBACK_QUEUED: return "callback_queued";
+	case AhkInputConsumerAction::TRIGGERED: return "triggered";
+	case AhkInputConsumerAction::REPLACED: return "replaced";
+	case AhkInputConsumerAction::SUPPRESSED: return "suppressed";
+	case AhkInputConsumerAction::PASSED: return "passed";
+	default: return "ignored";
+	}
+}
+
+const char *ConsumerReasonName(AhkInputConsumerReason r)
+{
+	switch (r)
+	{
+	case AhkInputConsumerReason::LEVEL_FILTERED: return "level_filtered";
+	case AhkInputConsumerReason::TRANSPORT_FILTERED: return "transport_filtered";
+	case AhkInputConsumerReason::KEY_CALLBACK: return "key_callback";
+	case AhkInputConsumerReason::CHAR_BUFFERED: return "char_buffered";
+	case AhkInputConsumerReason::END_KEY: return "end_key";
+	case AhkInputConsumerReason::HOTSTRING_BUFFERED: return "hotstring_buffered";
+	case AhkInputConsumerReason::HOTSTRING_MATCHED: return "hotstring_matched";
+	case AhkInputConsumerReason::LEVEL_ZERO_EXCLUDED: return "level_zero_excluded";
+	case AhkInputConsumerReason::SELECTED_GRAB_OWNS_EVENT: return "selected_grab_owns_event";
+	default: return "none";
+	}
+}
+
 const char *ReasonName(AhkInputDecisionReason r)
 {
 	switch (r)
@@ -279,6 +315,40 @@ void Trace(const char *stage, const AhkInputAcceptance &a,
 			d->backend_can_suppress ? "true" : "false");
 	if (outcome) fprintf(f, ",\"outcome\":\"%s\"", outcome);
 	if (equivalent >= 0) fprintf(f, ",\"equivalent\":%s", equivalent ? "true" : "false");
+	fprintf(f, "}\n");
+	fclose(f);
+}
+
+void TraceConsumer(const char *stage, const AhkInputAcceptance &a,
+	const AhkInputConsumerDecision &d, const char *outcome)
+{
+	const char *path = getenv("AHK_INPUT_PIPELINE_TRACE");
+	if (!path || !*path) return;
+	FILE *f = fopen(path, "a");
+	if (!f) return;
+	fprintf(f,
+		"{\"schema\":1,\"stage\":\"%s\",\"acceptance_seq\":%llu,"
+		"\"backend_seq\":%llu,\"authority_generation\":%llu,"
+		"\"domain\":\"%s\",\"origin\":\"%s\",\"source\":\"%s\","
+		"\"vk\":%u,\"sc\":%u,\"evdev_code\":%u,\"release\":%s,"
+		"\"repeat\":%s,\"send_level\":%d,\"transaction_id\":%llu,"
+		"\"parent_transaction_id\":%llu,\"consumer\":\"%s\","
+		"\"consumer_action\":\"%s\",\"consumer_reason\":\"%s\","
+		"\"registration_id\":%llu,\"suppress_original\":%s",
+		stage, (unsigned long long)a.state.acceptance_seq,
+		(unsigned long long)a.context.backend_sequence,
+		(unsigned long long)a.context.authority_generation,
+		DomainName(a.context.domain), LinuxInputOriginName(a.event.origin),
+		LinuxInputSourceName(a.event.source), (unsigned)a.event.vk,
+		(unsigned)a.event.sc, a.event.evdev_code,
+		a.event.is_release ? "true" : "false",
+		a.event.is_repeat ? "true" : "false", (int)a.event.send_level,
+		(unsigned long long)a.context.transaction_id,
+		(unsigned long long)a.context.parent_transaction_id,
+		ConsumerName(d.consumer), ConsumerActionName(d.action),
+		ConsumerReasonName(d.reason), (unsigned long long)d.registration_id,
+		d.suppress_original ? "true" : "false");
+	if (outcome) fprintf(f, ",\"outcome\":\"%s\"", outcome);
 	fprintf(f, "}\n");
 	fclose(f);
 }
@@ -584,6 +654,18 @@ void LinuxInputPipelineTraceOutcome(const AhkInputAcceptance &a,
 	const AhkInputDecision &d, const char *outcome)
 {
 	Trace("outcome", a, &d, outcome ? outcome : "unknown");
+}
+
+void LinuxInputPipelineTraceConsumerDecision(const AhkInputAcceptance &a,
+	const AhkInputConsumerDecision &d)
+{
+	TraceConsumer("consumer_decision", a, d, nullptr);
+}
+
+void LinuxInputPipelineTraceConsumerOutcome(const AhkInputAcceptance &a,
+	const AhkInputConsumerDecision &d, const char *outcome)
+{
+	TraceConsumer("consumer_outcome", a, d, outcome ? outcome : "unknown");
 }
 
 bool LinuxInputPipelineHasState(AhkInputSourceDomain domain,

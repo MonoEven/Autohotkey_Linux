@@ -886,7 +886,7 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 		// passthrough is done by releasing the active keyboard grab and
 		// re-injecting with XTEST -- check0818 P0-3, documented deviation
 		// from ReplayKeyboard.)
-		if (LinuxCaptureKeyEvent(d, ev, self_level))
+		if (LinuxCaptureKeyEvent(d, ev, self_level, &pipeline_accepted))
 			return;
 		LinuxInjectKey(d, ev);
 	}
