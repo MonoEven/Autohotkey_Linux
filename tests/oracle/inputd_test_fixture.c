@@ -6,8 +6,11 @@
  *
  *   usage: inputd_test_fixture --hold <code> [<code>...]   press and hold
  *          inputd_test_fixture --tap  <code> <code> ...     press+release once
+ *          inputd_test_fixture --seq-trigger COUNT CODE PATH
+ *          inputd_test_fixture --split-trigger CODE DOWN_PATH UP_PATH
+ *          inputd_test_fixture --script-trigger PATH CODE:VALUE...
  *
- * The process keeps the uinput device alive until killed.
+ * Non-tap modes keep the uinput device alive until killed.
  */
 #define _GNU_SOURCE
 #include <fcntl.h>
@@ -106,10 +109,11 @@ int main(int argc, char **argv)
 	int seq_delayed = strcmp(argv[1], "--seq-delayed") == 0;
 	int seq_trigger = strcmp(argv[1], "--seq-trigger") == 0;
 	int split_trigger = strcmp(argv[1], "--split-trigger") == 0;
+	int script_trigger = strcmp(argv[1], "--script-trigger") == 0;
 	int release_after = strcmp(argv[1], "--release-after") == 0;
 	int idle = strcmp(argv[1], "--idle") == 0;
 	if (!hold && !tap && !seq && !seq_delayed && !seq_trigger && !split_trigger
-		&& !release_after && !idle)
+		&& !script_trigger && !release_after && !idle)
 		return 2;
 	int seq_count = 0;
 	if (seq || seq_delayed || seq_trigger)
@@ -129,7 +133,13 @@ int main(int argc, char **argv)
 	if (seq_trigger)
 		seq_trigger_path = argv[4];
 	const char *split_down_path = NULL, *split_up_path = NULL;
+	const char *script_trigger_path = NULL;
 	int split_code = 0;
+	if (script_trigger)
+	{
+		if (argc < 4) return 2;
+		script_trigger_path = argv[2];
+	}
 	if (split_trigger)
 	{
 		if (argc < 5) return 2;
@@ -196,6 +206,23 @@ int main(int argc, char **argv)
 		}
 		for (;;)
 			pause();
+	}
+	if (script_trigger)
+	{
+		/* --script-trigger PATH CODE:VALUE...: deterministic multi-key
+		 * sequence for modifier/wildcard/key-up pipeline tests. */
+		while (access(script_trigger_path, F_OK) != 0) usleep(20000);
+		for (int i = 3; i < argc; ++i)
+		{
+			char *colon = strchr(argv[i], ':');
+			if (!colon) return 2;
+			int code = atoi(argv[i]);
+			int value = atoi(colon + 1);
+			emit(fd, EV_KEY, code, value);
+			emit(fd, EV_SYN, SYN_REPORT, 0);
+			usleep(70000);
+		}
+		for (;;) pause();
 	}
 	if (split_trigger)
 	{

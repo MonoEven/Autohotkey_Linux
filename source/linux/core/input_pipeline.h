@@ -42,6 +42,7 @@ struct AhkInputContext
 	uint64_t parent_transaction_id;
 	uint32_t seat_id;
 	unsigned int modifier_snapshot; // adapter-observed MOD_* bits before event
+	modLR_type modifier_lr_snapshot;
 	bool modifier_snapshot_valid;
 	bool state_authoritative;
 };
@@ -51,7 +52,9 @@ struct AhkInputStateSnapshot
 	uint64_t reducer_generation;
 	uint64_t acceptance_seq;
 	unsigned int modifiers; // logical Windows MOD_* bits after this event.
+	modLR_type modifiers_lr;
 	unsigned int physical_modifiers;
+	modLR_type physical_modifiers_lr;
 	bool event_was_down;
 	bool event_was_repeat;
 };
@@ -83,6 +86,7 @@ enum class AhkInputDecisionReason : uint8_t
 {
 	NONE,
 	ORDINARY_HOTKEY,
+	KEYUP_OWNERSHIP,
 	LEVEL_FILTERED,
 	BACKEND_LIMIT,
 	LEGACY_COMBO,

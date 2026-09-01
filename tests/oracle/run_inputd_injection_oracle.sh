@@ -151,13 +151,21 @@ SetTimer(() => ExitApp(7), -6000)
 EOF
 run_gate() { # level expected_rc
   local level=$1 expect_rc=$2
-  rm -f "$WORK/gate-result.txt"
+  local before_sub
+  before_sub=$(grep -c 'v2 subscribed' "$WORK/inj.log" 2>/dev/null || true)
+  rm -f "$WORK/gate-result.txt" "$WORK/gate.log"
   ( cd "$WORK" && AHK_INPUT_BACKEND=evdev AHK_INPUTD_SOCKET="$WORK/inja.sock" \
       xvfb-run -a "$AHK" gate.ahk "$WORK/gate-result.txt" >"$WORK/gate.log" 2>&1 ) &
   local apid=$!
   echo $apid >"$WORK/gate.pid"
-  for _ in $(seq 1 200); do grep -q "broker mode active" "$WORK/gate.log" 2>/dev/null && break; sleep .05; done
-  sleep .3
+  for _ in $(seq 1 200); do
+    current_sub=$(grep -c 'v2 subscribed' "$WORK/inj.log" 2>/dev/null || true)
+    grep -q "broker mode active" "$WORK/gate.log" 2>/dev/null \
+      && [ "$current_sub" -gt "$before_sub" ] && break
+    sleep .05
+  done
+  grep -q "broker mode active" "$WORK/gate.log"
+  sleep .1
   sudo -n "$PROBE" "$WORK/inja.sock" inject $KEY_F7 "$level" >/dev/null
   for _ in $(seq 1 200); do
     [ -s "$WORK/gate-result.txt" ] && break
@@ -195,12 +203,14 @@ expect_contains inj_commit_balance_up "code=65 phase=1 value=0" "$bal"
 "$PROBE" "$WORK/inja.sock" watch "65:0" --timeout-ms 9000 >"$WORK/crash.out" 2>&1 &
 echo $! >"$WORK/crash.pid"
 sleep .4
-sudo -n "$PROBE" "$WORK/inja.sock" inject $KEY_F7 3 --down-only --no-commit --stay 1500 --txn 83 >"$WORK/crash-inj.out" 2>&1 &
+set +e
+sudo -n "$PROBE" "$WORK/inja.sock" inject $KEY_F7 3 --down-only --no-commit \
+  --crash-after-events --txn 83 >"$WORK/crash-inj.out" 2>&1 &
 echo $! >"$WORK/crash-inj.pid"
-for _ in $(seq 1 100); do grep -q "status=8" "$WORK/crash-inj.out" 2>/dev/null && break; sleep .05; done
-sleep .5
-kill_probe "txn 83"  # SIGKILL the probe: broker must auto-abort + balance.
-sleep .5
+wait "$(cat "$WORK/crash-inj.pid")"
+set -e
+for _ in $(seq 1 100); do grep -q "aborted" "$WORK/inj.log" 2>/dev/null && break; sleep .05; done
+sleep .2
 sudo -n kill "$(cat "$WORK/crash.pid")" 2>/dev/null || true
 wait "$(cat "$WORK/crash.pid")" 2>/dev/null || true
 wait "$(cat "$WORK/crash-inj.pid")" 2>/dev/null || true

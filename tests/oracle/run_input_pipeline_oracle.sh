@@ -18,11 +18,11 @@ cc -O2 -Wall -Wextra "$ROOT/tests/oracle/inputd_v2_probe.c" -o "$PROBE"
 cc -O2 -Wall -Wextra "$ROOT/tests/oracle/inputd_test_fixture.c" -o "$FIXTURE"
 sudo -n true 2>/dev/null || { echo "input pipeline oracle needs sudo -n"; exit 1; }
 for p in $(pgrep -x ahk-inputd); do sudo -n kill -9 "$p" 2>/dev/null || true; done
-sudo -n pkill -9 -x inputd-test-fixture 2>/dev/null || true
+sudo -n pkill -9 -f "^$FIXTURE " 2>/dev/null || true
 FIXTURE_PID=""
 cleanup() {
   sudo -n pkill -9 -x ahk-inputd 2>/dev/null || true
-  sudo -n pkill -9 -x inputd-test-fixture 2>/dev/null || true
+  sudo -n pkill -9 -f "^$FIXTURE " 2>/dev/null || true
   [ -n "$FIXTURE_PID" ] && sudo -n kill -9 "$FIXTURE_PID" 2>/dev/null || true
 }
 trap cleanup EXIT HUP INT TERM
@@ -110,7 +110,7 @@ grep -q '^physical=1 source=inputd reducer=' "$WORK/physical.out"
 grep -q '"source":"physical"' "$WORK/physical.trace"
 grep -q 'src=0 conf=0 level=-1' "$WORK/physical-observer.log"
 sudo -n pkill -9 -x ahk-inputd 2>/dev/null || true
-sudo -n pkill -9 -x inputd-test-fixture 2>/dev/null || true
+sudo -n pkill -9 -f "^$FIXTURE " 2>/dev/null || true
 sudo -n kill -9 "$BP" "$FP" 2>/dev/null || true
 FIXTURE_PID=""
 sleep .2

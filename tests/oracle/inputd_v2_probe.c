@@ -374,6 +374,7 @@ int main(int argc, char **argv)
 	int inject_down_only = 0;
 	int inject_begin_only = 0;
 	int inject_no_commit = 0;
+	int inject_crash_after_events = 0;
 	int inject_pairs = 1;
 	long inject_stay_ms = 0;
 	int i;
@@ -391,6 +392,7 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[i], "--down-only")) inject_down_only = 1;
 		else if (!strcmp(argv[i], "--begin-only")) inject_begin_only = 1;
 		else if (!strcmp(argv[i], "--no-commit")) inject_no_commit = 1;
+		else if (!strcmp(argv[i], "--crash-after-events")) inject_crash_after_events = 1;
 		else if (!strcmp(argv[i], "--pairs") && i + 1 < argc) inject_pairs = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "--stay") && i + 1 < argc) inject_stay_ms = atol(argv[++i]);
 		else if (!strcmp(argv[i], "--nonce") && i + 1 < argc)
@@ -785,6 +787,11 @@ int main(int argc, char **argv)
 					}
 				}
 
+			if (inject_crash_after_events)
+			{
+				fflush(stdout);
+				_exit(99); /* no ABORT/COMMIT: broker observes owner crash */
+			}
 			if (inject_no_commit)
 			{
 				if (inject_stay_ms > 0)

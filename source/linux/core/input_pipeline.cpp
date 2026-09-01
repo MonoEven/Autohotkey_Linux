@@ -37,6 +37,8 @@ struct SeatState
 	unsigned char physical_vk[256 / 8];
 	unsigned char logical_evdev[KEY_CNT / 8];
 	unsigned char physical_evdev[KEY_CNT / 8];
+	uint64_t keyup_owner[KEY_CNT];
+	unsigned char keyup_suppress[KEY_CNT];
 };
 
 SeatState sSeats[16] = {};
@@ -100,6 +102,43 @@ void SetModifierFromEvdev(unsigned char *bits, unsigned int code, bool down)
 	case KEY_LEFTMETA: SetBit(bits, 256, 0x5B, down); break;
 	case KEY_RIGHTMETA: SetBit(bits, 256, 0x5C, down); break;
 	}
+	RecomputeGenericModifiers(bits);
+}
+
+modLR_type ModifiersLR(const unsigned char *bits)
+{
+	modLR_type lr = 0;
+	if (GetBit(bits, 256, 0xA2)) lr |= MOD_LCONTROL;
+	if (GetBit(bits, 256, 0xA3)) lr |= MOD_RCONTROL;
+	if (GetBit(bits, 256, 0xA0)) lr |= MOD_LSHIFT;
+	if (GetBit(bits, 256, 0xA1)) lr |= MOD_RSHIFT;
+	if (GetBit(bits, 256, 0xA4)) lr |= MOD_LALT;
+	if (GetBit(bits, 256, 0xA5)) lr |= MOD_RALT;
+	if (GetBit(bits, 256, 0x5B)) lr |= MOD_LWIN;
+	if (GetBit(bits, 256, 0x5C)) lr |= MOD_RWIN;
+	return lr;
+}
+
+unsigned GenericFromLR(modLR_type lr)
+{
+	unsigned m = 0;
+	if (lr & (MOD_LCONTROL | MOD_RCONTROL)) m |= MOD_CONTROL;
+	if (lr & (MOD_LSHIFT | MOD_RSHIFT)) m |= MOD_SHIFT;
+	if (lr & (MOD_LALT | MOD_RALT)) m |= MOD_ALT;
+	if (lr & (MOD_LWIN | MOD_RWIN)) m |= MOD_WIN;
+	return m;
+}
+
+void ApplyLRSnapshot(unsigned char *bits, modLR_type lr)
+{
+	SetBit(bits, 256, 0xA2, (lr & MOD_LCONTROL) != 0);
+	SetBit(bits, 256, 0xA3, (lr & MOD_RCONTROL) != 0);
+	SetBit(bits, 256, 0xA0, (lr & MOD_LSHIFT) != 0);
+	SetBit(bits, 256, 0xA1, (lr & MOD_RSHIFT) != 0);
+	SetBit(bits, 256, 0xA4, (lr & MOD_LALT) != 0);
+	SetBit(bits, 256, 0xA5, (lr & MOD_RALT) != 0);
+	SetBit(bits, 256, 0x5B, (lr & MOD_LWIN) != 0);
+	SetBit(bits, 256, 0x5C, (lr & MOD_RWIN) != 0);
 	RecomputeGenericModifiers(bits);
 }
 
@@ -192,6 +231,7 @@ const char *ReasonName(AhkInputDecisionReason r)
 	switch (r)
 	{
 	case AhkInputDecisionReason::ORDINARY_HOTKEY: return "ordinary_hotkey";
+	case AhkInputDecisionReason::KEYUP_OWNERSHIP: return "keyup_ownership";
 	case AhkInputDecisionReason::LEVEL_FILTERED: return "level_filtered";
 	case AhkInputDecisionReason::BACKEND_LIMIT: return "backend_limit";
 	case AhkInputDecisionReason::LEGACY_COMBO: return "legacy_combo";
@@ -215,8 +255,8 @@ void Trace(const char *stage, const AhkInputAcceptance &a,
 		"\"backend_seq\":%llu,\"authority_generation\":%llu,"
 		"\"domain\":\"%s\",\"origin\":\"%s\",\"source\":\"%s\","
 		"\"vk\":%u,\"sc\":%u,\"evdev_code\":%u,\"release\":%s,"
-		"\"repeat\":%s,\"send_level\":%d,\"mods\":%u,"
-		"\"physical_mods\":%u,\"transaction_id\":%llu,"
+		"\"repeat\":%s,\"send_level\":%d,\"mods\":%u,\"mods_lr\":%u,"
+		"\"physical_mods\":%u,\"physical_mods_lr\":%u,\"transaction_id\":%llu,"
 		"\"parent_transaction_id\":%llu,\"duplicate\":%s",
 		stage, (unsigned long long)a.state.acceptance_seq,
 		(unsigned long long)a.context.backend_sequence,
@@ -226,7 +266,8 @@ void Trace(const char *stage, const AhkInputAcceptance &a,
 		(unsigned)a.event.sc, a.event.evdev_code,
 		a.event.is_release ? "true" : "false",
 		a.event.is_repeat ? "true" : "false", (int)a.event.send_level,
-		a.state.modifiers, a.state.physical_modifiers,
+		a.state.modifiers, (unsigned)a.state.modifiers_lr,
+		a.state.physical_modifiers, (unsigned)a.state.physical_modifiers_lr,
 		(unsigned long long)a.context.transaction_id,
 		(unsigned long long)a.context.parent_transaction_id,
 		a.duplicate ? "true" : "false");
@@ -269,10 +310,13 @@ AhkInputAcceptance LinuxInputPipelineAccept(const AhkInputEvent &aEvent,
 		? GetBit(seat.logical_evdev, KEY_CNT, aEvent.evdev_code)
 		: GetBit(seat.logical_vk, 256, (unsigned)aEvent.vk);
 	out.event.is_repeat = aEvent.is_repeat || (down && was_down);
-	if (!out.duplicate)
+	bool mutate_state = !out.duplicate
+		&& !(out.event.is_release && out.event.is_repeat);
+	if (mutate_state)
 	{
 		if (aContext.modifier_snapshot_valid)
 		{
+			ApplyLRSnapshot(seat.logical_vk, aContext.modifier_lr_snapshot);
 			SetBit(seat.logical_vk, 256, 0x10,
 				(aContext.modifier_snapshot & MOD_SHIFT) != 0);
 			SetBit(seat.logical_vk, 256, 0x11,
@@ -289,14 +333,20 @@ AhkInputAcceptance LinuxInputPipelineAccept(const AhkInputEvent &aEvent,
 			SetBit(seat.logical_vk, 256, (unsigned)aEvent.vk, down);
 		RecomputeGenericModifiers(seat.logical_vk);
 		if (aContext.modifier_snapshot_valid)
+		{
+			ApplyLRSnapshot(seat.logical_vk, aContext.modifier_lr_snapshot);
 			ApplyModifierSnapshot(seat.logical_vk, aContext.modifier_snapshot,
 				aEvent.evdev_code);
+		}
 		if (aContext.state_authoritative)
 		{
 			seat.physical_known = true;
 			if (aContext.modifier_snapshot_valid)
+			{
+				ApplyLRSnapshot(seat.physical_vk, aContext.modifier_lr_snapshot);
 				ApplyModifierSnapshot(seat.physical_vk,
 					aContext.modifier_snapshot, aEvent.evdev_code);
+			}
 			if (aEvent.evdev_code)
 				SetBit(seat.physical_evdev, KEY_CNT, aEvent.evdev_code, down);
 			SetModifierFromEvdev(seat.physical_vk, aEvent.evdev_code, down);
@@ -304,20 +354,100 @@ AhkInputAcceptance LinuxInputPipelineAccept(const AhkInputEvent &aEvent,
 				SetBit(seat.physical_vk, 256, (unsigned)aEvent.vk, down);
 			RecomputeGenericModifiers(seat.physical_vk);
 			if (aContext.modifier_snapshot_valid)
+			{
+				ApplyLRSnapshot(seat.physical_vk, aContext.modifier_lr_snapshot);
 				ApplyModifierSnapshot(seat.physical_vk,
 					aContext.modifier_snapshot, aEvent.evdev_code);
+			}
 		}
 		++seat.reducer_generation;
 	}
 	out.state.reducer_generation = seat.reducer_generation;
 	out.state.modifiers = Modifiers(seat.logical_vk);
+	out.state.modifiers_lr = ModifiersLR(seat.logical_vk);
 	out.state.physical_modifiers = Modifiers(seat.physical_vk);
+	out.state.physical_modifiers_lr = ModifiersLR(seat.physical_vk);
 	out.state.event_was_down = was_down;
 	out.state.event_was_repeat = out.event.is_repeat;
 	Trace("capture", out);
 	Trace("reduce", out);
 	LinuxInputEventTrace(out.event); // legacy normalized trace remains supported.
 	return out;
+}
+
+static int CountBits(modLR_type value)
+{
+	int count = 0;
+	for (unsigned v = (unsigned)value; v; v >>= 1) count += (int)(v & 1);
+	return count;
+}
+
+static bool MatchModifiers(Hotkey *hk, const AhkInputStateSnapshot &state)
+{
+	modLR_type required_lr = hk->mModifiersLR;
+	unsigned required = (unsigned)hk->mModifiers | GenericFromLR(required_lr);
+	if ((state.modifiers & required) != required)
+		return false;
+	if ((state.modifiers_lr & required_lr) != required_lr)
+		return false;
+	if (!hk->mAllowExtraModifiers)
+	{
+		if (state.modifiers_lr & ~hk->mModifiersConsolidatedLR)
+			return false;
+		if (state.modifiers & ~required)
+			return false;
+	}
+	return true;
+}
+
+static bool IsPassthrough(Hotkey *hk, HotkeyVariant *vp)
+{
+	return (hk->mNoSuppress & (NO_SUPPRESS_PREFIX
+		| AT_LEAST_ONE_VARIANT_HAS_TILDE | AT_LEAST_ONE_COMBO_HAS_TILDE))
+		|| (vp->mNoSuppress & (NO_SUPPRESS_PREFIX
+			| AT_LEAST_ONE_VARIANT_HAS_TILDE));
+}
+
+static bool FindBestHotkey(const AhkInputAcceptance &a,
+	AhkInputBackendKind backend, bool release, AhkInputMatch &match,
+	bool &level_filtered)
+{
+	memset(&match, 0, sizeof(match));
+	int best = 0x7fffffff;
+	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
+	{
+		Hotkey *hk = Hotkey::shk[i];
+		if (!hk || hk->mModifierVK || hk->mModifierSC
+			|| hk->IsCompletelyDisabled()
+			|| !LinuxInputBackendHotkeyAssigned(hk, backend)
+			|| (bool)hk->mKeyUp != release)
+			continue;
+		bool key_match = hk->mVK
+			? (unsigned int)hk->mVK == (unsigned int)a.event.vk
+			: hk->mSC && hk->mSC == a.event.sc;
+		if (!key_match || !MatchModifiers(hk, a.state)
+			|| !AhkBackendHotkeyEnabled(hk))
+			continue;
+		HotkeyVariant *vp = hk->FindVariant();
+		if (!vp || !vp->mEnabled || !hk->PerformIsAllowed(*vp))
+			continue;
+		if (a.event.send_level >= 0
+			&& !AhkSyntheticMayTrigger(AhkConsumerKind::HOTKEY,
+				AhkSendTransportClass::EVENT, a.event.send_level,
+				(int)vp->mInputLevel))
+		{
+			level_filtered = true;
+			continue;
+		}
+		int score = (hk->mAllowExtraModifiers ? 8 : 0)
+			+ CountBits(hk->mModifiersConsolidatedLR);
+		if (score < best)
+		{
+			best = score;
+			match = AhkInputMatch{hk, vp, (uint64_t)i + 1};
+		}
+	}
+	return match.hotkey != nullptr;
 }
 
 bool LinuxInputPipelineMatchSingleHotkey(const AhkInputAcceptance &a,
@@ -328,56 +458,86 @@ bool LinuxInputPipelineMatchSingleHotkey(const AhkInputAcceptance &a,
 	decision = AhkInputDecision{a.state.acceptance_seq, 0,
 		AhkInputDecisionAction::NO_MATCH, AhkInputDecisionReason::NONE,
 		can_suppress};
-	if (a.duplicate)
+	if (a.duplicate || (a.event.is_release && a.event.is_repeat))
 	{
 		decision.action = AhkInputDecisionAction::DUPLICATE_IGNORED;
 		decision.reason = AhkInputDecisionReason::DUPLICATE_IDENTITY;
 		Trace("match", a, &decision);
 		return false;
 	}
+	SeatState &seat = Seat(a.context);
+	unsigned int code = a.event.evdev_code;
 	bool level_filtered = false;
-	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
+	bool found = !(a.event.is_release && a.event.is_repeat)
+		&& FindBestHotkey(a, backend, a.event.is_release, match,
+			level_filtered);
+	uint64_t stored_owner = code < KEY_CNT ? seat.keyup_owner[code] : 0;
+	bool stored_suppress = code < KEY_CNT && seat.keyup_suppress[code];
+	if (a.event.is_release && stored_owner && found
+		&& match.registration_id != stored_owner)
 	{
-		Hotkey *hk = Hotkey::shk[i];
-		if (!hk || hk->mModifierVK || hk->mModifierSC || hk->mModifiersLR
-			|| hk->mAllowExtraModifiers || hk->IsCompletelyDisabled()
-			|| !LinuxInputBackendHotkeyAssigned(hk, backend))
-			continue;
-		if ((bool)hk->mKeyUp != a.event.is_release)
-			continue;
-		bool key_match = hk->mVK
-			? (unsigned int)hk->mVK == (unsigned int)a.event.vk
-			: hk->mSC && hk->mSC == a.event.sc;
-		if (!key_match) continue;
-		unsigned req = (unsigned)hk->mModifiers;
-		if ((a.state.modifiers & req) != req) continue;
-		if (!hk->mAllowExtraModifiers && (a.state.modifiers & ~req)) continue;
-		if (!AhkBackendHotkeyEnabled(hk)) continue;
-		HotkeyVariant *vp = hk->FindVariant();
-		if (!vp || !vp->mEnabled || !hk->PerformIsAllowed(*vp)) continue;
-		if (a.event.send_level >= 0
-			&& !AhkSyntheticMayTrigger(AhkConsumerKind::HOTKEY,
-				AhkSendTransportClass::EVENT, a.event.send_level,
-				(int)vp->mInputLevel))
+		memset(&match, 0, sizeof(match));
+		found = false;
+	}
+
+	if (!a.event.is_release && !a.event.is_repeat && code < KEY_CNT)
+	{
+		AhkInputMatch up_match;
+		bool up_filtered = false;
+		if (FindBestHotkey(a, backend, true, up_match, up_filtered))
 		{
-			level_filtered = true;
-			continue;
+			bool owner_suppress = backend == AhkInputBackendKind::X11
+				|| (can_suppress && !IsPassthrough(up_match.hotkey,
+					up_match.variant));
+			seat.keyup_owner[code] = up_match.registration_id;
+			seat.keyup_suppress[code] = owner_suppress ? 1 : 0;
+			stored_suppress = owner_suppress;
+			if (!found)
+			{
+				decision.registration_id = up_match.registration_id;
+				decision.action = owner_suppress
+					? AhkInputDecisionAction::SUPPRESS_ORIGINAL
+					: AhkInputDecisionAction::PASS_ORIGINAL;
+				decision.reason = AhkInputDecisionReason::KEYUP_OWNERSHIP;
+				Trace("match", a, &decision);
+				return false;
+			}
 		}
-		match = AhkInputMatch{hk, vp, (uint64_t)i + 1};
+		level_filtered = level_filtered || up_filtered;
+	}
+
+	if (found)
+	{
 		decision.registration_id = match.registration_id;
-		bool passthrough = (hk->mNoSuppress & (NO_SUPPRESS_PREFIX
-			| AT_LEAST_ONE_VARIANT_HAS_TILDE | AT_LEAST_ONE_COMBO_HAS_TILDE))
-			|| (vp->mNoSuppress & (NO_SUPPRESS_PREFIX
-				| AT_LEAST_ONE_VARIANT_HAS_TILDE));
-		decision.action = can_suppress && !passthrough
-			? AhkInputDecisionAction::TRIGGER_SUPPRESS
+		bool suppress = can_suppress && !IsPassthrough(match.hotkey,
+			match.variant);
+		if (a.event.is_release && stored_suppress)
+			suppress = true;
+		if (!a.event.is_release && stored_suppress)
+			suppress = true;
+		decision.action = suppress ? AhkInputDecisionAction::TRIGGER_SUPPRESS
 			: AhkInputDecisionAction::TRIGGER_PASS;
 		decision.reason = AhkInputDecisionReason::ORDINARY_HOTKEY;
+		if (a.event.is_release && code < KEY_CNT)
+		{
+			seat.keyup_owner[code] = 0;
+			seat.keyup_suppress[code] = 0;
+		}
 		Trace("match", a, &decision);
 		return true;
 	}
-	decision.reason = level_filtered ? AhkInputDecisionReason::LEVEL_FILTERED
-		: AhkInputDecisionReason::NONE;
+
+	if (a.event.is_release && code < KEY_CNT && stored_suppress)
+	{
+		decision.registration_id = seat.keyup_owner[code];
+		decision.action = AhkInputDecisionAction::SUPPRESS_ORIGINAL;
+		decision.reason = AhkInputDecisionReason::KEYUP_OWNERSHIP;
+		seat.keyup_owner[code] = 0;
+		seat.keyup_suppress[code] = 0;
+	}
+	else
+		decision.reason = level_filtered ? AhkInputDecisionReason::LEVEL_FILTERED
+			: AhkInputDecisionReason::NONE;
 	Trace("match", a, &decision);
 	return false;
 }

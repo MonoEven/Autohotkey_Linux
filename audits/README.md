@@ -106,6 +106,21 @@ Closures since check0901 (evidence in the linked oracles):
   Ctrl+F8, authoritative physical GetKeyState, and zero mirror mismatch.
   Custom combo/remap suppression and Hotstring/InputHook callback migration
   remain M5b.
+- **M5b-1 (wildcard/LR/key-up matcher + suppression decisions)** — the
+  normalized reducer now retains left/right Ctrl/Shift/Alt/Win, adapter LR
+  snapshots, and per-key key-up ownership. Broker clients subscribe modifier
+  keys as observe-only state inputs. The common matcher implements the X11
+  unique-resolution contract: exact beats wildcard; fewer consolidated side
+  allowances wins; ties keep registration order; wrong-side LR is rejected.
+  Key-up registrations claim the down phase, keep a balanced suppression pair,
+  and fire only on release. The EVDEV legacy matcher independently implements
+  the same scoring for mirror validation. Oracle:
+  [run_input_pipeline_special_oracle.sh](../tests/oracle/run_input_pipeline_special_oracle.sh)
+  runs wrong/correct-side Ctrl+F7, Shift exact-vs-wildcard F8, Alt extra-modifier
+  wildcard, and F9-up through inputd and X11 in active/mirror/legacy modes,
+  checking callback/SendLevel equality, decision traces and zero mirror
+  mismatch. Broker dynamic HotIf suppression execution, custom combo/remap,
+  Hotstring and InputHook callback decisions remain later M5b slices.
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),

@@ -754,6 +754,8 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 	}
 
 	bool is_up = ev.type == KeyRelease;
+	unsigned int evmods = ev.xkey.state & (ControlMask | ShiftMask | sAltMask | sSuperMask);
+	modLR_type evlr = LinuxEventLR(d, evmods);
 	AhkLinuxKeyIdentity pipeline_identity;
 	memset(&pipeline_identity, 0, sizeof(pipeline_identity));
 	if (!LinuxKeyModelX11Decode(d, (KeyCode)ev.xkey.keycode,
@@ -768,11 +770,14 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 	AhkInputSource pipeline_source = is_physical ? AhkInputSource::PHYSICAL
 		: (self_injected ? AhkInputSource::SELF_INJECT
 			: AhkInputSource::OTHER_INJECT);
+	bool pipeline_repeat_release = is_up && !sDetectableAutoRepeat
+		&& LinuxIsSyntheticRelease(ev);
 	AhkInputEvent pipeline_event = {
 		LinuxInputEventMonotonicUs(), pipeline_identity.evdev_code,
 		pipeline_identity.vk, pipeline_identity.sc,
-		(char32_t)pipeline_identity.text, is_up, false, pipeline_source,
-		(int16_t)(self_injected ? self_level : -1), 0, AhkInputOrigin::X11
+		(char32_t)pipeline_identity.text, is_up, pipeline_repeat_release,
+		pipeline_source, (int16_t)(self_injected ? self_level : -1), 0,
+		AhkInputOrigin::X11
 	};
 	unsigned int pipeline_mods = (ev.xkey.state & ShiftMask ? MOD_SHIFT : 0)
 		| (ev.xkey.state & ControlMask ? MOD_CONTROL : 0)
@@ -784,7 +789,7 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 			: (self_injected ? AhkProvenanceConfidence::TIME_CORRELATED
 				: AhkProvenanceConfidence::UNKNOWN),
 		1, ++sX11PipelineSeq, 0, 0, 0, 0,
-		pipeline_mods, true, is_physical};
+		pipeline_mods, evlr, true, is_physical};
 	AhkInputAcceptance pipeline_accepted = LinuxInputPipelineAccept(
 		pipeline_event, pipeline_context);
 	AhkInputMatch pipeline_match;
@@ -794,10 +799,7 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 		pipeline_decision, true);
 
 	// The grab may activate on any lock state; the event's state then
-	// carries those bits.  Compare only the primary modifier slots.
-	unsigned int evmods = ev.xkey.state & (ControlMask | ShiftMask | sAltMask | sSuperMask);
-	modLR_type evlr = LinuxEventLR(d, evmods);
-
+	// carries those bits. Generic and LR snapshots were normalized above.
 	Hotkey *hk_fire = nullptr;
 	HotkeyVariant *vp_fire = nullptr;
 	LinuxFindHotkey(d, (unsigned int)ev.xkey.keycode, evmods, evlr, is_up, hk_fire, vp_fire);
@@ -816,16 +818,27 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 
 	LinuxInputPipelineTraceLegacyComparison(pipeline_accepted,
 		pipeline_found ? &pipeline_match : nullptr, hk_fire, vp_fire);
-	if (LinuxInputPipelineActive() && pipeline_found)
+	bool pipeline_handled = pipeline_found
+		|| pipeline_decision.reason == AhkInputDecisionReason::KEYUP_OWNERSHIP
+		|| pipeline_decision.action == AhkInputDecisionAction::DUPLICATE_IGNORED;
+	if (LinuxInputPipelineActive() && pipeline_handled)
 	{
 		LinuxInputPipelineTraceDecision(pipeline_accepted, pipeline_decision);
-		if (pipeline_decision.action == AhkInputDecisionAction::TRIGGER_PASS)
+		if (pipeline_decision.action == AhkInputDecisionAction::TRIGGER_PASS
+			|| pipeline_decision.action == AhkInputDecisionAction::PASS_ORIGINAL)
 			LinuxInjectKey(d, ev);
-		LinuxInputPipelineDispatch(pipeline_accepted, pipeline_match,
-			pipeline_decision);
+		if (pipeline_found)
+			LinuxInputPipelineDispatch(pipeline_accepted, pipeline_match,
+				pipeline_decision);
+		const char *outcome = pipeline_decision.action
+			== AhkInputDecisionAction::DUPLICATE_IGNORED ? "duplicate_ignored"
+			: (pipeline_found
+				? (pipeline_decision.action == AhkInputDecisionAction::TRIGGER_PASS
+					? "triggered_pass" : "triggered_suppressed")
+				: (pipeline_decision.action == AhkInputDecisionAction::SUPPRESS_ORIGINAL
+					? "keyup_owned_suppressed" : "keyup_owned_pass"));
 		LinuxInputPipelineTraceOutcome(pipeline_accepted, pipeline_decision,
-			pipeline_decision.action == AhkInputDecisionAction::TRIGGER_PASS
-				? "triggered_pass" : "triggered_suppressed");
+			outcome);
 		return;
 	}
 

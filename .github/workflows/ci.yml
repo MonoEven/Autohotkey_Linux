@@ -110,6 +110,10 @@ jobs:
         if: matrix.build == 'core'
         run: bash tests/oracle/run_input_pipeline_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd" "$BUILD_DIR/source/linux/core/ahk_core"
 
+      - name: Pipeline wildcard, LR and key-up oracle (check0901 M5b)
+        if: matrix.build == 'core'
+        run: bash tests/oracle/run_input_pipeline_special_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd" "$BUILD_DIR/source/linux/core/ahk_core"
+
       - name: Inputd systemd socket activation oracle
         if: matrix.build == 'core'
         run: |

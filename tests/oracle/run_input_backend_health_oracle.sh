@@ -35,6 +35,7 @@ cleanup() {
   sleep .15
   for pidf in "$WORK"/*.pid; do [ -f "$pidf" ] && sudo -n kill -9 "$(cat "$pidf")" 2>/dev/null || true; done
   sudo -n pkill -9 -x ahk-inputd 2>/dev/null || true
+  sudo -n pkill -9 -f "^$FIXTURE " 2>/dev/null || true
 }
 trap cleanup EXIT HUP INT TERM
 expect() { local n=$1 e=$2 a=$3; if [ "$e" = "$a" ]; then PASS=$((PASS+1)); echo "PASS $n [$a]"; else FAIL=$((FAIL+1)); FAILURES="$FAILURES $n(got=[$a])"; echo "FAIL $n expected=[$e] got=[$a]"; fi; }
@@ -53,7 +54,7 @@ start_broker() { # name [env...] [--extra args]
 }
 start_fixture() { # name mode args...
   local name=$1; shift; local devfile="$WORK/$name.dev"
-  sudo -n env AHK_FIXTURE_NAME="$name" AHK_FIXTURE_DEVPATH="$devfile" "$FIXTURE" "$@" >"$WORK/$name-fixture.log" 2>&1 &
+  sudo -n env AHK_FIXTURE_NAME="$name-$$" AHK_FIXTURE_DEVPATH="$devfile" "$FIXTURE" "$@" >"$WORK/$name-fixture.log" 2>&1 &
   echo $! >"$WORK/$name-fixture.pid"
   for _ in $(seq 1 100); do [ -s "$devfile" ] && break; sleep .03; done
   local node=$(cat "$devfile")

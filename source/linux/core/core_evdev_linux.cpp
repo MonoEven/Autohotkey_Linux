@@ -120,6 +120,37 @@ void SetDown(unsigned int vk, bool down)
 bool IsDown(unsigned int vk) { return vk < 256 && (sDown[vk / 8] & (1u << (vk % 8))) != 0; }
 
 // Current modifier state as the Windows MOD_* bits (hotkey.mModifiers).
+modLR_type ActiveModsLR()
+{
+	modLR_type lr = 0;
+	if (IsDown(0xA2)) lr |= MOD_LCONTROL;
+	if (IsDown(0xA3)) lr |= MOD_RCONTROL;
+	if (IsDown(0xA0)) lr |= MOD_LSHIFT;
+	if (IsDown(0xA1)) lr |= MOD_RSHIFT;
+	if (IsDown(0xA4)) lr |= MOD_LALT;
+	if (IsDown(0xA5)) lr |= MOD_RALT;
+	if (IsDown(0x5B)) lr |= MOD_LWIN;
+	if (IsDown(0x5C)) lr |= MOD_RWIN;
+	return lr;
+}
+
+unsigned int GenericModsForLR(modLR_type lr)
+{
+	unsigned int m = 0;
+	if (lr & (MOD_LCONTROL | MOD_RCONTROL)) m |= MOD_CONTROL;
+	if (lr & (MOD_LSHIFT | MOD_RSHIFT)) m |= MOD_SHIFT;
+	if (lr & (MOD_LALT | MOD_RALT)) m |= MOD_ALT;
+	if (lr & (MOD_LWIN | MOD_RWIN)) m |= MOD_WIN;
+	return m;
+}
+
+int ModifierSideCount(modLR_type lr)
+{
+	int count = 0;
+	for (unsigned v = (unsigned)lr; v; v >>= 1) count += (int)(v & 1);
+	return count;
+}
+
 unsigned int ActiveMods()
 {
 	unsigned int m = 0;
@@ -524,7 +555,9 @@ bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat, int aSendLeve
 	if (vk)
 		SetDown(vk, down);
 	unsigned int mods = ActiveMods();
-	EvTrace("ev %u vk=%u down=%d mods=%u", evcode, vk, (int)down, mods);
+	modLR_type mods_lr = ActiveModsLR();
+	EvTrace("ev %u vk=%u down=%d mods=%u lr=%u", evcode, vk, (int)down,
+		mods, (unsigned)mods_lr);
 	int combo_result = HandleEvdevCombo(evcode, down, isRepeat, mods);
 	if (combo_result >= 0)
 		return combo_result != 0;
@@ -533,6 +566,7 @@ bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat, int aSendLeve
 		return false;
 	Hotkey *hk_fire = nullptr;
 	HotkeyVariant *vp_fire = nullptr;
+	int best = 0x7fffffff;
 
 	for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
 	{
@@ -540,40 +574,40 @@ bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat, int aSendLeve
 		if (!hk || hk->mModifierVK || hk->mModifierSC || hk->IsCompletelyDisabled()
 			|| !LinuxInputBackendHotkeyAssigned(hk, AhkInputBackendKind::EVDEV))
 			continue;
-		if (hk->mKeyUp == down) // up-variants need a release; down need press.
+		if (hk->mKeyUp == down)
 			continue;
 		bool key_match = hk->mVK
 			? (unsigned int)hk->mVK == vk
 			: hk->mSC && LinuxEvdevCodeForScanCode(hk->mSC) == evcode;
 		if (!key_match)
 			continue;
-		// Modifier match: the required neutral bits must be held; extra primary
-	// modifiers disqualify unless the hotkey is a wildcard (*).
-	unsigned int req = (unsigned int)hk->mModifiers;
-	if ((mods & req) != req)
-		continue;
-	if (!hk->mAllowExtraModifiers && (mods & ~req))
-		continue;
+		unsigned int req = (unsigned int)hk->mModifiers
+			| GenericModsForLR(hk->mModifiersLR);
+		if ((mods & req) != req
+			|| (mods_lr & hk->mModifiersLR) != hk->mModifiersLR)
+			continue;
+		if (!hk->mAllowExtraModifiers
+			&& ((mods & ~req)
+				|| (mods_lr & ~hk->mModifiersConsolidatedLR)))
+			continue;
 		if (!AhkBackendHotkeyEnabled(hk))
 			continue;
 		HotkeyVariant *vp = hk->FindVariant();
-		if (!vp || !vp->mEnabled)
+		if (!vp || !vp->mEnabled || !hk->PerformIsAllowed(*vp))
 			continue;
-		if (!hk->PerformIsAllowed(*vp))
-			continue;
-		// check0901 P0-3: broker-injected synthetic events (send_level >= 0)
-		// fire only when send_level > input_level (official
-		// HotInputLevelAllowsFiring).  Physical broker-lane events carry -1
-		// and are never filtered here.
 		if (aSendLevel >= 0
 			&& !AhkSyntheticMayTrigger(AhkConsumerKind::HOTKEY
 				, AhkSendTransportClass::EVENT, aSendLevel
 				, (int)vp->mInputLevel))
 			continue;
-		// Unique resolution: first match wins (registration order).
-		hk_fire = hk;
-		vp_fire = vp;
-		break;
+		int score = (hk->mAllowExtraModifiers ? 8 : 0)
+			+ ModifierSideCount(hk->mModifiersConsolidatedLR);
+		if (score < best)
+		{
+			best = score;
+			hk_fire = hk;
+			vp_fire = vp;
+		}
 	}
 
 	if (!hk_fire || !vp_fire) { EvTrace("no-match vk=%u", vk); return false; }
@@ -647,14 +681,21 @@ bool HandleEvdevNormalized(const AhkInputEvent &event,
 	bool found = LinuxInputPipelineMatchSingleHotkey(accepted,
 		AhkInputBackendKind::EVDEV, match, decision, backend_can_suppress);
 	LinuxInputPipelineTraceDecision(accepted, decision);
-	const char *planned_outcome = found
-		? (decision.action == AhkInputDecisionAction::TRIGGER_SUPPRESS
-			? "triggered_suppressed" : "triggered_pass")
-		: "passed_no_match";
+	const char *planned_outcome = decision.action
+		== AhkInputDecisionAction::DUPLICATE_IGNORED ? "duplicate_ignored"
+		: (found
+			? (decision.action == AhkInputDecisionAction::TRIGGER_SUPPRESS
+				? "triggered_suppressed" : "triggered_pass")
+			: (decision.reason == AhkInputDecisionReason::KEYUP_OWNERSHIP
+				? (decision.action == AhkInputDecisionAction::SUPPRESS_ORIGINAL
+					? "keyup_owned_suppressed" : "keyup_owned_pass")
+				: "passed_no_match"));
 	if (found)
 		LinuxInputPipelineDispatch(accepted, match, decision);
 	LinuxInputPipelineTraceOutcome(accepted, decision, planned_outcome);
-	return found && decision.action == AhkInputDecisionAction::TRIGGER_SUPPRESS;
+	return decision.action == AhkInputDecisionAction::TRIGGER_SUPPRESS
+		|| decision.action == AhkInputDecisionAction::SUPPRESS_ORIGINAL
+		|| decision.action == AhkInputDecisionAction::DUPLICATE_IGNORED;
 }
 
 } // namespace
@@ -799,7 +840,7 @@ static void EvdevBrokerEventAdapter(const LinuxInputdEvent &aEvent, void *aUser)
 			: LinuxInputdClientConnectionGeneration(),
 		aEvent.v2 ? aEvent.eventSeq : 0,
 		aEvent.producerClientId, aEvent.transactionId,
-		aEvent.parentTransactionId, 0, 0, false,
+		aEvent.parentTransactionId, 0, 0, 0, false,
 		aEvent.v2 && source == AhkInputSource::PHYSICAL};
 	bool can_suppress = aEvent.v2
 		&& (LinuxInputdClientCapsGranted() & INPUTD_V2_CAP_SUPPRESS);
@@ -939,7 +980,7 @@ void LinuxEvdevDispatch()
 					AhkInputSourceDomain::EVDEV_LOCAL,
 					AhkProvenanceConfidence::DEVICE_DERIVED,
 					sLocalHealthGeneration ? sLocalHealthGeneration : 1,
-					++sLocalEventSeq, 0, 0, 0, 0, 0, false, true};
+					++sLocalEventSeq, 0, 0, 0, 0, 0, 0, false, true};
 				bool suppressed = HandleEvdevNormalized(normalized, context,
 					sDevices[i].grabbed);
 				// Suppression cover: when this device is grabbed and the key

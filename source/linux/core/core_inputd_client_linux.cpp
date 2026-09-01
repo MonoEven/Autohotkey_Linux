@@ -315,6 +315,7 @@ bool SendSubscribeFrame()
 {
 	struct { unsigned int code; unsigned char suppress; } rules[INPUTD_MAX_RULES];
 	int count = 0;
+	bool need_modifier_stream = false;
 	auto add_rule = [&](unsigned int aCode, unsigned char aSuppress) {
 		if (!aCode)
 			return;
@@ -340,6 +341,8 @@ bool SendSubscribeFrame()
 			continue;
 		if (!LinuxInputBackendHotkeyAssigned(hk, AhkInputBackendKind::EVDEV))
 			continue;
+		if (hk->mModifiers || hk->mModifiersLR)
+			need_modifier_stream = true;
 		bool passthrough = (hk->mNoSuppress & (AT_LEAST_ONE_VARIANT_HAS_TILDE
 			| AT_LEAST_ONE_COMBO_HAS_TILDE)) != 0;
 		unsigned char sup = passthrough ? 0 : 1;
@@ -356,6 +359,15 @@ bool SendSubscribeFrame()
 			add_rule(LinuxEvdevCodeForScanCode(hk->mModifierSC), sup);
 		else if (hk->mModifierVK)
 			add_rule(LinuxWaylandKeycodeForVk(hk->mModifierVK), sup);
+	}
+	// Modifier events are state observations, never suppression rules. Broker
+	// F7 alone cannot tell a reducer whether LCtrl or RCtrl was held.
+	if (need_modifier_stream)
+	{
+		add_rule(KEY_LEFTCTRL, 0); add_rule(KEY_RIGHTCTRL, 0);
+		add_rule(KEY_LEFTSHIFT, 0); add_rule(KEY_RIGHTSHIFT, 0);
+		add_rule(KEY_LEFTALT, 0); add_rule(KEY_RIGHTALT, 0);
+		add_rule(KEY_LEFTMETA, 0); add_rule(KEY_RIGHTMETA, 0);
 	}
 	// Character-stream needs (Hotstring / visible InputHook): subscribe every
 	// key which the X11 layout can produce text from, without suppression (the
@@ -717,7 +729,11 @@ void DispatchFrameV2(LinuxInputdEventFn aFn, void *aUser)
 	case INPUTD_V2_PONG:
 	case INPUTD_V2_DEVICE_ADDED:
 	case INPUTD_V2_DEVICE_REMOVED:
-		break; // bookkeeping frames
+	case INPUTD_V2_INJECT_ACK:
+	case INPUTD_V2_ARB_REGISTER_ACK:
+	case INPUTD_V2_CONFLICT:
+	case INPUTD_V2_ARB_DECISION:
+		break; // bookkeeping/sideband frames (owned by broker diagnostics)
 	default:
 		Disconnect("protocol desync"); // caller may reconnect.
 		return;
