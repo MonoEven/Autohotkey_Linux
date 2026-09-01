@@ -3,14 +3,14 @@
 - Linux status: `IMPL` (P1)
 - Example kind: `verified`
 - Environment profile: `x11`
-- Verified source: [tests/doccheck/assert_hotstring.ahk:40](../../tests/doccheck/assert_hotstring.ahk#L40)
+- Verified source: [tests/doccheck/assert_hotstring.ahk:43](../../tests/doccheck/assert_hotstring.ahk#L43)
 - Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
 
 ## Additional verified environments
 
-- `x11`: [tests/doccheck/assert_input.ahk:82](../../tests/doccheck/assert_input.ahk#L82)
-- `x11`: [tests/doccheck/assert_inputhook.ahk:98](../../tests/doccheck/assert_inputhook.ahk#L98)
-- `x11`: [tests/doccheck/assert_repeat.ahk:48](../../tests/doccheck/assert_repeat.ahk#L48)
+- `x11`: [tests/doccheck/assert_input.ahk:89](../../tests/doccheck/assert_input.ahk#L89)
+- `x11`: [tests/doccheck/assert_inputhook.ahk:103](../../tests/doccheck/assert_inputhook.ahk#L103)
+- `x11`: [tests/doccheck/assert_repeat.ahk:52](../../tests/doccheck/assert_repeat.ahk#L52)
 - `x11`: [tests/doccheck/assert_unicode_lease.ahk:26](../../tests/doccheck/assert_unicode_lease.ahk#L26)
 - `wayland`: [tests/doccheck/assert_wayland.ahk:60](../../tests/doccheck/assert_wayland.ahk#L60)
 

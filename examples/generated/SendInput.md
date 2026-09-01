@@ -3,7 +3,7 @@
 - Linux status: `IMPL` (P2)
 - Example kind: `verified`
 - Environment profile: `x11`
-- Verified source: [tests/doccheck/assert_input.ahk:106](../../tests/doccheck/assert_input.ahk#L106)
+- Verified source: [tests/doccheck/assert_input.ahk:113](../../tests/doccheck/assert_input.ahk#L113)
 - Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
 - Linux adaptation: XTEST batch without a journal; hook-unload self-suppression implemented, target delivery limited by the passive grab
 

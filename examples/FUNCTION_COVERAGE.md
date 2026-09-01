@@ -1,7 +1,7 @@
 # Complete Function Example Coverage
 
 Generated from `tests/doccheck/worklist.tsv`: **370/370 IMPL entries mapped**.
-Linux-verified source links: **703**; multi-environment entries: **50**; upstream reference code blocks: **230**.
+Linux-verified source links: **716**; multi-environment entries: **51**; upstream reference code blocks: **230**.
 Every row has Linux-executed evidence or an explicit interaction/safety boundary; an upstream snippet alone never counts as coverage.
 
 | Function | Profile | Kind | Linux-verified example | Upstream code |
@@ -12,7 +12,7 @@ Every row has Linux-executed evidence or an explicit interaction/safety boundary
 | [A_ParityLevel](generated/A_ParityLevel.md) | `headless` | `verified` | [tests/doccheck/assert_parity.ahk:28](../tests/doccheck/assert_parity.ahk#L28) | no |
 | [Abs](generated/Abs.md) | `headless` | `verified` | [tests/doccheck/assert_math.ahk:5](../tests/doccheck/assert_math.ahk#L5) | no |
 | [Array](generated/Array.md) | `headless` | `verified` | [examples/language/runtime_types.ahk:7](../examples/language/runtime_types.ahk#L7) | no |
-| [BlockInput](generated/BlockInput.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:316](../tests/doccheck/assert_input.ahk#L316) | yes |
+| [BlockInput](generated/BlockInput.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:326](../tests/doccheck/assert_input.ahk#L326) | yes |
 | [Buffer](generated/Buffer.md) | `headless` | `verified` | [tests/doccheck/assert_dllcall.ahk:57](../tests/doccheck/assert_dllcall.ahk#L57) | yes |
 | [CallbackCreate](generated/CallbackCreate.md) | `host-tools` | `verified` | [tests/doccheck/assert_sound_etc.ahk:42](../tests/doccheck/assert_sound_etc.ahk#L42) | yes |
 | [CallbackFree](generated/CallbackFree.md) | `host-tools` | `verified` | [tests/doccheck/assert_sound_etc.ahk:44](../tests/doccheck/assert_sound_etc.ahk#L44) | no |
@@ -20,7 +20,7 @@ Every row has Linux-executed evidence or an explicit interaction/safety boundary
 | [Ceil](generated/Ceil.md) | `headless` | `verified` | [tests/doccheck/assert_math.ahk:16](../tests/doccheck/assert_math.ahk#L16) | no |
 | [Chr](generated/Chr.md) | `headless` | `verified` | [tests/doccheck/assert_string.ahk:44](../tests/doccheck/assert_string.ahk#L44) | yes |
 | [Class](generated/Class.md) | `headless` | `verified` | [examples/language/runtime_types.ahk:14](../examples/language/runtime_types.ahk#L14) | no |
-| [Click](generated/Click.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:267](../tests/doccheck/assert_input.ahk#L267) | yes |
+| [Click](generated/Click.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:277](../tests/doccheck/assert_input.ahk#L277) | yes |
 | [ClipWait](generated/ClipWait.md) | `x11` | `verified` | [tests/doccheck/assert_clipboard.ahk:93](../tests/doccheck/assert_clipboard.ahk#L93) | yes |
 | [ClipboardAll](generated/ClipboardAll.md) | `x11` | `verified` | [tests/doccheck/assert_misc_cov.ahk:222](../tests/doccheck/assert_misc_cov.ahk#L222) | yes |
 | [ComCall](generated/ComCall.md) | `x11` | `verified-error` | [tests/doccheck/assert_misc_cov.ahk:193](../tests/doccheck/assert_misc_cov.ahk#L193) | yes |
@@ -135,7 +135,7 @@ Every row has Linux-executed evidence or an explicit interaction/safety boundary
 | [Func](generated/Func.md) | `headless` | `verified` | [examples/language/runtime_types.ahk:11](../examples/language/runtime_types.ahk#L11) | no |
 | [GetKeyName](generated/GetKeyName.md) | `headless` | `verified` | [tests/doccheck/assert_general.ahk:108](../tests/doccheck/assert_general.ahk#L108) | yes |
 | [GetKeySC](generated/GetKeySC.md) | `x11` | `verified` | [tests/doccheck/assert_misc_cov.ahk:197](../tests/doccheck/assert_misc_cov.ahk#L197) | yes |
-| [GetKeyState](generated/GetKeyState.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:293](../tests/doccheck/assert_input.ahk#L293) | yes |
+| [GetKeyState](generated/GetKeyState.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:303](../tests/doccheck/assert_input.ahk#L303) | yes |
 | [GetKeyVK](generated/GetKeyVK.md) | `x11` | `verified` | [tests/doccheck/assert_misc_cov.ahk:196](../tests/doccheck/assert_misc_cov.ahk#L196) | yes |
 | [GetMethod](generated/GetMethod.md) | `headless` | `verified` | [tests/doccheck/assert_object.ahk:48](../tests/doccheck/assert_object.ahk#L48) | yes |
 | [GroupActivate](generated/GroupActivate.md) | `x11` | `verified` | [tests/doccheck/assert_win.ahk:185](../tests/doccheck/assert_win.ahk#L185) | yes |
@@ -154,8 +154,8 @@ Every row has Linux-executed evidence or an explicit interaction/safety boundary
 | [HotIfWinExist](generated/HotIfWinExist.md) | `x11` | `verified` | [tests/doccheck/assert_misc_cov.ahk:213](../tests/doccheck/assert_misc_cov.ahk#L213) | no |
 | [HotIfWinNotActive](generated/HotIfWinNotActive.md) | `x11` | `verified` | [tests/doccheck/assert_misc_cov.ahk:214](../tests/doccheck/assert_misc_cov.ahk#L214) | no |
 | [HotIfWinNotExist](generated/HotIfWinNotExist.md) | `x11` | `verified` | [tests/doccheck/assert_misc_cov.ahk:215](../tests/doccheck/assert_misc_cov.ahk#L215) | no |
-| [Hotkey](generated/Hotkey.md) | `x11` | `verified` | [tests/doccheck/assert_hotkey.ahk:17](../tests/doccheck/assert_hotkey.ahk#L17) | yes |
-| [HotkeyBackendGet](generated/HotkeyBackendGet.md) | `x11` | `verified` | [tests/doccheck/assert_hotkey.ahk:123](../tests/doccheck/assert_hotkey.ahk#L123) | no |
+| [Hotkey](generated/Hotkey.md) | `x11` | `verified` | [tests/doccheck/assert_hotkey.ahk:24](../tests/doccheck/assert_hotkey.ahk#L24) | yes |
+| [HotkeyBackendGet](generated/HotkeyBackendGet.md) | `x11` | `verified` | [tests/doccheck/assert_hotkey.ahk:130](../tests/doccheck/assert_hotkey.ahk#L130) | no |
 | [Hotstring](generated/Hotstring.md) | `x11` | `verified` | [tests/doccheck/assert_hotstring.ahk:23](../tests/doccheck/assert_hotstring.ahk#L23) | yes |
 | [IL_Add](generated/IL_Add.md) | `x11` | `verified` | [tests/doccheck/assert_image.ahk:135](../tests/doccheck/assert_image.ahk#L135) | no |
 | [IL_Create](generated/IL_Create.md) | `x11` | `verified` | [tests/doccheck/assert_image.ahk:129](../tests/doccheck/assert_image.ahk#L129) | no |
@@ -168,10 +168,10 @@ Every row has Linux-executed evidence or an explicit interaction/safety boundary
 | [IniRead](generated/IniRead.md) | `headless` | `verified` | [tests/doccheck/assert_general.ahk:62](../tests/doccheck/assert_general.ahk#L62) | yes |
 | [IniWrite](generated/IniWrite.md) | `headless` | `verified` | [tests/doccheck/assert_general.ahk:61](../tests/doccheck/assert_general.ahk#L61) | yes |
 | [InputBox](generated/InputBox.md) | `interactive` | `interactive` | [examples/interactive/input_box.ahk:3](../examples/interactive/input_box.ahk#L3) | yes |
-| [InputHook](generated/InputHook.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:215](../tests/doccheck/assert_input.ahk#L215) | yes |
-| [InstallKeybdHook](generated/InstallKeybdHook.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:330](../tests/doccheck/assert_input.ahk#L330) | yes |
-| [InstallMouseHook](generated/InstallMouseHook.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:331](../tests/doccheck/assert_input.ahk#L331) | yes |
-| [Integer](generated/Integer.md) | `x11` | `verified` | [tests/doccheck/assert_hotkey_pt.ahk:108](../tests/doccheck/assert_hotkey_pt.ahk#L108) | no |
+| [InputHook](generated/InputHook.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:225](../tests/doccheck/assert_input.ahk#L225) | yes |
+| [InstallKeybdHook](generated/InstallKeybdHook.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:340](../tests/doccheck/assert_input.ahk#L340) | yes |
+| [InstallMouseHook](generated/InstallMouseHook.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:341](../tests/doccheck/assert_input.ahk#L341) | yes |
+| [Integer](generated/Integer.md) | `x11` | `verified` | [tests/doccheck/assert_hotkey_pt.ahk:112](../tests/doccheck/assert_hotkey_pt.ahk#L112) | no |
 | [IsAlnum](generated/IsAlnum.md) | `headless` | `verified` | [tests/doccheck/assert_math.ahk:36](../tests/doccheck/assert_math.ahk#L36) | no |
 | [IsAlpha](generated/IsAlpha.md) | `headless` | `verified` | [tests/doccheck/assert_math.ahk:38](../tests/doccheck/assert_math.ahk#L38) | no |
 | [IsDigit](generated/IsDigit.md) | `headless` | `verified` | [tests/doccheck/assert_math.ahk:37](../tests/doccheck/assert_math.ahk#L37) | no |
@@ -188,7 +188,7 @@ Every row has Linux-executed evidence or an explicit interaction/safety boundary
 | [IsUpper](generated/IsUpper.md) | `headless` | `verified` | [tests/doccheck/assert_math.ahk:39](../tests/doccheck/assert_math.ahk#L39) | no |
 | [IsXDigit](generated/IsXDigit.md) | `headless` | `verified` | [tests/doccheck/assert_math.ahk:42](../tests/doccheck/assert_math.ahk#L42) | no |
 | [KeyHistory](generated/KeyHistory.md) | `x11` | `verified` | [tests/doccheck/assert_display.ahk:41](../tests/doccheck/assert_display.ahk#L41) | yes |
-| [KeyWait](generated/KeyWait.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:283](../tests/doccheck/assert_input.ahk#L283) | yes |
+| [KeyWait](generated/KeyWait.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:293](../tests/doccheck/assert_input.ahk#L293) | yes |
 | [LTrim](generated/LTrim.md) | `headless` | `verified` | [tests/doccheck/assert_string.ahk:24](../tests/doccheck/assert_string.ahk#L24) | no |
 | [ListHotkeys](generated/ListHotkeys.md) | `x11` | `verified` | [tests/doccheck/assert_display.ahk:51](../tests/doccheck/assert_display.ahk#L51) | yes |
 | [ListLines](generated/ListLines.md) | `headless` | `verified` | [tests/doccheck/assert_general.ahk:102](../tests/doccheck/assert_general.ahk#L102) | yes |
@@ -210,10 +210,10 @@ Every row has Linux-executed evidence or an explicit interaction/safety boundary
 | [MonitorGetName](generated/MonitorGetName.md) | `x11` | `verified` | [tests/doccheck/assert_monitor.ahk:21](../tests/doccheck/assert_monitor.ahk#L21) | no |
 | [MonitorGetPrimary](generated/MonitorGetPrimary.md) | `x11` | `verified` | [tests/doccheck/assert_monitor.ahk:20](../tests/doccheck/assert_monitor.ahk#L20) | no |
 | [MonitorGetWorkArea](generated/MonitorGetWorkArea.md) | `x11` | `verified` | [tests/doccheck/assert_monitor.ahk:27](../tests/doccheck/assert_monitor.ahk#L27) | no |
-| [MouseClick](generated/MouseClick.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:242](../tests/doccheck/assert_input.ahk#L242) | yes |
-| [MouseClickDrag](generated/MouseClickDrag.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:260](../tests/doccheck/assert_input.ahk#L260) | yes |
-| [MouseGetPos](generated/MouseGetPos.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:238](../tests/doccheck/assert_input.ahk#L238) | yes |
-| [MouseMove](generated/MouseMove.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:236](../tests/doccheck/assert_input.ahk#L236) | yes |
+| [MouseClick](generated/MouseClick.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:252](../tests/doccheck/assert_input.ahk#L252) | yes |
+| [MouseClickDrag](generated/MouseClickDrag.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:270](../tests/doccheck/assert_input.ahk#L270) | yes |
+| [MouseGetPos](generated/MouseGetPos.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:248](../tests/doccheck/assert_input.ahk#L248) | yes |
+| [MouseMove](generated/MouseMove.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:246](../tests/doccheck/assert_input.ahk#L246) | yes |
 | [MsgBox](generated/MsgBox.md) | `x11` | `verified` | [tests/doccheck/assert_display.ahk:9](../tests/doccheck/assert_display.ahk#L9) | yes |
 | [NumGet](generated/NumGet.md) | `headless` | `verified` | [tests/doccheck/assert_interop.ahk:8](../tests/doccheck/assert_interop.ahk#L8) | no |
 | [NumPut](generated/NumPut.md) | `headless` | `verified` | [tests/doccheck/assert_interop.ahk:7](../tests/doccheck/assert_interop.ahk#L7) | no |
@@ -266,24 +266,24 @@ Every row has Linux-executed evidence or an explicit interaction/safety boundary
 | [Run](generated/Run.md) | `x11` | `verified` | [tests/doccheck/assert_clipboard.ahk:73](../tests/doccheck/assert_clipboard.ahk#L73) | yes |
 | [RunAs](generated/RunAs.md) | `x11` | `verified-error` | [tests/doccheck/assert_msg.ahk:214](../tests/doccheck/assert_msg.ahk#L214) | yes |
 | [RunWait](generated/RunWait.md) | `x11` | `verified` | [tests/doccheck/assert_clipboard.ahk:25](../tests/doccheck/assert_clipboard.ahk#L25) | no |
-| [Send](generated/Send.md) | `x11` | `verified` | [tests/doccheck/assert_hotkey.ahk:19](../tests/doccheck/assert_hotkey.ahk#L19) | yes |
-| [SendEvent](generated/SendEvent.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:103](../tests/doccheck/assert_input.ahk#L103) | no |
-| [SendInput](generated/SendInput.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:106](../tests/doccheck/assert_input.ahk#L106) | no |
-| [SendLevel](generated/SendLevel.md) | `x11` | `verified` | [tests/doccheck/assert_hotstring.ahk:34](../tests/doccheck/assert_hotstring.ahk#L34) | yes |
+| [Send](generated/Send.md) | `x11` | `verified` | [tests/doccheck/assert_hotkey.ahk:26](../tests/doccheck/assert_hotkey.ahk#L26) | yes |
+| [SendEvent](generated/SendEvent.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:110](../tests/doccheck/assert_input.ahk#L110) | no |
+| [SendInput](generated/SendInput.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:113](../tests/doccheck/assert_input.ahk#L113) | no |
+| [SendLevel](generated/SendLevel.md) | `x11` | `verified` | [tests/doccheck/assert_hotkey.ahk:15](../tests/doccheck/assert_hotkey.ahk#L15) | yes |
 | [SendMessage](generated/SendMessage.md) | `x11` | `verified-error` | [tests/doccheck/assert_msg.ahk:31](../tests/doccheck/assert_msg.ahk#L31) | yes |
-| [SendMode](generated/SendMode.md) | `headless` | `verified` | [tests/doccheck/assert_sys.ahk:98](../tests/doccheck/assert_sys.ahk#L98) | yes |
-| [SendPlay](generated/SendPlay.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:109](../tests/doccheck/assert_input.ahk#L109) | no |
-| [SendText](generated/SendText.md) | `x11` | `verified` | [tests/doccheck/assert_hotstring.ahk:40](../tests/doccheck/assert_hotstring.ahk#L40) | no |
-| [SetCapsLockState](generated/SetCapsLockState.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:292](../tests/doccheck/assert_input.ahk#L292) | no |
+| [SendMode](generated/SendMode.md) | `x11` | `verified` | [tests/doccheck/assert_hotkey.ahk:16](../tests/doccheck/assert_hotkey.ahk#L16) | yes |
+| [SendPlay](generated/SendPlay.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:116](../tests/doccheck/assert_input.ahk#L116) | no |
+| [SendText](generated/SendText.md) | `x11` | `verified` | [tests/doccheck/assert_hotstring.ahk:43](../tests/doccheck/assert_hotstring.ahk#L43) | no |
+| [SetCapsLockState](generated/SetCapsLockState.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:302](../tests/doccheck/assert_input.ahk#L302) | no |
 | [SetControlDelay](generated/SetControlDelay.md) | `headless` | `verified` | [tests/doccheck/assert_sys.ahk:88](../tests/doccheck/assert_sys.ahk#L88) | yes |
 | [SetDefaultMouseSpeed](generated/SetDefaultMouseSpeed.md) | `headless` | `verified` | [tests/doccheck/assert_sys.ahk:93](../tests/doccheck/assert_sys.ahk#L93) | yes |
-| [SetKeyDelay](generated/SetKeyDelay.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:133](../tests/doccheck/assert_input.ahk#L133) | yes |
+| [SetKeyDelay](generated/SetKeyDelay.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:140](../tests/doccheck/assert_input.ahk#L140) | yes |
 | [SetMouseDelay](generated/SetMouseDelay.md) | `headless` | `verified` | [tests/doccheck/assert_sys.ahk:71](../tests/doccheck/assert_sys.ahk#L71) | yes |
-| [SetNumLockState](generated/SetNumLockState.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:300](../tests/doccheck/assert_input.ahk#L300) | no |
+| [SetNumLockState](generated/SetNumLockState.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:310](../tests/doccheck/assert_input.ahk#L310) | no |
 | [SetRegView](generated/SetRegView.md) | `headless` | `verified` | [tests/doccheck/assert_sys.ahk:117](../tests/doccheck/assert_sys.ahk#L117) | yes |
-| [SetScrollLockState](generated/SetScrollLockState.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:304](../tests/doccheck/assert_input.ahk#L304) | no |
+| [SetScrollLockState](generated/SetScrollLockState.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:314](../tests/doccheck/assert_input.ahk#L314) | no |
 | [SetStoreCapsLockMode](generated/SetStoreCapsLockMode.md) | `headless` | `verified` | [tests/doccheck/assert_sys.ahk:145](../tests/doccheck/assert_sys.ahk#L145) | yes |
-| [SetTimer](generated/SetTimer.md) | `x11` | `verified` | [tests/doccheck/assert_hotkey.ahk:94](../tests/doccheck/assert_hotkey.ahk#L94) | yes |
+| [SetTimer](generated/SetTimer.md) | `x11` | `verified` | [tests/doccheck/assert_hotkey.ahk:101](../tests/doccheck/assert_hotkey.ahk#L101) | yes |
 | [SetTitleMatchMode](generated/SetTitleMatchMode.md) | `x11` | `verified` | [tests/doccheck/assert_ctrl.ahk:115](../tests/doccheck/assert_ctrl.ahk#L115) | yes |
 | [SetWinDelay](generated/SetWinDelay.md) | `headless` | `verified` | [tests/doccheck/assert_sys.ahk:84](../tests/doccheck/assert_sys.ahk#L84) | yes |
 | [SetWorkingDir](generated/SetWorkingDir.md) | `headless` | `verified` | [tests/doccheck/assert_general.ahk:13](../tests/doccheck/assert_general.ahk#L13) | yes |
@@ -306,7 +306,7 @@ Every row has Linux-executed evidence or an explicit interaction/safety boundary
 | [StrCompare](generated/StrCompare.md) | `headless` | `verified` | [tests/doccheck/assert_string.ahk:29](../tests/doccheck/assert_string.ahk#L29) | yes |
 | [StrGet](generated/StrGet.md) | `headless` | `verified` | [tests/doccheck/assert_dllcall.ahk:59](../tests/doccheck/assert_dllcall.ahk#L59) | yes |
 | [StrLen](generated/StrLen.md) | `x11` | `verified` | [tests/doccheck/assert_clipboard.ahk:66](../tests/doccheck/assert_clipboard.ahk#L66) | yes |
-| [StrLower](generated/StrLower.md) | `x11` | `verified` | [tests/doccheck/assert_inputhook.ahk:111](../tests/doccheck/assert_inputhook.ahk#L111) | yes |
+| [StrLower](generated/StrLower.md) | `x11` | `verified` | [tests/doccheck/assert_inputhook.ahk:116](../tests/doccheck/assert_inputhook.ahk#L116) | yes |
 | [StrPtr](generated/StrPtr.md) | `x11` | `verified` | [tests/doccheck/assert_misc_cov.ahk:161](../tests/doccheck/assert_misc_cov.ahk#L161) | no |
 | [StrPut](generated/StrPut.md) | `headless` | `verified` | [tests/doccheck/assert_interop.ahk:34](../tests/doccheck/assert_interop.ahk#L34) | yes |
 | [StrReplace](generated/StrReplace.md) | `headless` | `verified` | [tests/doccheck/assert_string.ahk:17](../tests/doccheck/assert_string.ahk#L17) | yes |

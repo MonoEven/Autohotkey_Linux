@@ -45,10 +45,12 @@ SoakTick() {
         soakClipboardRetries += 1
         Sleep(10)
     }
-    SendLevel(0)
+    ; Windows-golden self-trigger path: SendEvent at SendLevel 1 fires the
+    ; level-0 hotkey (send_level must strictly exceed input_level).
+    SendMode("Event")
+    SendLevel(1)
     Send("{F6}")
     Sleep(20) ; yield so the hotkey thread can interrupt this timer callback
-    SendLevel(1)
     SendText("zzq")
     Sleep(20)
     SendLevel(0)

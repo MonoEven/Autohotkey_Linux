@@ -3,13 +3,13 @@
 - Linux status: `IMPL` (P1)
 - Example kind: `verified`
 - Environment profile: `x11`
-- Verified source: [tests/doccheck/assert_hotkey_pt.ahk:108](../../tests/doccheck/assert_hotkey_pt.ahk#L108)
+- Verified source: [tests/doccheck/assert_hotkey_pt.ahk:112](../../tests/doccheck/assert_hotkey_pt.ahk#L112)
 - Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
 
 ## Additional verified environments
 
 - `desktop-session`: [tests/doccheck/assert_ime.ahk:26](../../tests/doccheck/assert_ime.ahk#L26)
-- `x11`: [tests/doccheck/assert_input.ahk:125](../../tests/doccheck/assert_input.ahk#L125)
+- `x11`: [tests/doccheck/assert_input.ahk:132](../../tests/doccheck/assert_input.ahk#L132)
 - `x11`: [tests/doccheck/assert_misc_cov.ahk:47](../../tests/doccheck/assert_misc_cov.ahk#L47)
 
 Converts a numeric string or floating-point value to an integer.

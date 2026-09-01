@@ -192,12 +192,12 @@
       "verified_source": {
         "excerpt": "; keyboard state, not the capture file).\nnext_lines()\nBlockInput(\"On\")\nSend(\"{Enter}\")\nSleep(60)\nLog(\"block_send=\" (downs(next_lines()) = \"\" ? 1 : 0))",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 316
+        "line": 326
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 316,
+          "line": 326,
           "profile": "x11"
         }
       ]
@@ -457,12 +457,12 @@
       "verified_source": {
         "excerpt": "\n; --- Click (g_BIF). ---\nClick(\"Right\")\nSleep(80)\nLog(\"click_right=\" (btns(next_lines()) = \"down:3,up:3\" ? 1 : 0))\nClick(\"150 160\")",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 267
+        "line": 277
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 267,
+          "line": 277,
           "profile": "x11"
         }
       ]
@@ -3075,7 +3075,7 @@
         },
         {
           "file": "tests/doccheck/assert_layout.ahk",
-          "line": 40,
+          "line": 44,
           "profile": "x11"
         }
       ]
@@ -3244,7 +3244,7 @@
         },
         {
           "file": "tests/doccheck/assert_hotkey.ahk",
-          "line": 140,
+          "line": 147,
           "profile": "x11"
         },
         {
@@ -3812,7 +3812,7 @@
         },
         {
           "file": "tests/doccheck/assert_hotkey_pt.ahk",
-          "line": 104,
+          "line": 108,
           "profile": "x11"
         },
         {
@@ -3940,17 +3940,17 @@
         },
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 27,
+          "line": 34,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_layout.ahk",
-          "line": 23,
+          "line": 27,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_repeat.ahk",
-          "line": 30,
+          "line": 34,
           "profile": "x11"
         },
         {
@@ -4125,17 +4125,17 @@
         },
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 23,
+          "line": 30,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_layout.ahk",
-          "line": 19,
+          "line": 23,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_repeat.ahk",
-          "line": 26,
+          "line": 30,
           "profile": "x11"
         }
       ]
@@ -4201,22 +4201,22 @@
         },
         {
           "file": "tests/doccheck/assert_hotkey_lr.ahk",
-          "line": 82,
+          "line": 86,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_hotkey_pt.ahk",
-          "line": 89,
+          "line": 93,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_hotstring.ahk",
-          "line": 54,
+          "line": 57,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_inputhook.ahk",
-          "line": 142,
+          "line": 147,
           "profile": "x11"
         },
         {
@@ -4226,7 +4226,7 @@
         },
         {
           "file": "tests/doccheck/assert_repeat.ahk",
-          "line": 85,
+          "line": 89,
           "profile": "x11"
         },
         {
@@ -4645,12 +4645,12 @@
       "verified_source": {
         "excerpt": "; --- SetCapsLockState/SetNumLockState/SetScrollLockState + GetKeyState \"T\". ---\nSetCapsLockState(\"On\")\nLog(\"caps_on=\" (GetKeyState(\"CapsLock\", \"T\") = 1 ? 1 : 0))\nSetCapsLockState(-1)\nLog(\"caps_toggle=\" (GetKeyState(\"CapsLock\", \"T\") = 0 ? 1 : 0))\nSetCapsLockState(1)",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 293
+        "line": 303
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 293,
+          "line": 303,
           "profile": "x11"
         },
         {
@@ -5114,7 +5114,7 @@
         },
         {
           "file": "tests/doccheck/assert_hotkey_pt.ahk",
-          "line": 60,
+          "line": 64,
           "profile": "x11"
         },
         {
@@ -5253,12 +5253,12 @@
       "verified_source": {
         "excerpt": "    cnt1++\n}\nHotkey(\"F7\", CB1)\nSleep(200) ; Let the grab be established.\nSend(\"{F7}\")\nSleep(300)",
         "file": "tests/doccheck/assert_hotkey.ahk",
-        "line": 17
+        "line": 24
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_hotkey.ahk",
-          "line": 17,
+          "line": 24,
           "profile": "x11"
         },
         {
@@ -5268,27 +5268,27 @@
         },
         {
           "file": "tests/doccheck/assert_hotkey_lr.ahk",
-          "line": 53,
+          "line": 57,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_hotkey_pt.ahk",
-          "line": 53,
+          "line": 57,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 180,
+          "line": 188,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_layout.ahk",
-          "line": 53,
+          "line": 57,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_repeat.ahk",
-          "line": 61,
+          "line": 65,
           "profile": "x11"
         },
         {
@@ -5315,17 +5315,17 @@
       "verified_source": {
         "excerpt": "bk := A_HotkeyBackend\nLog(\"caps_backend_nn=\" (bk != \"\" ? 1 : 0))\nbo := HotkeyBackendGet()\nLog(\"caps_obj_ok=\" (IsObject(bo) && bo.backend != \"\" && (bo.global_hotkeys = 1 || bo.global_hotkeys = 0) ? 1 : 0))\nLog(\"caps_schema_v2=\" (bo.caps_version = 2 && bo.event_version = 1 ? 1 : 0))\nLog(\"caps_extended_x11=\" (bo.backend = \"x11\"",
         "file": "tests/doccheck/assert_hotkey.ahk",
-        "line": 123
+        "line": 130
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_hotkey.ahk",
-          "line": 123,
+          "line": 130,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_hotstring.ahk",
-          "line": 50,
+          "line": 53,
           "profile": "x11"
         }
       ]
@@ -5602,17 +5602,17 @@
         },
         {
           "file": "tests/doccheck/assert_hotkey_lr.ahk",
-          "line": 83,
+          "line": 87,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_hotkey_pt.ahk",
-          "line": 90,
+          "line": 94,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_hotstring.ahk",
-          "line": 55,
+          "line": 58,
           "profile": "x11"
         },
         {
@@ -5622,12 +5622,12 @@
         },
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 223,
+          "line": 233,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_inputhook.ahk",
-          "line": 143,
+          "line": 148,
           "profile": "x11"
         },
         {
@@ -5642,7 +5642,7 @@
         },
         {
           "file": "tests/doccheck/assert_repeat.ahk",
-          "line": 85,
+          "line": 89,
           "profile": "x11"
         },
         {
@@ -5817,17 +5817,17 @@
       "verified_source": {
         "excerpt": "; is ignored.  Physical input always feeds (not exercised here).\nSendLevel(2)\nih_hi := InputHook(\"I1\", \"z\")   ; I1 = MinSendLevel 1; end key z.\nih_hi.Start()\nSleep(100)\nSend(\"a\")        ; level 2 >= 1 -> collected.",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 215
+        "line": 225
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 215,
+          "line": 225,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_inputhook.ahk",
-          "line": 20,
+          "line": 25,
           "profile": "x11"
         },
         {
@@ -5858,12 +5858,12 @@
       "verified_source": {
         "excerpt": "\n; --- InstallKeybdHook/InstallMouseHook: no error, flags stored. ---\nInstallKeybdHook()\nInstallMouseHook()\nInstallKeybdHook(0)\nInstallMouseHook(0)",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 330
+        "line": 340
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 330,
+          "line": 340,
           "profile": "x11"
         },
         {
@@ -5894,12 +5894,12 @@
       "verified_source": {
         "excerpt": "; --- InstallKeybdHook/InstallMouseHook: no error, flags stored. ---\nInstallKeybdHook()\nInstallMouseHook()\nInstallKeybdHook(0)\nInstallMouseHook(0)\nLog(\"install_hooks=1\")",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 331
+        "line": 341
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 331,
+          "line": 341,
           "profile": "x11"
         }
       ]
@@ -5925,12 +5925,12 @@
       "verified_source": {
         "excerpt": "    i += 1\n}\ncpid := FileExist(\"/tmp/ahk_kill9.pid\") ? Integer(FileRead(\"/tmp/ahk_kill9.pid\")) : 0\nif cpid\n    RunWait('kill -9 ' cpid)\nRunWait(\"pkill -9 -f ahk_kill9_child\")",
         "file": "tests/doccheck/assert_hotkey_pt.ahk",
-        "line": 108
+        "line": 112
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_hotkey_pt.ahk",
-          "line": 108,
+          "line": 112,
           "profile": "x11"
         },
         {
@@ -5940,7 +5940,7 @@
         },
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 125,
+          "line": 132,
           "profile": "x11"
         },
         {
@@ -6206,7 +6206,7 @@
         },
         {
           "file": "tests/doccheck/assert_hotkey.ahk",
-          "line": 124,
+          "line": 131,
           "profile": "x11"
         },
         {
@@ -6434,12 +6434,12 @@
       "verified_source": {
         "excerpt": "\n; --- KeyWait (docs: 1 when the condition is met; \"D\" waits for down). ---\nLog(\"keywait_up=\" (KeyWait(\"a\") = 1 ? 1 : 0))\nSend(\"{a down}\")\nSleep(50)\nLog(\"keywait_d=\" (KeyWait(\"a\", \"D\") = 1 ? 1 : 0))",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 283
+        "line": 293
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 283,
+          "line": 293,
           "profile": "x11"
         }
       ]
@@ -7112,12 +7112,12 @@
       "verified_source": {
         "excerpt": "\n; --- MouseClick. ---\nMouseClick(\"Left\", 100, 100)\nSleep(80)\nLog(\"mouseclick_btns=\" (btns(next_lines()) = \"down:1,up:1\" ? 1 : 0))\nMouseGetPos(&mx, &my)",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 242
+        "line": 252
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 242,
+          "line": 252,
           "profile": "x11"
         },
         {
@@ -7148,12 +7148,12 @@
       "verified_source": {
         "excerpt": "\n; --- MouseClickDrag. ---\nMouseClickDrag(\"Left\", 10, 10, 120, 90)\nSleep(80)\nLog(\"mousedrag_btns=\" (btns(next_lines()) = \"down:1,up:1\" ? 1 : 0))\nMouseGetPos(&mx, &my)",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 260
+        "line": 270
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 260,
+          "line": 270,
           "profile": "x11"
         }
       ]
@@ -7179,12 +7179,12 @@
       "verified_source": {
         "excerpt": "MouseMove(300, 200)\nSleep(50)\nMouseGetPos(&mx, &my)\nLog(\"mousemove=\" (mx = 300 && my = 200 ? 1 : 0))\n\n; --- MouseClick. ---",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 238
+        "line": 248
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 238,
+          "line": 248,
           "profile": "x11"
         }
       ]
@@ -7210,12 +7210,12 @@
       "verified_source": {
         "excerpt": "\n; --- MouseMove + MouseGetPos. ---\nMouseMove(300, 200)\nSleep(50)\nMouseGetPos(&mx, &my)\nLog(\"mousemove=\" (mx = 300 && my = 200 ? 1 : 0))",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 236
+        "line": 246
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 236,
+          "line": 246,
           "profile": "x11"
         },
         {
@@ -8578,7 +8578,7 @@
         },
         {
           "file": "tests/doccheck/assert_inputhook.ahk",
-          "line": 58,
+          "line": 63,
           "profile": "x11"
         },
         {
@@ -8800,12 +8800,12 @@
         },
         {
           "file": "tests/doccheck/assert_hotkey_lr.ahk",
-          "line": 49,
+          "line": 53,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_hotkey_pt.ahk",
-          "line": 49,
+          "line": 53,
           "profile": "x11"
         },
         {
@@ -8820,17 +8820,17 @@
         },
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 16,
+          "line": 23,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_inputhook.ahk",
-          "line": 15,
+          "line": 20,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_layout.ahk",
-          "line": 12,
+          "line": 16,
           "profile": "x11"
         },
         {
@@ -8845,7 +8845,7 @@
         },
         {
           "file": "tests/doccheck/assert_repeat.ahk",
-          "line": 19,
+          "line": 23,
           "profile": "x11"
         },
         {
@@ -8948,22 +8948,22 @@
         },
         {
           "file": "tests/doccheck/assert_hotkey_lr.ahk",
-          "line": 89,
+          "line": 93,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_hotkey_pt.ahk",
-          "line": 110,
+          "line": 114,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_hotstring.ahk",
-          "line": 108,
+          "line": 111,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_layout.ahk",
-          "line": 41,
+          "line": 45,
           "profile": "x11"
         },
         {
@@ -8973,7 +8973,7 @@
         },
         {
           "file": "tests/doccheck/assert_repeat.ahk",
-          "line": 89,
+          "line": 93,
           "profile": "x11"
         },
         {
@@ -9019,12 +9019,12 @@
       "verified_source": {
         "excerpt": "Hotkey(\"F7\", CB1)\nSleep(200) ; Let the grab be established.\nSend(\"{F7}\")\nSleep(300)\nLog(\"hk_f7=\" (cnt1 = 1 ? 1 : 0))",
         "file": "tests/doccheck/assert_hotkey.ahk",
-        "line": 19
+        "line": 26
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_hotkey.ahk",
-          "line": 19,
+          "line": 26,
           "profile": "x11"
         },
         {
@@ -9034,37 +9034,37 @@
         },
         {
           "file": "tests/doccheck/assert_hotkey_lr.ahk",
-          "line": 61,
+          "line": 65,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_hotkey_pt.ahk",
-          "line": 66,
+          "line": 70,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_hotstring.ahk",
-          "line": 35,
+          "line": 38,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 58,
+          "line": 65,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_inputhook.ahk",
-          "line": 22,
+          "line": 27,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_layout.ahk",
-          "line": 57,
+          "line": 61,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_repeat.ahk",
-          "line": 64,
+          "line": 68,
           "profile": "x11"
         },
         {
@@ -9091,12 +9091,12 @@
       "verified_source": {
         "excerpt": "\n; --- SendMode variants: all deliver XTEST events on Linux. ---\nSendEvent(\"x\")\nSleep(60)\nLog(\"sendevent=\" (downs(next_lines()) = \"x\" ? 1 : 0))\nSendInput(\"y\")",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 103
+        "line": 110
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 103,
+          "line": 110,
           "profile": "x11"
         }
       ]
@@ -9118,12 +9118,12 @@
       "verified_source": {
         "excerpt": "Sleep(60)\nLog(\"sendevent=\" (downs(next_lines()) = \"x\" ? 1 : 0))\nSendInput(\"y\")\nSleep(60)\nLog(\"sendinput=\" (downs(next_lines()) = \"y\" ? 1 : 0))\nSendPlay(\"z\")",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 106
+        "line": 113
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 106,
+          "line": 113,
           "profile": "x11"
         },
         {
@@ -9152,24 +9152,49 @@
       "status": "IMPL",
       "syntax": "PrevLevel := SendLevel(Level)",
       "verified_source": {
-        "excerpt": "; Synthetic test input needs level > the default Hotstring input level 0.\n; Auto-replacement itself is forced to level 0 and cannot recurse.\nSendLevel(1)\nSend(\"xq \")                 ; -> \"ZZ\" + space.\nSend(\"cd \")                 ; -> \"Q\", space omitted.\nSend(\"ef.\")                 ; callback fires; '.' forwarded.",
-        "file": "tests/doccheck/assert_hotstring.ahk",
-        "line": 34
+        "excerpt": "; SendEvent-class input at level 1 (the Windows-golden way to trigger own\n; hotkeys) so these assertions test hotkey semantics, not the level gate.\nSendLevel(1)\nSendMode(\"Event\")\n\n; --- Simple hotkey fires when its key is pressed. ---",
+        "file": "tests/doccheck/assert_hotkey.ahk",
+        "line": 15
       },
       "verified_sources": [
         {
+          "file": "tests/doccheck/assert_hotkey.ahk",
+          "line": 15,
+          "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_hotkey_lr.ahk",
+          "line": 18,
+          "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_hotkey_pt.ahk",
+          "line": 23,
+          "profile": "x11"
+        },
+        {
           "file": "tests/doccheck/assert_hotstring.ahk",
-          "line": 34,
+          "line": 36,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 201,
+          "line": 193,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_inputhook.ahk",
-          "line": 68,
+          "line": 73,
+          "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_layout.ahk",
+          "line": 12,
+          "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_repeat.ahk",
+          "line": 18,
           "profile": "x11"
         },
         {
@@ -9224,16 +9249,56 @@
         "level": "P1",
         "note": ""
       },
-      "profile": "headless",
-      "run": "bash tests/doccheck/run_check.sh \"$BIN\"",
+      "profile": "x11",
+      "run": "bash tests/doccheck/run_check.sh --xvfb \"$BIN\"",
       "status": "IMPL",
       "syntax": "PrevMode := SendMode(Mode)",
       "verified_source": {
-        "excerpt": "\n; Docs: \"The default sending mode is Input\"; SendMode returns the previous mode.\nMsgBox \"SendMode_prev=\" (SendMode(\"Play\") = \"Input\")\nMsgBox \"SendMode_set=\" (A_SendMode = \"Play\")\nMsgBox \"SendMode_return=\" (SendMode(\"InputThenPlay\") = \"Play\")\nMsgBox \"SendMode_restore=\" (SendMode(\"Input\") = \"InputThenPlay\")",
-        "file": "tests/doccheck/assert_sys.ahk",
-        "line": 98
+        "excerpt": "; hotkeys) so these assertions test hotkey semantics, not the level gate.\nSendLevel(1)\nSendMode(\"Event\")\n\n; --- Simple hotkey fires when its key is pressed. ---\ncnt1 := 0",
+        "file": "tests/doccheck/assert_hotkey.ahk",
+        "line": 16
       },
       "verified_sources": [
+        {
+          "file": "tests/doccheck/assert_hotkey.ahk",
+          "line": 16,
+          "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_hotkey_lr.ahk",
+          "line": 19,
+          "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_hotkey_pt.ahk",
+          "line": 24,
+          "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_hotstring.ahk",
+          "line": 37,
+          "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_input.ahk",
+          "line": 17,
+          "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_inputhook.ahk",
+          "line": 16,
+          "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_layout.ahk",
+          "line": 13,
+          "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_repeat.ahk",
+          "line": 19,
+          "profile": "x11"
+        },
         {
           "file": "tests/doccheck/assert_sys.ahk",
           "line": 98,
@@ -9258,12 +9323,12 @@
       "verified_source": {
         "excerpt": "Sleep(60)\nLog(\"sendinput=\" (downs(next_lines()) = \"y\" ? 1 : 0))\nSendPlay(\"z\")\nSleep(60)\nLog(\"sendplay=\" (downs(next_lines()) = \"z\" ? 1 : 0))",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 109
+        "line": 116
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 109,
+          "line": 116,
           "profile": "x11"
         }
       ]
@@ -9285,27 +9350,27 @@
       "verified_source": {
         "excerpt": "Send(\"abz\")                 ; -> \"W\" + 'z'.\nSend(\"hello \")              ; no match -> passthrough.\nSendText(\"你好\")             ; CJK raw trigger -> Backspace x2 + \"nn\".\nSend(\"gh\")                   ; B0 -> original \"gh\" remains, then R.\nSend(\"xij \")                ; inside-word guard: no replacement.\nSend(\" ij \")                ; boundary match: Backspace x3 + S + space.",
         "file": "tests/doccheck/assert_hotstring.ahk",
-        "line": 40
+        "line": 43
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_hotstring.ahk",
-          "line": 40,
+          "line": 43,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 82,
+          "line": 89,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_inputhook.ahk",
-          "line": 98,
+          "line": 103,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_repeat.ahk",
-          "line": 48,
+          "line": 52,
           "profile": "x11"
         },
         {
@@ -9337,12 +9402,12 @@
       "verified_source": {
         "excerpt": "\n; --- SetCapsLockState/SetNumLockState/SetScrollLockState + GetKeyState \"T\". ---\nSetCapsLockState(\"On\")\nLog(\"caps_on=\" (GetKeyState(\"CapsLock\", \"T\") = 1 ? 1 : 0))\nSetCapsLockState(-1)\nLog(\"caps_toggle=\" (GetKeyState(\"CapsLock\", \"T\") = 0 ? 1 : 0))",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 292
+        "line": 302
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 292,
+          "line": 302,
           "profile": "x11"
         }
       ]
@@ -9430,12 +9495,12 @@
       "verified_source": {
         "excerpt": "; (50ms) delay could collapse into one wake-up and flake; 150ms is measured\n; robustly as >=120ms.\nSetKeyDelay(150)\nSendEvent(\"abc\")\nSleep(600)\nts := all_key_times(next_lines())",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 133
+        "line": 140
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 133,
+          "line": 140,
           "profile": "x11"
         },
         {
@@ -9493,12 +9558,12 @@
       "verified_source": {
         "excerpt": "SetCapsLockState(\"Off\")\nLog(\"caps_off=\" (GetKeyState(\"CapsLock\", \"T\") = 0 ? 1 : 0))\nSetNumLockState(\"On\")\nLog(\"num_on=\" (GetKeyState(\"NumLock\", \"T\") = 1 ? 1 : 0))\nSetNumLockState(\"Off\")\nLog(\"num_off=\" (GetKeyState(\"NumLock\", \"T\") = 0 ? 1 : 0))",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 300
+        "line": 310
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 300,
+          "line": 310,
           "profile": "x11"
         }
       ]
@@ -9551,12 +9616,12 @@
       "verified_source": {
         "excerpt": "SetNumLockState(\"Off\")\nLog(\"num_off=\" (GetKeyState(\"NumLock\", \"T\") = 0 ? 1 : 0))\nSetScrollLockState(\"On\")\nLog(\"scroll_on=\" (GetKeyState(\"ScrollLock\", \"T\") = 1 ? 1 : 0))\nSetScrollLockState(\"Off\")\nLog(\"scroll_off=\" (GetKeyState(\"ScrollLock\", \"T\") = 0 ? 1 : 0))",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 304
+        "line": 314
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 304,
+          "line": 314,
           "profile": "x11"
         }
       ]
@@ -9613,12 +9678,12 @@
       "verified_source": {
         "excerpt": "    n++\n}\nSetTimer(T, 60)\ncnt6 := 0\nCB6(ThisHotkey) {\n    global cnt6",
         "file": "tests/doccheck/assert_hotkey.ahk",
-        "line": 94
+        "line": 101
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_hotkey.ahk",
-          "line": 94,
+          "line": 101,
           "profile": "x11"
         },
         {
@@ -9835,7 +9900,7 @@
         },
         {
           "file": "tests/doccheck/assert_hotkey.ahk",
-          "line": 18,
+          "line": 25,
           "profile": "x11"
         },
         {
@@ -9845,12 +9910,12 @@
         },
         {
           "file": "tests/doccheck/assert_hotkey_lr.ahk",
-          "line": 51,
+          "line": 55,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_hotkey_pt.ahk",
-          "line": 51,
+          "line": 55,
           "profile": "x11"
         },
         {
@@ -9865,17 +9930,17 @@
         },
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 18,
+          "line": 25,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_inputhook.ahk",
-          "line": 17,
+          "line": 22,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_layout.ahk",
-          "line": 14,
+          "line": 18,
           "profile": "x11"
         },
         {
@@ -9890,7 +9955,7 @@
         },
         {
           "file": "tests/doccheck/assert_repeat.ahk",
-          "line": 21,
+          "line": 25,
           "profile": "x11"
         },
         {
@@ -10473,12 +10538,12 @@
       "verified_source": {
         "excerpt": "ih3.Wait(2500)\nLog(\"ih3_val=\" (ih3.Input = \"ab\" ? 1 : 0))\nLog(\"ih3_end=\" (ih3.EndReason = \"EndKey\" && StrLower(ih3.EndKey) = \"z\" ? 1 : 0))\nSleep(50)\n; E matches by produced character but still reports EndReason=EndKey; EndKey\n; returns the actual character (official v2 contract).",
         "file": "tests/doccheck/assert_inputhook.ahk",
-        "line": 111
+        "line": 116
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_inputhook.ahk",
-          "line": 111,
+          "line": 116,
           "profile": "x11"
         },
         {
@@ -10617,17 +10682,17 @@
         },
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 28,
+          "line": 35,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_layout.ahk",
-          "line": 24,
+          "line": 28,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_repeat.ahk",
-          "line": 31,
+          "line": 35,
           "profile": "x11"
         },
         {
@@ -11940,7 +12005,7 @@
         },
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 280,
+          "line": 290,
           "profile": "x11"
         },
         {
@@ -12680,12 +12745,12 @@
         },
         {
           "file": "tests/doccheck/assert_hotkey_lr.ahk",
-          "line": 50,
+          "line": 54,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_hotkey_pt.ahk",
-          "line": 50,
+          "line": 54,
           "profile": "x11"
         },
         {
@@ -12700,17 +12765,17 @@
         },
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 17,
+          "line": 24,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_inputhook.ahk",
-          "line": 16,
+          "line": 21,
           "profile": "x11"
         },
         {
           "file": "tests/doccheck/assert_layout.ahk",
-          "line": 13,
+          "line": 17,
           "profile": "x11"
         },
         {
@@ -12725,7 +12790,7 @@
         },
         {
           "file": "tests/doccheck/assert_repeat.ahk",
-          "line": 20,
+          "line": 24,
           "profile": "x11"
         },
         {
@@ -12849,7 +12914,7 @@
     "verified-error": 6
   },
   "mapped_count": 370,
-  "multi_environment_entries": 50,
+  "multi_environment_entries": 51,
   "official_reference_examples": 230,
   "profile_evidence": {
     "dbus": 9,
@@ -12860,19 +12925,19 @@
     "lifecycle": 2,
     "safety-boundary": 1,
     "wayland": 18,
-    "x11": 232
+    "x11": 233
   },
   "profiles": {
     "dbus": 7,
     "desktop-session": 2,
-    "headless": 125,
+    "headless": 124,
     "host-tools": 9,
     "interactive": 1,
     "lifecycle": 2,
     "safety-boundary": 1,
-    "x11": 223
+    "x11": 224
   },
   "schema": 1,
   "source": "tests/doccheck/worklist.tsv",
-  "verified_source_links": 703
+  "verified_source_links": 716
 }

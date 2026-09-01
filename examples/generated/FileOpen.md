@@ -10,9 +10,9 @@
 
 - `headless`: [tests/doccheck/assert_file.ahk:24](../../tests/doccheck/assert_file.ahk#L24)
 - `x11`: [tests/doccheck/assert_image.ahk:28](../../tests/doccheck/assert_image.ahk#L28)
-- `x11`: [tests/doccheck/assert_input.ahk:23](../../tests/doccheck/assert_input.ahk#L23)
-- `x11`: [tests/doccheck/assert_layout.ahk:19](../../tests/doccheck/assert_layout.ahk#L19)
-- `x11`: [tests/doccheck/assert_repeat.ahk:26](../../tests/doccheck/assert_repeat.ahk#L26)
+- `x11`: [tests/doccheck/assert_input.ahk:30](../../tests/doccheck/assert_input.ahk#L30)
+- `x11`: [tests/doccheck/assert_layout.ahk:23](../../tests/doccheck/assert_layout.ahk#L23)
+- `x11`: [tests/doccheck/assert_repeat.ahk:30](../../tests/doccheck/assert_repeat.ahk#L30)
 
 Opens a file to read specific content from it and/or to write new content into it.
 

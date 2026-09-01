@@ -10,7 +10,7 @@
 
 - `x11`: [tests/doccheck/assert_dialog.ahk:64](../../tests/doccheck/assert_dialog.ahk#L64)
 - `headless`: [tests/doccheck/assert_general.ahk:6](../../tests/doccheck/assert_general.ahk#L6)
-- `x11`: [tests/doccheck/assert_layout.ahk:40](../../tests/doccheck/assert_layout.ahk#L40)
+- `x11`: [tests/doccheck/assert_layout.ahk:44](../../tests/doccheck/assert_layout.ahk#L44)
 
 Retrieves the value of the specified environment variable.
 

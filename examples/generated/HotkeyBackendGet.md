@@ -3,12 +3,12 @@
 - Linux status: `IMPL` (P1)
 - Example kind: `verified`
 - Environment profile: `x11`
-- Verified source: [tests/doccheck/assert_hotkey.ahk:123](../../tests/doccheck/assert_hotkey.ahk#L123)
+- Verified source: [tests/doccheck/assert_hotkey.ahk:130](../../tests/doccheck/assert_hotkey.ahk#L130)
 - Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
 
 ## Additional verified environments
 
-- `x11`: [tests/doccheck/assert_hotstring.ahk:50](../../tests/doccheck/assert_hotstring.ahk#L50)
+- `x11`: [tests/doccheck/assert_hotstring.ahk:53](../../tests/doccheck/assert_hotstring.ahk#L53)
 
 ## Linux-verified example excerpt
 

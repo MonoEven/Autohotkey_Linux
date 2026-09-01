@@ -8,7 +8,7 @@
 
 ## Additional verified environments
 
-- `x11`: [tests/doccheck/assert_hotkey_pt.ahk:60](../../tests/doccheck/assert_hotkey_pt.ahk#L60)
+- `x11`: [tests/doccheck/assert_hotkey_pt.ahk:64](../../tests/doccheck/assert_hotkey_pt.ahk#L64)
 - `x11`: [tests/doccheck/assert_misc_cov.ahk:210](../../tests/doccheck/assert_misc_cov.ahk#L210)
 
 Specifies the criteria for subsequently created or modified hotkey variants and hotstring variants.

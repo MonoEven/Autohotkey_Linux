@@ -3,19 +3,19 @@
 - Linux status: `IMPL` (P1)
 - Example kind: `verified`
 - Environment profile: `x11`
-- Verified source: [tests/doccheck/assert_hotkey.ahk:19](../../tests/doccheck/assert_hotkey.ahk#L19)
+- Verified source: [tests/doccheck/assert_hotkey.ahk:26](../../tests/doccheck/assert_hotkey.ahk#L26)
 - Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
 
 ## Additional verified environments
 
 - `x11`: [tests/doccheck/assert_hotkey_btn.ahk:70](../../tests/doccheck/assert_hotkey_btn.ahk#L70)
-- `x11`: [tests/doccheck/assert_hotkey_lr.ahk:61](../../tests/doccheck/assert_hotkey_lr.ahk#L61)
-- `x11`: [tests/doccheck/assert_hotkey_pt.ahk:66](../../tests/doccheck/assert_hotkey_pt.ahk#L66)
-- `x11`: [tests/doccheck/assert_hotstring.ahk:35](../../tests/doccheck/assert_hotstring.ahk#L35)
-- `x11`: [tests/doccheck/assert_input.ahk:58](../../tests/doccheck/assert_input.ahk#L58)
-- `x11`: [tests/doccheck/assert_inputhook.ahk:22](../../tests/doccheck/assert_inputhook.ahk#L22)
-- `x11`: [tests/doccheck/assert_layout.ahk:57](../../tests/doccheck/assert_layout.ahk#L57)
-- `x11`: [tests/doccheck/assert_repeat.ahk:64](../../tests/doccheck/assert_repeat.ahk#L64)
+- `x11`: [tests/doccheck/assert_hotkey_lr.ahk:65](../../tests/doccheck/assert_hotkey_lr.ahk#L65)
+- `x11`: [tests/doccheck/assert_hotkey_pt.ahk:70](../../tests/doccheck/assert_hotkey_pt.ahk#L70)
+- `x11`: [tests/doccheck/assert_hotstring.ahk:38](../../tests/doccheck/assert_hotstring.ahk#L38)
+- `x11`: [tests/doccheck/assert_input.ahk:65](../../tests/doccheck/assert_input.ahk#L65)
+- `x11`: [tests/doccheck/assert_inputhook.ahk:27](../../tests/doccheck/assert_inputhook.ahk#L27)
+- `x11`: [tests/doccheck/assert_layout.ahk:61](../../tests/doccheck/assert_layout.ahk#L61)
+- `x11`: [tests/doccheck/assert_repeat.ahk:68](../../tests/doccheck/assert_repeat.ahk#L68)
 - `wayland`: [tests/doccheck/assert_wayland.ahk:39](../../tests/doccheck/assert_wayland.ahk#L39)
 
 Sends simulated keystrokes and mouse clicks to the active window.

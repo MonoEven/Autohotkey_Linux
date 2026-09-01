@@ -3,12 +3,12 @@
 - Linux status: `IMPL` (P1)
 - Example kind: `verified`
 - Environment profile: `x11`
-- Verified source: [tests/doccheck/assert_input.ahk:215](../../tests/doccheck/assert_input.ahk#L215)
+- Verified source: [tests/doccheck/assert_input.ahk:225](../../tests/doccheck/assert_input.ahk#L225)
 - Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
 
 ## Additional verified environments
 
-- `x11`: [tests/doccheck/assert_inputhook.ahk:20](../../tests/doccheck/assert_inputhook.ahk#L20)
+- `x11`: [tests/doccheck/assert_inputhook.ahk:25](../../tests/doccheck/assert_inputhook.ahk#L25)
 - `host-tools`: [tests/doccheck/assert_sound_etc.ahk:48](../../tests/doccheck/assert_sound_etc.ahk#L48)
 
 Creates an object which can be used to collect or intercept keyboard input.

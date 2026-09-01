@@ -3,7 +3,7 @@
 - Linux status: `IMPL` (P1)
 - Example kind: `verified`
 - Environment profile: `x11`
-- Verified source: [tests/doccheck/assert_input.ahk:238](../../tests/doccheck/assert_input.ahk#L238)
+- Verified source: [tests/doccheck/assert_input.ahk:248](../../tests/doccheck/assert_input.ahk#L248)
 - Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
 
 Retrieves the current position of the mouse cursor, and optionally which window and control it is hovering over.

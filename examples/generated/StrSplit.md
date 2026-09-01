@@ -9,9 +9,9 @@
 ## Additional verified environments
 
 - `x11`: [tests/doccheck/assert_ctrl.ahk:30](../../tests/doccheck/assert_ctrl.ahk#L30)
-- `x11`: [tests/doccheck/assert_input.ahk:28](../../tests/doccheck/assert_input.ahk#L28)
-- `x11`: [tests/doccheck/assert_layout.ahk:24](../../tests/doccheck/assert_layout.ahk#L24)
-- `x11`: [tests/doccheck/assert_repeat.ahk:31](../../tests/doccheck/assert_repeat.ahk#L31)
+- `x11`: [tests/doccheck/assert_input.ahk:35](../../tests/doccheck/assert_input.ahk#L35)
+- `x11`: [tests/doccheck/assert_layout.ahk:28](../../tests/doccheck/assert_layout.ahk#L28)
+- `x11`: [tests/doccheck/assert_repeat.ahk:35](../../tests/doccheck/assert_repeat.ahk#L35)
 - `headless`: [tests/doccheck/assert_string.ahk:34](../../tests/doccheck/assert_string.ahk#L34)
 
 Separates a string into an array of substrings using the specified delimiters.

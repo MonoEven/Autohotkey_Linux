@@ -3,7 +3,7 @@
 - Linux status: `IMPL` (P1)
 - Example kind: `verified`
 - Environment profile: `x11`
-- Verified source: [tests/doccheck/assert_inputhook.ahk:111](../../tests/doccheck/assert_inputhook.ahk#L111)
+- Verified source: [tests/doccheck/assert_inputhook.ahk:116](../../tests/doccheck/assert_inputhook.ahk#L116)
 - Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
 
 ## Additional verified environments

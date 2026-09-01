@@ -8,7 +8,7 @@
 
 ## Additional verified environments
 
-- `x11`: [tests/doccheck/assert_hotkey.ahk:124](../../tests/doccheck/assert_hotkey.ahk#L124)
+- `x11`: [tests/doccheck/assert_hotkey.ahk:131](../../tests/doccheck/assert_hotkey.ahk#L131)
 - `headless`: [tests/doccheck/assert_object.ahk:14](../../tests/doccheck/assert_object.ahk#L14)
 
 Returns a non-zero number if the specified value is an object.

@@ -11,7 +11,7 @@
 - `x11`: [tests/doccheck/assert_clipboard_slow.ahk:23](../../tests/doccheck/assert_clipboard_slow.ahk#L23)
 - `x11`: [tests/doccheck/assert_edit.ahk:110](../../tests/doccheck/assert_edit.ahk#L110)
 - `headless`: [tests/doccheck/assert_file.ahk:5](../../tests/doccheck/assert_file.ahk#L5)
-- `x11`: [tests/doccheck/assert_hotkey_pt.ahk:104](../../tests/doccheck/assert_hotkey_pt.ahk#L104)
+- `x11`: [tests/doccheck/assert_hotkey_pt.ahk:108](../../tests/doccheck/assert_hotkey_pt.ahk#L108)
 - `x11`: [tests/doccheck/assert_shape.ahk:32](../../tests/doccheck/assert_shape.ahk#L32)
 - `headless`: [tests/doccheck/assert_statements.ahk:132](../../tests/doccheck/assert_statements.ahk#L132)
 - `headless`: [tests/doccheck/assert_sys.ahk:224](../../tests/doccheck/assert_sys.ahk#L224)

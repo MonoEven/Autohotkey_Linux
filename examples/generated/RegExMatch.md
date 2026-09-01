@@ -8,7 +8,7 @@
 
 ## Additional verified environments
 
-- `x11`: [tests/doccheck/assert_inputhook.ahk:58](../../tests/doccheck/assert_inputhook.ahk#L58)
+- `x11`: [tests/doccheck/assert_inputhook.ahk:63](../../tests/doccheck/assert_inputhook.ahk#L63)
 - `headless`: [tests/doccheck/assert_regex.ahk:8](../../tests/doccheck/assert_regex.ahk#L8)
 
 Determines whether a string contains a pattern (regular expression).

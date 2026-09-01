@@ -10,7 +10,7 @@
 
 - `x11`: [tests/doccheck/assert_edit.ahk:147](../../tests/doccheck/assert_edit.ahk#L147)
 - `x11`: [tests/doccheck/assert_gui.ahk:40](../../tests/doccheck/assert_gui.ahk#L40)
-- `x11`: [tests/doccheck/assert_hotkey.ahk:140](../../tests/doccheck/assert_hotkey.ahk#L140)
+- `x11`: [tests/doccheck/assert_hotkey.ahk:147](../../tests/doccheck/assert_hotkey.ahk#L147)
 - `x11`: [tests/doccheck/assert_image.ahk:193](../../tests/doccheck/assert_image.ahk#L193)
 - `x11`: [tests/doccheck/assert_msg.ahk:231](../../tests/doccheck/assert_msg.ahk#L231)
 - `x11`: [tests/doccheck/assert_shape.ahk:123](../../tests/doccheck/assert_shape.ahk#L123)

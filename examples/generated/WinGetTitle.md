@@ -8,7 +8,7 @@
 
 ## Additional verified environments
 
-- `x11`: [tests/doccheck/assert_input.ahk:280](../../tests/doccheck/assert_input.ahk#L280)
+- `x11`: [tests/doccheck/assert_input.ahk:290](../../tests/doccheck/assert_input.ahk#L290)
 - `x11`: [tests/doccheck/assert_timer.ahk:82](../../tests/doccheck/assert_timer.ahk#L82)
 - `wayland`: [tests/doccheck/assert_wayland.ahk:101](../../tests/doccheck/assert_wayland.ahk#L101)
 - `x11`: [tests/doccheck/assert_win.ahk:46](../../tests/doccheck/assert_win.ahk#L46)

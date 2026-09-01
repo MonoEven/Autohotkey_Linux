@@ -3,7 +3,7 @@
 - Linux status: `IMPL` (P1)
 - Example kind: `verified`
 - Environment profile: `x11`
-- Verified source: [tests/doccheck/assert_input.ahk:267](../../tests/doccheck/assert_input.ahk#L267)
+- Verified source: [tests/doccheck/assert_input.ahk:277](../../tests/doccheck/assert_input.ahk#L277)
 - Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
 
 Clicks a mouse button at the specified coordinates. It can also hold down a mouse button, turn the mouse wheel, or move the mouse.

@@ -3,7 +3,7 @@
 - Linux status: `IMPL` (P2)
 - Example kind: `verified`
 - Environment profile: `x11`
-- Verified source: [tests/doccheck/assert_input.ahk:109](../../tests/doccheck/assert_input.ahk#L109)
+- Verified source: [tests/doccheck/assert_input.ahk:116](../../tests/doccheck/assert_input.ahk#L116)
 - Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
 - Linux adaptation: No X11 journal: SendEvent pacing + the SetKeyDelay ,, Play variants (injection depth equals Event)
 

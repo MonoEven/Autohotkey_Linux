@@ -9,9 +9,9 @@
 ## Additional verified environments
 
 - `headless`: [tests/doccheck/assert_file.ahk:58](../../tests/doccheck/assert_file.ahk#L58)
-- `x11`: [tests/doccheck/assert_input.ahk:27](../../tests/doccheck/assert_input.ahk#L27)
-- `x11`: [tests/doccheck/assert_layout.ahk:23](../../tests/doccheck/assert_layout.ahk#L23)
-- `x11`: [tests/doccheck/assert_repeat.ahk:30](../../tests/doccheck/assert_repeat.ahk#L30)
+- `x11`: [tests/doccheck/assert_input.ahk:34](../../tests/doccheck/assert_input.ahk#L34)
+- `x11`: [tests/doccheck/assert_layout.ahk:27](../../tests/doccheck/assert_layout.ahk#L27)
+- `x11`: [tests/doccheck/assert_repeat.ahk:34](../../tests/doccheck/assert_repeat.ahk#L34)
 - `headless`: [tests/doccheck/assert_sys.ahk:313](../../tests/doccheck/assert_sys.ahk#L313)
 
 Retrieves the size of a file.
