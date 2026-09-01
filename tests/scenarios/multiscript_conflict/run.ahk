@@ -36,6 +36,10 @@ if (conflict_seen)
 ; Hotkey() call or process restart.
 ProcessWaitClose(holderPid, 10)
 Sleep 1800
+; Windows-golden self-trigger path: SendEvent at SendLevel 1 fires the
+; level-0 hotkey (send_level must exceed input_level).
+SendMode("Event")
+SendLevel(1)
 Send("{F7}")
 Sleep 500
 FileAppend("recovered=" (fired = 1 ? 1 : 0) "`n", WINOUT)

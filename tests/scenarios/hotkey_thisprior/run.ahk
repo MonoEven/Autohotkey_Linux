@@ -14,6 +14,10 @@ CB9(ThisHotkey) {
         ok := 1
 }
 Hotkey("F9", CB9)
+; Windows-golden self-trigger path: SendEvent at SendLevel 1 fires level-0
+; hotkeys (a level-0 Send may not -- send_level must exceed input_level).
+SendMode("Event")
+SendLevel(1)
 Sleep(200)
 Send("{F8}")
 Sleep(300)

@@ -8,6 +8,12 @@ CB(ThisHotkey) {
     cnt++
 }
 Hotkey("F7", CB)
+; Windows-golden self-trigger path (official HotInputLevelAllowsFiring): a
+; synthetic event fires a hotkey only when send_level > input_level, so a
+; level-0 Send can never fire a level-0 hotkey.  SendEvent at SendLevel 1 is
+; the documented way for a script to trigger its own hotkeys.
+SendMode("Event")
+SendLevel(1)
 Sleep(200)
 Send("{F7}")
 Sleep(300)

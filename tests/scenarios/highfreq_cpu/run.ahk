@@ -8,6 +8,10 @@ CB(ThisHotkey) {
     cnt++
 }
 Hotkey("F6", CB)
+; Windows-golden self-trigger path: SendEvent at SendLevel 1 fires the
+; level-0 hotkey (a level-0 Send may not -- send_level must exceed input_level).
+SendMode("Event")
+SendLevel(1)
 Sleep(600)   ; let the grab settle before the first send
 Loop 50 {
     Send("{F6}")
