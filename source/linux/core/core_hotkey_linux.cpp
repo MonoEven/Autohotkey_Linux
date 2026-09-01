@@ -786,10 +786,11 @@ void LinuxHandleKeyEvent(Display *d, XEvent &ev)
 		// Windows: every hotkey/hotstring thread starts with SendLevel equal
 		// to the hotkey's InputLevel (official SendLevel docs).  Set it AFTER
 		// InitNewThread (which resets thread settings to the auto-execute
-		// defaults).
+		// defaults); capture the underlying thread's SendLevel BEFORE ++g
+		// (the reused slot's stale settings must never leak back).
+		SendLevelType saved_send_level = g->SendLevel;
 		++g_nThreads;
 		++g;
-		SendLevelType saved_send_level = g->SendLevel;
 		InitNewThread(vp_fire->mPriority, false, false);
 		g->SendLevel = vp_fire->mInputLevel;
 		LinuxTrackHotkey(hk_fire);
@@ -889,10 +890,11 @@ void LinuxHandleButtonEvent(Display *d, XEvent &ev)
 	if (hk_fire)
 	{
 		// Windows: the button hotkey thread starts at its InputLevel (set
-		// after InitNewThread resets thread settings).
+		// after InitNewThread resets thread settings; capture the underlying
+		// thread's SendLevel before ++g).
+		SendLevelType saved_send_level = g->SendLevel;
 		++g_nThreads;
 		++g;
-		SendLevelType saved_send_level = g->SendLevel;
 		InitNewThread(vp_fire->mPriority, false, false);
 		g->SendLevel = vp_fire->mInputLevel;
 		LinuxTrackHotkey(hk_fire);
