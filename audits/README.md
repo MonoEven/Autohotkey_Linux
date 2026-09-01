@@ -13,6 +13,27 @@ old counts and findings are not mistaken for the latest release status.
 | [check_detail0821.md](check_detail0821.md) | Detailed roadmap plus the current evidence-based completion audit |
 | [check0824.md](check0824.md) | 2026-08-24 independent technical audit (commit `eaeeaf74`) |
 | [check_detail0824.md](check_detail0824.md) | Detailed gap breakdown and per-item solution designs derived from check0824 |
+| [check0901.md](check0901.md) | 2026-08-30 independent technical audit (commit `5bc26e5a`) |
+| [check_detail0901.md](check_detail0901.md) | Per-item designs for every P0-P3 gap; milestone plan MF-M9 |
+
+Closures since check0901 (evidence in the linked oracles):
+
+- **P0-1 (inputd replay fail-open)** — replay device is created and
+  validated before any grab; every `UI_SET_*`/`UI_DEV_CREATE` result is
+  checked; replay writes fail-open (release all grabs + client-visible
+  `BACKEND_DEGRADED` + `STATUS=degraded`); two-phase `EVIOCGKEY` grab with
+  defer/retry. Fault oracle:
+  [run_inputd_replay_failure_oracle.sh](../tests/oracle/run_inputd_replay_failure_oracle.sh)
+  (12/12: EACCES, ENOTTY, runtime write failure, held-key defer/retry).
+- **P0-2 / P1-3 (SendLevel/InputLevel + SendMode Input)** — unified
+  policy entry in
+  [input_semantics.h](../source/linux/core/input_semantics.h) with the
+  official strict `send_level > input_level` rule; hotkey/hotstring threads
+  start at their InputLevel; hotstring buffer excludes level 0; Send/SendText
+  under SendMode "Input" and explicit SendInput share hook-unloaded
+  semantics; SendPlay never fires own hooks. Policy oracle:
+  [run_sendlevel_policy_oracle.sh](../tests/oracle/run_sendlevel_policy_oracle.sh)
+  (22/22 documented Windows golden matrix).
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),
