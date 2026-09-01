@@ -151,6 +151,24 @@ static unsigned long long sEventSeq;
 static unsigned long long sNextClientId;
 static unsigned long long sNextDeviceId = 1;
 static unsigned long long sDevIds[MAX_DEVICES];
+
+/* M4 broker-owned injection transactions (check0901 P0-3 §3.3C).  A client
+ * opens a transaction, streams key events, then commits/aborts; the broker
+ * validates capability, level, quota and TTL, submits the events to its own
+ * output device and publishes them on the internal stream with authoritative
+ * provenance.  Crash/expiry auto-aborts and balances any still-held keys. */
+struct inject_txn {
+	struct client *owner;   /* NULL = free slot */
+	unsigned long long id;
+	int send_level;
+	long long deadline_ms;
+	unsigned int event_count; /* preflight plan */
+	unsigned int events_seen;
+	unsigned long long parent;
+	unsigned char held[KEY_CNT / 8];
+};
+static struct inject_txn sTxns[INPUTD_V2_INJECT_MAX_TOTAL];
+static long long sLastTtlSweepMs = 0;
 /* check0901 P0-1: replay-lane health is separate from the panic path.  Once
  * the replay device fails (create or write), every physical grab is released
  * and the broker becomes observe/listen-only; it never grabs again. */
@@ -488,7 +506,9 @@ static void send_hello_ack_v2(struct client *c, unsigned int caps_granted
 }
 
 static void send_event_v2(struct client *c, unsigned int code, int value
-	, long long ts, unsigned long long device_id)
+	, long long ts, unsigned long long device_id
+	, unsigned long long producer, unsigned long long txn
+	, unsigned long long parent, int send_level, unsigned char source)
 {
 	unsigned char payload[INPUTD_V2_ENVELOPE_LEN + INPUTD_V2_KEY_PAYLOAD_LEN];
 	unsigned char *p = payload;
@@ -497,13 +517,17 @@ static void send_event_v2(struct client *c, unsigned int code, int value
 	st_le64(p, sEventSeq); p += 8;
 	st_le64(p, (unsigned long long)ts); p += 8;
 	st_le64(p, device_id); p += 8;
-	*p++ = INPUTD_V2_SOURCE_PHYSICAL;  /* broker-owned evdev lane */
-	*p++ = INPUTD_V2_ORIGIN_EVDEV;
+	*p++ = source;
+	*p++ = source == INPUTD_V2_SOURCE_PHYSICAL
+		? INPUTD_V2_ORIGIN_EVDEV : INPUTD_V2_ORIGIN_UINPUT; /* broker-owned output */
 	*p++ = INPUTD_V2_CONF_AUTHORITATIVE;
 	*p++ = 0;                          /* reserved */
-	st_le16(p, (unsigned int)(int)-1); p += 2; /* send_level: not synthetic */
+	st_le16(p, (unsigned int)(int)send_level); p += 2;
 	st_le16(p, INPUTD_V2_PAYLOAD_KEY); p += 2;
 	st_le16(p, INPUTD_V2_KEY_PAYLOAD_LEN); p += 2;
+	st_le64(p, producer); p += 8;
+	st_le64(p, txn); p += 8;
+	st_le64(p, parent); p += 8;
 	st_le32(p, code); p += 4;
 	st_le16(p, 0); p += 2;  /* vk: not mapped by the broker */
 	st_le16(p, 0); p += 2;  /* sc: not mapped by the broker */
@@ -560,6 +584,143 @@ static void broadcast_device_removed(unsigned long long device_id)
 	}
 }
 
+/* ---- M4 broker-owned injection -------------------------------------------- */
+
+static void send_inject_ack(struct client *c, unsigned long long txn
+	, unsigned char status, const char *detail)
+{
+	size_t dlen = detail ? strlen(detail) : 0;
+	if (dlen > 96)
+		dlen = 96;
+	unsigned char payload[8 + 1 + 2 + 96];
+	st_le64(payload, txn);
+	payload[8] = status;
+	st_le16(payload + 9, (unsigned int)dlen);
+	if (dlen)
+		memcpy(payload + 11, detail, dlen);
+	send_frame_v2(c, INPUTD_V2_INJECT_ACK, 0, payload, 11 + dlen);
+}
+
+static struct inject_txn *find_txn(struct client *c, unsigned long long id)
+{
+	for (int i = 0; i < INPUTD_V2_INJECT_MAX_TOTAL; ++i)
+		if (sTxns[i].owner == c && sTxns[i].id == id)
+			return &sTxns[i];
+	return NULL;
+}
+
+static int client_txn_count(struct client *c)
+{
+	int count = 0;
+	for (int i = 0; i < INPUTD_V2_INJECT_MAX_TOTAL; ++i)
+		if (sTxns[i].owner == c)
+			++count;
+	return count;
+}
+
+static struct inject_txn *alloc_txn(struct client *c, unsigned long long id
+	, int send_level, unsigned int ttl_ms, unsigned int event_count
+	, unsigned long long parent)
+{
+	for (int i = 0; i < INPUTD_V2_INJECT_MAX_TOTAL; ++i)
+		if (!sTxns[i].owner)
+		{
+			struct inject_txn *t = &sTxns[i];
+			memset(t, 0, sizeof(*t));
+			t->owner = c;
+			t->id = id;
+			t->send_level = send_level;
+			t->deadline_ms = now_ms()
+				+ (ttl_ms ? (long long)ttl_ms : INPUTD_V2_INJECT_DEFAULT_TTL_MS);
+			t->event_count = event_count;
+			t->parent = parent;
+			return t;
+		}
+	return NULL;
+}
+
+static void inject_publish(struct client *producer, struct inject_txn *t
+	, unsigned int code, int value)
+{
+	/* One acceptance stamp per synthetic event; every recipient sees the
+	 * same authority/generation/seq + transaction provenance.  v1 clients
+	 * receive the legacy 14-byte frame (provenance-free, observe-only). */
+	++sEventSeq;
+	long long ts = now_us();
+	for (int i = 0; i < MAX_CLIENTS; ++i)
+	{
+		struct client *cl = &sClients[i];
+		if (cl->fd < 0 || cl->dead || !cl->hello_ok
+			&& !(cl->v2 && cl->v2_hello_ok))
+			continue;
+		int subscribed = 0;
+		for (int r = 0; r < cl->rule_count; ++r)
+			if (cl->rules[r].code == code)
+			{
+				subscribed = 1;
+				break;
+			}
+		if (!subscribed)
+			continue;
+		if (cl->v2 && cl->v2_hello_ok)
+			send_event_v2(cl, code, value, ts, 0, producer->client_id, t->id,
+				t->parent, t->send_level,
+				cl == producer ? INPUTD_V2_SOURCE_SELF : INPUTD_V2_SOURCE_OTHER);
+		else
+			send_event_to(cl, code, value, ts);
+	}
+}
+
+/* Release every still-held key of a transaction: write the key-up to the
+ * output device and publish the synthetic release so no observer (and no
+ * desktop) is left with a stuck key.  Call with the txns already marked. */
+static void txn_balance_and_close(struct inject_txn *t)
+{
+	struct client *owner = t->owner;
+	for (unsigned int code = 1; code < KEY_CNT; ++code)
+		if (t->held[code / 8] & (1u << (code & 7)))
+		{
+			/* replay_key() fails open (replay_dead) when the lane is gone. */
+			(void)replay_key(code, 0);
+			if (owner && owner->fd >= 0 && !owner->dead)
+				inject_publish(owner, t, code, 0);
+		}
+	t->owner = NULL;
+}
+
+static void abort_client_txns(struct client *c)
+{
+	for (int i = 0; i < INPUTD_V2_INJECT_MAX_TOTAL; ++i)
+	{
+		struct inject_txn *t = &sTxns[i];
+		if (t->owner == c)
+		{
+			fprintf(stderr, "[inputd] inject txn %llu client %llu aborted "
+				"(owner gone); balancing %s\n", t->id, c->client_id,
+				"held keys");
+			txn_balance_and_close(t);
+		}
+	}
+}
+
+static void sweep_inject_ttl(void)
+{
+	long long now = now_ms();
+	for (int i = 0; i < INPUTD_V2_INJECT_MAX_TOTAL; ++i)
+	{
+		struct inject_txn *t = &sTxns[i];
+		if (t->owner && now >= t->deadline_ms)
+		{
+			fprintf(stderr, "[inputd] inject txn %llu client %llu timed out; "
+				"aborting and balancing\n", t->id, t->owner->client_id);
+			if (t->owner->fd >= 0 && !t->owner->dead)
+				send_inject_ack(t->owner, t->id, INPUTD_V2_INJECT_STALE,
+					"transaction timed out");
+			txn_balance_and_close(t);
+		}
+	}
+}
+
 /* ---- protocol v2 command handling ------------------------------------------ */
 
 static void handle_client_cmd_v2(struct client *c, unsigned int mtype
@@ -611,13 +772,13 @@ static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 		memcpy(c->nonce, payload + 4, 16);
 		unsigned int caps_requested = ld_le32(payload + 20);
 		/* Capability grants (check_detail0901 §3.5): OBSERVE for every
-		 * socket-authorized client; SUPPRESS only for the socket owner
-		 * (or root); EXCLUSIVE/INJECT are M4 and never granted yet.
+		 * socket-authorized client; SUPPRESS/INJECT only for the socket
+		 * owner (or root); EXCLUSIVE/REMAP are P1-4 and never granted yet.
 		 * caps_denied reports every requested-but-not-granted bit so
 		 * denials stay machine-readable. */
 		unsigned int caps_granted = INPUTD_V2_CAP_OBSERVE;
 		if (c->uid == 0 || c->uid == geteuid())
-			caps_granted |= INPUTD_V2_CAP_SUPPRESS;
+			caps_granted |= INPUTD_V2_CAP_SUPPRESS | INPUTD_V2_CAP_INJECT;
 		unsigned int caps_denied = caps_requested & ~caps_granted;
 		c->client_id = ++sNextClientId;
 		c->caps_granted = caps_granted;
@@ -687,6 +848,128 @@ static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 	case INPUTD_V2_PING:
 		send_frame_v2(c, INPUTD_V2_PONG, 0, NULL, 0);
 		break;
+	case INPUTD_V2_INJECT_BEGIN:
+	{
+		unsigned long long id = n >= 8 ? ld_le64(payload) : 0;
+		if (n != INPUTD_V2_INJECT_BEGIN_PAYLOAD_LEN)
+		{
+			send_inject_ack(c, id, INPUTD_V2_INJECT_BAD_FRAME, "bad INJECT_BEGIN payload");
+			break;
+		}
+		int level = (int)(short)ld_le16(payload + 8);
+		unsigned int ttl_ms = ld_le16(payload + 12);
+		unsigned int event_count = ld_le32(payload + 14);
+		unsigned long long parent = ld_le64(payload + 18);
+		if (!(c->caps_granted & INPUTD_V2_CAP_INJECT))
+		{
+			send_inject_ack(c, id, INPUTD_V2_INJECT_DENIED, "INJECT capability not granted");
+			break;
+		}
+		if (level < 0 || level > 100 || event_count < 1
+			|| event_count > INPUTD_V2_INJECT_MAX_EVENTS)
+		{
+			send_inject_ack(c, id, INPUTD_V2_INJECT_BAD_FRAME, "level/event_count out of range");
+			break;
+		}
+		if (find_txn(c, id))
+		{
+			send_inject_ack(c, id, INPUTD_V2_INJECT_BAD_FRAME, "duplicate transaction id");
+			break;
+		}
+		if (client_txn_count(c) >= (int)INPUTD_V2_INJECT_MAX_PER_CLIENT
+			|| !alloc_txn(c, id, level, ttl_ms, event_count, parent))
+		{
+			send_inject_ack(c, id, INPUTD_V2_INJECT_QUOTA, "transaction quota exceeded");
+			break;
+		}
+		if (sReplayDead || sUinputFd < 0)
+		{
+			abort_client_txns(c);
+			send_inject_ack(c, id, INPUTD_V2_INJECT_DEGRADED, "replay lane unavailable");
+			break;
+		}
+		send_inject_ack(c, id, INPUTD_V2_INJECT_OK_BEGIN, "transaction opened");
+		break;
+	}
+	case INPUTD_V2_INJECT_EVENT:
+	{
+		unsigned long long id = n >= 8 ? ld_le64(payload) : 0;
+		if (n != 24)
+		{
+			send_inject_ack(c, id, INPUTD_V2_INJECT_BAD_FRAME, "bad INJECT_EVENT payload");
+			break;
+		}
+		struct inject_txn *t = find_txn(c, id);
+		if (!t)
+		{
+			/* check0901 P0-3: a restarted broker must never accept events for
+			 * a previous generation's transaction. */
+			send_inject_ack(c, id, INPUTD_V2_INJECT_STALE, "unknown transaction");
+			break;
+		}
+		const unsigned char *k = payload + 8;
+		unsigned int code = ld_le32(k);
+		unsigned int value = k[13];
+		unsigned int phase = k[12];
+		if (!code || code > KEY_MAX || value > 2
+			|| (value == 2) != (phase == INPUTD_V2_PHASE_REPEAT))
+		{
+			send_inject_ack(c, id, INPUTD_V2_INJECT_BAD_FRAME, "bad key payload");
+			txn_balance_and_close(t);
+			break;
+		}
+		if (sReplayDead || sUinputFd < 0)
+		{
+			send_inject_ack(c, id, INPUTD_V2_INJECT_DEGRADED, "replay lane unavailable");
+			txn_balance_and_close(t);
+			break;
+		}
+		if (replay_key(code, (int)value) != 0)
+		{
+			send_inject_ack(c, id, INPUTD_V2_INJECT_DEGRADED, "replay write failed");
+			txn_balance_and_close(t);
+			break;
+		}
+		/* Track held keys so commit/abort/crash can balance the set. */
+		if (value)
+			t->held[code / 8] |= (unsigned char)(1u << (code & 7));
+		else
+			t->held[code / 8] &= (unsigned char)~(1u << (code & 7));
+		++t->events_seen;
+		if (t->events_seen > t->event_count)
+		{
+			send_inject_ack(c, id, INPUTD_V2_INJECT_BAD_FRAME, "event_count plan exceeded");
+			txn_balance_and_close(t);
+			break;
+		}
+		inject_publish(c, t, code, (int)value);
+		send_inject_ack(c, id, INPUTD_V2_INJECT_OK_EVENT, "event accepted");
+		break;
+	}
+	case INPUTD_V2_INJECT_COMMIT:
+	case INPUTD_V2_INJECT_ABORT:
+	{
+		unsigned char is_abort = mtype == INPUTD_V2_INJECT_ABORT;
+		unsigned long long id = n >= 8 ? ld_le64(payload) : 0;
+		if (n != 8)
+		{
+			send_inject_ack(c, id, INPUTD_V2_INJECT_BAD_FRAME, "bad COMMIT/ABORT payload");
+			break;
+		}
+		struct inject_txn *t = find_txn(c, id);
+		if (!t)
+		{
+			send_inject_ack(c, id, INPUTD_V2_INJECT_STALE, "unknown transaction");
+			break;
+		}
+		/* Commit balances any key the client forgot to release, then closes
+		 * the transaction; the released events carry the same transaction
+		 * identity so observers see a balanced stream. */
+		txn_balance_and_close(t);
+		send_inject_ack(c, id, is_abort ? INPUTD_V2_INJECT_OK_ABORT
+			: INPUTD_V2_INJECT_OK_COMMIT, "transaction closed");
+		break;
+	}
 	default:
 		send_error_v2(c, INPUTD_V2_ERR_BAD_FRAME, "unknown message type");
 		c->dead = 1;
@@ -698,6 +981,9 @@ static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 
 static void close_client(struct client *c)
 {
+	/* M4: a crashed/disconnected owner auto-aborts its open transactions and
+	 * balances any still-held keys (check_detail0901 §3.6 case 6). */
+	abort_client_txns(c);
 	if (c->fd >= 0)
 	{
 		fprintf(stderr, "[inputd] client pid=%ld uid=%ld disconnected; rules dropped\n",
@@ -1476,6 +1762,12 @@ int main(int argc, char **argv)
 			if (errno == EINTR) continue;
 			break;
 		}
+		/* M4: lazy transaction TTL sweep (250 ms cadence). */
+		if (now - sLastTtlSweepMs >= 250)
+		{
+			sLastTtlSweepMs = now;
+			sweep_inject_ttl();
+		}
 		int idx = 0;
 		if (pfds[idx].revents & POLLIN)
 			(void)accept_client();
@@ -1522,7 +1814,8 @@ int main(int argc, char **argv)
 								if (cl->rules[r].suppress)
 									any_suppress = 1;
 								if (cl->v2 && cl->v2_hello_ok)
-									send_event_v2(cl, (unsigned int)ev.code, ev.value, ev_ts, ev_dev_id);
+									send_event_v2(cl, (unsigned int)ev.code, ev.value, ev_ts, ev_dev_id
+										, 0, 0, 0, -1, INPUTD_V2_SOURCE_PHYSICAL);
 								else
 									send_event_to(cl, (unsigned int)ev.code, ev.value, ev_ts);
 								break;

@@ -26,6 +26,7 @@
 #include "input_event.h"
 #include "core_inputd_client_linux.h"
 #include "../inputd/inputd_proto.h" // INPUTD_V2_SOURCE_* provenance enums
+#include "input_semantics.h"       // AhkSyntheticMayTrigger (P0-2/P0-3)
 #include "core_capture_linux.h" // LinuxCaptureRawKeyEvent / LinuxCaptureUsesRaw
 #include "core_win_linux.h"     // LinuxX11Display
 #include <linux/input.h>
@@ -474,7 +475,7 @@ int HandleEvdevCombo(unsigned int aCode, bool aDown, bool aRepeat, unsigned int 
 	return release_suppressed ? 1 : -1;
 }
 
-bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat)
+bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat, int aSendLevel = -1)
 {
 	EvTraceStart();
 	unsigned int vk = VkForEvdev(evcode);
@@ -522,6 +523,15 @@ bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat)
 		if (!vp || !vp->mEnabled)
 			continue;
 		if (!hk->PerformIsAllowed(*vp))
+			continue;
+		// check0901 P0-3: broker-injected synthetic events (send_level >= 0)
+		// fire only when send_level > input_level (official
+		// HotInputLevelAllowsFiring).  Physical broker-lane events carry -1
+		// and are never filtered here.
+		if (aSendLevel >= 0
+			&& !AhkSyntheticMayTrigger(AhkConsumerKind::HOTKEY
+				, AhkSendTransportClass::EVENT, aSendLevel
+				, (int)vp->mInputLevel))
 			continue;
 		// Unique resolution: first match wins (registration order).
 		hk_fire = hk;
@@ -661,7 +671,7 @@ static void EvdevBrokerEventAdapter(const LinuxInputdEvent &aEvent, void *aUser)
 	};
 	LinuxInputEventTrace(normalized);
 	bool down = aValue != 0;
-	HandleEvdevKey(aCode, down, aValue == 2);
+	HandleEvdevKey(aCode, down, aValue == 2, send_level);
 	// Broker character stream: when the script needs Hotstring/InputHook
 	// capture and an X11 layout source exists, decode through the same
 	// three-layer model and feed the capture engine (M2-R backspace model:

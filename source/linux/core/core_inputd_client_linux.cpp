@@ -313,6 +313,11 @@ bool SendSubscribeFrame()
 		bool passthrough = (hk->mNoSuppress & (AT_LEAST_ONE_VARIANT_HAS_TILDE
 			| AT_LEAST_ONE_COMBO_HAS_TILDE)) != 0;
 		unsigned char sup = passthrough ? 0 : 1;
+		// check_detail0901 §7.2 rule 3: suppression is owner/root-only.  A
+		// client without the SUPPRESS grant subscribes observe-only; the
+		// broker would reject suppress rules with CAPABILITY_DENIED.
+		if (sV2 && !(sCapsGranted & INPUTD_V2_CAP_SUPPRESS))
+			sup = 0;
 		if (hk->mSC)
 			add_rule(LinuxEvdevCodeForScanCode(hk->mSC), sup);
 		else if (hk->mVK)
@@ -515,6 +520,9 @@ void DispatchFrameV2(LinuxInputdEventFn aFn, void *aUser)
 		ev.source = env[48];
 		ev.confidence = env[50];
 		ev.deviceId = (unsigned int)ld_le64(env + 40);
+		ev.producerClientId = ld_le64(env + 58);
+		ev.transactionId = ld_le64(env + 66);
+		ev.parentTransactionId = ld_le64(env + 74);
 		ev.v2 = true;
 		if (aFn)
 			aFn(ev, aUser);
@@ -651,6 +659,9 @@ void LinuxInputdClientDispatch(LinuxInputdEventFn aFn, void *aUser)
 				ev.source = INPUTD_V2_SOURCE_UNKNOWN;
 				ev.confidence = INPUTD_V2_CONF_UNKNOWN;
 				ev.deviceId = 0;
+				ev.producerClientId = 0;
+				ev.transactionId = 0;
+				ev.parentTransactionId = 0;
 				ev.v2 = false;
 				if (aFn)
 					aFn(ev, aUser);

@@ -75,16 +75,24 @@
 #define INPUTD_V2_DEVICE_ADDED 11u    /* S2C */
 #define INPUTD_V2_DEVICE_REMOVED 12u  /* S2C */
 #define INPUTD_V2_BACKEND_DEGRADED 13u /* S2C */
-/* M4 (broker-owned injection / arbitration), declared but not granted yet:
- * DECISION_REQUEST/DECISION_REPLY, INJECT_BEGIN/EVENT/COMMIT/ABORT,
- * REPLACEMENT_ACK, CONFLICT, DEVICE_COVERAGE, BACKEND_HEALTH.  Clients that
- * send them today receive INPUTD_V2_ERROR / BAD_FRAME. */
+/* M4 broker-owned injection (check0901 P0-3 §3.3C): a client submits a
+ * transaction plan, the broker validates it, submits the events to its own
+ * output device and publishes the same transaction's normalized synthetic
+ * events on the internal stream with authoritative provenance. */
+#define INPUTD_V2_INJECT_BEGIN 14u    /* C2S */
+#define INPUTD_V2_INJECT_EVENT 15u    /* C2S */
+#define INPUTD_V2_INJECT_COMMIT 16u   /* C2S */
+#define INPUTD_V2_INJECT_ABORT 17u    /* C2S */
+#define INPUTD_V2_INJECT_ACK 18u      /* S2C */
+/* M4 arbitration (check_detail0901 §7): DECISION_REQUEST/DECISION_REPLY,
+ * CONFLICT, REPLACEMENT_ACK land with P1-4; EXCLUSIVE/REMAP capabilities are
+ * still denied until then. */
 
 /* capability bits (HELLO caps_requested / HELLO_ACK caps_granted|denied) */
 #define INPUTD_V2_CAP_OBSERVE 0x1u
 #define INPUTD_V2_CAP_SUPPRESS 0x2u
-#define INPUTD_V2_CAP_EXCLUSIVE 0x4u /* M4 */
-#define INPUTD_V2_CAP_INJECT 0x8u    /* M4 */
+#define INPUTD_V2_CAP_EXCLUSIVE 0x4u /* P1-4 */
+#define INPUTD_V2_CAP_INJECT 0x8u    /* M4: owner/root only */
 
 /* HELLO_ACK flags */
 #define INPUTD_V2_ACK_FLAG_DEGRADED 0x1u
@@ -128,7 +136,7 @@
 
 /* v2 payload layouts (byte offsets, little-endian) ------------------------- */
 
-/* EVENT envelope, 58 bytes:
+/* EVENT envelope, 82 bytes:
  *   0  authority_id[16]    broker instance identity (random per boot)
  *   16 generation u64      boot generation (changes on restart)
  *   24 event_seq u64       monotonic inside authority+generation
@@ -141,8 +149,11 @@
  *   52 send_level i16      -1 = not synthetic; >=0 authoritative level
  *   54 payload_kind u16    INPUTD_V2_PAYLOAD_*
  *   56 payload_len u16     payload bytes after the envelope
+ *   58 producer_client_id u64   0 for physical events
+ *   66 transaction_id u64       0 for physical events
+ *   74 parent_transaction_id u64 0 unless part of a remap chain (M4+)
  */
-#define INPUTD_V2_ENVELOPE_LEN 58u
+#define INPUTD_V2_ENVELOPE_LEN 82u
 
 /* KEY payload, 16 bytes:
  *   0  evdev_code u32
@@ -185,5 +196,34 @@
  * S2C DEVICE_ADDED payload: device_id u64, name_len u16, name bytes.
  * S2C DEVICE_REMOVED payload: device_id u64.
  * S2C BACKEND_DEGRADED payload: none. */
+
+/* M4 injection transaction (check0901 P0-3 §3.3C):
+ * C2S INJECT_BEGIN payload, 26 bytes:
+ *   0  transaction_id u64  client-chosen, unique per client+connection
+ *   8  send_level i16      0..100 (synthetic events always carry a level)
+ *   10 flags u16           0 for now
+ *   12 ttl_ms u16          0 = broker default (2000); transaction deadline
+ *   14 event_count u32     preflight: total INJECT_EVENT frames expected
+ *   18 parent_transaction_id u64  0 = top-level transaction
+ * C2S INJECT_EVENT payload, 24 bytes: transaction_id u64 + KEY payload 16.
+ * C2S INJECT_COMMIT / INJECT_ABORT payload, 8 bytes: transaction_id u64.
+ * S2C INJECT_ACK payload: transaction_id u64, status u8, detail_len u16,
+ *   detail bytes (bounded).  Status codes: */
+#define INPUTD_V2_INJECT_BEGIN_PAYLOAD_LEN 26u
+#define INPUTD_V2_INJECT_OK_BEGIN 0u
+#define INPUTD_V2_INJECT_OK_COMMIT 1u
+#define INPUTD_V2_INJECT_OK_ABORT 2u
+#define INPUTD_V2_INJECT_OK_EVENT 8u    /* one INJECT_EVENT accepted */
+#define INPUTD_V2_INJECT_STALE 3u      /* unknown txn id (restart/replay) */
+#define INPUTD_V2_INJECT_DENIED 4u     /* capability not granted */
+#define INPUTD_V2_INJECT_QUOTA 5u      /* too many concurrent transactions */
+#define INPUTD_V2_INJECT_BAD_FRAME 6u  /* malformed payload / bad event_count */
+#define INPUTD_V2_INJECT_DEGRADED 7u   /* replay lane unavailable */
+
+/* M4 injection quotas (check_detail0901 §3.5) */
+#define INPUTD_V2_INJECT_MAX_PER_CLIENT 4u
+#define INPUTD_V2_INJECT_MAX_TOTAL 16u
+#define INPUTD_V2_INJECT_MAX_EVENTS 256u
+#define INPUTD_V2_INJECT_DEFAULT_TTL_MS 2000u
 
 #endif /* AHK_INPUTD_PROTO_H */

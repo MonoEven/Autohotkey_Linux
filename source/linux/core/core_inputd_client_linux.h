@@ -29,6 +29,9 @@ struct LinuxInputdEvent
 	unsigned char source;     // INPUTD_V2_SOURCE_*
 	unsigned char confidence; // INPUTD_V2_CONF_*
 	unsigned int deviceId;    // broker-assigned device id (v2); 0 on v1
+	unsigned long long producerClientId; // 0 for physical events (M4)
+	unsigned long long transactionId;    // 0 for physical events (M4)
+	unsigned long long parentTransactionId;
 	bool v2;
 };
 

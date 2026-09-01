@@ -121,6 +121,10 @@ jobs:
         if: matrix.build == 'core'
         run: bash tests/oracle/run_inputd_v2_protocol_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd"
 
+      - name: Inputd broker-owned injection oracle (check0901 P0-3 M4)
+        if: matrix.build == 'core'
+        run: bash tests/oracle/run_inputd_injection_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd" "$BUILD_DIR/source/linux/core/ahk_core"
+
       - name: SendLevel/InputLevel policy oracle (check0901 P0-2/P1-3)
         if: matrix.build == 'core'
         run: bash tests/oracle/run_sendlevel_policy_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"

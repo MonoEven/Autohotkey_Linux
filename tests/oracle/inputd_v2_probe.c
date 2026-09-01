@@ -30,6 +30,7 @@
  *   CLOSED / NO_RESPONSE
  */
 #define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE /* usleep */
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/time.h>
@@ -59,9 +60,25 @@
 #define MSG_DEVICE_ADDED 11u
 #define MSG_DEVICE_REMOVED 12u
 #define MSG_BACKEND_DEGRADED 13u
+#define MSG_INJECT_BEGIN 14u
+#define MSG_INJECT_EVENT 15u
+#define MSG_INJECT_COMMIT 16u
+#define MSG_INJECT_ABORT 17u
+#define MSG_INJECT_ACK 18u
 
 #define CAP_OBSERVE 0x1u
 #define CAP_SUPPRESS 0x2u
+#define CAP_INJECT 0x8u
+
+#define INJECT_OK_BEGIN 0u
+#define INJECT_OK_COMMIT 1u
+#define INJECT_OK_ABORT 2u
+#define INJECT_STALE 3u
+#define INJECT_DENIED 4u
+#define INJECT_QUOTA 5u
+#define INJECT_BAD_FRAME 6u
+#define INJECT_DEGRADED 7u
+#define INJECT_OK_EVENT 8u
 
 #define ERR_PROTO_UNSUPPORTED 1u
 #define ERR_BAD_FRAME 2u
@@ -198,12 +215,32 @@ static void print_error(const unsigned char *p, size_t n)
 
 static void print_event(const unsigned char *p)
 {
-	const unsigned char *key = p + 58; /* envelope 58 + key payload 16 */
-	printf("EVENT seq=%llu ts=%llu dev=%llu src=%u conf=%u level=%d code=%u phase=%u value=%u\n",
+	/* envelope 82 + key payload 16 */
+	const unsigned char *key = p + 82;
+	printf("EVENT seq=%llu ts=%llu dev=%llu src=%u conf=%u level=%d txn=%llu prod=%llu parent=%llu code=%u phase=%u value=%u\n",
 		ld_le64(p + 24), ld_le64(p + 32), ld_le64(p + 40),
 		(unsigned)p[48], (unsigned)p[50], (int)(short)ld_le16(p + 52),
+		ld_le64(p + 66), ld_le64(p + 58), ld_le64(p + 74),
 		ld_le32(key), (unsigned)key[12], (unsigned)key[13]);
 	fflush(stdout);
+}
+
+static void print_inject_ack(const unsigned char *p, size_t n)
+{
+	if (n < 11u) { printf("INJECT_ACK_SHORT\n"); return; }
+	unsigned int dlen = ld_le16(p + 9);
+	if (dlen > n - 11) dlen = (unsigned int)(n - 11);
+	printf("INJECT_ACK txn=%llu status=%u detail=%.*s\n",
+		ld_le64(p), (unsigned)p[8], (int)dlen, (const char *)p + 11);
+	fflush(stdout);
+}
+
+static void key_payload_fill(unsigned int code, int value, unsigned char *out)
+{
+	memset(out, 0, 16);
+	st_le32(out, code);
+	out[12] = (unsigned char)(value == 2 ? 2 : (value ? 0 : 1));
+	out[13] = (unsigned char)value;
 }
 
 static int parse_rules(const char *rules, unsigned int *codes, unsigned char *sup, int cap)
@@ -268,6 +305,12 @@ int main(int argc, char **argv)
 	int expect_close = 0;
 	int until_events = 0;
 	long timeout_ms = 10000;
+	unsigned long long inject_txn_id = 0;
+	int inject_down_only = 0;
+	int inject_begin_only = 0;
+	int inject_no_commit = 0;
+	int inject_pairs = 1;
+	long inject_stay_ms = 0;
 	int i;
 
 	for (i = 3; i < argc; ++i)
@@ -279,6 +322,12 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[i], "--expect-close")) expect_close = 1;
 		else if (!strcmp(argv[i], "--until-events") && i + 1 < argc) until_events = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "--timeout-ms") && i + 1 < argc) timeout_ms = atol(argv[++i]);
+		else if (!strcmp(argv[i], "--txn") && i + 1 < argc) inject_txn_id = strtoull(argv[++i], NULL, 0);
+		else if (!strcmp(argv[i], "--down-only")) inject_down_only = 1;
+		else if (!strcmp(argv[i], "--begin-only")) inject_begin_only = 1;
+		else if (!strcmp(argv[i], "--no-commit")) inject_no_commit = 1;
+		else if (!strcmp(argv[i], "--pairs") && i + 1 < argc) inject_pairs = atoi(argv[++i]);
+		else if (!strcmp(argv[i], "--stay") && i + 1 < argc) inject_stay_ms = atol(argv[++i]);
 		else if (!strcmp(argv[i], "--nonce") && i + 1 < argc)
 		{
 			const char *hex = argv[++i];
@@ -443,7 +492,7 @@ int main(int argc, char **argv)
 				printf("SUBSCRIBE_ACK ok=%u granted=%u\n", (unsigned)rp[0], ld_le32(rp + 1));
 				break;
 			case MSG_EVENT:
-				if (rp_len == 74)
+				if (rp_len == 98)
 				{
 					print_event(rp);
 					if (++events >= until_events && until_events)
@@ -481,6 +530,99 @@ int main(int argc, char **argv)
 		printf("WATCH_END events=%d\n", events);
 		fflush(stdout);
 		return until_events ? (events >= until_events ? 0 : 1) : 0;
+	}
+
+	if (!strcmp(mode, "inject") || !strcmp(mode, "inject-event"))
+	{
+		int is_single = mode[7] == 'e';
+		int code, level;
+		int p;
+		unsigned long long seq = 1;
+		if (argc < 5)
+		{
+			fprintf(stderr, "usage: %s SOCKET %s CODE LEVEL [--txn N] [--down-only] [--begin-only] [--pairs N] [--no-commit] [--stay MS]\n",
+				argv[0], mode);
+			return 2;
+		}
+		code = atoi(argv[3]);
+		level = atoi(argv[4]);
+		if (!inject_txn_id)
+			inject_txn_id = 0xA11CE000ULL + (unsigned long long)getpid();
+		caps = CAP_OBSERVE | CAP_INJECT;
+		if (send_hello(fd, proto, caps, 0, nonce, have_nonce) != 0) return 1;
+		if (read_one_print(fd, &mtype, rp, &rp_len) != 1 || mtype != MSG_HELLO_ACK) return 1;
+		print_ack(rp, rp_len);
+
+		/* key payload: 16 bytes LE (code, phase, value) */
+		if (is_single)
+		{
+			/* INJECT_EVENT without BEGIN: the broker must answer STALE. */
+			unsigned char ep[24];
+			st_le64(ep, inject_txn_id);
+			key_payload_fill((unsigned int)code, 1, ep + 8);
+			if (send_frame(fd, MSG_INJECT_EVENT, seq++, ep, sizeof(ep)) != 0) return 1;
+			if (read_one_print(fd, &mtype, rp, &rp_len) != 1) return 1;
+			if (mtype != MSG_INJECT_ACK) { printf("EXPECTED_INJECT_ACK_GOT=%u\n", mtype); return 1; }
+			print_inject_ack(rp, rp_len);
+			return (unsigned)rp[8] == INJECT_STALE ? 0 : 1;
+		}
+
+		{
+			unsigned int event_count = (unsigned int)inject_pairs * (inject_down_only ? 1u : 2u);
+			unsigned char bp[26];
+			st_le64(bp, inject_txn_id);
+			st_le16(bp + 8, (unsigned int)(unsigned short)level);
+			st_le16(bp + 10, 0);
+			st_le16(bp + 12, 0); /* ttl: broker default */
+			st_le32(bp + 14, event_count);
+			st_le64(bp + 18, 0); /* parent */
+			if (send_frame(fd, MSG_INJECT_BEGIN, seq++, bp, sizeof(bp)) != 0) return 1;
+			if (read_one_print(fd, &mtype, rp, &rp_len) != 1) return 1;
+			if (mtype != MSG_INJECT_ACK) { printf("EXPECTED_INJECT_ACK_GOT=%u\n", mtype); return 1; }
+			print_inject_ack(rp, rp_len);
+			if ((unsigned)rp[8] != INJECT_OK_BEGIN) return 1;
+
+			if (!inject_begin_only)
+				for (p = 0; p < inject_pairs; ++p)
+				{
+					unsigned char ep[24];
+					st_le64(ep, inject_txn_id);
+					key_payload_fill((unsigned int)code, 1, ep + 8);
+					if (send_frame(fd, MSG_INJECT_EVENT, seq++, ep, sizeof(ep)) != 0) return 1;
+					if (read_one_print(fd, &mtype, rp, &rp_len) != 1) return 1;
+					if (mtype != MSG_INJECT_ACK) { printf("EXPECTED_INJECT_ACK_GOT=%u\n", mtype); return 1; }
+					print_inject_ack(rp, rp_len);
+					if ((unsigned)rp[8] != INJECT_OK_EVENT) return 1;
+					if (!inject_down_only)
+					{
+						key_payload_fill((unsigned int)code, 0, ep + 8);
+						if (send_frame(fd, MSG_INJECT_EVENT, seq++, ep, sizeof(ep)) != 0) return 1;
+						if (read_one_print(fd, &mtype, rp, &rp_len) != 1) return 1;
+						if (mtype != MSG_INJECT_ACK) { printf("EXPECTED_INJECT_ACK_GOT=%u\n", mtype); return 1; }
+						print_inject_ack(rp, rp_len);
+						if ((unsigned)rp[8] != INJECT_OK_EVENT) return 1;
+					}
+				}
+
+			if (inject_no_commit)
+			{
+				if (inject_stay_ms > 0)
+					usleep((useconds_t)inject_stay_ms * 1000);
+				for (;;)
+					pause(); /* external kill; broker must abort+balance */
+			}
+			if (inject_stay_ms > 0)
+				usleep((useconds_t)inject_stay_ms * 1000);
+			{
+				unsigned char cp[8];
+				st_le64(cp, inject_txn_id);
+				if (send_frame(fd, MSG_INJECT_COMMIT, seq++, cp, sizeof(cp)) != 0) return 1;
+				if (read_one_print(fd, &mtype, rp, &rp_len) != 1) return 1;
+				if (mtype != MSG_INJECT_ACK) { printf("EXPECTED_INJECT_ACK_GOT=%u\n", mtype); return 1; }
+				print_inject_ack(rp, rp_len);
+				return (unsigned)rp[8] == INJECT_OK_COMMIT ? 0 : 1;
+			}
+		}
 	}
 
 	fprintf(stderr, "v2_probe: unknown mode %s\n", mode);
