@@ -82,6 +82,12 @@ static int sAnyGrabbed = 0;
 static int sPanicked = 0;
 static int sPanicStage = 0;
 static long long sPanicStageMs = 0;
+/* check0901 P0-1: replay-lane health is separate from the panic path.  Once
+ * the replay device fails (create or write), every physical grab is released
+ * and the broker becomes observe/listen-only; it never grabs again. */
+static int sReplayDead = 0;
+static long long sReplayWrites = 0; /* successful replay write batches */
+static long sReplayFailAfter = 0;   /* AHK_INPUTD_TEST_REPLAY_FAIL_AFTER */
 static int sVerbose = 0;
 static volatile sig_atomic_t sQuit = 0;
 static volatile sig_atomic_t sWatchdogFired = 0;
@@ -99,6 +105,8 @@ static long long now_us(void)
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	return (long long)ts.tv_sec * 1000000LL + (long long)ts.tv_nsec / 1000LL;
 }
+
+static int write_full(int fd, const void *buf, size_t n); /* fwd */
 
 static void logmsg(const char *fmt, ...)
 {
@@ -119,6 +127,43 @@ static void release_all_grabs(void)
 			ioctl(sDevFds[i], EVIOCGRAB, 0);
 	sAnyGrabbed = 0;
 	fprintf(stderr, "[inputd] grabs released (fail-open)\n");
+}
+
+/* check0901 P0-1: replay lane is gone.  Release every physical grab first,
+ * then tell all clients the backend is listen-only.  The kernel releases the
+ * grabs the instant this function returns, so physical input flows again
+ * even if later cleanup fails. */
+static void replay_dead(void)
+{
+	if (sReplayDead)
+		return;
+	sReplayDead = 1;
+	release_all_grabs();
+	/* Stop reading the physical devices entirely: they are ungrabbed now and
+	 * their events flow to the real consumers; keeping the fds would just
+	 * duplicate (and possibly drop) traffic. */
+	for (int i = 0; i < sDevCount; ++i)
+		if (sDevFds[i] >= 0)
+		{
+			close(sDevFds[i]);
+			sDevFds[i] = -1;
+			sGrabbedNames[i][0] = '\0';
+		}
+	sDevCount = 0;
+	for (int i = 0; i < MAX_CLIENTS; ++i)
+	{
+		struct client *cl = &sClients[i];
+		if (cl->fd >= 0 && !cl->dead && cl->hello_ok)
+		{
+			unsigned char frame[1];
+			frame[0] = INPUTD_S2C_BACKEND_DEGRADED;
+			if (write_full(cl->fd, frame, sizeof(frame)) != 0)
+				cl->dead = 1;
+		}
+	}
+	fprintf(stderr, "[inputd] replay lane failed: grabs released, "
+		"listen-only from now on\n");
+	fprintf(stderr, "STATUS=degraded: replay unavailable, grabs released\n");
 }
 
 static int panic_step(unsigned int code, int down)
@@ -146,14 +191,24 @@ static int panic_step(unsigned int code, int down)
 
 /* ---- uinput replay device ----------------------------------------------- */
 
+/* check0901 P0-1: every setup ioctl result is validated; a device whose
+ * capability bitmap is incomplete must not be treated as a working replay
+ * lane.  AHK_INPUTD_TEST_UINPUT_PATH overrides the device for fault oracles
+ * (missing device, EACCES, failing UI_DEV_CREATE). */
 static int open_uinput_replay(void)
 {
-	int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
-	if (fd < 0) { fprintf(stderr, "[inputd] /dev/uinput: %s\n", strerror(errno)); return -1; }
-	ioctl(fd, UI_SET_EVBIT, EV_KEY);
-	ioctl(fd, UI_SET_EVBIT, EV_SYN);
-	for (int c = 1; c < KEY_MAX; ++c)
-		ioctl(fd, UI_SET_KEYBIT, c);
+	const char *path = getenv("AHK_INPUTD_TEST_UINPUT_PATH");
+	if (!path || !*path)
+		path = "/dev/uinput";
+	int fd = open(path, O_WRONLY | O_NONBLOCK);
+	if (fd < 0) { fprintf(stderr, "[inputd] %s: %s\n", path, strerror(errno)); return -1; }
+	int fail = 0;
+	if (ioctl(fd, UI_SET_EVBIT, EV_KEY) != 0
+		|| ioctl(fd, UI_SET_EVBIT, EV_SYN) != 0)
+		fail = 1;
+	for (int c = 1; c < KEY_MAX && !fail; ++c)
+		if (ioctl(fd, UI_SET_KEYBIT, c) != 0)
+			fail = 1;
 	struct uinput_setup setup;
 	memset(&setup, 0, sizeof(setup));
 	setup.id.bustype = BUS_USB;
@@ -161,27 +216,95 @@ static int open_uinput_replay(void)
 	setup.id.product = 0xABCD;
 	setup.id.version = 1;
 	strncpy(setup.name, "ahk-inputd virtual keyboard", UINPUT_MAX_NAME_SIZE);
-	if (ioctl(fd, UI_DEV_SETUP, &setup) != 0 || ioctl(fd, UI_DEV_CREATE) != 0)
+	if (fail || ioctl(fd, UI_DEV_SETUP, &setup) != 0
+		|| ioctl(fd, UI_DEV_CREATE) != 0)
 	{
-		fprintf(stderr, "[inputd] uinput create: %s\n", strerror(errno));
+		fprintf(stderr, "[inputd] uinput create %s: %s\n", path, strerror(errno));
 		close(fd);
 		return -1;
 	}
 	return fd;
 }
 
-static void replay_key(unsigned int code, int value)
+/* Write one input_event with bounded retry and full-write semantics.
+ * EINTR retries; EAGAIN gets a short bounded poll budget; short writes,
+ * EPIPE/EIO/ENODEV/EBADF fail immediately (check_detail0901 §1.3-B). */
+static int replay_write_event(const struct input_event *e)
 {
-	if (sUinputFd < 0) return;
+	for (;;)
+	{
+		ssize_t r = write(sUinputFd, e, sizeof(*e));
+		if (r == (ssize_t)sizeof(*e))
+			return 0;
+		if (r >= 0)
+		{
+			fprintf(stderr, "[inputd] replay short write (%zd/%zu): %s\n"
+				, r, sizeof(*e), strerror(errno));
+			return -1;
+		}
+		if (errno == EINTR)
+			continue;
+		if (errno == EAGAIN || errno == EWOULDBLOCK)
+		{
+			struct pollfd pfd;
+			pfd.fd = sUinputFd;
+			pfd.events = POLLOUT;
+			pfd.revents = 0;
+			if (poll(&pfd, 1, 20) > 0 && (pfd.revents & POLLOUT))
+				continue;
+			fprintf(stderr, "[inputd] replay write stalled: %s\n", strerror(errno));
+			return -1;
+		}
+		fprintf(stderr, "[inputd] replay write failed: %s\n", strerror(errno));
+		return -1;
+	}
+}
+
+/* Replay one EV_KEY frame (single SYN_REPORT per original frame boundary).
+ * Returns 0 on success, -1 after fail-open (all grabs already released).
+ * AHK_INPUTD_TEST_REPLAY_FAIL_AFTER=N forces the N-th batch to fail so
+ * oracles can deterministically exercise the runtime-failure path. */
+static int replay_key(unsigned int code, int value)
+{
+	if (sReplayDead || sUinputFd < 0)
+		return -1;
 	struct input_event e;
 	memset(&e, 0, sizeof(e));
 	e.type = EV_KEY; e.code = (__u16)code; e.value = (__s32)value;
-	ssize_t ignored = write(sUinputFd, &e, sizeof(e));
-	(void)ignored;
+	if (replay_write_event(&e) != 0)
+	{
+		replay_dead();
+		return -1;
+	}
 	memset(&e, 0, sizeof(e));
 	e.type = EV_SYN; e.code = SYN_REPORT;
-	ignored = write(sUinputFd, &e, sizeof(e));
-	(void)ignored;
+	if (replay_write_event(&e) != 0)
+	{
+		replay_dead();
+		return -1;
+	}
+	++sReplayWrites;
+	if (sReplayFailAfter > 0 && sReplayWrites >= sReplayFailAfter)
+	{
+		fprintf(stderr, "[inputd] test hook: forcing replay failure after %lld batch(es)\n"
+			, sReplayWrites);
+		replay_dead();
+		return -1;
+	}
+	return 0;
+}
+
+/* True when any key (including modifiers) is currently reported down. */
+static int device_has_held_keys(int fd)
+{
+	unsigned char keys[KEY_CNT / 8];
+	memset(keys, 0, sizeof(keys));
+	if (ioctl(fd, EVIOCGKEY(sizeof(keys)), keys) < 0)
+		return -1; /* ambiguous: treat as held so the caller defers. */
+	for (size_t i = 0; i < sizeof(keys); ++i)
+		if (keys[i])
+			return 1;
+	return 0;
 }
 
 /* ---- frame IO ------------------------------------------------------------ */
@@ -441,12 +564,25 @@ static void scan_devices(void)
 {
 	if (sPanicked)
 		return;
+	/* check0901 P0-1: never grab while the replay lane is unavailable --
+	 * without a working replay path an exclusive grab would swallow input. */
+	if (sReplayDead || sUinputFd < 0)
+	{
+		if (!sReplayDead)
+			fprintf(stderr, "[inputd] replay not ready; deferring grabs\n");
+		return;
+	}
+	/* Test oracle hook: limit grabs to one specific device (a uinput
+	 * fixture), so fault tests never touch the host keyboard. */
+	const char *test_device = getenv("AHK_INPUTD_TEST_DEVICE");
+	if (test_device && !*test_device)
+		test_device = NULL;
 	DIR *dir = opendir("/dev/input");
 	if (!dir) { fprintf(stderr, "[inputd] /dev/input: %s\n", strerror(errno)); return; }
 	struct dirent *ent;
 	while ((ent = readdir(dir)) != NULL)
 	{
-		if (sPanicked)
+		if (sPanicked || sReplayDead)
 			break;
 		if (strncmp(ent->d_name, "event", 5) != 0)
 			continue;
@@ -462,25 +598,58 @@ static void scan_devices(void)
 		char path[PATH_MAX];
 		if (snprintf(path, sizeof(path), "/dev/input/%s", ent->d_name) >= (int)sizeof(path))
 			continue;
+		if (test_device)
+		{
+			if (strcmp(test_device, ent->d_name) != 0
+				&& strcmp(test_device, path) != 0)
+				continue; /* not the device under test */
+		}
 		int fd = open(path, O_RDONLY | O_NONBLOCK);
 		if (fd < 0) continue;
 		if (is_self_device(fd)) { close(fd); continue; }
 		if (!is_keyboard(fd)) { close(fd); continue; }
 		if (sDevCount < MAX_DEVICES)
 		{
+			/* two-phase grab (check0901 P0-1): EVIOCGKEY before AND after
+			 * EVIOCGRAB.  Grabbing while a key is held makes the previous
+			 * consumer miss the release (stuck key); a down appearing in the
+			 * check->grab window is caught by the post-grab check, which
+			 * ungrabs and defers the device to the next rescan. */
+			int held_before = device_has_held_keys(fd);
+			if (held_before != 0)
+			{
+				fprintf(stderr, "[inputd] %s has held keys%s; grab deferred\n"
+					, path, held_before < 0 ? " (state ambiguous)" : "");
+				close(fd);
+				continue;
+			}
 			/* Publish the fd before EVIOCGRAB so SIGALRM can always close a
 			 * just-grabbed device even if it interrupts this ioctl. */
 			int slot = sDevCount++;
 			sDevFds[slot] = fd;
 			memcpy(sGrabbedNames[slot], ent->d_name, device_name_len + 1);
-			if (!sPanicked && ioctl(fd, EVIOCGRAB, 1) == 0 && !sPanicked)
+			if (!sPanicked && !sReplayDead && ioctl(fd, EVIOCGRAB, 1) == 0 && !sPanicked)
 			{
-				sAnyGrabbed = 1;
-				logmsg("grabbed %s", path);
+				if (device_has_held_keys(fd) != 0)
+				{
+					/* Down appeared in the check->grab window: fail open
+					 * immediately and retry on a later rescan. */
+					ioctl(fd, EVIOCGRAB, 0);
+					fprintf(stderr, "[inputd] %s: key down at grab boundary; "
+						"grab deferred (fail-open)\n", path);
+					close(fd);
+					sDevFds[slot] = -1;
+					sGrabbedNames[slot][0] = '\0';
+				}
+				else
+				{
+					sAnyGrabbed = 1;
+					logmsg("grabbed %s", path);
+				}
 			}
 			else
 			{
-				if (!sPanicked)
+				if (!sPanicked && !sReplayDead)
 					fprintf(stderr, "[inputd] EVIOCGRAB %s: %s (running as root?)\n", path, strerror(errno));
 				close(fd); // EBADF is harmless if SIGALRM already closed it.
 				sDevFds[slot] = -1;
@@ -722,13 +891,40 @@ int main(int argc, char **argv)
 	signal(SIGALRM, on_sig); /* watchdog: release grabs, keep serving */
 	signal(SIGPIPE, SIG_IGN);
 
+	/* Test-only fault injection knobs (check0901 P0-1 oracles). */
+	const char *fail_after_text = getenv("AHK_INPUTD_TEST_REPLAY_FAIL_AFTER");
+	if (fail_after_text && *fail_after_text)
+	{
+		char *end = NULL;
+		sReplayFailAfter = strtol(fail_after_text, &end, 10);
+		if (!end || *end || sReplayFailAfter < 1)
+		{
+			fprintf(stderr, "[inputd] invalid AHK_INPUTD_TEST_REPLAY_FAIL_AFTER\n");
+			return 2;
+		}
+		fprintf(stderr, "[inputd] test hook: replay will fail after %ld batch(es)\n"
+			, sReplayFailAfter);
+	}
+
 	if (!protocol_only)
 	{
-		scan_devices();
+		/* check0901 P0-1: create AND validate the replay device BEFORE any
+		 * physical grab.  Without a working replay lane we run listen-only
+		 * (no grabs) so normal input is never swallowed. */
 		sUinputFd = open_uinput_replay();
+		if (sUinputFd < 0)
+		{
+			sReplayDead = 1;
+			fprintf(stderr, "[inputd] replay unavailable: listen-only degraded mode (no grabs)\n");
+			fprintf(stderr, "STATUS=degraded: replay unavailable, grabs disabled\n");
+		}
+		else
+			scan_devices();
 	}
-	fprintf(stderr, "[inputd] ready on %s (%d keyboard(s) grabbed%s)\n",
-		socket_path, sDevCount, protocol_only ? ", protocol-only" : "");
+	fprintf(stderr, "[inputd] ready on %s (%d keyboard(s) grabbed%s%s)\n",
+		socket_path, sDevCount,
+		protocol_only ? ", protocol-only" : "",
+		(!protocol_only && sReplayDead) ? ", degraded listen-only" : "");
 
 	struct pollfd pfds[1 + MAX_DEVICES + MAX_CLIENTS];
 	int polled_devices[MAX_DEVICES];
@@ -813,7 +1009,14 @@ int main(int argc, char **argv)
 							}
 					}
 					if (!any_suppress)
-						replay_key((unsigned int)ev.code, ev.value);
+					{
+						if (replay_key((unsigned int)ev.code, ev.value) != 0)
+						{
+							/* replay_dead() already released every grab and
+							 * closed the device fds; drop this slot too. */
+							remove_device = true;
+						}
+					}
 				}
 			}
 			if (remove_device)

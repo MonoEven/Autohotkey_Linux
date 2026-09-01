@@ -33,6 +33,7 @@ namespace {
 int sFd = -1;
 bool sActive = false;
 bool sConnectAttempted = false;
+bool sBackendDegraded = false;
 unsigned char sRx[4096];
 size_t sRxUsed = 0;
 
@@ -44,6 +45,7 @@ void Disconnect()
 	sActive = false;
 	sConnectAttempted = false;
 	sRxUsed = 0;
+	sBackendDegraded = false; // next connection re-probes health.
 }
 
 int SocketPaths(char aPaths[][256], int aMax)
@@ -310,13 +312,25 @@ void LinuxInputdClientDispatch(LinuxInputdEventFn aFn, void *aUser)
 			case INPUTD_S2C_EVENT: frame_size = 14; break;
 			case INPUTD_S2C_ACK: frame_size = 6; break;
 			case INPUTD_S2C_PONG: frame_size = 1; break;
+			case INPUTD_S2C_BACKEND_DEGRADED: frame_size = 1; break;
 			default:
 				Disconnect(); // protocol desync; caller may reconnect.
 				return;
 			}
 			if (sRxUsed < frame_size)
 				break; // stream fragment: keep it for the next dispatch.
-			if (sRx[0] == INPUTD_S2C_EVENT)
+			if (sRx[0] == INPUTD_S2C_BACKEND_DEGRADED)
+			{
+				// check0901 P0-1: the broker released all grabs (replay lane
+				// failed).  Observe/listen-only from here on; surface it once.
+				if (!sBackendDegraded)
+				{
+					sBackendDegraded = true;
+					fprintf(stderr, "AHK warning: ahk-inputd degraded: replay "
+						"lane failed, grabs released (listen-only)\n");
+				}
+			}
+			else if (sRx[0] == INPUTD_S2C_EVENT)
 			{
 				unsigned int code;
 				long long ts;

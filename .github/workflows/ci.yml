@@ -57,7 +57,7 @@ jobs:
             libxfixes-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev libxkbcommon-x11-dev \
             libffi-dev libdbus-1-dev dbus libgtk-3-dev zlib1g-dev libjpeg-dev \
-            xvfb xdotool x11-xkb-utils sway xwayland weston \
+            xvfb xdotool x11-xkb-utils x11-utils sway xwayland weston \
             xclip
           sudo apt-get install -y --no-install-recommends python3 dpkg-dev
 
@@ -112,6 +112,14 @@ jobs:
           command -v systemd-socket-activate
           bash tests/oracle/run_inputd_socket_activation_oracle.sh
           bash tests/oracle/run_inputd_client_framing_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
+
+      - name: Inputd replay fail-open fault oracle (check0901 P0-1)
+        if: matrix.build == 'core'
+        run: bash tests/oracle/run_inputd_replay_failure_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd"
+
+      - name: SendLevel/InputLevel policy oracle (check0901 P0-2/P1-3)
+        if: matrix.build == 'core'
+        run: bash tests/oracle/run_sendlevel_policy_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
 
       - name: Windows v2.0.26 differential trace gate
         if: matrix.build == 'core'
