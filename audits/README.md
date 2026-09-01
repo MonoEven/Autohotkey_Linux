@@ -33,7 +33,9 @@ Closures since check0901 (evidence in the linked oracles):
   under SendMode "Input" and explicit SendInput share hook-unloaded
   semantics; SendPlay never fires own hooks. Policy oracle:
   [run_sendlevel_policy_oracle.sh](../tests/oracle/run_sendlevel_policy_oracle.sh)
-  (22/22 documented Windows golden matrix).
+  (22/22 documented Windows golden matrix). Scenario runner + mixed soak
+  re-encoded to the same golden self-trigger path (SendMode Event +
+  SendLevel 1); examples catalog regenerated accordingly.
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),
