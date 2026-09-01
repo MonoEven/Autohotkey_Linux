@@ -81,6 +81,7 @@ struct client {
 	/* protocol v2 state (check0901 P0-3) */
 	char v2;                     /* magic "AHK2" seen on this connection */
 	char v2_hello_ok;            /* v2 HELLO accepted (must be first) */
+	char rules_confirmed;        /* current generation SUBSCRIBE ACKed */
 	unsigned long long v2_client_seq_last;
 	unsigned long long client_id;
 	unsigned char nonce[16];     /* per-process script nonce, not a PID */
@@ -151,6 +152,12 @@ static unsigned long long sEventSeq;
 static unsigned long long sNextClientId;
 static unsigned long long sNextDeviceId = 1;
 static unsigned long long sDevIds[MAX_DEVICES];
+/* M2 backend health/generation snapshot. */
+static int sProtocolOnly;
+static int sReplayErrno;
+static unsigned long long sHealthSeq = 1;
+static unsigned long long sLastSuccessUs;
+static int sHeldStateReconciled;
 
 /* M4 broker-owned injection transactions (check0901 P0-3 §3.3C).  A client
  * opens a transaction, streams key events, then commits/aborts; the broker
@@ -222,6 +229,7 @@ static long long now_us(void)
 
 static int write_full(int fd, const void *buf, size_t n); /* fwd */
 static void send_degraded_v2(struct client *c); /* fwd (defined with the v2 writers) */
+static void broadcast_backend_health(void); /* M2 fwd */
 
 static void logmsg(const char *fmt, ...)
 {
@@ -253,6 +261,7 @@ static void replay_dead(void)
 	if (sReplayDead)
 		return;
 	sReplayDead = 1;
+	sHeldStateReconciled = 0;
 	release_all_grabs();
 	/* Stop reading the physical devices entirely: they are ungrabbed now and
 	 * their events flow to the real consumers; keeping the fds would just
@@ -282,6 +291,7 @@ static void replay_dead(void)
 			}
 		}
 	}
+	broadcast_backend_health();
 	fprintf(stderr, "[inputd] replay lane failed: grabs released, "
 		"listen-only from now on\n");
 	fprintf(stderr, "STATUS=degraded: replay unavailable, grabs released\n");
@@ -322,7 +332,7 @@ static int open_uinput_replay(void)
 	if (!path || !*path)
 		path = "/dev/uinput";
 	int fd = open(path, O_WRONLY | O_NONBLOCK);
-	if (fd < 0) { fprintf(stderr, "[inputd] %s: %s\n", path, strerror(errno)); return -1; }
+	if (fd < 0) { sReplayErrno = errno; fprintf(stderr, "[inputd] %s: %s\n", path, strerror(errno)); return -1; }
 	int fail = 0;
 	if (ioctl(fd, UI_SET_EVBIT, EV_KEY) != 0
 		|| ioctl(fd, UI_SET_EVBIT, EV_SYN) != 0)
@@ -340,6 +350,7 @@ static int open_uinput_replay(void)
 	if (fail || ioctl(fd, UI_DEV_SETUP, &setup) != 0
 		|| ioctl(fd, UI_DEV_CREATE) != 0)
 	{
+		sReplayErrno = errno ? errno : EIO;
 		fprintf(stderr, "[inputd] uinput create %s: %s\n", path, strerror(errno));
 		close(fd);
 		return -1;
@@ -394,6 +405,7 @@ static int replay_key(unsigned int code, int value)
 	e.type = EV_KEY; e.code = (__u16)code; e.value = (__s32)value;
 	if (replay_write_event(&e) != 0)
 	{
+		sReplayErrno = errno ? errno : EIO;
 		replay_dead();
 		return -1;
 	}
@@ -401,14 +413,18 @@ static int replay_key(unsigned int code, int value)
 	e.type = EV_SYN; e.code = SYN_REPORT;
 	if (replay_write_event(&e) != 0)
 	{
+		sReplayErrno = errno ? errno : EIO;
 		replay_dead();
 		return -1;
 	}
 	++sReplayWrites;
+	sLastSuccessUs = (unsigned long long)now_us();
+	sReplayErrno = 0;
 	if (sReplayFailAfter > 0 && sReplayWrites >= sReplayFailAfter)
 	{
 		fprintf(stderr, "[inputd] test hook: forcing replay failure after %lld batch(es)\n"
 			, sReplayWrites);
+		sReplayErrno = EIO;
 		replay_dead();
 		return -1;
 	}
@@ -571,6 +587,102 @@ static void send_degraded_v2(struct client *c)
 	send_frame_v2(c, INPUTD_V2_BACKEND_DEGRADED, 0, NULL, 0);
 }
 
+static unsigned health_grabbed_count(void)
+{
+	unsigned count = 0;
+	for (int i = 0; i < sDevCount; ++i)
+		if (sDevFds[i] >= 0) ++count;
+	return count;
+}
+
+static unsigned health_registration_count(void)
+{
+	unsigned count = 0;
+	for (int i = 0; i < MAX_CLIENTS; ++i)
+		if (sClients[i].fd >= 0) count += (unsigned)sClients[i].rule_count;
+	for (int i = 0; i < INPUTD_V2_ARB_MAX_RULES; ++i)
+		if (sArbRules[i].owner) ++count;
+	return count;
+}
+
+static unsigned health_transaction_count(void)
+{
+	unsigned count = 0;
+	for (int i = 0; i < INPUTD_V2_INJECT_MAX_TOTAL; ++i)
+		if (sTxns[i].owner) ++count;
+	return count;
+}
+
+static void send_backend_health(struct client *c)
+{
+	if (!c || c->fd < 0 || c->dead || !c->v2 || !c->v2_hello_ok)
+		return;
+	unsigned char state;
+	unsigned char permission;
+	unsigned int flags = INPUTD_V2_HEALTH_FLAG_AUTHORITATIVE;
+	if (sHeldStateReconciled)
+		flags |= INPUTD_V2_HEALTH_FLAG_HELD_STATE_RECONCILED;
+	const char *reason;
+	if (sProtocolOnly)
+	{
+		state = INPUTD_V2_HEALTH_AVAILABLE;
+		permission = INPUTD_V2_PERMISSION_UNKNOWN;
+		reason = "protocol-only: output disabled";
+	}
+	else if (sReplayDead || sUinputFd < 0)
+	{
+		state = INPUTD_V2_HEALTH_DEGRADED;
+		permission = sReplayErrno == EACCES || sReplayErrno == EPERM
+			? INPUTD_V2_PERMISSION_DENIED : INPUTD_V2_PERMISSION_UNKNOWN;
+		reason = "replay unavailable; grabs released";
+	}
+	else
+	{
+		int coverage_missing = c->rules_confirmed && c->rule_count > 0
+			&& sDevCount == 0;
+		state = coverage_missing ? INPUTD_V2_HEALTH_DEGRADED
+			: (c->rules_confirmed && sHeldStateReconciled
+				? INPUTD_V2_HEALTH_HEALTHY
+				: (c->rules_confirmed ? INPUTD_V2_HEALTH_RECONCILING_STATE
+					: INPUTD_V2_HEALTH_BINDING));
+		permission = INPUTD_V2_PERMISSION_GRANTED;
+		flags |= INPUTD_V2_HEALTH_FLAG_REPLAY_AVAILABLE;
+		reason = !c->rules_confirmed
+			? "hello acknowledged; registration reconciliation pending"
+			: (coverage_missing ? "registrations ACKed; no keyboard device coverage"
+				: (sHeldStateReconciled ? "healthy; registrations and held state reconciled"
+					: "registrations ACKed; held-state/device reconciliation pending"));
+	}
+	if (c->rules_confirmed)
+		flags |= INPUTD_V2_HEALTH_FLAG_REGISTRATIONS_RECONCILED;
+	size_t rlen = strlen(reason);
+	if (rlen > 160) rlen = 160;
+	unsigned char payload[INPUTD_V2_HEALTH_BASE_LEN + 160];
+	memset(payload, 0, sizeof(payload));
+	payload[0] = state;
+	payload[1] = permission;
+	st_le16(payload + 2, flags);
+	st_le64(payload + 4, sGeneration);
+	st_le64(payload + 12, sHealthSeq);
+	st_le64(payload + 20, sLastSuccessUs);
+	st_le32(payload + 28, (unsigned int)sReplayErrno);
+	st_le32(payload + 32, (unsigned int)sDevCount);
+	st_le32(payload + 36, health_grabbed_count());
+	st_le32(payload + 40, health_registration_count());
+	st_le32(payload + 44, health_transaction_count());
+	st_le16(payload + 48, (unsigned int)rlen);
+	memcpy(payload + INPUTD_V2_HEALTH_BASE_LEN, reason, rlen);
+	send_frame_v2(c, INPUTD_V2_BACKEND_HEALTH, 0, payload,
+		INPUTD_V2_HEALTH_BASE_LEN + rlen);
+}
+
+static void broadcast_backend_health(void)
+{
+	++sHealthSeq;
+	for (int i = 0; i < MAX_CLIENTS; ++i)
+		send_backend_health(&sClients[i]);
+}
+
 static void send_device_added_v2(struct client *c, unsigned long long device_id
 	, const char *name)
 {
@@ -599,6 +711,7 @@ static void broadcast_device_added(unsigned long long device_id, const char *nam
 		if (cl->fd >= 0 && !cl->dead && cl->v2 && cl->v2_hello_ok)
 			send_device_added_v2(cl, device_id, name);
 	}
+	broadcast_backend_health();
 }
 
 static void broadcast_device_removed(unsigned long long device_id)
@@ -609,6 +722,7 @@ static void broadcast_device_removed(unsigned long long device_id)
 		if (cl->fd >= 0 && !cl->dead && cl->v2 && cl->v2_hello_ok)
 			send_device_removed_v2(cl, device_id);
 	}
+	broadcast_backend_health();
 }
 
 /* ---- M4 broker-owned injection -------------------------------------------- */
@@ -985,6 +1099,7 @@ static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 		c->client_id = ++sNextClientId;
 		c->caps_granted = caps_granted;
 		c->v2_hello_ok = 1;
+		c->rules_confirmed = 0;
 		send_hello_ack_v2(c, caps_granted, caps_denied);
 		logmsg("client %d v2 hello uid=%ld client_id=%llu caps=0x%x denied=0x%x",
 			c->fd, (long)c->uid, c->client_id, caps_granted, caps_denied);
@@ -1036,19 +1151,25 @@ static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 		unsigned char ack[5];
 		ack[0] = 1;
 		st_le32(ack + 1, (unsigned int)c->rule_count);
+		c->rules_confirmed = 1;
 		send_frame_v2(c, INPUTD_V2_SUBSCRIBE_ACK, 0, ack, sizeof(ack));
+		broadcast_backend_health();
 		break;
 	}
 	case INPUTD_V2_UNSUBSCRIBE:
 	{
 		c->rule_count = 0;
+		c->rules_confirmed = 1;
 		unsigned char ack[1];
 		ack[0] = 1;
 		send_frame_v2(c, INPUTD_V2_UNSUBSCRIBE_ACK, 0, ack, sizeof(ack));
+		broadcast_backend_health();
 		break;
 	}
 	case INPUTD_V2_PING:
 		send_frame_v2(c, INPUTD_V2_PONG, 0, NULL, 0);
+		++sHealthSeq;
+		send_backend_health(c);
 		break;
 	case INPUTD_V2_ARB_REGISTER:
 	{
@@ -1356,6 +1477,7 @@ static void close_client(struct client *c)
 	c->dead = 0;
 	c->v2 = 0;
 	c->v2_hello_ok = 0;
+	c->rules_confirmed = 0;
 	c->v2_client_seq_last = 0;
 	c->client_id = 0;
 	c->caps_granted = 0;
@@ -1398,6 +1520,7 @@ static int accept_client(void)
 			sClients[i].rx_used = 0;
 			sClients[i].rule_count = 0;
 			sClients[i].hello_ok = 0;
+			sClients[i].rules_confirmed = 0;
 			fprintf(stderr, "[inputd] client pid=%ld uid=%ld gid=%ld connected\n",
 				(long)cred.pid, (long)cred.uid, (long)cred.gid);
 			return fd;
@@ -1649,6 +1772,8 @@ static void scan_devices(void)
 {
 	if (sPanicked)
 		return;
+	int held_deferred = 0;
+	int held_before_state = sHeldStateReconciled;
 	/* check0901 P0-1: never grab while the replay lane is unavailable --
 	 * without a working replay path an exclusive grab would swallow input. */
 	if (sReplayDead || sUinputFd < 0)
@@ -1730,6 +1855,7 @@ static void scan_devices(void)
 			int held_before = device_has_held_keys(fd);
 			if (held_before != 0)
 			{
+				held_deferred = 1;
 				fprintf(stderr, "[inputd] %s has held keys%s; grab deferred\n"
 					, path, held_before < 0 ? " (state ambiguous)" : "");
 				close(fd);
@@ -1744,6 +1870,7 @@ static void scan_devices(void)
 			{
 				if (device_has_held_keys(fd) != 0)
 				{
+					held_deferred = 1;
 					/* Down appeared in the check->grab window: fail open
 					 * immediately and retry on a later rescan. */
 					ioctl(fd, EVIOCGRAB, 0);
@@ -1777,6 +1904,9 @@ static void scan_devices(void)
 	}
 	closedir(dir);
 	prune_removed_devices();
+	sHeldStateReconciled = held_deferred ? 0 : 1;
+	if (sHeldStateReconciled != held_before_state)
+		broadcast_backend_health();
 }
 
 static void prune_removed_devices(void)
@@ -2027,6 +2157,7 @@ int main(int argc, char **argv)
 		sClients[i].rules[0].code = 0;
 		sClients[i].v2 = 0;
 		sClients[i].v2_hello_ok = 0;
+		sClients[i].rules_confirmed = 0;
 		sClients[i].v2_client_seq_last = 0;
 		sClients[i].client_id = 0;
 		sClients[i].caps_granted = 0;
@@ -2059,6 +2190,10 @@ int main(int argc, char **argv)
 			, sReplayFailAfter);
 	}
 
+	sProtocolOnly = protocol_only;
+	sHeldStateReconciled = protocol_only ? 1 : 0;
+	if (protocol_only)
+		sLastSuccessUs = (unsigned long long)now_us();
 	if (!protocol_only)
 	{
 		/* check0901 P0-1: create AND validate the replay device BEFORE any
@@ -2072,7 +2207,11 @@ int main(int argc, char **argv)
 			fprintf(stderr, "STATUS=degraded: replay unavailable, grabs disabled\n");
 		}
 		else
+		{
+			sLastSuccessUs = (unsigned long long)now_us();
+			sReplayErrno = 0;
 			scan_devices();
+		}
 	}
 	fprintf(stderr, "[inputd] ready on %s (%d keyboard(s) grabbed%s%s)\n",
 		socket_path, sDevCount,

@@ -92,6 +92,7 @@
 #define INPUTD_V2_ARB_UNREGISTER 21u  /* C2S */
 #define INPUTD_V2_CONFLICT 22u        /* S2C */
 #define INPUTD_V2_ARB_DECISION 23u    /* S2C */
+#define INPUTD_V2_BACKEND_HEALTH 24u  /* S2C */
 
 /* capability bits (HELLO caps_requested / HELLO_ACK caps_granted|denied) */
 #define INPUTD_V2_CAP_OBSERVE 0x1u
@@ -299,5 +300,38 @@
 #define INPUTD_V2_ARB_MAX_PER_CLIENT 64u
 #define INPUTD_V2_ARB_DEFAULT_LEASE_MS 30000u
 #define INPUTD_V2_ARB_MAX_LEASE_MS 300000u
+
+/* M2 BACKEND_HEALTH payload, base 50 bytes + bounded UTF-8 reason:
+ *   state u8, permission u8, flags u16,
+ *   authority_generation u64, health_seq u64, last_success_us u64,
+ *   last_errno i32, device_count u32, grabbed_count u32,
+ *   registration_count u32, active_transaction_count u32,
+ *   reason_len u16, reason bytes.
+ */
+#define INPUTD_V2_HEALTH_BASE_LEN 50u
+#define INPUTD_V2_HEALTH_FLAG_REPLAY_AVAILABLE 0x1u
+#define INPUTD_V2_HEALTH_FLAG_REGISTRATIONS_RECONCILED 0x2u
+#define INPUTD_V2_HEALTH_FLAG_HELD_STATE_RECONCILED 0x4u
+#define INPUTD_V2_HEALTH_FLAG_AUTHORITATIVE 0x8u
+
+#define INPUTD_V2_HEALTH_UNINITIALIZED 0u
+#define INPUTD_V2_HEALTH_PROBING 1u
+#define INPUTD_V2_HEALTH_AVAILABLE 2u
+#define INPUTD_V2_HEALTH_BINDING 3u
+#define INPUTD_V2_HEALTH_HEALTHY 4u
+#define INPUTD_V2_HEALTH_DEGRADED 5u
+#define INPUTD_V2_HEALTH_DISCONNECTED 6u
+#define INPUTD_V2_HEALTH_RETRY_WAIT 7u
+#define INPUTD_V2_HEALTH_RESUBSCRIBING 8u
+#define INPUTD_V2_HEALTH_RECONCILING_STATE 9u
+#define INPUTD_V2_HEALTH_PERMISSION_DENIED 10u
+#define INPUTD_V2_HEALTH_UNSUPPORTED 11u
+#define INPUTD_V2_HEALTH_REAUTH_REQUIRED 12u
+#define INPUTD_V2_HEALTH_SHUTDOWN 13u
+
+#define INPUTD_V2_PERMISSION_UNKNOWN 0u
+#define INPUTD_V2_PERMISSION_GRANTED 1u
+#define INPUTD_V2_PERMISSION_DENIED 2u
+#define INPUTD_V2_PERMISSION_REAUTH_REQUIRED 3u
 
 #endif /* AHK_INPUTD_PROTO_H */

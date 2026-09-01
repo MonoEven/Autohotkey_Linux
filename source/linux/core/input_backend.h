@@ -76,6 +76,103 @@ enum class AhkSyntheticProvenance
 };
 
 constexpr unsigned AHK_INPUT_CAPS_VERSION = 2;
+constexpr unsigned AHK_INPUT_HEALTH_VERSION = 1;
+
+// M2 health/generation/diagnostics model (check_detail0901 §5).  Static
+// capabilities say what an implementation can theoretically do; health says
+// what this generation has actually probed, bound and reconciled.
+enum class AhkBackendState
+{
+	UNINITIALIZED,
+	PROBING,
+	AVAILABLE,
+	BINDING,
+	HEALTHY,
+	DEGRADED,
+	DISCONNECTED,
+	RETRY_WAIT,
+	RESUBSCRIBING,
+	RECONCILING_STATE,
+	PERMISSION_DENIED,
+	UNSUPPORTED,
+	REAUTH_REQUIRED,
+	SHUTDOWN,
+};
+
+enum class AhkPermissionState
+{
+	UNKNOWN,
+	GRANTED,
+	DENIED,
+	REAUTH_REQUIRED,
+};
+
+struct AhkDeviceCoverage
+{
+	unsigned device_count;
+	unsigned grabbed_count;
+	unsigned registration_count;
+	unsigned active_transaction_count;
+};
+
+struct AhkBackendHealth
+{
+	AhkBackendState state;
+	uint64_t generation;
+	uint64_t health_seq;
+	uint64_t last_success_us;
+	int last_errno;
+	std::string reason;
+	AhkDeviceCoverage coverage;
+	AhkPermissionState permission;
+	bool replay_available;
+	bool registrations_reconciled;
+	bool held_state_reconciled;
+};
+
+enum class AhkDispatchSemantic
+{
+	NONE,
+	HOOK_LIKE,
+	REGISTERED_OR_ACCELERATOR,
+	STREAM,
+};
+
+enum class AhkGuaranteeGrade
+{
+	NONE,
+	HEURISTIC,
+	ADAPTED,
+	GUARANTEED,
+};
+
+enum class AhkRecoveryGrade
+{
+	NONE,
+	PROCESS_LOCAL,
+	GENERATION_RECONCILE,
+};
+
+struct AhkRouteGuarantees
+{
+	AhkDispatchSemantic dispatch;
+	AhkSyntheticProvenance provenance;
+	AhkGuaranteeGrade level_gate;
+	AhkGuaranteeGrade suppression;
+	AhkGuaranteeGrade character_stream;
+	AhkGuaranteeGrade physical_state;
+	AhkGuaranteeGrade interleaving;
+	AhkRecoveryGrade recovery;
+};
+
+enum class AhkCompatibilityOutcome
+{
+	SUPPORTED,
+	ADAPTED,
+	DEGRADED,
+	NOT_SUPPORTED,
+	FAILED,
+};
 
 struct AhkInputBackendCaps
 {
@@ -118,6 +215,26 @@ const char *LinuxInputBackendProvenanceName(AhkSyntheticProvenance aValue);
 const AhkInputBackendCaps *LinuxInputBackendCapsFor(AhkInputBackendKind aKind);
 const char *LinuxInputBackendNameFor(AhkInputBackendKind aKind);
 
+// Dynamic M2 status/query/update API.  ReportHealth rejects stale generation
+// or health_seq updates so old callbacks cannot mutate the current state.
+const AhkBackendHealth *LinuxInputBackendHealthFor(AhkInputBackendKind aKind);
+uint64_t LinuxInputBackendNextGeneration(AhkInputBackendKind aKind);
+AhkRouteGuarantees LinuxInputBackendGuaranteesFor(AhkInputBackendKind aKind);
+AhkCompatibilityOutcome LinuxInputBackendCompatibilityFor(AhkInputBackendKind aKind,
+	bool aRequireLevelGate = false, bool aRequireSuppression = false);
+void LinuxInputBackendReportHealth(AhkInputBackendKind aKind,
+	AhkBackendState aState, uint64_t aGeneration, uint64_t aHealthSeq,
+	uint64_t aLastSuccessUs, int aLastErrno, const char *aReason,
+	const AhkDeviceCoverage &aCoverage, AhkPermissionState aPermission,
+	bool aReplayAvailable, bool aRegistrationsReconciled,
+	bool aHeldStateReconciled);
+const char *LinuxInputBackendStateName(AhkBackendState aState);
+const char *LinuxInputBackendPermissionName(AhkPermissionState aState);
+const char *LinuxInputBackendDispatchName(AhkDispatchSemantic aValue);
+const char *LinuxInputBackendGuaranteeName(AhkGuaranteeGrade aValue);
+const char *LinuxInputBackendRecoveryName(AhkRecoveryGrade aValue);
+const char *LinuxInputBackendOutcomeName(AhkCompatibilityOutcome aValue);
+
 struct Hotkey; // ../../hotkey.h
 
 // Per-hotkey backend routing (check_detail0821 §1-A / M3-M): pick the best
@@ -126,7 +243,8 @@ struct Hotkey; // ../../hotkey.h
 // through the other lanes in priority order when the effective one cannot
 // satisfy the flags.
 AhkInputBackendKind LinuxInputBackendRoute(bool aPassthrough, bool aKeyUp, bool aBare,
-	bool aWildcard, bool aScanCode = false, bool aCustomCombo = false);
+	bool aWildcard, bool aScanCode = false, bool aCustomCombo = false,
+	bool aRequireLevelGate = false);
 AhkInputBackendKind LinuxInputBackendForHotkey(Hotkey *aHotkey);
 bool LinuxInputBackendHotkeyAssigned(Hotkey *aHotkey, AhkInputBackendKind aKind);
 bool LinuxInputBackendMuxUses(AhkInputBackendKind aKind);

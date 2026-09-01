@@ -14,9 +14,10 @@
 // (authority+generation+event_seq, source/confidence, send_level).  A v1-only
 // broker falls back to the legacy 14-byte EVENT frames transparently.
 //
-// Broker-lane hotkey matching is physical-only for now (send_level -1); the
-// synthetic level gate for broker-injected transactions lands with M4
-// (broker-owned injection), when this envelope starts carrying send_level >= 0.
+// Broker-lane physical and broker-injected transactions share the v2
+// envelope; synthetic events carry send_level >= 0 and are consumer-gated.
+// M2 health snapshots expose local connection generation, authoritative
+// broker generation/sequence, coverage and registration/held reconciliation.
 
 // One dispatched broker event.  v2 fills provenance authoritatively; v1 fills
 // only code/value/tsUs (provenance fields stay unknown).
@@ -41,6 +42,10 @@ typedef void (*LinuxInputdEventFn)(const LinuxInputdEvent &aEvent, void *aUser);
 // Returns true in broker mode.
 bool LinuxInputdClientConnect();
 bool LinuxInputdClientActive();
+uint64_t LinuxInputdClientConnectionGeneration();
+uint64_t LinuxInputdClientAuthorityGeneration();
+uint64_t LinuxInputdClientBrokerHealthSeq();
+unsigned LinuxInputdClientCapsGranted();
 
 // Recompute and push the subscription rule set from the Hotkey table
 // (EVDEV-assigned hotkeys only).  No-op when not connected.

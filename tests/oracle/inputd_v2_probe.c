@@ -70,6 +70,7 @@
 #define MSG_ARB_UNREGISTER 21u
 #define MSG_CONFLICT 22u
 #define MSG_ARB_DECISION 23u
+#define MSG_BACKEND_HEALTH 24u
 
 #define CAP_OBSERVE 0x1u
 #define CAP_SUPPRESS 0x2u
@@ -285,6 +286,20 @@ static void print_decision(const unsigned char *p, size_t n)
 	fflush(stdout);
 }
 
+static void print_health(const unsigned char *p, size_t n)
+{
+	if (n < 50u) { printf("HEALTH_SHORT\n"); return; }
+	size_t rlen = ld_le16(p + 48);
+	if (rlen > n - 50) rlen = n - 50;
+	printf("HEALTH state=%u permission=%u flags=0x%x authority_generation=%llu health_seq=%llu last_success=%llu errno=%d devices=%u grabbed=%u registrations=%u transactions=%u reason=%.*s\n",
+		(unsigned)p[0], (unsigned)p[1], ld_le16(p + 2),
+		ld_le64(p + 4), ld_le64(p + 12), ld_le64(p + 20),
+		(int)ld_le32(p + 28), ld_le32(p + 32), ld_le32(p + 36),
+		ld_le32(p + 40), ld_le32(p + 44), (int)rlen,
+		(const char *)p + 50);
+	fflush(stdout);
+}
+
 static void key_payload_fill(unsigned int code, int value, unsigned char *out)
 {
 	memset(out, 0, 16);
@@ -387,6 +402,39 @@ int main(int argc, char **argv)
 					nonce[b] = (unsigned char)strtoul(hex + (size_t)b * 2, NULL, 16);
 			have_nonce = 1;
 		}
+	}
+
+	if (!strcmp(mode, "health") || !strcmp(mode, "health-sub"))
+	{
+		if (send_hello(fd, proto, caps, 0, nonce, have_nonce) != 0) return 1;
+		if (read_one_print(fd, &mtype, rp, &rp_len) != 1 || mtype != MSG_HELLO_ACK) return 1;
+		print_ack(rp, rp_len);
+		if (send_frame(fd, MSG_PING, 1, NULL, 0) != 0) return 1;
+		if (read_one_print(fd, &mtype, rp, &rp_len) != 1 || mtype != MSG_PONG) return 1;
+		if (read_one_print(fd, &mtype, rp, &rp_len) != 1 || mtype != MSG_BACKEND_HEALTH) return 1;
+		print_health(rp, rp_len);
+		if (!strcmp(mode, "health-sub"))
+		{
+			st_le32(payload, 0); /* empty but reconciled subscription */
+			if (send_frame(fd, MSG_SUBSCRIBE, 2, payload, 4) != 0) return 1;
+			int saw_ack = 0, saw_health = 0;
+			for (int frame = 0; frame < 4 && !saw_health; ++frame)
+			{
+				if (read_one_print(fd, &mtype, rp, &rp_len) != 1) return 1;
+				if (mtype == MSG_SUBSCRIBE_ACK)
+				{
+					printf("SUBSCRIBE_ACK ok=%u granted=%u\n", (unsigned)rp[0], ld_le32(rp + 1));
+					saw_ack = 1;
+				}
+				else if (mtype == MSG_BACKEND_HEALTH)
+				{
+					print_health(rp, rp_len);
+					saw_health = 1;
+				}
+			}
+			return saw_ack && saw_health ? 0 : 1;
+		}
+		return 0;
 	}
 
 	if (!strcmp(mode, "hello"))
@@ -580,6 +628,9 @@ int main(int argc, char **argv)
 			case MSG_ARB_DECISION:
 				print_decision(rp, rp_len);
 				break;
+			case MSG_BACKEND_HEALTH:
+				print_health(rp, rp_len);
+				break;
 			default:
 				printf("UNEXPECTED_TYPE=%u\n", mtype);
 				break;
@@ -655,6 +706,7 @@ int main(int argc, char **argv)
 			else if (mtype == MSG_ARB_DECISION) print_decision(rp, rp_len);
 			else if (mtype == MSG_EVENT && rp_len == 98) print_event(rp);
 			else if (mtype == MSG_ARB_REGISTER_ACK) print_arb_ack(rp, rp_len);
+			else if (mtype == MSG_BACKEND_HEALTH) print_health(rp, rp_len);
 			else if (mtype == MSG_ERROR) print_error(rp, rp_len);
 		}
 		close(fd);

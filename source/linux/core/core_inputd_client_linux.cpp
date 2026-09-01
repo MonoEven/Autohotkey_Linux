@@ -53,9 +53,36 @@ unsigned int sCapsDenied = 0;
 unsigned long long sClientSeq = 0;
 unsigned char sNonce[16] = { 0 };
 bool sNonceReady = false;
+/* M2 local monotonic connection generation + authoritative broker snapshot. */
+unsigned long long sConnectionGeneration = 0;
+unsigned long long sLocalHealthSeq = 0;
+unsigned long long sBrokerHealthSeq = 0;
+unsigned long long sLastSuccessUs = 0;
+int sLastErrno = 0;
+AhkDeviceCoverage sCoverage = {0, 0, 0, 0};
+AhkPermissionState sPermission = AhkPermissionState::UNKNOWN;
+bool sReplayAvailable = false;
+bool sRegistrationsReconciled = false;
+bool sHeldStateReconciled = false;
 
-void Disconnect()
+void ReportHealth(AhkBackendState aState, const char *aReason)
 {
+	LinuxInputBackendReportHealth(AhkInputBackendKind::EVDEV, aState,
+		sConnectionGeneration, ++sLocalHealthSeq, sLastSuccessUs, sLastErrno,
+		aReason, sCoverage, sPermission, sReplayAvailable,
+		sRegistrationsReconciled, sHeldStateReconciled);
+}
+
+void Disconnect(const char *aReason = "broker disconnected")
+{
+	bool had_connection = sFd >= 0 || sActive;
+	if (had_connection)
+	{
+		sReplayAvailable = false;
+		sRegistrationsReconciled = false;
+		sHeldStateReconciled = false;
+		ReportHealth(AhkBackendState::DISCONNECTED, aReason);
+	}
 	if (sFd >= 0)
 		close(sFd);
 	sFd = -1;
@@ -65,11 +92,11 @@ void Disconnect()
 	sBackendDegraded = false; // next connection re-probes health.
 	sV2 = false;
 	sClientId = 0;
-	sGeneration = 0;
+	/* Preserve last authority generation/id for post-disconnect diagnostics;
+	 * the next HELLO replaces it. */
 	sCapsGranted = 0;
 	sCapsDenied = 0;
 	sClientSeq = 0;
-	memset(sAuthorityId, 0, sizeof(sAuthorityId));
 }
 
 void EnsureNonce()
@@ -407,6 +434,7 @@ bool LinuxInputdClientConnect()
 	if (getenv("AHK_INPUTD_DISABLE"))
 		return false;
 	EnsureNonce();
+	ReportHealth(AhkBackendState::PROBING, "probing broker socket");
 
 	char paths[2][256] = {{0}};
 	int path_count = SocketPaths(paths, 2);
@@ -458,6 +486,9 @@ bool LinuxInputdClientConnect()
 			if (SendHello())
 			{
 				sV2 = false;
+				sGeneration = 0;
+				sBrokerHealthSeq = 0;
+				memset(sAuthorityId, 0, sizeof(sAuthorityId));
 				sActive = true;
 				break;
 			}
@@ -466,16 +497,51 @@ bool LinuxInputdClientConnect()
 		}
 	}
 	if (sFd < 0)
+	{
+		ReportHealth(AhkBackendState::RETRY_WAIT, "broker socket unavailable");
 		return false;
+	}
 	int flags = fcntl(sFd, F_GETFL, 0);
 	fcntl(sFd, F_SETFL, flags | O_NONBLOCK);
 	sActive = true;
+	sConnectionGeneration = LinuxInputBackendNextGeneration(AhkInputBackendKind::EVDEV);
+	sLocalHealthSeq = 0;
+	sBrokerHealthSeq = 0;
+	sCoverage = AhkDeviceCoverage{0, 0, 0, 0};
+	sPermission = sV2 && (sCapsGranted & INPUTD_V2_CAP_OBSERVE)
+		? AhkPermissionState::GRANTED : AhkPermissionState::UNKNOWN;
+	sReplayAvailable = false;
+	sRegistrationsReconciled = false;
+	sHeldStateReconciled = false;
+	ReportHealth(sV2 ? AhkBackendState::BINDING : AhkBackendState::AVAILABLE,
+		sV2 ? "hello acknowledged; waiting for health and registration reconciliation"
+			: "v1 broker connected; authoritative health telemetry unavailable");
 	return true;
 }
 
 bool LinuxInputdClientActive()
 {
 	return sActive;
+}
+
+uint64_t LinuxInputdClientConnectionGeneration()
+{
+	return sConnectionGeneration;
+}
+
+uint64_t LinuxInputdClientAuthorityGeneration()
+{
+	return sGeneration;
+}
+
+uint64_t LinuxInputdClientBrokerHealthSeq()
+{
+	return sBrokerHealthSeq;
+}
+
+unsigned LinuxInputdClientCapsGranted()
+{
+	return sCapsGranted;
 }
 
 void LinuxInputdClientShutdown()
@@ -487,11 +553,51 @@ void LinuxInputdClientUpdateRules()
 {
 	if (!sActive)
 		return;
+	sRegistrationsReconciled = false;
+	ReportHealth(AhkBackendState::RESUBSCRIBING, "sending desired registration set");
 	if (!SendSubscribeFrame())
-		Disconnect();
+		Disconnect("registration write failed");
+	else if (!sV2)
+	{
+		sRegistrationsReconciled = true;
+		ReportHealth(AhkBackendState::AVAILABLE,
+			"v1 registration sent; ACK/health guarantees unavailable");
+	}
 }
 
 /* ---- v2 dispatch ----------------------------------------------------------- */
+
+AhkBackendState WireHealthState(unsigned char aState)
+{
+	switch (aState)
+	{
+	case INPUTD_V2_HEALTH_PROBING: return AhkBackendState::PROBING;
+	case INPUTD_V2_HEALTH_AVAILABLE: return AhkBackendState::AVAILABLE;
+	case INPUTD_V2_HEALTH_BINDING: return AhkBackendState::BINDING;
+	case INPUTD_V2_HEALTH_HEALTHY: return AhkBackendState::HEALTHY;
+	case INPUTD_V2_HEALTH_DEGRADED: return AhkBackendState::DEGRADED;
+	case INPUTD_V2_HEALTH_DISCONNECTED: return AhkBackendState::DISCONNECTED;
+	case INPUTD_V2_HEALTH_RETRY_WAIT: return AhkBackendState::RETRY_WAIT;
+	case INPUTD_V2_HEALTH_RESUBSCRIBING: return AhkBackendState::RESUBSCRIBING;
+	case INPUTD_V2_HEALTH_RECONCILING_STATE: return AhkBackendState::RECONCILING_STATE;
+	case INPUTD_V2_HEALTH_PERMISSION_DENIED: return AhkBackendState::PERMISSION_DENIED;
+	case INPUTD_V2_HEALTH_UNSUPPORTED: return AhkBackendState::UNSUPPORTED;
+	case INPUTD_V2_HEALTH_REAUTH_REQUIRED: return AhkBackendState::REAUTH_REQUIRED;
+	case INPUTD_V2_HEALTH_SHUTDOWN: return AhkBackendState::SHUTDOWN;
+	default: return AhkBackendState::UNINITIALIZED;
+	}
+}
+
+AhkPermissionState WirePermission(unsigned char aState)
+{
+	switch (aState)
+	{
+	case INPUTD_V2_PERMISSION_GRANTED: return AhkPermissionState::GRANTED;
+	case INPUTD_V2_PERMISSION_DENIED: return AhkPermissionState::DENIED;
+	case INPUTD_V2_PERMISSION_REAUTH_REQUIRED: return AhkPermissionState::REAUTH_REQUIRED;
+	default: return AhkPermissionState::UNKNOWN;
+	}
+}
 
 void DispatchFrameV2(LinuxInputdEventFn aFn, void *aUser)
 {
@@ -541,6 +647,43 @@ void DispatchFrameV2(LinuxInputdEventFn aFn, void *aUser)
 		}
 		break;
 	}
+	case INPUTD_V2_BACKEND_HEALTH:
+	{
+		if (payload_len < INPUTD_V2_HEALTH_BASE_LEN)
+			break;
+		uint64_t authority_generation = ld_le64(payload + 4);
+		uint64_t broker_seq = ld_le64(payload + 12);
+		// A health snapshot for an old authority/sequence is stale and must not
+		// mutate the current connection generation.
+		if (authority_generation != sGeneration || broker_seq <= sBrokerHealthSeq)
+			break;
+		sBrokerHealthSeq = broker_seq;
+		sLastSuccessUs = ld_le64(payload + 20);
+		sLastErrno = (int)ld_le32(payload + 28);
+		sCoverage.device_count = ld_le32(payload + 32);
+		sCoverage.grabbed_count = ld_le32(payload + 36);
+		sCoverage.registration_count = ld_le32(payload + 40);
+		sCoverage.active_transaction_count = ld_le32(payload + 44);
+		sPermission = WirePermission(payload[1]);
+		unsigned int health_flags = ld_le16(payload + 2);
+		sReplayAvailable = (health_flags & INPUTD_V2_HEALTH_FLAG_REPLAY_AVAILABLE) != 0;
+		sRegistrationsReconciled = (health_flags
+			& INPUTD_V2_HEALTH_FLAG_REGISTRATIONS_RECONCILED) != 0;
+		sHeldStateReconciled = (health_flags
+			& INPUTD_V2_HEALTH_FLAG_HELD_STATE_RECONCILED) != 0;
+		size_t reason_len = ld_le16(payload + 48);
+		if (reason_len > payload_len - INPUTD_V2_HEALTH_BASE_LEN)
+			reason_len = payload_len - INPUTD_V2_HEALTH_BASE_LEN;
+		char reason[192];
+		if (reason_len >= sizeof(reason)) reason_len = sizeof(reason) - 1;
+		memcpy(reason, payload + INPUTD_V2_HEALTH_BASE_LEN, reason_len);
+		reason[reason_len] = '\0';
+		AhkBackendState state = WireHealthState(payload[0]);
+		if (state == AhkBackendState::HEALTHY && !sRegistrationsReconciled)
+			state = AhkBackendState::RECONCILING_STATE;
+		ReportHealth(state, reason);
+		break;
+	}
 	case INPUTD_V2_BACKEND_DEGRADED:
 	{
 		// check0901 P0-1: the broker released all grabs (replay lane
@@ -551,17 +694,27 @@ void DispatchFrameV2(LinuxInputdEventFn aFn, void *aUser)
 			fprintf(stderr, "AHK warning: ahk-inputd degraded: replay "
 				"lane failed, grabs released (listen-only)\n");
 		}
+		sReplayAvailable = false;
+		ReportHealth(AhkBackendState::DEGRADED,
+			"replay lane failed; grabs released (listen-only)");
 		break;
 	}
-	case INPUTD_V2_HELLO_ACK:
 	case INPUTD_V2_SUBSCRIBE_ACK:
 	case INPUTD_V2_UNSUBSCRIBE_ACK:
+		if (payload_len >= 1 && payload[0])
+		{
+			sRegistrationsReconciled = true;
+			ReportHealth(AhkBackendState::RECONCILING_STATE,
+				"registration ACK received; waiting for health confirmation");
+		}
+		break;
+	case INPUTD_V2_HELLO_ACK:
 	case INPUTD_V2_PONG:
 	case INPUTD_V2_DEVICE_ADDED:
 	case INPUTD_V2_DEVICE_REMOVED:
 		break; // bookkeeping frames
 	default:
-		Disconnect(); // protocol desync; caller may reconnect.
+		Disconnect("protocol desync"); // caller may reconnect.
 		return;
 	}
 }
@@ -579,7 +732,7 @@ void LinuxInputdClientDispatch(LinuxInputdEventFn aFn, void *aUser)
 	{
 		if (sRxUsed == sizeof(sRx))
 		{
-			Disconnect();
+			Disconnect("receive buffer overflow");
 			return;
 		}
 		ssize_t got = read(sFd, sRx + sRxUsed, sizeof(sRx) - sRxUsed);
@@ -605,7 +758,7 @@ void LinuxInputdClientDispatch(LinuxInputdEventFn aFn, void *aUser)
 				{
 					if (sRxUsed < 4 + INPUTD_V2_HEADER_LEN)
 						break; // stream fragment: keep it for the next dispatch.
-					Disconnect();
+					Disconnect("v2 magic mismatch");
 					return;
 				}
 				unsigned int mlen = ld_le32(sRx + 8);
@@ -614,7 +767,7 @@ void LinuxInputdClientDispatch(LinuxInputdEventFn aFn, void *aUser)
 					|| mlen < INPUTD_V2_HEADER_LEN
 					|| mlen > sizeof(sRx) - 4)
 				{
-					Disconnect();
+					Disconnect("invalid v2 frame header");
 					return;
 				}
 				frame_size = 4 + (size_t)mlen;
@@ -628,7 +781,7 @@ void LinuxInputdClientDispatch(LinuxInputdEventFn aFn, void *aUser)
 				case INPUTD_S2C_PONG: frame_size = 1; break;
 				case INPUTD_S2C_BACKEND_DEGRADED: frame_size = 1; break;
 				default:
-					Disconnect(); // protocol desync; caller may reconnect.
+					Disconnect("v1 protocol desync"); // caller may reconnect.
 					return;
 				}
 			}
@@ -646,6 +799,9 @@ void LinuxInputdClientDispatch(LinuxInputdEventFn aFn, void *aUser)
 					fprintf(stderr, "AHK warning: ahk-inputd degraded: replay "
 						"lane failed, grabs released (listen-only)\n");
 				}
+				sReplayAvailable = false;
+				ReportHealth(AhkBackendState::DEGRADED,
+					"v1 broker reported replay degradation");
 			}
 			else if (sRx[0] == INPUTD_S2C_EVENT)
 			{
@@ -674,7 +830,7 @@ void LinuxInputdClientDispatch(LinuxInputdEventFn aFn, void *aUser)
 		}
 		if (peer_closed)
 		{
-			Disconnect(); // caller starts a bounded reconnect window.
+			Disconnect("broker socket closed"); // caller starts reconnect window.
 			return;
 		}
 		if (got < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))

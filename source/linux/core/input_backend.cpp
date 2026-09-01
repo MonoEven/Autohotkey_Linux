@@ -18,6 +18,7 @@
 #include "input_backend_gnome_shell.h"
 #include "core_evdev_linux.h"
 #include "core_inputd_client_linux.h"
+#include "../inputd/inputd_proto.h" // v2 capability grants
 #include "core_clipboard_linux.h"
 #include "core_tray_linux.h"
 #include "core_ime_linux.h"
@@ -28,6 +29,7 @@
 #include "../../keyboard_mouse.h"
 #include "../../application.h"
 #include "core_capture_linux.h" // LinuxCaptureUsesRaw (needs X headers AFTER AHK)
+#include "input_event.h" // LinuxInputEventMonotonicUs
 #include <dbus/dbus.h>
 #include <cstring>
 #include <cstdlib>
@@ -238,6 +240,91 @@ static const InputCapsEntry sInputCaps[] = {
 };
 #undef AHK_INPUT_CAPS
 
+AhkBackendHealth sHealth[5];
+bool sHealthInitialized = false;
+
+unsigned KindIndex(AhkInputBackendKind aKind)
+{
+	unsigned index = (unsigned)aKind;
+	return index < _countof(sHealth) ? index : 0;
+}
+
+void InitHealth()
+{
+	if (sHealthInitialized)
+		return;
+	sHealthInitialized = true;
+	for (auto &h : sHealth)
+	{
+		h.state = AhkBackendState::UNINITIALIZED;
+		h.generation = 0;
+		h.health_seq = 0;
+		h.last_success_us = 0;
+		h.last_errno = 0;
+		h.reason = "not probed";
+		h.coverage = AhkDeviceCoverage{0, 0, 0, 0};
+		h.permission = AhkPermissionState::UNKNOWN;
+		h.replay_available = false;
+		h.registrations_reconciled = false;
+		h.held_state_reconciled = false;
+	}
+}
+
+void WideToUtf8(const wchar_t *aIn, char *aOut, size_t aSize); // fwd
+
+void RefreshDerivedHealth(AhkInputBackendKind aKind)
+{
+	InitHealth();
+	AhkBackendHealth &h = sHealth[KindIndex(aKind)];
+	if (aKind == AhkInputBackendKind::EVDEV && h.generation)
+		return; // authoritative broker/client reports own this generation.
+	bool active = false, available = false;
+	const wchar_t *error = _T("");
+	switch (aKind)
+	{
+	case AhkInputBackendKind::X11:
+		available = getenv("DISPLAY") && *getenv("DISPLAY");
+		active = available;
+		break;
+	case AhkInputBackendKind::PORTAL:
+		available = LinuxPortalGlobalShortcutsAvailable();
+		active = LinuxGShortcutActive();
+		error = LinuxGShortcutLastError();
+		break;
+	case AhkInputBackendKind::GNOME_SHELL:
+		available = LinuxGnomeShellAvailable();
+		active = LinuxGnomeShellActive();
+		error = LinuxGnomeShellLastError();
+		break;
+	default:
+		return;
+	}
+	if (!h.generation) h.generation = 1;
+	++h.health_seq;
+	h.last_errno = 0;
+	h.permission = available ? AhkPermissionState::GRANTED : AhkPermissionState::UNKNOWN;
+	h.registrations_reconciled = active || aKind == AhkInputBackendKind::X11;
+	h.held_state_reconciled = active || aKind == AhkInputBackendKind::X11;
+	if (active)
+	{
+		h.state = AhkBackendState::HEALTHY;
+		h.reason = "healthy";
+		h.last_success_us = LinuxInputEventMonotonicUs();
+	}
+	else if (error && *error)
+	{
+		h.state = AhkBackendState::DEGRADED;
+		char buf[512];
+		WideToUtf8(error, buf, sizeof(buf));
+		h.reason = buf;
+	}
+	else
+	{
+		h.state = available ? AhkBackendState::AVAILABLE : AhkBackendState::UNSUPPORTED;
+		h.reason = available ? "available, not bound" : "backend unavailable";
+	}
+}
+
 const InputCapsEntry *KindCapsEntry(AhkInputBackendKind aKind)
 {
 	for (const auto &entry : sInputCaps)
@@ -369,8 +456,209 @@ const char *LinuxInputBackendProvenanceName(AhkSyntheticProvenance aValue)
 	}
 }
 
+const char *LinuxInputBackendStateName(AhkBackendState aState)
+{
+	switch (aState)
+	{
+	case AhkBackendState::PROBING: return "probing";
+	case AhkBackendState::AVAILABLE: return "available";
+	case AhkBackendState::BINDING: return "binding";
+	case AhkBackendState::HEALTHY: return "healthy";
+	case AhkBackendState::DEGRADED: return "degraded";
+	case AhkBackendState::DISCONNECTED: return "disconnected";
+	case AhkBackendState::RETRY_WAIT: return "retry_wait";
+	case AhkBackendState::RESUBSCRIBING: return "resubscribing";
+	case AhkBackendState::RECONCILING_STATE: return "reconciling_state";
+	case AhkBackendState::PERMISSION_DENIED: return "permission_denied";
+	case AhkBackendState::UNSUPPORTED: return "unsupported";
+	case AhkBackendState::REAUTH_REQUIRED: return "reauth_required";
+	case AhkBackendState::SHUTDOWN: return "shutdown";
+	default: return "uninitialized";
+	}
+}
+
+const char *LinuxInputBackendPermissionName(AhkPermissionState aState)
+{
+	switch (aState)
+	{
+	case AhkPermissionState::GRANTED: return "granted";
+	case AhkPermissionState::DENIED: return "denied";
+	case AhkPermissionState::REAUTH_REQUIRED: return "reauth_required";
+	default: return "unknown";
+	}
+}
+
+const char *LinuxInputBackendDispatchName(AhkDispatchSemantic aValue)
+{
+	switch (aValue)
+	{
+	case AhkDispatchSemantic::HOOK_LIKE: return "hook_like";
+	case AhkDispatchSemantic::REGISTERED_OR_ACCELERATOR: return "registered_or_accelerator";
+	case AhkDispatchSemantic::STREAM: return "stream";
+	default: return "none";
+	}
+}
+
+const char *LinuxInputBackendGuaranteeName(AhkGuaranteeGrade aValue)
+{
+	switch (aValue)
+	{
+	case AhkGuaranteeGrade::HEURISTIC: return "heuristic";
+	case AhkGuaranteeGrade::ADAPTED: return "adapted";
+	case AhkGuaranteeGrade::GUARANTEED: return "guaranteed";
+	default: return "none";
+	}
+}
+
+const char *LinuxInputBackendRecoveryName(AhkRecoveryGrade aValue)
+{
+	switch (aValue)
+	{
+	case AhkRecoveryGrade::PROCESS_LOCAL: return "process_local";
+	case AhkRecoveryGrade::GENERATION_RECONCILE: return "generation_reconcile";
+	default: return "none";
+	}
+}
+
+const char *LinuxInputBackendOutcomeName(AhkCompatibilityOutcome aValue)
+{
+	switch (aValue)
+	{
+	case AhkCompatibilityOutcome::SUPPORTED: return "supported";
+	case AhkCompatibilityOutcome::ADAPTED: return "adapted";
+	case AhkCompatibilityOutcome::DEGRADED: return "degraded";
+	case AhkCompatibilityOutcome::NOT_SUPPORTED: return "not_supported";
+	default: return "failed";
+	}
+}
+
+const AhkBackendHealth *LinuxInputBackendHealthFor(AhkInputBackendKind aKind)
+{
+	RefreshDerivedHealth(aKind);
+	return &sHealth[KindIndex(aKind)];
+}
+
+uint64_t LinuxInputBackendNextGeneration(AhkInputBackendKind aKind)
+{
+	InitHealth();
+	return sHealth[KindIndex(aKind)].generation + 1;
+}
+
+void LinuxInputBackendReportHealth(AhkInputBackendKind aKind,
+	AhkBackendState aState, uint64_t aGeneration, uint64_t aHealthSeq,
+	uint64_t aLastSuccessUs, int aLastErrno, const char *aReason,
+	const AhkDeviceCoverage &aCoverage, AhkPermissionState aPermission,
+	bool aReplayAvailable, bool aRegistrationsReconciled,
+	bool aHeldStateReconciled)
+{
+	InitHealth();
+	AhkBackendHealth &h = sHealth[KindIndex(aKind)];
+	// Local connection generations are monotonic. Reject old generations and
+	// duplicate/out-of-order callbacks within the current generation.
+	if (aGeneration < h.generation
+		|| (aGeneration == h.generation && aHealthSeq <= h.health_seq))
+		return;
+	if (aGeneration > h.generation)
+	{
+		h = AhkBackendHealth{AhkBackendState::UNINITIALIZED, aGeneration, 0, 0,
+			0, "new generation", AhkDeviceCoverage{0, 0, 0, 0},
+			AhkPermissionState::UNKNOWN, false, false, false};
+	}
+	h.state = aState;
+	h.generation = aGeneration;
+	h.health_seq = aHealthSeq;
+	h.last_success_us = aLastSuccessUs;
+	h.last_errno = aLastErrno;
+	h.reason = aReason ? aReason : "";
+	h.coverage = aCoverage;
+	h.permission = aPermission;
+	h.replay_available = aReplayAvailable;
+	h.registrations_reconciled = aRegistrationsReconciled;
+	h.held_state_reconciled = aHeldStateReconciled;
+}
+
+AhkRouteGuarantees LinuxInputBackendGuaranteesFor(AhkInputBackendKind aKind)
+{
+	const AhkInputBackendCaps *caps = KindCaps(aKind);
+	const AhkBackendHealth *health = LinuxInputBackendHealthFor(aKind);
+	AhkRouteGuarantees g = {AhkDispatchSemantic::NONE,
+		caps ? caps->synthetic_provenance : AhkSyntheticProvenance::NONE,
+		AhkGuaranteeGrade::NONE, AhkGuaranteeGrade::NONE,
+		AhkGuaranteeGrade::NONE, AhkGuaranteeGrade::NONE,
+		AhkGuaranteeGrade::NONE, AhkRecoveryGrade::NONE};
+	if (aKind == AhkInputBackendKind::X11 || aKind == AhkInputBackendKind::EVDEV)
+		g.dispatch = AhkDispatchSemantic::HOOK_LIKE;
+	else if (aKind == AhkInputBackendKind::PORTAL
+		|| aKind == AhkInputBackendKind::GNOME_SHELL)
+		g.dispatch = AhkDispatchSemantic::REGISTERED_OR_ACCELERATOR;
+	if (caps && caps->send_level_gate)
+		g.level_gate = AhkGuaranteeGrade::GUARANTEED;
+	if (aKind == AhkInputBackendKind::EVDEV && LinuxInputdClientActive())
+	{
+		g.provenance = AhkSyntheticProvenance::AUTHORITATIVE;
+		g.level_gate = AhkGuaranteeGrade::GUARANTEED;
+	}
+	if (caps && caps->suppress)
+	{
+		bool denied_by_client_caps = aKind == AhkInputBackendKind::EVDEV
+			&& LinuxInputdClientActive()
+			&& !(LinuxInputdClientCapsGranted() & INPUTD_V2_CAP_SUPPRESS);
+		g.suppression = (denied_by_client_caps
+			|| (aKind == AhkInputBackendKind::EVDEV
+				&& (!health->replay_available || health->state != AhkBackendState::HEALTHY)))
+			? AhkGuaranteeGrade::NONE : AhkGuaranteeGrade::GUARANTEED;
+	}
+	if (caps && caps->char_stream)
+		g.character_stream = AhkGuaranteeGrade::GUARANTEED;
+	if (aKind == AhkInputBackendKind::EVDEV)
+	{
+		g.physical_state = AhkGuaranteeGrade::GUARANTEED;
+		g.interleaving = AhkGuaranteeGrade::GUARANTEED;
+		g.recovery = AhkRecoveryGrade::GENERATION_RECONCILE;
+	}
+	else if (aKind == AhkInputBackendKind::X11)
+	{
+		g.physical_state = AhkGuaranteeGrade::ADAPTED;
+		g.interleaving = AhkGuaranteeGrade::HEURISTIC;
+		g.recovery = AhkRecoveryGrade::PROCESS_LOCAL;
+	}
+	else
+		g.recovery = AhkRecoveryGrade::PROCESS_LOCAL;
+	return g;
+}
+
+AhkCompatibilityOutcome LinuxInputBackendCompatibilityFor(AhkInputBackendKind aKind,
+	bool aRequireLevelGate, bool aRequireSuppression)
+{
+	const AhkInputBackendCaps *caps = KindCaps(aKind);
+	if (!caps || !caps->global_hotkeys)
+		return AhkCompatibilityOutcome::NOT_SUPPORTED;
+	const AhkBackendHealth *h = LinuxInputBackendHealthFor(aKind);
+	AhkRouteGuarantees g = LinuxInputBackendGuaranteesFor(aKind);
+	if ((aRequireLevelGate && g.level_gate != AhkGuaranteeGrade::GUARANTEED)
+		|| (aRequireSuppression && g.suppression != AhkGuaranteeGrade::GUARANTEED))
+		return AhkCompatibilityOutcome::NOT_SUPPORTED;
+	if (h->state == AhkBackendState::PERMISSION_DENIED
+		|| h->state == AhkBackendState::UNSUPPORTED
+		|| h->state == AhkBackendState::REAUTH_REQUIRED)
+		return AhkCompatibilityOutcome::NOT_SUPPORTED;
+	if (h->state == AhkBackendState::HEALTHY)
+		return AhkCompatibilityOutcome::SUPPORTED;
+	if (h->state == AhkBackendState::AVAILABLE || h->state == AhkBackendState::BINDING)
+		return AhkCompatibilityOutcome::ADAPTED;
+	if (h->state == AhkBackendState::DEGRADED
+		|| h->state == AhkBackendState::DISCONNECTED
+		|| h->state == AhkBackendState::RETRY_WAIT
+		|| h->state == AhkBackendState::PROBING
+		|| h->state == AhkBackendState::RESUBSCRIBING
+		|| h->state == AhkBackendState::RECONCILING_STATE)
+		return AhkCompatibilityOutcome::DEGRADED;
+	return AhkCompatibilityOutcome::FAILED;
+}
+
 static bool CapsSatisfy(const AhkInputBackendCaps *c, bool aPassthrough, bool aKeyUp,
-	bool aBare, bool aWildcard, bool aScanCode, bool aCustomCombo)
+	bool aBare, bool aWildcard, bool aScanCode, bool aCustomCombo,
+	bool aRequireLevelGate)
 {
 	if (!c || !c->global_hotkeys) return false;
 	if (aPassthrough && !c->passthrough) return false;
@@ -379,6 +667,7 @@ static bool CapsSatisfy(const AhkInputBackendCaps *c, bool aPassthrough, bool aK
 	if (aWildcard && !c->wildcard) return false;
 	if (aScanCode && !c->scan_code) return false;
 	if (aCustomCombo && !c->custom_combo) return false;
+	if (aRequireLevelGate && !c->send_level_gate) return false;
 	return true;
 }
 
@@ -386,11 +675,11 @@ static bool CapsSatisfy(const AhkInputBackendCaps *c, bool aPassthrough, bool aK
 // backend whose caps satisfy the hotkey's needs.  The effective backend wins
 // when it qualifies; otherwise walk the other lanes in priority order.
 AhkInputBackendKind LinuxInputBackendRoute(bool aPassthrough, bool aKeyUp, bool aBare,
-	bool aWildcard, bool aScanCode, bool aCustomCombo)
+	bool aWildcard, bool aScanCode, bool aCustomCombo, bool aRequireLevelGate)
 {
 	const AhkInputBackendKind eff = CurrentKind();
 	if (CapsSatisfy(KindCaps(eff), aPassthrough, aKeyUp, aBare, aWildcard,
-		aScanCode, aCustomCombo))
+		aScanCode, aCustomCombo, aRequireLevelGate))
 		return eff;
 	// Priority: prefer non-root, integration-light lanes first.
 	static const AhkInputBackendKind kCandidates[] = {
@@ -403,7 +692,7 @@ AhkInputBackendKind LinuxInputBackendRoute(bool aPassthrough, bool aKeyUp, bool 
 	{
 		if (k == eff) continue;
 		if (!CapsSatisfy(KindCaps(k), aPassthrough, aKeyUp, aBare, aWildcard,
-			aScanCode, aCustomCombo))
+			aScanCode, aCustomCombo, aRequireLevelGate))
 			continue;
 		if (k == AhkInputBackendKind::X11)
 		{
@@ -439,8 +728,12 @@ AhkInputBackendKind LinuxInputBackendForHotkey(Hotkey *aHotkey)
 	bool scan = aHotkey->mSC != 0 || aHotkey->mModifierSC != 0;
 	bool bare = aHotkey->mModifiers == 0 && aHotkey->mModifiersLR == 0
 		&& !combo && !acts_as_prefix;
+	bool require_level_gate = false;
+	for (HotkeyVariant *v = aHotkey->mFirstVariant; v; v = v->mNextVariant)
+		if (v->mInputLevel > 0) { require_level_gate = true; break; }
 	return LinuxInputBackendRoute(passthrough, aHotkey->mKeyUp, bare,
-		aHotkey->mAllowExtraModifiers != 0, scan, combo || acts_as_prefix);
+		aHotkey->mAllowExtraModifiers != 0, scan, combo || acts_as_prefix,
+		require_level_gate);
 }
 
 bool LinuxInputBackendHotkeyAssigned(Hotkey *aHotkey, AhkInputBackendKind aKind)

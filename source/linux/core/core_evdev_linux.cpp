@@ -65,6 +65,25 @@ char sError[256] = { 0 };
 DWORD sLastRescanMs = 0;  // Periodic device discovery (check0820 direction-B:
                           // uinput test devices appear after startup; the
                           // broker must pick them up without a restart).
+uint64_t sLocalHealthGeneration = 0;
+uint64_t sLocalHealthSeq = 0;
+
+void ReportLocalEvdevHealth(AhkBackendState aState, const char *aReason,
+	AhkPermissionState aPermission, bool aHeldReconciled)
+{
+	if (!sLocalHealthGeneration)
+	{
+		sLocalHealthGeneration = LinuxInputBackendNextGeneration(AhkInputBackendKind::EVDEV);
+		sLocalHealthSeq = 0;
+	}
+	AhkDeviceCoverage coverage = {(unsigned)sDevices.size(),
+		(unsigned)std::count_if(sDevices.begin(), sDevices.end(),
+			[](const EvdevDevice &d) { return d.fd >= 0 && d.grabbed; }),
+		0, 0};
+	LinuxInputBackendReportHealth(AhkInputBackendKind::EVDEV, aState,
+		sLocalHealthGeneration, ++sLocalHealthSeq, LinuxInputEventMonotonicUs(),
+		0, aReason, coverage, aPermission, false, true, aHeldReconciled);
+}
 
 // Panic escape key (check_detail0821 §1-B / R4, keyd-style): the sequence
 // Backspace -> Escape -> Enter releases every EVIOCGRAB and drops the lane
@@ -618,7 +637,22 @@ bool LinuxEvdevActive()
 			sDevices.size(), sAnyGrabbed ? "suppress" : "listen-only",
 			EvTraceActive() ? " (trace-on)" : " (trace-off)");
 		if (sDevices.empty())
+		{
 			fprintf(stderr, "[evdev] %s\n", sError[0] ? sError : "no keyboard devices");
+			ReportLocalEvdevHealth(sError[0] ? AhkBackendState::PERMISSION_DENIED
+				: AhkBackendState::UNSUPPORTED,
+				sError[0] ? sError : "no keyboard devices",
+				sError[0] ? AhkPermissionState::DENIED : AhkPermissionState::UNKNOWN,
+				false);
+		}
+		else if (sAnyGrabbed)
+			ReportLocalEvdevHealth(AhkBackendState::DEGRADED,
+				"in-process EVIOCGRAB active; replay is lazy/non-authoritative",
+				AhkPermissionState::GRANTED, true);
+		else
+			ReportLocalEvdevHealth(AhkBackendState::HEALTHY,
+				"in-process evdev listen-only observer",
+				AhkPermissionState::GRANTED, true);
 		fflush(stderr);
 	}
 	return !sDevices.empty();

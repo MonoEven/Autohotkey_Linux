@@ -35,6 +35,7 @@ extern "C" const char *LinuxParityLookup(const char *aName, int &aLevel);
 #include "core_hotkey_linux.h"
 #include "core_pack_linux.h"
 #include "input_backend.h"
+#include "core_inputd_client_linux.h"
 #include "input_event.h"
 #include "core_clipboard_linux.h"
 #include "core_ime_linux.h"
@@ -2212,6 +2213,8 @@ BIV_DECL_R(BIV_HotkeyBackend)
 BIF_DECL(BIF_Linux_HotkeyBackendGet)
 {
 	AhkInputBackendKind kind = LinuxInputBackendKind();
+	bool require_level_gate = false;
+	bool require_suppression = false;
 	if (aParamCount > 0)
 	{
 		TCHAR name_buf[256];
@@ -2222,7 +2225,13 @@ BIF_DECL(BIF_Linux_HotkeyBackendGet)
 			bool hook_mandatory = false;
 			Hotkey *hk = Hotkey::FindHotkeyByTrueNature(keyname, no_suppress, hook_mandatory);
 			if (hk)
+			{
 				kind = LinuxInputBackendForHotkey(hk);
+				require_suppression = !(hk->mNoSuppress & (NO_SUPPRESS_PREFIX
+					| AT_LEAST_ONE_VARIANT_HAS_TILDE | AT_LEAST_ONE_COMBO_HAS_TILDE));
+				for (HotkeyVariant *v = hk->mFirstVariant; v; v = v->mNextVariant)
+					if (v->mInputLevel > 0) { require_level_gate = true; break; }
+			}
 		}
 	}
 	const char *name = LinuxInputBackendNameFor(kind);
@@ -2233,6 +2242,15 @@ BIF_DECL(BIF_Linux_HotkeyBackendGet)
 		aResultToken.Error(_T("HotkeyBackendGet: out of memory."));
 		return;
 	}
+	auto set_utf8 = [&](LPCTSTR aProp, const char *aValue) {
+		wchar_t wbuf[512];
+		size_t n = mbstowcs(wbuf, aValue ? aValue : "", _countof(wbuf) - 1);
+		if (n == (size_t)-1) n = 0;
+		wbuf[n] = 0;
+		LPTSTR persistent = (LPTSTR)SimpleHeap::Alloc((n + 1) * sizeof(TCHAR));
+		tmemcpy(persistent, wbuf, n + 1);
+		obj->SetOwnProp(aProp, persistent);
+	};
 	if (name && *name)
 	{
 		wchar_t wbuf[64];
@@ -2279,6 +2297,55 @@ BIF_DECL(BIF_Linux_HotkeyBackendGet)
 	LPTSTR prov_persistent = (LPTSTR)SimpleHeap::Alloc((prov_len + 1) * sizeof(TCHAR));
 	tmemcpy(prov_persistent, prov_buf, prov_len + 1);
 	obj->SetOwnProp(_T("synthetic_provenance"), prov_persistent);
+
+	const AhkBackendHealth *health = LinuxInputBackendHealthFor(kind);
+	AhkRouteGuarantees guarantees = LinuxInputBackendGuaranteesFor(kind);
+	AhkCompatibilityOutcome outcome = LinuxInputBackendCompatibilityFor(kind,
+		require_level_gate, require_suppression);
+	obj->SetOwnProp(_T("health_version"), (__int64)AHK_INPUT_HEALTH_VERSION);
+	set_utf8(_T("state"), LinuxInputBackendStateName(health->state));
+	obj->SetOwnProp(_T("generation"), (__int64)health->generation);
+	obj->SetOwnProp(_T("health_seq"), (__int64)health->health_seq);
+	obj->SetOwnProp(_T("last_success_us"), (__int64)health->last_success_us);
+	obj->SetOwnProp(_T("last_errno"), (__int64)health->last_errno);
+	set_utf8(_T("reason"), health->reason.c_str());
+	set_utf8(_T("permission"), LinuxInputBackendPermissionName(health->permission));
+	obj->SetOwnProp(_T("device_count"), (__int64)health->coverage.device_count);
+	obj->SetOwnProp(_T("grabbed_count"), (__int64)health->coverage.grabbed_count);
+	obj->SetOwnProp(_T("registration_count"), (__int64)health->coverage.registration_count);
+	obj->SetOwnProp(_T("active_transaction_count"),
+		(__int64)health->coverage.active_transaction_count);
+	obj->SetOwnProp(_T("replay_available"), (__int64)health->replay_available);
+	obj->SetOwnProp(_T("registrations_reconciled"),
+		(__int64)health->registrations_reconciled);
+	obj->SetOwnProp(_T("held_state_reconciled"), (__int64)health->held_state_reconciled);
+	if (kind == AhkInputBackendKind::EVDEV)
+	{
+		obj->SetOwnProp(_T("authority_generation"),
+			(__int64)LinuxInputdClientAuthorityGeneration());
+		obj->SetOwnProp(_T("broker_health_seq"),
+			(__int64)LinuxInputdClientBrokerHealthSeq());
+		obj->SetOwnProp(_T("caps_granted"),
+			(__int64)LinuxInputdClientCapsGranted());
+	}
+	else
+	{
+		obj->SetOwnProp(_T("authority_generation"), (__int64)0);
+		obj->SetOwnProp(_T("broker_health_seq"), (__int64)0);
+		obj->SetOwnProp(_T("caps_granted"), (__int64)0);
+	}
+	set_utf8(_T("dispatch_semantic"), LinuxInputBackendDispatchName(guarantees.dispatch));
+	set_utf8(_T("provenance_grade"),
+		LinuxInputBackendProvenanceName(guarantees.provenance));
+	set_utf8(_T("level_gate_grade"), LinuxInputBackendGuaranteeName(guarantees.level_gate));
+	set_utf8(_T("suppression_grade"), LinuxInputBackendGuaranteeName(guarantees.suppression));
+	set_utf8(_T("character_grade"), LinuxInputBackendGuaranteeName(guarantees.character_stream));
+	set_utf8(_T("physical_state_grade"), LinuxInputBackendGuaranteeName(guarantees.physical_state));
+	set_utf8(_T("interleaving_grade"), LinuxInputBackendGuaranteeName(guarantees.interleaving));
+	set_utf8(_T("recovery_grade"), LinuxInputBackendRecoveryName(guarantees.recovery));
+	set_utf8(_T("compatibility_outcome"), LinuxInputBackendOutcomeName(outcome));
+	obj->SetOwnProp(_T("requires_level_gate"), (__int64)require_level_gate);
+	obj->SetOwnProp(_T("requires_suppression"), (__int64)require_suppression);
 	aResultToken.SetValue(obj);
 }
 

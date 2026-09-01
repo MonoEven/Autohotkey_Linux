@@ -73,6 +73,21 @@ Closures since check0901 (evidence in the linked oracles):
   [run_inputd_arbitration_oracle.sh](../tests/oracle/run_inputd_arbitration_oracle.sh)
   (29/29). Dynamic HotIf deadlines and logind active-seat ownership remain
   M5/M7 work; keyboard default remains fail-open.
+- **M2a (unified backend health/generation/diagnostics + CompatibilityOutcome)**
+  — static capabilities are separated from current `BackendHealth` and
+  `RouteGuarantees`; the common registry rejects stale generation/health_seq
+  updates and exposes state, local connection generation, broker authority
+  generation, coverage, permission, replay, registration/held reconciliation,
+  last errno/reason and compatibility outcome through `HotkeyBackendGet`.
+  inputd v2 publishes typed BACKEND_HEALTH snapshots; the client transitions
+  PROBING→BINDING→RESUBSCRIBING→RECONCILING_STATE→HEALTHY and preserves desired
+  registrations across reconnect. Device held at the grab boundary stays
+  reconciling until release/regrab; zero coverage cannot claim healthy; v1
+  fallback is explicitly adapted rather than authoritative. Oracle:
+  [run_input_backend_health_oracle.sh](../tests/oracle/run_input_backend_health_oracle.sh)
+  (23/23: available/degraded/healthy, coverage, held-state recovery and the
+  same AHK PID across broker SIGKILL/restart with generation++ and new
+  authority). Portal/GNOME/Wayland service-owner generations remain M7.
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),
