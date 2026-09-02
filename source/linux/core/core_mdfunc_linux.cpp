@@ -35,6 +35,7 @@ extern "C" const char *LinuxParityLookup(const char *aName, int &aLevel);
 #include "core_hotkey_linux.h"
 #include "core_pack_linux.h"
 #include "input_backend.h"
+#include "input_backend_libei.h"
 #include "input_pipeline.h"
 #include "core_inputd_client_linux.h"
 #include "input_event.h"
@@ -2289,6 +2290,36 @@ BIF_DECL(BIF_Linux_HotkeyBackendGet)
 	obj->SetOwnProp(_T("char_stream"), (__int64)(caps && caps->char_stream));
 	obj->SetOwnProp(_T("send_level_gate"), (__int64)(caps && caps->send_level_gate));
 	obj->SetOwnProp(_T("injection_unicode"), (__int64)(caps && caps->injection_unicode));
+	const LinuxLibeiStatus &libei = LinuxLibeiGetStatus();
+	set_utf8(_T("injection_backend"), libei.state == LinuxLibeiState::READY
+		? "libei" : (LinuxLibeiMayFallback()
+			? "auto-fallback" : "libei-unavailable-no-fallback"));
+	obj->SetOwnProp(_T("libei_build_enabled"), (__int64)libei.build_enabled);
+	set_utf8(_T("libei_version"), libei.libei_version);
+	set_utf8(_T("liboeffis_version"), libei.liboeffis_version);
+	set_utf8(_T("libportal_version"), libei.libportal_version);
+	obj->SetOwnProp(_T("remote_desktop_version"),
+		(__int64)libei.portal_interface_version);
+	set_utf8(_T("libei_state"), LinuxLibeiStateName(libei.state));
+	set_utf8(_T("libei_reason"), libei.reason);
+	obj->SetOwnProp(_T("libei_generation"), (__int64)libei.generation);
+	obj->SetOwnProp(_T("libei_health_seq"), (__int64)libei.health_seq);
+	obj->SetOwnProp(_T("libei_last_errno"), (__int64)libei.last_errno);
+	obj->SetOwnProp(_T("libei_keyboard"), (__int64)libei.keyboard);
+	obj->SetOwnProp(_T("libei_pointer"), (__int64)libei.pointer);
+	obj->SetOwnProp(_T("libei_button"), (__int64)libei.button);
+	obj->SetOwnProp(_T("libei_scroll"), (__int64)libei.scroll);
+	obj->SetOwnProp(_T("libei_text"), (__int64)libei.text);
+	obj->SetOwnProp(_T("libei_keymap"), (__int64)libei.keymap);
+	obj->SetOwnProp(_T("libei_keymap_generation"),
+		(__int64)libei.keymap_generation);
+	obj->SetOwnProp(_T("libei_last_transaction"),
+		(__int64)libei.last_transaction_id);
+	obj->SetOwnProp(_T("libei_emulation_sequence"),
+		(__int64)libei.last_sequence);
+	set_utf8(_T("libei_outcome"), LinuxLibeiOutcomeName(libei.last_outcome));
+	set_utf8(_T("libei_target_delivery"), "unknown");
+	set_utf8(_T("libei_target_consumption"), "unknown");
 	const char *provenance = caps
 		? LinuxInputBackendProvenanceName(caps->synthetic_provenance) : "none";
 	wchar_t prov_buf[32];

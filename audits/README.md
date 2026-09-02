@@ -171,6 +171,30 @@ Closures since check0901 (evidence in the linked oracles):
   release callback and only the false pair target-visible, plus callback HotIf
   parity across X11 active/mirror/legacy. M5's normalized decision migration is
   now closed; IME composition/focus remains M8 host integration.
+- **M6a (consented libei sender + EIS runtime capabilities)** — optional
+  libei/liboeffis build support adds a user-session RemoteDesktop injection
+  route without involving root inputd in portal consent. liboeffis owns the
+  required CreateSession→SelectDevices→Start→ConnectToEIS ordering; the client
+  binds seat-granted KEYBOARD/POINTER/BUTTON/SCROLL and compile+runtime-gated
+  TEXT, loads the EIS XKB keymap, starts monotonic emulation sequences, frames
+  every submission and uses ping/pong only as EIS-processed evidence. It never
+  calls portal Notify* after obtaining EIS, never claims target delivery, and
+  required mode forbids virtual-keyboard/uinput fallback. Device replacement
+  reloads keymap/generation; a portal-owned EIS disconnect enters
+  REAUTH_REQUIRED. Independent
+  [run_input_libei_oracle.sh](../tests/oracle/run_input_libei_oracle.sh) uses a
+  separate libeis receiver with pointer-first/delayed-keyboard devices to
+  prove capability-specific waits, per-device keymaps/sequences, real EI
+  keyboard/pointer/button/scroll and distinct down/up frames. It also covers
+  explicit unrepresentable-Unicode/modifier failure with neutral release,
+  top-level Click/XWayland-required routing, complete and mid-PressDuration
+  device replacement, partial-grant compound-drag rejection, EIS-processed
+  ping when libei ≥1.4, disconnect/required-route failure, and the no-libei
+  build. A same-version feature-off pack template keeps `--pack` output a
+  dependency-free single ELF even when the interactive runtime links libei.
+  This direct-EIS oracle deliberately does not impersonate a portal;
+  M6b remains open for GNOME/KDE native CreateSession/consent/ConnectToEIS,
+  libei 1.6 TEXT, pause/revoke and persistent restore-token recovery evidence.
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),

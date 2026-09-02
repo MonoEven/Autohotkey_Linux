@@ -55,10 +55,16 @@ chk "deb: ahk --check reports dpkg" "/usr/bin/ahk --check > /tmp/ahk_deb_check.l
 chk "deb: ahk --check integrity OK" "/usr/bin/ahk --check > /tmp/ahk_deb_check2.log 2>&1 && grep -q 'integrity         : OK' /tmp/ahk_deb_check2.log"
 /usr/bin/ahk /tmp/ahk_smoke.ahk
 chk "deb: runs a script" "grep -q 'smoke-ok' /tmp/ahk_smoke_out.txt"
+rm -f /tmp/ahk_packed /tmp/ahk_smoke_out.txt
+/usr/bin/ahk --pack /tmp/ahk_packed /tmp/ahk_smoke.ahk
+chk "deb: packed ELF has no libei dependency" "test -x /tmp/ahk_packed && ! ldd /tmp/ahk_packed | grep -q 'libei\\|liboeffis'"
+/tmp/ahk_packed
+chk "deb: packed ELF runs" "grep -q 'smoke-ok' /tmp/ahk_smoke_out.txt"
 chk "deb: ships the GNOME extension system-wide" "test -f /usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org/metadata.json"
 chk "deb: ships official AHK SNI pixmap" "test -f /usr/share/autohotkey/autohotkey.png && test -f /usr/share/autohotkey/icon_main.ico"
 chk "deb: installs themed AutoHotkey icon" "test -f /usr/share/icons/hicolor/16x16/apps/autohotkey.png"
 chk "deb: ships ahk-inputd daemon" "test -x /usr/share/autohotkey/ahk-inputd"
+chk "deb: ships standalone pack runtime" "test -x /usr/share/autohotkey/ahk_core_pack && ! ldd /usr/share/autohotkey/ahk_core_pack | grep -q 'libei\\|liboeffis'"
 chk "deb: ships socket-activation units" "test -f /usr/lib/systemd/system/ahk-inputd.socket && test -f /usr/lib/systemd/system/ahk-inputd.service && grep -q '^SocketMode=0660$' /usr/lib/systemd/system/ahk-inputd.socket"
 # The deb's postinst enable-hint text is verified on the GNOME VM with
 # `dpkg-deb -e` (it prints exactly the per-user steps); CI cannot read
@@ -87,6 +93,8 @@ chk "tar: ships the GNOME extension" "test -n '$EXT_META' && test -f '$EXT_META'
 INPUTD_BIN=$(find /tmp/ahk_tar -maxdepth 2 -name ahk-inputd -type f -print -quit)
 INPUTD_SOCKET=$(find /tmp/ahk_tar -path '*/tools/linux/systemd/ahk-inputd.socket' -print -quit)
 chk "tar: ships ahk-inputd and systemd templates" "test -x '$INPUTD_BIN' && test -f '$INPUTD_SOCKET'"
+PACK_RUNTIME=$(find /tmp/ahk_tar -maxdepth 2 -name ahk_core_pack -type f -print -quit)
+chk "tar: ships standalone pack runtime" "test -x '$PACK_RUNTIME' && ! ldd '$PACK_RUNTIME' | grep -q 'libei\\|liboeffis'"
 bash "$INST" --prefix /tmp/ahk_prefix --yes > /tmp/ahk_tar_install.log 2>&1
 chk "tar: install (launcher present)" "test -x /tmp/ahk_prefix/bin/ahk"
 chk "tar: ahk --version stamps the release" "/tmp/ahk_prefix/bin/ahk --version > /tmp/ahk_ver2.txt 2>&1 && grep -F 'v$VER' /tmp/ahk_ver2.txt"

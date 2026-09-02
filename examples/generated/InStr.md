@@ -19,7 +19,7 @@
 - `x11`: [tests/doccheck/assert_hotkey_pt.ahk:94](../../tests/doccheck/assert_hotkey_pt.ahk#L94)
 - `x11`: [tests/doccheck/assert_hotstring.ahk:58](../../tests/doccheck/assert_hotstring.ahk#L58)
 - `desktop-session`: [tests/doccheck/assert_ime.ahk:22](../../tests/doccheck/assert_ime.ahk#L22)
-- `x11`: [tests/doccheck/assert_input.ahk:233](../../tests/doccheck/assert_input.ahk#L233)
+- `x11`: [tests/doccheck/assert_input.ahk:241](../../tests/doccheck/assert_input.ahk#L241)
 - `x11`: [tests/doccheck/assert_inputhook.ahk:148](../../tests/doccheck/assert_inputhook.ahk#L148)
 - `headless`: [tests/doccheck/assert_notimpl.ahk:17](../../tests/doccheck/assert_notimpl.ahk#L17)
 - `headless`: [tests/doccheck/assert_parity.ahk:13](../../tests/doccheck/assert_parity.ahk#L13)

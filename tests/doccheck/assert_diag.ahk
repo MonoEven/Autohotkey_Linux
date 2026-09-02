@@ -31,3 +31,7 @@ MsgBox "diag_appid_line=" (InStr(txt, "portal-app-id-resolvable :") ? 1 : 0)
 ; (no sourceid tap, no XTEST device) -- the lines still print.
 MsgBox "diag_xi2_line=" (InStr(txt, "xi2-sourceid    :") ? 1 : 0)
 MsgBox "diag_xtest_line=" (InStr(txt, "xi2-xtest-dev   :") ? 1 : 0)
+MsgBox "diag_libei_build_line=" (InStr(txt, "libei-build  :")
+    && InStr(txt, "liboeffis=") && InStr(txt, "libportal=") ? 1 : 0)
+MsgBox "diag_libei_state_line=" (InStr(txt, "libei-state  :")
+    && InStr(txt, "target=unknown") ? 1 : 0)

@@ -15,6 +15,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <limits.h>
 
 #define AHK_PACK_MAGIC "AHK2ELFX1" // 8 bytes, also the footer's tail.
 
@@ -113,10 +114,42 @@ static void LinuxCollectFileInstallSources(const std::vector<unsigned char> &aSc
 // + the script, append the two lengths + the magic.
 bool LinuxPackExecutable(const char *aOut, const char *aScript)
 {
-	int src = open("/proc/self/exe", O_RDONLY);
+	const char *runtime_path = "/proc/self/exe";
+#ifdef HAVE_LIBEI
+	// A DT_NEEDED libei runtime cannot be copied into a truly standalone ELF:
+	// the dynamic loader resolves dependencies before embedded resources can be
+	// extracted. Release packages therefore ship a same-version, feature-off
+	// pack template beside ahk_core. Source builds may name it explicitly.
+	char sibling[PATH_MAX] = { 0 };
+	const char *configured = getenv("AHK_PACK_RUNTIME");
+	if (configured && *configured)
+		runtime_path = configured;
+	else
+	{
+		ssize_t n = readlink("/proc/self/exe", sibling, sizeof(sibling) - 1);
+		if (n > 0)
+		{
+			sibling[n] = 0;
+			char *slash = strrchr(sibling, '/');
+			if (slash)
+				snprintf(slash + 1, (size_t)(sibling + sizeof(sibling) - slash - 1),
+					"ahk_core_pack");
+		}
+		if (!sibling[0] || access(sibling, X_OK) != 0)
+		{
+			fprintf(stderr, "AutoHotkey Linux: this libei-enabled runtime needs "
+				"the bundled ahk_core_pack template (or AHK_PACK_RUNTIME) to "
+				"produce a standalone executable.\n");
+			return false;
+		}
+		runtime_path = sibling;
+	}
+#endif
+	int src = open(runtime_path, O_RDONLY);
 	if (src < 0)
 	{
-		fprintf(stderr, "AutoHotkey Linux: cannot read own executable.\n");
+		fprintf(stderr, "AutoHotkey Linux: cannot read pack runtime '%s'.\n",
+			runtime_path);
 		return false;
 	}
 	std::vector<unsigned char> runtime;

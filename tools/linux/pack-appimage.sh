@@ -17,8 +17,9 @@ case "$ARCH" in
   aarch64|arm64) ARCH=aarch64 ;;
 esac
 
-CORE=build-core/source/linux/core/ahk_core
-INPUTD=build-core/source/linux/inputd/ahk-inputd
+CORE=${AHK_CORE:-build-core/source/linux/core/ahk_core}
+INPUTD=${AHK_INPUTD:-build-core/source/linux/inputd/ahk-inputd}
+PACK_CORE=${AHK_PACK_CORE:-build-pack-runtime/source/linux/core/ahk_core}
 if [ ! -x "$CORE" ]; then
   echo "pack-appimage.sh: $CORE not found; build first" >&2
   exit 1
@@ -26,6 +27,11 @@ fi
 if [ ! -x "$INPUTD" ]; then
   echo "pack-appimage.sh: $INPUTD not found; build first" >&2
   exit 1
+fi
+if ldd "$CORE" 2>/dev/null | grep -q 'libei\.so\.1'; then
+  [ -x "$PACK_CORE" ] || { echo "pack-appimage.sh: missing feature-off $PACK_CORE" >&2; exit 1; }
+else
+  PACK_CORE="$CORE"
 fi
 
 # Fetch appimagetool if needed.  The release asset is a plain
@@ -114,13 +120,26 @@ export APPIMAGE_EXTRACT_AND_RUN=1
 
 APP=dist/appimage/autohotkey.AppDir
 rm -rf dist/appimage
-mkdir -p "$APP/usr/bin" "$APP/usr/share/applications" \
+mkdir -p "$APP/usr/bin" "$APP/usr/lib" "$APP/usr/share/applications" \
          "$APP/usr/share/autohotkey" \
          "$APP/usr/share/icons/hicolor/scalable/apps" \
          "$APP/usr/share/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org"
 
 install -m 0755 "$CORE" "$APP/usr/bin/ahk_core"
+install -m 0755 "$PACK_CORE" "$APP/usr/bin/ahk_core_pack"
 install -m 0755 "$INPUTD" "$APP/usr/bin/ahk-inputd"
+# A build with M6 libei support links the optional libei/liboeffis SONAMEs.
+# Bundle exactly those two so the AppImage retains its consented injection
+# route on hosts that do not preinstall them; other desktop ABI libraries are
+# intentionally supplied by the host as before.
+for soname in libei.so.1 liboeffis.so.1; do
+  lib=$(ldd "$CORE" 2>/dev/null | awk -v n="$soname" '$1 == n {print $3; exit}')
+  [ -n "$lib" ] && [ -f "$lib" ] && cp -L "$lib" "$APP/usr/lib/$soname"
+done
+if ldd "$CORE" 2>/dev/null | grep -q 'libei\.so\.1'; then
+  [ -f "$APP/usr/lib/libei.so.1" ] && [ -f "$APP/usr/lib/liboeffis.so.1" ] \
+    || { echo "pack-appimage.sh: failed to stage optional libei runtime" >&2; exit 1; }
+fi
 install -m 0644 source/resources/icon_main.ico "$APP/usr/share/autohotkey/icon_main.ico"
 install -m 0644 docs-v2/docs/static/ahk16.png "$APP/usr/share/autohotkey/autohotkey.png"
 # The GNOME Shell global-hotkey extension ships inside the AppImage (the
@@ -196,6 +215,7 @@ cat > "$APP/AppRun" <<'EOF'
 #!/bin/sh
 SELF=$(readlink -f "$0")
 HERE=$(dirname "$SELF")
+export LD_LIBRARY_PATH="$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # `ahk.AppImage --install-extension` installs the bundled GNOME Shell
 # global-hotkey extension for the current user (the AppImage itself is a
 # read-only single file, so the extension must be copied out of it).

@@ -244,11 +244,13 @@ if [ "$UNINSTALL" = 1 ]; then
   echo "Removing AutoHotkey v2 from $OLD_PREFIX ..."
   remove_inputd_service_if_owned
   rm -f "$OLD_PREFIX/$BIN_SUB/ahk" "$OLD_PREFIX/$BIN_SUB/ahk_core" \
-        "$OLD_PREFIX/$LIB_SUB/ahk_core" "$OLD_PREFIX/$LIB_SUB/ahk-inputd" \
+        "$OLD_PREFIX/$LIB_SUB/ahk_core" "$OLD_PREFIX/$LIB_SUB/ahk_core_pack" \
+        "$OLD_PREFIX/$LIB_SUB/ahk-inputd" \
         "$OLD_PREFIX/$LIB_SUB/ahk.ahk" "$OLD_PREFIX/$LIB_SUB/icon_main.ico" "$OLD_PREFIX/$LIB_SUB/autohotkey.png" \
         "$OLD_PREFIX/share/icons/hicolor/16x16/apps/autohotkey.png"
-  rm -rf "$OLD_PREFIX/$DOC_SUB"
+  rm -rf "$OLD_PREFIX/$LIB_SUB/lib" "$OLD_PREFIX/$DOC_SUB"
   rmdir "$OLD_PREFIX/share/icons/hicolor/16x16/apps" 2>/dev/null || true
+  rmdir "$OLD_PREFIX/$LIB_SUB" 2>/dev/null || true
   rmdir "$OLD_PREFIX/$BIN_SUB" 2>/dev/null || true
   if [ "$GNOME_EXT" = yes ]; then
     remove_extension
@@ -277,11 +279,20 @@ mkdir -p "$BINDIR" "$LIBDIR" "$DOCDIR" "$ICONDIR" || { echo "install.sh: cannot 
 # ICO provides SNI IconPixmap; the 16px PNG makes IconName=autohotkey resolve
 # through the freedesktop icon theme.
 install -m 0755 "$CORE" "$LIBDIR/ahk_core" || exit 1
+if [ -x "$REPO_DIR/ahk_core_pack" ]; then
+  install -m 0755 "$REPO_DIR/ahk_core_pack" "$LIBDIR/ahk_core_pack" || exit 1
+fi
 if [ -x "$INPUTD" ]; then
   install -m 0755 "$INPUTD" "$LIBDIR/ahk-inputd" || exit 1
 elif [ "$INPUTD_SERVICE" = 1 ]; then
   echo "install.sh: --inputd-service requested but ahk-inputd was not built/shipped" >&2
   exit 1
+fi
+if [ -d "$REPO_DIR/lib" ]; then
+  mkdir -p "$LIBDIR/lib" || exit 1
+  for P in "$REPO_DIR/lib"/libei.so.1 "$REPO_DIR/lib"/liboeffis.so.1; do
+    [ -f "$P" ] && install -m 0644 "$P" "$LIBDIR/lib/$(basename "$P")"
+  done
 fi
 for P in "$REPO_DIR/icon_main.ico" "$REPO_DIR/source/resources/icon_main.ico"; do
   [ -f "$P" ] && { install -m 0644 "$P" "$LIBDIR/icon_main.ico"; break; }

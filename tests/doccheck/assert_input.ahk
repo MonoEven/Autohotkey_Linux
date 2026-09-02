@@ -193,7 +193,11 @@ Log("sendinput_self_no_fire=" (self_fired = 0 ? 1 : 0))
 SendLevel(1)
 SendEvent("x")
 SendLevel(0)
-Sleep(150)
+Loop 20 {
+    if (self_fired >= 1)
+        break
+    Sleep(50)
+}
 Log("sendevent_self_fire=" (self_fired = 1 ? 1 : 0))
 Hotkey("x", "Off")
 
@@ -214,7 +218,11 @@ Sleep(150)
 Log("sendlevel_gate=" (level_fired = 0 ? 1 : 0))
 SendLevel(1)
 Send("y")
-Sleep(150)
+Loop 20 {
+    if (level_fired >= 1)
+        break
+    Sleep(50)
+}
 Log("sendlevel_nogate=" (level_fired = 1 ? 1 : 0))
 Hotkey("y", "Off")
 

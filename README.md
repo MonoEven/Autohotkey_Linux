@@ -67,7 +67,9 @@ Run it with:
 ahk script.ahk
 ```
 
-Create a self-contained executable:
+Create a self-contained executable. Release packages include the matching
+feature-off `ahk_core_pack` template so a libei-enabled interpreter still
+produces one ELF which starts on hosts without libei:
 
 ```bash
 ahk_core --pack my-script script.ahk
@@ -97,15 +99,15 @@ default. Release tar/deb/RPM payloads include the complete examples catalog.
 |---|---|
 | Language/runtime | AutoHotkey v2 syntax, objects, functions, classes, timers, files and processes |
 | X11/XWayland | `Win*`, `Control*`, hotkeys, hotstrings, InputHook, Unicode Send, pixels/monitors, dialogs and GTK3 GUI |
-| Native Wayland | xdg-shell, wlroots virtual keyboard/pointer and screencopy; global hotkeys via portal, GNOME Shell or evdev |
-| Input backends | Versioned normalized events/caps; X11/portal/GNOME/evdev routes; layout-aware key model; XI2 raw Hotstring/InputHook; physical `scXXX`, evdev `A & B`, hotplug recovery |
+| Native Wayland | xdg-shell, wlroots virtual keyboard/pointer and screencopy; consented RemoteDesktop/libei injection; global hotkeys via portal, GNOME Shell or evdev |
+| Input backends | Versioned normalized events/caps; X11/portal/GNOME/evdev capture routes plus optional libei sender; layout-aware key model; XI2 raw Hotstring/InputHook; physical `scXXX`, evdev `A & B`, hotplug recovery |
 | Accessibility/IME | AT-SPI Text/Action/Selection/Value with pending pumping and title-priority; GTK/Qt/Java/LibreOffice/VS Code matrix; IBus commits drive Hotstring/InputHook |
 | Interop | `.so` `DllCall` + libffi callbacks, including Float/Double ABI types; D-Bus adapted COM layer |
 | Desktop | GTK3 GUI/Menu, notifications, AutoHotkey StatusNotifierItem tray icon and `A_TrayMenu` |
 | Developer tooling | VS Code 0.2.1: syntax/run/tasks/diagnostics, gutter breakpoints, DBGp/DAP stepping, paged variables, exceptions, idle Pause and same-PID reconnect |
 | Distribution | deb, RPM, tarball, AppImage, VSIX, AUR PKGBUILD, Flatpak manifest and `--pack` |
 
-The authoritative test totals are **1143/1143** X11/headless assertions,
+The authoritative test totals are **1145/1145** X11/headless assertions,
 **17/17** native-Wayland assertions and **234/234** XWayland assertions. CI
 also runs regular, ASan and TSan-input builds, four distro containers,
 no-XWayland, packed-binary acceptance, identity-bound scenarios, a mixed
@@ -120,7 +122,9 @@ differential trace gate.
   protocols are used instead.
 - Native-Wayland capabilities vary by compositor. wlroots offers the deepest
   direct input path; GNOME/KDE generally require portal, extension, libei or
-  evdev/uinput integration.
+  evdev/uinput integration. The optional libei sender has independent EIS-wire
+  coverage; production recovery still requires native GNOME/KDE consent,
+  revoke/pause and persistent restore-token matrices.
 - The evdev/uinput chain and multi-client `ahk-inputd` broker are implemented.
   Deb/RPM ship an opt-in `root:input 0660` socket-activated service; the tar
   installer offers `--inputd-service`. Add only trusted users to group `input`

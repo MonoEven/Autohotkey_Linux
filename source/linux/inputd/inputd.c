@@ -250,6 +250,7 @@ static void logmsg(const char *fmt, ...)
 	fprintf(stderr, "[inputd] ");
 	vfprintf(stderr, fmt, ap);
 	fprintf(stderr, "\n");
+	fflush(stderr);
 	va_end(ap);
 }
 

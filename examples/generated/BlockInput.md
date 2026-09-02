@@ -3,7 +3,7 @@
 - Linux status: `IMPL` (P1)
 - Example kind: `verified`
 - Environment profile: `x11`
-- Verified source: [tests/doccheck/assert_input.ahk:326](../../tests/doccheck/assert_input.ahk#L326)
+- Verified source: [tests/doccheck/assert_input.ahk:334](../../tests/doccheck/assert_input.ahk#L334)
 - Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
 
 Disables or enables the user's ability to interact with the computer via keyboard and mouse.

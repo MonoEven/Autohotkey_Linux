@@ -65,6 +65,21 @@ pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
 pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
 pkg_check_modules(XKBCOMMON_X11 REQUIRED IMPORTED_TARGET xkbcommon-x11)
 pkg_check_modules(XCB REQUIRED IMPORTED_TARGET xcb)
+# M6: optional consented RemoteDesktop/EIS injection. liboeffis owns the
+# portal state machine; libportal is recorded for the supported host matrix.
+option(AHK_ENABLE_LIBEI "Build consented RemoteDesktop/libei injection" ON)
+if(AHK_ENABLE_LIBEI)
+  pkg_check_modules(LIBEI QUIET IMPORTED_TARGET libei-1.0)
+  pkg_check_modules(LIBOEFFIS QUIET IMPORTED_TARGET liboeffis-1.0)
+  pkg_check_modules(LIBPORTAL QUIET libportal)
+else()
+  # pkg_check_modules stores *_FOUND in CMakeCache. Explicitly clear it so
+  # reconfiguring an existing ON build directory with OFF never references
+  # imported targets which are not recreated in this configure pass.
+  set(LIBEI_FOUND FALSE)
+  set(LIBOEFFIS_FOUND FALSE)
+  set(LIBPORTAL_FOUND FALSE)
+endif()
 find_program(WAYLAND_SCANNER_EXE wayland-scanner REQUIRED)
 set(WL_PROTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../wayland/protocols")
 set(WL_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/wl_gen")
@@ -117,6 +132,7 @@ add_executable(ahk_core
     core_inputd_client_linux.cpp
     input_backend.cpp
     input_backend_gnome_shell.cpp
+    input_backend_libei.cpp
     core_clipboard_linux.cpp
     core_dllcall_linux.cpp
     core_com_dbus_linux.cpp
@@ -151,6 +167,10 @@ target_include_directories(ahk_core PRIVATE
 )
 
 target_compile_options(ahk_core PRIVATE -fpermissive -Wno-jump-misses-init)
+# Generic tar installs place optional runtime libraries in ahk_core's private
+# ./lib directory; distro packages can still satisfy the same SONAMEs system-wide.
+set_target_properties(ahk_core PROPERTIES
+  BUILD_RPATH "\$ORIGIN/lib;\$ORIGIN/../lib")
 
 find_package(X11 REQUIRED)
 find_library(XTST_LIBRARY Xtst REQUIRED)
@@ -174,3 +194,25 @@ pkg_check_modules(DBUS REQUIRED IMPORTED_TARGET dbus-1)
 # GTK3 GUI backend (GuiType/GuiControlType/UserMenu).
 pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
 target_link_libraries(ahk_core PRIVATE X11::X11 ahk_pcre16 ${XTST_LIBRARY} ${XRANDR_LIBRARY} ${XINERAMA_LIBRARY} ${XEXT_LIBRARY} ${XFIXES_LIBRARY} PkgConfig::WAYLAND_CLIENT PkgConfig::XKBCOMMON PkgConfig::XKBCOMMON_X11 PkgConfig::XCB ${DL_LIBRARY} PkgConfig::LIBFFI PkgConfig::DBUS PkgConfig::GTK3 ${ZLIB_LIBRARY} ${JPEG_LIBRARY} ${XI_LIBRARY})
+
+if(AHK_ENABLE_LIBEI AND LIBEI_FOUND AND LIBOEFFIS_FOUND)
+  target_link_libraries(ahk_core PRIVATE PkgConfig::LIBEI PkgConfig::LIBOEFFIS)
+  target_compile_definitions(ahk_core PRIVATE HAVE_LIBEI=1
+    "AHK_LIBEI_VERSION=\"${LIBEI_VERSION}\""
+    "AHK_LIBOEFFIS_VERSION=\"${LIBOEFFIS_VERSION}\"")
+  if(LIBEI_VERSION VERSION_GREATER_EQUAL "1.4.0")
+    target_compile_definitions(ahk_core PRIVATE AHK_LIBEI_HAS_PING=1)
+  endif()
+  if(LIBEI_VERSION VERSION_GREATER_EQUAL "1.6.0")
+    target_compile_definitions(ahk_core PRIVATE AHK_LIBEI_HAS_TEXT=1)
+  endif()
+elseif(AHK_ENABLE_LIBEI)
+  message(STATUS "libei/liboeffis not found: consented EIS injection disabled")
+else()
+  message(STATUS "consented EIS injection disabled by AHK_ENABLE_LIBEI=OFF")
+endif()
+
+if(AHK_ENABLE_LIBEI AND LIBPORTAL_FOUND)
+  target_compile_definitions(ahk_core PRIVATE
+    "AHK_LIBPORTAL_VERSION=\"${LIBPORTAL_VERSION}\"")
+endif()

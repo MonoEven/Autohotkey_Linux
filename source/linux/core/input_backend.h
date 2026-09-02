@@ -58,6 +58,7 @@ enum class AhkInputBackendKind
 	PORTAL,      // XDG Global Shortcuts Portal.
 	GNOME_SHELL, // GNOME Shell extension broker.
 	EVDEV,       // Native evdev/uinput lane (core_evdev_linux.cpp).
+	LIBEI,       // Consented RemoteDesktop/EIS injection lane (not capture).
 };
 
 // What a backend can do.  The evdev lane (check0820 direction-B) can

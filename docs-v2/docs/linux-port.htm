@@ -177,6 +177,7 @@ and 20 for the D-Bus COM layer). The port has two display backends:</p>
   <tr><td>portal</td><td>yes</td><td>yes</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td><td>yes</td><td>no</td><td>no</td><td>no</td><td>no</td><td>none</td><td>no</td><td>no</td></tr>
   <tr><td>gnome-shell</td><td>yes</td><td>yes</td><td>no</td><td>no</td><td>no</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>no</td><td>no</td><td>no</td><td>none</td><td>no</td><td>no</td></tr>
   <tr><td>evdev</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>authoritative</td><td>yes</td><td>no</td></tr>
+  <tr><td>libei</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td><td>none</td><td>no</td><td>yes</td></tr>
 </table>
 <p><code>heuristic</code> provenance means process-local/device heuristics. The inputd v2 broker stamps authority/generation/event and transaction identity and therefore reports <code>authoritative</code>; XTEST without broker sideband remains heuristic or unknown. A <code>no</code> value remains no until a matching behavior test is added.</p>
 <!-- INPUT_CAPS:END -->
@@ -229,8 +230,43 @@ and 20 for the D-Bus COM layer). The port has two display backends:</p>
     RemoteDesktop/ConnectToEIS portal traffic is generated.  So on this
     distro the zero-code path is <b>not</b> available; it would need a
     distro whose Xwayland ships libei (e.g. Fedora or a
-    <code>--enable-libei</code> build).  The native path (libei sender
-    backend) is the R3 plan.</li>
+    <code>--enable-libei</code> build).</li>
+  <li><b>Native consented libei sender (M6a):</b> when built with optional
+    <code>libei-1.0</code> and <code>liboeffis-1.0</code>, pure-Wayland
+    <code>Send</code>/<code>SendText</code>/pointer/button/scroll injection
+    prefers an XDG RemoteDesktop session.  liboeffis owns
+    CreateSession&rarr;SelectDevices&rarr;Start/consent&rarr;ConnectToEIS; the
+    runtime then binds only seat-granted capabilities, waits for resumed
+    devices, starts a monotonically sequenced emulation transaction and frames
+    every event.  <code>AHK_LIBEI=required</code> forbids privileged
+    virtual-keyboard/uinput fallback and returns an explicit error on denial,
+    disconnect or missing capability; <code>AHK_LIBEI=0</code> disables this
+    route.  <code>HotkeyBackendGet()</code> exposes build/library/portal
+    versions, generation, state, runtime keyboard/pointer/button/scroll/TEXT
+    grants, keymap generation and outcome.  TEXT is enabled only when both the
+    build is libei 1.6+ and the compositor actually grants it; otherwise the
+    EIS XKB keymap is used, and an unrepresentable character fails explicitly.
+    Per-device modifier snapshots drive key selection; AHK-held Ctrl/Alt/Super
+    remain command modifiers around the key and are excluded from printable
+    level lookup, while temporary Shift/Level3 keys are framed and neutralized.
+    Outcomes mean <code>submitted-to-libei</code> or
+    <code>eis-processed</code>; target delivery/consumption remain
+    <code>unknown</code> because EI provides no application acknowledgement.
+    Release packages include a same-version feature-off
+    <code>ahk_core_pack</code> template, so <code>--pack</code> remains a
+    dependency-free single ELF even when the interactive runtime links libei.
+    Generic tar/AppImage/RPM payloads privately carry their matched optional
+    libei/liboeffis SONAMEs; Debian packages use build-version-floored runtime
+    dependencies.
+    Keymaps/modifier masks and sequences are per device; the planner waits for
+    the requested capability even when another device became ready first.
+    Removal reloads the replacement keymap and increments its client-side
+    emulation sequence, while replacement during PressDuration fails without
+    moving the old key-up onto the new device. A portal-owned EIS disconnect
+    enters <code>reauth-required</code>. The CI oracle talks directly to an
+    independent EIS receiver and does not claim to validate portal UI/consent;
+    M6b still requires GNOME/KDE real-host CreateSession/Start/ConnectToEIS,
+    pause/revoke, libei 1.6 TEXT and persistence recovery matrices.</li>
 </ul>
 
 <h2>Differences from Windows AutoHotkey</h2>

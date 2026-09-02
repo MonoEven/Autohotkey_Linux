@@ -41,7 +41,7 @@ done
 # included (it carries the published total).
 rows=$(awk '/^\| 模块 \|/{f=1; next}
             f && /^\| \*\*合计 \(X11/{print; exit}
-            f{print}' "$REPORT")
+            f{print}' "$REPORT" | tr -d '\r')
 
 check_row() { # label want  (label = start of the row, may contain "(")
   local got
@@ -96,7 +96,8 @@ check_summary "$x11"
 check_pass "$x11"
 check_pass "$wayland"
 check_pass "$xw"
-grep -qE "^\| XWayland 回退 .*\| $xw \|$" "$REPORT" \
+tr -d '\r' < "$REPORT" \
+  | grep -qE "^\| XWayland 回退 .*\| $xw \|$" \
   || { echo "FAIL: XWayland row != $xw"; fail=1; }
 
 echo "verify_report_numbers: x11=$x11 wayland=$wayland xwayland=$xw"

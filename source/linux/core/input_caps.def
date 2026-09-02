@@ -16,3 +16,8 @@ AHK_INPUT_CAPS(GNOME_SHELL, "gnome-shell",
 AHK_INPUT_CAPS(EVDEV, "evdev",
     true, true, true, true, true, true, true, true, true,
     true, true, true, AUTHORITATIVE, true, false)
+// Injection-only: no global capture semantics. Unicode is a runtime TEXT
+// capability (libei >=1.6 + compositor grant), so the static ceiling is true.
+AHK_INPUT_CAPS(LIBEI, "libei",
+    false, false, false, false, false, false, false, false, false,
+    false, false, false, NONE, false, true)

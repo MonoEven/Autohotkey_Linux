@@ -28,8 +28,9 @@ case "$ARCH" in
   aarch64|arm64) ARCH=arm64 ;;
 esac
 
-CORE=build-core/source/linux/core/ahk_core
-INPUTD=build-core/source/linux/inputd/ahk-inputd
+CORE=${AHK_CORE:-build-core/source/linux/core/ahk_core}
+INPUTD=${AHK_INPUTD:-build-core/source/linux/inputd/ahk-inputd}
+PACK_CORE=${AHK_PACK_CORE:-build-pack-runtime/source/linux/core/ahk_core}
 if [ ! -x "$CORE" ]; then
   echo "pack.sh: $CORE not found; build first (cmake --build build-core)" >&2
   exit 1
@@ -41,6 +42,19 @@ fi
 if ! command -v dpkg-deb >/dev/null 2>&1; then
   echo "pack.sh: warning: dpkg-deb not found; .deb will be skipped" >&2
 fi
+LIBEI_DEB_DEPS=""
+if ldd "$CORE" 2>/dev/null | grep -q 'libei\.so\.1'; then
+  [ -x "$PACK_CORE" ] || { echo "pack.sh: libei build requires feature-off $PACK_CORE" >&2; exit 1; }
+  if ldd "$PACK_CORE" 2>/dev/null | grep -q 'libei\.so\.1\|liboeffis\.so\.1'; then
+    echo "pack.sh: $PACK_CORE is not a feature-off standalone template" >&2
+    exit 1
+  fi
+  LIBEI_VER=$(pkg-config --modversion libei-1.0 2>/dev/null) || exit 1
+  LIBOEFFIS_VER=$(pkg-config --modversion liboeffis-1.0 2>/dev/null) || exit 1
+  LIBEI_DEB_DEPS=", libei1 (>= $LIBEI_VER), liboeffis1 (>= $LIBOEFFIS_VER)"
+else
+  PACK_CORE="$CORE"
+fi
 
 rm -rf dist/stage dist/autohotkey-linux-* dist/*.deb dist/*.tar.gz
 mkdir -p dist/stage/autohotkey-linux/tools/linux/systemd \
@@ -50,7 +64,21 @@ STAGE=dist/stage/autohotkey-linux
 
 # --- stage the payload ------------------------------------------------
 install -m 0755 "$CORE" "$STAGE/ahk_core"
+install -m 0755 "$PACK_CORE" "$STAGE/ahk_core_pack"
 install -m 0755 "$INPUTD" "$STAGE/ahk-inputd"
+# The generic tarball must remain runnable when the build enabled optional
+# libei but the target host has not installed it. Bundle only those optional
+# SONAMEs; the launcher scopes LD_LIBRARY_PATH to this private directory.
+mkdir -p "$STAGE/lib"
+for soname in libei.so.1 liboeffis.so.1; do
+  lib=$(ldd "$CORE" 2>/dev/null | awk -v n="$soname" '$1 == n {print $3; exit}')
+  [ -n "$lib" ] && [ -f "$lib" ] && cp -L "$lib" "$STAGE/lib/$soname"
+done
+if [ -n "$LIBEI_DEB_DEPS" ]; then
+  [ -f "$STAGE/lib/libei.so.1" ] && [ -f "$STAGE/lib/liboeffis.so.1" ] \
+    || { echo "pack.sh: failed to stage optional libei runtime" >&2; exit 1; }
+fi
+rmdir "$STAGE/lib" 2>/dev/null || true
 cp -r tools/linux/systemd/. "$STAGE/tools/linux/systemd/"
 cp -r tools/linux/permissions/. "$STAGE/tools/linux/permissions/"
 # Official upstream AutoHotkey icon assets: the installer places the ICO next
@@ -92,6 +120,7 @@ if command -v dpkg-deb >/dev/null 2>&1; then
            "$DEBROOT/DEBIAN"
   chmod 0755 "$DEBROOT" "$DEBROOT/DEBIAN"
   install -m 0755 "$CORE" "$DEBROOT/usr/share/autohotkey/ahk_core"
+  install -m 0755 "$PACK_CORE" "$DEBROOT/usr/share/autohotkey/ahk_core_pack"
   install -m 0755 "$INPUTD" "$DEBROOT/usr/share/autohotkey/ahk-inputd"
   install -m 0644 tools/linux/systemd/ahk-inputd.socket \
     "$DEBROOT/usr/lib/systemd/system/ahk-inputd.socket"
@@ -132,7 +161,7 @@ Priority: optional
 Architecture: $ARCH
 Maintainer: MonoEven <MonoEven@users.noreply.github.com>
 Installed-Size: $DEB_SIZE
-Depends: libx11-6, libxext6, libxrandr2, libxinerama1, libxtst6, libxkbcommon-x11-0, libgtk-3-0, libdbus-1-3, libffi8
+Depends: libx11-6, libxext6, libxrandr2, libxinerama1, libxtst6, libxkbcommon-x11-0, libgtk-3-0, libdbus-1-3, libffi8${LIBEI_DEB_DEPS}
 Recommends: zenity | yad, systemd
 Description: AutoHotkey v2 automation for Linux (X11/Wayland)
  AutoHotkey v2.0.26 interpreter and Linux desktop backends: X11/XWayland

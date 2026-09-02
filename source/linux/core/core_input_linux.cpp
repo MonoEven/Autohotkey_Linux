@@ -24,6 +24,7 @@
 #include "core_hotkey_linux.h" // LinuxSendInputTrack/Clear (SendInput self-suppression)
 #include "core_keymodel_linux.h"
 #include "input_backend.h"
+#include "input_backend_libei.h"
 #include "input_pipeline.h"
 #include "core_inputd_client_linux.h"
 #include <X11/Xlib.h>
@@ -260,6 +261,13 @@ static int sUinputLastY = 0;
 
 static void LinuxFakeKey(Display *d, vk_type aVK, bool aDown)
 {
+	if (!d && LinuxLibeiShouldAttempt())
+	{
+		if (LinuxLibeiKeyEvent((unsigned)aVK, aDown))
+			return;
+		if (!LinuxLibeiMayFallback())
+			return;
+	}
 	if (!d && LinuxWaylandKeyEvent((unsigned)aVK, aDown))
 		return; // Wayland virtual keyboard.
 	if (!d && LinuxUinputKeyEvent((unsigned)aVK, aDown))
@@ -280,11 +288,24 @@ static void LinuxFakeButton(Display *d, unsigned int aButton, bool aDown)
 	{
 		if (aButton >= 4 && aButton <= 7)
 		{
+			if (LinuxLibeiShouldAttempt())
+			{
+				if ((aDown && LinuxLibeiScrollEvent(aButton))
+					|| (!aDown && LinuxLibeiGetStatus().state == LinuxLibeiState::READY
+						&& LinuxLibeiGetStatus().scroll))
+					return;
+				if (!LinuxLibeiMayFallback()) return;
+			}
 			if (LinuxWaylandWheelEvent(aButton, aDown))
 				return;
 			if (LinuxUinputWheelEvent(aButton, aDown))
 				return;
 			return; // Unsupported button on Wayland: no-op (documented).
+		}
+		if (LinuxLibeiShouldAttempt())
+		{
+			if (LinuxLibeiButtonEvent(aButton, aDown)) return;
+			if (!LinuxLibeiMayFallback()) return;
 		}
 		if (LinuxWaylandButtonEvent(aButton, aDown))
 			return;
@@ -300,8 +321,18 @@ static void LinuxFakeMotion(Display *d, int aX, int aY)
 {
 	if (!d)
 	{
+		int dx = aX - sUinputLastX, dy = aY - sUinputLastY;
+		if (LinuxLibeiShouldAttempt())
+		{
+			if (LinuxLibeiPointerMotion(dx, dy))
+			{
+				sUinputLastX = aX; sUinputLastY = aY;
+				return;
+			}
+			if (!LinuxLibeiMayFallback()) return;
+		}
 		LinuxWaylandMotionTo(aX, aY);
-		LinuxUinputMotionEvent(aX - sUinputLastX, aY - sUinputLastY);
+		LinuxUinputMotionEvent(dx, dy);
 		sUinputLastX = aX;
 		sUinputLastY = aY;
 		return;
@@ -533,6 +564,21 @@ static void LinuxSendVk(Display *d, vk_type aVK, int aCount)
 		track_kc = LinuxKeycodeForVk(d, aVK);
 	for (int i = 0; i < aCount; ++i)
 	{
+		if (!d && LinuxLibeiShouldAttempt())
+		{
+			unsigned int direct_button = LinuxMouseButtonForVk(aVK);
+			bool handled = direct_button >= 4 && direct_button <= 7
+				? LinuxLibeiScrollEvent(direct_button)
+				: (direct_button ? LinuxLibeiTapButton(direct_button)
+					: (aVK == 0x1000 ? LinuxLibeiScrollEvent(4)
+						: (aVK == 0x1001 ? LinuxLibeiScrollEvent(5)
+							: (aVK == 0x1002 ? LinuxLibeiScrollEvent(6)
+								: (aVK == 0x1003 ? LinuxLibeiScrollEvent(7)
+									: LinuxLibeiTapKey(aVK, press_ms,
+										i + 1 < aCount ? gap_ms : 0))))));
+			if (handled || !LinuxLibeiMayFallback())
+				continue;
+		}
 		bool is_key = true;
 		if (unsigned int btn = LinuxMouseButtonForVk(aVK))
 			LinuxFakeButton(d, btn, true), is_key = false;
@@ -971,7 +1017,7 @@ static bool LinuxSendLiteralRun(Display *d, const wchar_t *aStart, const wchar_t
 	// Per-char delivery: ASCII (pure Wayland or X11), X11 Unicode via the
 	// borrowed-keycode keysym path, and -- with a virtual keyboard -- pure
 	// Wayland Unicode via the custom-keymap injection (wtype model, R3 §6-U3).
-	if (!has_non_ascii || d || aHeld.Any()
+	if (!has_non_ascii || d || aHeld.Any() || LinuxLibeiShouldAttempt()
 		|| (LinuxWaylandActive() && LinuxWaylandCanInjectKeys()))
 	{
 		for (const wchar_t *q = aStart; q < aEnd; ++q)
@@ -1066,6 +1112,20 @@ static void LinuxSendChar(Display *d, wchar_t aChar, LinuxHeldMods &aHeld)
 		return;
 	}
 
+	if (LinuxLibeiShouldAttempt())
+	{
+		unsigned int held_mods = (aHeld.ctrl ? MOD_CONTROL : 0)
+			| (aHeld.shift ? MOD_SHIFT : 0) | (aHeld.alt ? MOD_ALT : 0)
+			| (aHeld.win ? MOD_WIN : 0);
+		if (LinuxLibeiSendUtf32((uint32_t)aChar, held_mods,
+			LinuxModePressDurationMs(), LinuxModeKeyDelayMs()))
+			return;
+		if (!LinuxLibeiMayFallback())
+		{
+			sLastUnsendable = aChar;
+			return;
+		}
+	}
 	if ((unsigned int)aChar > 0x7E)
 	{
 		if (LinuxWaylandSendCharW(aChar))
@@ -1158,12 +1218,17 @@ static void LinuxSendBrace(Display *d, const std::wstring &aToken, LinuxHeldMods
 		}
 		if (x >= 0 || y >= 0)
 		{
-			// {Click} coordinates are screen-relative (CoordMode ToolTip? the
-			// docs say Click coordinates follow CoordMode Mouse; keep simple
-			// and use the same conversion as MouseMove).
-			int cx, cy;
-			LinuxMouseCoords(d, x < 0 ? 0 : x, y < 0 ? 0 : y, cx, cy);
-			LinuxFakeMotion(d, cx, cy);
+			// {Click} coordinates are screen-relative. X11 needs CoordMode
+			// conversion; pure Wayland/libei accepts the tracked absolute intent
+			// directly and must never dereference a null Display.
+			if (d)
+			{
+				int cx, cy;
+				LinuxMouseCoords(d, x < 0 ? 0 : x, y < 0 ? 0 : y, cx, cy);
+				LinuxFakeMotion(d, cx, cy);
+			}
+			else
+				LinuxFakeMotion(nullptr, x < 0 ? 0 : x, y < 0 ? 0 : y);
 		}
 		unsigned int btn = 0;
 		if (!LinuxButtonFromName(button.c_str(), btn))
@@ -1336,6 +1401,66 @@ static void LinuxMouseCoords(Display *d, int aX, int aY, int &aOutX, int &aOutY)
 	aOutY = aY + wy;
 }
 
+static void LinuxSetLibeiError(ResultToken &aResultToken, const char *aReason)
+{
+	wchar_t reason[320];
+	size_t n = mbstowcs(reason, aReason ? aReason : "", _countof(reason) - 1);
+	if (n == (size_t)-1) n = 0;
+	reason[n] = 0;
+	aResultToken.Error(reason[0] ? reason
+		: _T("Consented libei route is unavailable."), _T(""), ErrorPrototype::OS);
+}
+
+static bool LinuxValidateLibeiRoute(ResultToken &aResultToken)
+{
+	if (!LinuxLibeiRequired() && !LinuxLibeiShouldAttempt())
+		return true;
+	if (LinuxLibeiEnsureReady())
+		return true;
+	if (LinuxLibeiMayFallback())
+		return true;
+	LinuxSetLibeiError(aResultToken, LinuxLibeiGetStatus().reason);
+	return false;
+}
+
+static bool LinuxSelectInjectionRoute(ResultToken &aResultToken, Display *&aDisplay)
+{
+	aDisplay = LinuxInputDisplay();
+	bool selected = LinuxLibeiRequired() || LinuxLibeiShouldAttempt();
+	if (selected && !LinuxValidateLibeiRoute(aResultToken))
+		return false;
+	if (selected && LinuxLibeiGetStatus().state == LinuxLibeiState::READY)
+		aDisplay = nullptr; // EIS owns this operation; XTEST must stand aside.
+	return true;
+}
+
+static bool LinuxCheckLibeiOperation(ResultToken &aResultToken)
+{
+	if (!LinuxLibeiShouldAttempt() || LinuxLibeiMayFallback())
+		return true;
+	const LinuxLibeiStatus &status = LinuxLibeiGetStatus();
+	if (status.state == LinuxLibeiState::READY
+		&& status.last_outcome != LinuxLibeiOutcome::FAILED)
+		return true;
+	LinuxSetLibeiError(aResultToken, status.reason);
+	return false;
+}
+
+static bool LinuxBeginMouseLibei(Display *aDisplay)
+{
+	if (aDisplay || !LinuxLibeiShouldAttempt()
+		|| LinuxLibeiGetStatus().state != LinuxLibeiState::READY)
+		return false;
+	LinuxLibeiBeginTransaction(g ? g->SendLevel : 0, "pointer");
+	return true;
+}
+
+static bool LinuxEndMouseLibei(ResultToken &aResultToken, bool aTransaction)
+{
+	if (aTransaction) LinuxLibeiEndTransaction();
+	return LinuxCheckLibeiOperation(aResultToken);
+}
+
 // ---------------------------------------------------------------------------
 // Send / SendEvent / SendInput / SendPlay / SendText
 // ---------------------------------------------------------------------------
@@ -1346,18 +1471,27 @@ static void LinuxMouseCoords(Display *d, int aX, int aY, int &aOutX, int &aOutY)
 // P1-3), not a fourth mode.
 static void LinuxSendWrapper(ResultToken &aResultToken, ExprTokenType *aParam[], int aParamCount, bool aRaw, int aMode)
 {
-	Display *d = LinuxInputDisplay();
-	if (!d && !LinuxWaylandActive())
-	{
-		aResultToken.Error(_T("No X display or Wayland display is available."), _T(""), ErrorPrototype::OS);
-		return;
-	}
 	TCHAR keys_buf[65536];
 	LPTSTR keys = aParamCount > 0 ? TokenToString(*aParam[0], keys_buf, nullptr) : nullptr;
 	if (!keys)
 		keys = keys_buf;
+	if (!*keys) return;
+	Display *d = nullptr;
+	if (!LinuxSelectInjectionRoute(aResultToken, d)) return;
+	if (!d && !LinuxWaylandActive() && !LinuxLibeiShouldAttempt())
+	{
+		aResultToken.Error(_T("No X display, Wayland display or consented libei route is available."), _T(""), ErrorPrototype::OS);
+		return;
+	}
+	bool libei_selected = !d && LinuxLibeiShouldAttempt();
+	bool libei_ready = libei_selected
+		&& LinuxLibeiGetStatus().state == LinuxLibeiState::READY;
 	int saved_mode = s_send_mode;
 	LinuxSetSendMode(aMode);
+	bool libei_transaction = libei_ready;
+	if (libei_transaction)
+		LinuxLibeiBeginTransaction(g->SendLevel,
+			aMode == LSE_INPUT ? "input" : (aMode == LSE_PLAY ? "play" : "event"));
 	sLastUnsendable = 0;
 	bool ok = true;
 	if (aRaw)
@@ -1368,17 +1502,39 @@ static void LinuxSendWrapper(ResultToken &aResultToken, ExprTokenType *aParam[],
 	}
 	else
 		ok = LinuxSendKeys(d, keys);
+	bool libei_failed = libei_transaction && LinuxLibeiTransactionFailed();
+	char libei_error[192] = "";
+	if (libei_failed)
+		snprintf(libei_error, sizeof(libei_error), "%s",
+			LinuxLibeiTransactionError());
+	if (libei_transaction)
+		LinuxLibeiEndTransaction();
 	s_send_mode = saved_mode;
+	if (libei_transaction && !LinuxLibeiMayFallback()
+		&& libei_failed && !sLastUnsendable)
+	{
+		wchar_t reason[320];
+		const char *message = libei_error[0] ? libei_error
+			: LinuxLibeiGetStatus().reason;
+		size_t n = mbstowcs(reason, message,
+			_countof(reason) - 1);
+		if (n == (size_t)-1) n = 0;
+		reason[n] = 0;
+		aResultToken.Error(reason[0] ? reason
+			: _T("Required libei route could not submit input."),
+			_T(""), ErrorPrototype::OS);
+		return;
+	}
 	if (!ok && sLastUnsendable)
 	{
 		TCHAR buf[256];
-		_tcsncpy(buf, _T("Non-ASCII character U+"), _countof(buf));
+		_tcsncpy(buf, _T("Character U+"), _countof(buf));
 		TCHAR hex[32];
 		sntprintf(hex, _countof(hex), _T("%04X"), (unsigned)sLastUnsendable);
 		_tcsncat(buf, hex, _countof(buf));
-		_tcsncat(buf, _T(" cannot be sent on this session (no X display and the "
-			"compositor provides no virtual keyboard); use X11/XWayland, or "
-			"check that the Wayland compositor exposes a virtual keyboard)."),
+		_tcsncat(buf, _T(" cannot be sent on this session (no matching EIS "
+			"keymap/TEXT capability or compositor virtual keyboard); use X11/"
+			"XWayland, grant RemoteDesktop/libei, or use the paste fallback)."),
 			_countof(buf));
 		aResultToken.Error(buf, _T(""), ErrorPrototype::OS);
 	}
@@ -1458,12 +1614,14 @@ static void LinuxQueryPointer(Display *d, int &aX, int &aY)
 
 BIF_DECL(BIF_Linux_MouseMove)
 {
-	Display *d = LinuxInputDisplay();
-	if (!d && !LinuxWaylandActive())
+	Display *d = nullptr;
+	if (!LinuxSelectInjectionRoute(aResultToken, d)) return;
+	if (!d && !LinuxWaylandActive() && !LinuxLibeiShouldAttempt())
 	{
-		aResultToken.Error(_T("No X display or Wayland display is available."), _T(""), ErrorPrototype::OS);
+		aResultToken.Error(_T("No X display, Wayland display or consented libei route is available."), _T(""), ErrorPrototype::OS);
 		return;
 	}
+	bool libei_transaction = LinuxBeginMouseLibei(d);
 	int x = (int)TokenToInt64(*aParam[0]);
 	int y = (int)TokenToInt64(*aParam[1]);
 	// Relative mode ("R"): relative to the current position.
@@ -1482,8 +1640,11 @@ BIF_DECL(BIF_Linux_MouseMove)
 			}
 			else
 			{
-				// Wayland: relative motion by the given amounts.
-				LinuxWaylandMotionEvent(x, y);
+				// Consented libei is preferred; compositor-specific virtual
+				// pointer remains the deterministic fallback.
+				if (!LinuxLibeiPointerMotion(x, y) && LinuxLibeiMayFallback())
+					LinuxWaylandMotionEvent(x, y);
+				LinuxEndMouseLibei(aResultToken, libei_transaction);
 				return;
 			}
 		}
@@ -1495,17 +1656,22 @@ BIF_DECL(BIF_Linux_MouseMove)
 		LinuxFakeMotion(d, sx, sy);
 	}
 	else
+	{
 		LinuxFakeMotion(nullptr, x, y); // Absolute intent via tracked position.
+		LinuxEndMouseLibei(aResultToken, libei_transaction);
+	}
 }
 
 BIF_DECL(BIF_Linux_MouseClick)
 {
-	Display *d = LinuxInputDisplay();
-	if (!d && !LinuxWaylandActive())
+	Display *d = nullptr;
+	if (!LinuxSelectInjectionRoute(aResultToken, d)) return;
+	if (!d && !LinuxWaylandActive() && !LinuxLibeiShouldAttempt())
 	{
-		aResultToken.Error(_T("No X display or Wayland display is available."), _T(""), ErrorPrototype::OS);
+		aResultToken.Error(_T("No X display, Wayland display or consented libei route is available."), _T(""), ErrorPrototype::OS);
 		return;
 	}
+	bool libei_transaction = LinuxBeginMouseLibei(d);
 	TCHAR btn_buf[32], duo_buf[32], rel_buf[16];
 	btn_buf[0] = L'\0'; duo_buf[0] = L'\0'; rel_buf[0] = L'\0';
 	LPTSTR button = aParamCount > 0 && !ParamIndexIsOmitted(0) ? TokenToString(*aParam[0], btn_buf, nullptr) : nullptr;
@@ -1534,8 +1700,8 @@ BIF_DECL(BIF_Linux_MouseClick)
 			}
 			else
 			{
-				// Wayland: relative motion by the given amounts.
-				LinuxWaylandMotionEvent(x, y);
+				if (!LinuxLibeiPointerMotion(x, y) && LinuxLibeiMayFallback())
+					LinuxWaylandMotionEvent(x, y);
 				x = -1;
 			}
 		}
@@ -1561,6 +1727,7 @@ BIF_DECL(BIF_Linux_MouseClick)
 	}
 	if (!btn)
 	{
+		LinuxEndMouseLibei(aResultToken, libei_transaction);
 		aResultToken.Error(_T("Invalid button name."), _T(""), ErrorPrototype::Value);
 		return;
 	}
@@ -1569,11 +1736,6 @@ BIF_DECL(BIF_Linux_MouseClick)
 	{
 		if (!_tcsicmp(down_up, _T("D"))) hold = true;
 		else if (!_tcsicmp(down_up, _T("U"))) release = true;
-	}
-	if (!btn)
-	{
-		aResultToken.Error(_T("Invalid button name."), _T(""), ErrorPrototype::Value);
-		return;
 	}
 	if (hold)
 		LinuxFakeButton(d, btn, true);
@@ -1585,14 +1747,17 @@ BIF_DECL(BIF_Linux_MouseClick)
 			LinuxFakeButton(d, btn, true);
 			LinuxFakeButton(d, btn, false);
 		}
+	if (!d)
+		LinuxEndMouseLibei(aResultToken, libei_transaction);
 }
 
 BIF_DECL(BIF_Linux_MouseClickDrag)
 {
-	Display *d = LinuxInputDisplay();
-	if (!d && !LinuxWaylandActive())
+	Display *d = nullptr;
+	if (!LinuxSelectInjectionRoute(aResultToken, d)) return;
+	if (!d && !LinuxWaylandActive() && !LinuxLibeiShouldAttempt())
 	{
-		aResultToken.Error(_T("No X display or Wayland display is available."), _T(""), ErrorPrototype::OS);
+		aResultToken.Error(_T("No X display, Wayland display or consented libei route is available."), _T(""), ErrorPrototype::OS);
 		return;
 	}
 	TCHAR btn_buf[32], rel_buf[16];
@@ -1618,6 +1783,7 @@ BIF_DECL(BIF_Linux_MouseClickDrag)
 		aResultToken.Error(_T("Invalid button name."), _T(""), ErrorPrototype::Value);
 		return;
 	}
+	bool libei_transaction = LinuxBeginMouseLibei(d);
 	if (relative && !_tcsicmp(relative, _T("R")) && d) // Wayland: cannot query the pointer.
 	{
 		int cx, cy;
@@ -1641,6 +1807,7 @@ BIF_DECL(BIF_Linux_MouseClickDrag)
 		LinuxFakeButton(nullptr, btn, true);
 		LinuxFakeMotion(nullptr, x2, y2);
 		LinuxFakeButton(nullptr, btn, false);
+		LinuxEndMouseLibei(aResultToken, libei_transaction);
 	}
 }
 
@@ -1870,10 +2037,11 @@ BIF_DECL(BIF_Linux_SetScrollLockState){ LinuxSetLockState(aResultToken, aParam, 
 
 BIF_DECL(BIF_Click)
 {
-	Display *d = LinuxInputDisplay();
-	if (!d)
+	Display *d = nullptr;
+	if (!LinuxSelectInjectionRoute(aResultToken, d)) return;
+	if (!d && !LinuxWaylandActive() && !LinuxLibeiShouldAttempt())
 	{
-		aResultToken.Error(_T("No X display is available."), _T(""), ErrorPrototype::OS);
+		aResultToken.Error(_T("No X display, Wayland display or consented libei route is available."), _T(""), ErrorPrototype::OS);
 		return;
 	}
 	TCHAR keys_buf[4096];
@@ -1902,13 +2070,19 @@ BIF_DECL(BIF_Click)
 		else
 			actions.push_back(w);
 	}
+	bool libei_transaction = LinuxBeginMouseLibei(d);
 	// Docs: coordinates move the mouse first; then the actions run (a bare
 	// click with no actions = Left-click at the current position).
 	if (has_coords)
 	{
-		int sx, sy;
-		LinuxMouseCoords(d, x < 0 ? 0 : x, y < 0 ? 0 : y, sx, sy);
-		LinuxFakeMotion(d, sx, sy);
+		if (d)
+		{
+			int sx, sy;
+			LinuxMouseCoords(d, x < 0 ? 0 : x, y < 0 ? 0 : y, sx, sy);
+			LinuxFakeMotion(d, sx, sy);
+		}
+		else
+			LinuxFakeMotion(nullptr, x < 0 ? 0 : x, y < 0 ? 0 : y);
 	}
 	if (actions.empty())
 		actions.push_back(L"Left");
@@ -1934,11 +2108,14 @@ BIF_DECL(BIF_Click)
 		}
 		if (!btn)
 		{
+			LinuxEndMouseLibei(aResultToken, libei_transaction);
 			aResultToken.Error(_T("Invalid Click item."), _T(""), ErrorPrototype::Value);
 			return;
 		}
 		LinuxFakeButton(d, btn, true);
 		LinuxFakeButton(d, btn, false);
 	}
+	if (!d)
+		LinuxEndMouseLibei(aResultToken, libei_transaction);
 }
 

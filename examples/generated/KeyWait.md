@@ -3,7 +3,7 @@
 - Linux status: `IMPL` (P3)
 - Example kind: `verified`
 - Environment profile: `x11`
-- Verified source: [tests/doccheck/assert_input.ahk:293](../../tests/doccheck/assert_input.ahk#L293)
+- Verified source: [tests/doccheck/assert_input.ahk:301](../../tests/doccheck/assert_input.ahk#L301)
 - Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
 - Linux adaptation: XQueryKeymap polling; logical/physical state and debounce are approximate
 

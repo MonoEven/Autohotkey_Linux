@@ -192,12 +192,12 @@
       "verified_source": {
         "excerpt": "; keyboard state, not the capture file).\nnext_lines()\nBlockInput(\"On\")\nSend(\"{Enter}\")\nSleep(60)\nLog(\"block_send=\" (downs(next_lines()) = \"\" ? 1 : 0))",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 326
+        "line": 334
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 326,
+          "line": 334,
           "profile": "x11"
         }
       ]
@@ -457,12 +457,12 @@
       "verified_source": {
         "excerpt": "\n; --- Click (g_BIF). ---\nClick(\"Right\")\nSleep(80)\nLog(\"click_right=\" (btns(next_lines()) = \"down:3,up:3\" ? 1 : 0))\nClick(\"150 160\")",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 277
+        "line": 285
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 277,
+          "line": 285,
           "profile": "x11"
         }
       ]
@@ -4645,12 +4645,12 @@
       "verified_source": {
         "excerpt": "; --- SetCapsLockState/SetNumLockState/SetScrollLockState + GetKeyState \"T\". ---\nSetCapsLockState(\"On\")\nLog(\"caps_on=\" (GetKeyState(\"CapsLock\", \"T\") = 1 ? 1 : 0))\nSetCapsLockState(-1)\nLog(\"caps_toggle=\" (GetKeyState(\"CapsLock\", \"T\") = 0 ? 1 : 0))\nSetCapsLockState(1)",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 303
+        "line": 311
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 303,
+          "line": 311,
           "profile": "x11"
         },
         {
@@ -5622,7 +5622,7 @@
         },
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 233,
+          "line": 241,
           "profile": "x11"
         },
         {
@@ -5817,12 +5817,12 @@
       "verified_source": {
         "excerpt": "; is ignored.  Physical input always feeds (not exercised here).\nSendLevel(2)\nih_hi := InputHook(\"I1\", \"z\")   ; I1 = MinSendLevel 1; end key z.\nih_hi.Start()\nSleep(100)\nSend(\"a\")        ; level 2 >= 1 -> collected.",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 225
+        "line": 233
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 225,
+          "line": 233,
           "profile": "x11"
         },
         {
@@ -5858,12 +5858,12 @@
       "verified_source": {
         "excerpt": "\n; --- InstallKeybdHook/InstallMouseHook: no error, flags stored. ---\nInstallKeybdHook()\nInstallMouseHook()\nInstallKeybdHook(0)\nInstallMouseHook(0)",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 340
+        "line": 348
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 340,
+          "line": 348,
           "profile": "x11"
         },
         {
@@ -5894,12 +5894,12 @@
       "verified_source": {
         "excerpt": "; --- InstallKeybdHook/InstallMouseHook: no error, flags stored. ---\nInstallKeybdHook()\nInstallMouseHook()\nInstallKeybdHook(0)\nInstallMouseHook(0)\nLog(\"install_hooks=1\")",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 341
+        "line": 349
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 341,
+          "line": 349,
           "profile": "x11"
         }
       ]
@@ -6434,12 +6434,12 @@
       "verified_source": {
         "excerpt": "\n; --- KeyWait (docs: 1 when the condition is met; \"D\" waits for down). ---\nLog(\"keywait_up=\" (KeyWait(\"a\") = 1 ? 1 : 0))\nSend(\"{a down}\")\nSleep(50)\nLog(\"keywait_d=\" (KeyWait(\"a\", \"D\") = 1 ? 1 : 0))",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 293
+        "line": 301
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 293,
+          "line": 301,
           "profile": "x11"
         }
       ]
@@ -7112,12 +7112,12 @@
       "verified_source": {
         "excerpt": "\n; --- MouseClick. ---\nMouseClick(\"Left\", 100, 100)\nSleep(80)\nLog(\"mouseclick_btns=\" (btns(next_lines()) = \"down:1,up:1\" ? 1 : 0))\nMouseGetPos(&mx, &my)",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 252
+        "line": 260
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 252,
+          "line": 260,
           "profile": "x11"
         },
         {
@@ -7148,12 +7148,12 @@
       "verified_source": {
         "excerpt": "\n; --- MouseClickDrag. ---\nMouseClickDrag(\"Left\", 10, 10, 120, 90)\nSleep(80)\nLog(\"mousedrag_btns=\" (btns(next_lines()) = \"down:1,up:1\" ? 1 : 0))\nMouseGetPos(&mx, &my)",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 270
+        "line": 278
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 270,
+          "line": 278,
           "profile": "x11"
         }
       ]
@@ -7179,12 +7179,12 @@
       "verified_source": {
         "excerpt": "MouseMove(300, 200)\nSleep(50)\nMouseGetPos(&mx, &my)\nLog(\"mousemove=\" (mx = 300 && my = 200 ? 1 : 0))\n\n; --- MouseClick. ---",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 248
+        "line": 256
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 248,
+          "line": 256,
           "profile": "x11"
         }
       ]
@@ -7210,12 +7210,12 @@
       "verified_source": {
         "excerpt": "\n; --- MouseMove + MouseGetPos. ---\nMouseMove(300, 200)\nSleep(50)\nMouseGetPos(&mx, &my)\nLog(\"mousemove=\" (mx = 300 && my = 200 ? 1 : 0))",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 246
+        "line": 254
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 246,
+          "line": 254,
           "profile": "x11"
         },
         {
@@ -9402,12 +9402,12 @@
       "verified_source": {
         "excerpt": "\n; --- SetCapsLockState/SetNumLockState/SetScrollLockState + GetKeyState \"T\". ---\nSetCapsLockState(\"On\")\nLog(\"caps_on=\" (GetKeyState(\"CapsLock\", \"T\") = 1 ? 1 : 0))\nSetCapsLockState(-1)\nLog(\"caps_toggle=\" (GetKeyState(\"CapsLock\", \"T\") = 0 ? 1 : 0))",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 302
+        "line": 310
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 302,
+          "line": 310,
           "profile": "x11"
         }
       ]
@@ -9558,12 +9558,12 @@
       "verified_source": {
         "excerpt": "SetCapsLockState(\"Off\")\nLog(\"caps_off=\" (GetKeyState(\"CapsLock\", \"T\") = 0 ? 1 : 0))\nSetNumLockState(\"On\")\nLog(\"num_on=\" (GetKeyState(\"NumLock\", \"T\") = 1 ? 1 : 0))\nSetNumLockState(\"Off\")\nLog(\"num_off=\" (GetKeyState(\"NumLock\", \"T\") = 0 ? 1 : 0))",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 310
+        "line": 318
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 310,
+          "line": 318,
           "profile": "x11"
         }
       ]
@@ -9616,12 +9616,12 @@
       "verified_source": {
         "excerpt": "SetNumLockState(\"Off\")\nLog(\"num_off=\" (GetKeyState(\"NumLock\", \"T\") = 0 ? 1 : 0))\nSetScrollLockState(\"On\")\nLog(\"scroll_on=\" (GetKeyState(\"ScrollLock\", \"T\") = 1 ? 1 : 0))\nSetScrollLockState(\"Off\")\nLog(\"scroll_off=\" (GetKeyState(\"ScrollLock\", \"T\") = 0 ? 1 : 0))",
         "file": "tests/doccheck/assert_input.ahk",
-        "line": 314
+        "line": 322
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 314,
+          "line": 322,
           "profile": "x11"
         }
       ]
@@ -12005,7 +12005,7 @@
         },
         {
           "file": "tests/doccheck/assert_input.ahk",
-          "line": 290,
+          "line": 298,
           "profile": "x11"
         },
         {

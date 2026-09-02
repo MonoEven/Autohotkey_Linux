@@ -16,6 +16,7 @@
 #include "input_backend.h"
 #include "core_gshortcut_linux.h"
 #include "input_backend_gnome_shell.h"
+#include "input_backend_libei.h"
 #include "core_evdev_linux.h"
 #include "core_inputd_client_linux.h"
 #include "../inputd/inputd_proto.h" // v2 capability grants
@@ -240,7 +241,7 @@ static const InputCapsEntry sInputCaps[] = {
 };
 #undef AHK_INPUT_CAPS
 
-AhkBackendHealth sHealth[5];
+AhkBackendHealth sHealth[6];
 bool sHealthInitialized = false;
 
 unsigned KindIndex(AhkInputBackendKind aKind)
@@ -923,6 +924,8 @@ void LinuxInputBackendDispatch()
 	LinuxCaptureDispatchInputNotifies();
 	// §5-M5: the StatusNotifierItem tray service rides the session bus too.
 	LinuxTrayDispatch();
+	// M6: the consented injection lane is orthogonal to hotkey capture.
+	LinuxLibeiDispatch();
 }
 
 void LinuxInputBackendShutdown()
@@ -930,6 +933,7 @@ void LinuxInputBackendShutdown()
 	LinuxGShortcutShutdown();
 	LinuxGnomeShellShutdown();
 	LinuxEvdevShutdown();
+	LinuxLibeiShutdown();
 	LinuxImeShutdown();
 	sMuxMask = 0;
 	UpdateMuxDescription();

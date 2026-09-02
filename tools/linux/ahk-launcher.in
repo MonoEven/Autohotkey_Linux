@@ -20,6 +20,11 @@ AHK_VERSION="@AHK_VERSION@"
 AHK_LIB="$AHK_PREFIX/@LIB_SUB@"
 AHK_BIN="$AHK_PREFIX/@BIN_SUB@"
 AHK_DOC="$AHK_PREFIX/@DOC_SUB@"
+# Generic tar installs may bundle the optional libei/liboeffis SONAMEs next to
+# the interpreter. System packages intentionally use distro-managed libraries.
+if [ -d "$AHK_LIB/lib" ]; then
+  export LD_LIBRARY_PATH="$AHK_LIB/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
 
 # True when this prefix carries the Debian/Ubuntu package (dpkg state).
 is_deb() {

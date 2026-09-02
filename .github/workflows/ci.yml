@@ -19,6 +19,7 @@ permissions:
 
 jobs:
   build-and-test:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -26,6 +27,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       BUILD_DIR: build-${{ matrix.build }}
+      AHK_PACK_RUNTIME: ${{ github.workspace }}/build-pack-runtime/source/linux/core/ahk_core
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -57,6 +59,7 @@ jobs:
             libxfixes-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev libxkbcommon-x11-dev \
             libffi-dev libdbus-1-dev dbus libgtk-3-dev zlib1g-dev libjpeg-dev \
+            libei-dev libeis-dev liboeffis-dev libportal-dev \
             xvfb xdotool x11-xkb-utils x11-utils sway xwayland weston \
             xclip
           sudo apt-get install -y --no-install-recommends python3 dpkg-dev
@@ -71,9 +74,12 @@ jobs:
               -DCMAKE_C_FLAGS="-fsanitize=address -g" \
               -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address"
           fi
+          cmake -S . -B build-pack-runtime -DAHK_ENABLE_LIBEI=OFF
 
       - name: Build
-        run: cmake --build "$BUILD_DIR" -j$(nproc)
+        run: |
+          cmake --build "$BUILD_DIR" -j$(nproc)
+          cmake --build build-pack-runtime -j$(nproc) --target ahk_core
 
       - name: Headless regression
         run: |
@@ -129,6 +135,10 @@ jobs:
       - name: Dynamic HotIf deadline and fail-open oracle (check0901 M5b)
         if: matrix.build == 'core'
         run: bash tests/oracle/run_input_dynamic_decision_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd" "$BUILD_DIR/source/linux/core/ahk_core"
+
+      - name: Consented libei/EIS injection oracle (check0901 M6a)
+        if: matrix.build == 'core'
+        run: bash tests/oracle/run_input_libei_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
 
       - name: Inputd systemd socket activation oracle
         if: matrix.build == 'core'
@@ -328,6 +338,15 @@ jobs:
       - name: Headless regression
         run: bash tests/run_tests.sh build-container/source/linux/core/ahk_core
 
+      - name: Optional libei compile/wire matrix
+        run: |
+          if pkg-config --exists libei-1.0 libeis-1.0 liboeffis-1.0; then
+            bash tests/oracle/run_input_libei_oracle.sh build-container/source/linux/core/ahk_core
+          else
+            build-container/source/linux/core/ahk_core --diag > /tmp/container-diag.txt
+            grep -q 'libei-build  : no' /tmp/container-diag.txt
+          fi
+
       # A display smoke under Xvfb: the built binary must start + run a script
       # that touches the X11/GTK init path.  Deliberately NOT MsgBox (it would
       # block forever on the unclicked dialog under headless); the script
@@ -356,9 +375,12 @@ jobs:
           bash tools/linux/ci-container-deps.sh
           cmake -S . -B build-pc
           cmake --build build-pc -j$(nproc)
+          cmake -S . -B build-pack-runtime -DAHK_ENABLE_LIBEI=OFF
+          cmake --build build-pack-runtime -j$(nproc) --target ahk_core
       - name: Pack + verify in a bare container
         run: |
           AHK="$PWD/build-pc/source/linux/core/ahk_core"
+          export AHK_PACK_RUNTIME="$PWD/build-pack-runtime/source/linux/core/ahk_core"
           mkdir -p /tmp/packwork && cd /tmp/packwork
           printf 'PACKED-FILEINSTALL-OK' > res.txt
           cat > pkg.ahk <<'EOF'
@@ -396,7 +418,14 @@ jobs:
       # config (line 49: `xwayland disable`), which is exactly the §16-3
       # pure-Wayland downgrade path; --xwayland is the opt-in enabled mode.
       - name: Wayland suite with xwayland disabled
-        run: bash tests/doccheck/wayland_run.sh build-nox/source/linux/core/ahk_core
+        run: |
+          bash tests/doccheck/wayland_run.sh build-nox/source/linux/core/ahk_core
+          # Portal v2 unavailable/transport absent is an allowed auto fallback:
+          # prove non-ASCII paste/virtual-keyboard still works after a failed
+          # libei probe and never waits on the caller's real session bus.
+          AHK_WAYLAND_LIBEI=1 \
+            DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/ahk-no-such-session-bus \
+            bash tests/doccheck/wayland_run.sh build-nox/source/linux/core/ahk_core
         env:
           XDG_RUNTIME_DIR: /tmp
 
@@ -423,13 +452,22 @@ jobs:
 
       - name: Configure ThreadSanitizer
         run: |
-          cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Debug \
+          # Explicit OFF build is the optional-dependency oracle: the same
+          # source must compile/run without libei/liboeffis installed.
+          cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Debug -DAHK_ENABLE_LIBEI=OFF \
             -DCMAKE_CXX_FLAGS="-fsanitize=thread -g -O0 -fno-omit-frame-pointer" \
             -DCMAKE_C_FLAGS="-fsanitize=thread -g -O0 -fno-omit-frame-pointer" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
 
       - name: Build ThreadSanitizer
-        run: cmake --build build-tsan -j$(nproc)
+        run: |
+          cmake --build build-tsan -j$(nproc)
+          build-tsan/source/linux/core/ahk_core --diag > /tmp/tsan-diag.txt
+          grep -q 'libei-build  : no (libei=not-built liboeffis=not-built libportal=not-built)' /tmp/tsan-diag.txt
+          if ldd build-tsan/source/linux/core/ahk_core | grep -q 'libei\|liboeffis'; then
+            echo 'feature-off TSan build unexpectedly links libei' >&2
+            exit 1
+          fi
 
       - name: TSan headless and input oracles
         env:
@@ -491,6 +529,7 @@ jobs:
             libxfixes-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev libxkbcommon-x11-dev \
             libffi-dev libdbus-1-dev dbus libgtk-3-dev libjpeg-dev \
+            libei-dev liboeffis-dev libportal-dev \
             python3 dpkg-dev rpm libfuse2 squashfs-tools
           # appimagetool (continuous, v295+) packages the AppDir through
           # FUSE; GitHub-hosted runners have no /dev/fuse by default, so
@@ -505,6 +544,8 @@ jobs:
         run: |
           cmake -S . -B build-core
           cmake --build build-core -j$(nproc)
+          cmake -S . -B build-pack-runtime -DAHK_ENABLE_LIBEI=OFF
+          cmake --build build-pack-runtime -j$(nproc) --target ahk_core
 
       - name: Build packages
         run: |
@@ -530,19 +571,35 @@ jobs:
           tar_rc=$?
           set -e
           [ $tar_rc -eq 0 ] || [ $tar_rc -eq 141 ]
-          dpkg-deb --info dist/autohotkey-linux-*.deb | head -8
-          # linux.19: every package must carry AutoHotkey's official tray
-          # assets (runtime IconPixmap + freedesktop IconName theme lookup).
-          tar tzf dist/autohotkey-linux-*.tar.gz | grep -q 'autohotkey-linux/icon_main.ico'
-          tar tzf dist/autohotkey-linux-*.tar.gz | grep -q 'autohotkey-linux/autohotkey.png'
-          dpkg-deb --contents dist/autohotkey-linux-*.deb | grep -q 'usr/share/autohotkey/icon_main.ico'
-          dpkg-deb --contents dist/autohotkey-linux-*.deb | grep -q 'usr/share/icons/hicolor/16x16/apps/autohotkey.png'
-          rpm -qlp dist/*.rpm | grep -q '/usr/share/autohotkey/icon_main.ico'
-          rpm -qlp dist/*.rpm | grep -q '/usr/share/icons/hicolor/16x16/apps/autohotkey.png'
-          # EX-1: full generated examples must ship in tar/deb/rpm payloads.
+          dpkg-deb --info dist/autohotkey-linux-*.deb > /tmp/ahk-deb-info.txt
+          head -8 /tmp/ahk-deb-info.txt
+          dpkg-deb -f dist/autohotkey-linux-*.deb Depends > /tmp/ahk-deb-depends.txt
+          rpm -qp --requires dist/*.rpm > /tmp/ahk-rpm-requires.txt
+          rpm -qp --provides dist/*.rpm > /tmp/ahk-rpm-provides.txt
           tar tzf dist/autohotkey-linux-*.tar.gz > /tmp/ahk-tar-contents.txt
           dpkg-deb --contents dist/autohotkey-linux-*.deb > /tmp/ahk-deb-contents.txt
           rpm -qlp dist/*.rpm > /tmp/ahk-rpm-contents.txt
+          grep -q 'libei1 (>= .*), liboeffis1 (>= ' /tmp/ahk-deb-depends.txt
+          grep -q 'libei.so.1' /tmp/ahk-rpm-requires.txt
+          grep -q 'liboeffis.so.1' /tmp/ahk-rpm-requires.txt
+          grep -q 'libei.so.1' /tmp/ahk-rpm-provides.txt
+          grep -q 'liboeffis.so.1' /tmp/ahk-rpm-provides.txt
+          # linux.19: every package must carry AutoHotkey's official tray
+          # assets, the standalone pack runtime and matched optional libraries.
+          grep -q 'autohotkey-linux/icon_main.ico' /tmp/ahk-tar-contents.txt
+          grep -q 'autohotkey-linux/autohotkey.png' /tmp/ahk-tar-contents.txt
+          grep -q 'autohotkey-linux/ahk_core_pack' /tmp/ahk-tar-contents.txt
+          grep -q 'autohotkey-linux/lib/libei.so.1' /tmp/ahk-tar-contents.txt
+          grep -q 'autohotkey-linux/lib/liboeffis.so.1' /tmp/ahk-tar-contents.txt
+          grep -q 'usr/share/autohotkey/ahk_core_pack' /tmp/ahk-deb-contents.txt
+          grep -q 'usr/share/autohotkey/icon_main.ico' /tmp/ahk-deb-contents.txt
+          grep -q 'usr/share/icons/hicolor/16x16/apps/autohotkey.png' /tmp/ahk-deb-contents.txt
+          grep -q '/usr/share/autohotkey/ahk_core_pack' /tmp/ahk-rpm-contents.txt
+          grep -q '/usr/share/autohotkey/lib/libei.so.1' /tmp/ahk-rpm-contents.txt
+          grep -q '/usr/share/autohotkey/lib/liboeffis.so.1' /tmp/ahk-rpm-contents.txt
+          grep -q '/usr/share/autohotkey/icon_main.ico' /tmp/ahk-rpm-contents.txt
+          grep -q '/usr/share/icons/hicolor/16x16/apps/autohotkey.png' /tmp/ahk-rpm-contents.txt
+          # EX-1: full generated examples must ship in tar/deb/rpm payloads.
           grep -q 'autohotkey-linux/examples/FUNCTION_COVERAGE.md' /tmp/ahk-tar-contents.txt
           grep -q 'autohotkey-linux/examples/generated/ControlClick.md' /tmp/ahk-tar-contents.txt
           grep -q 'usr/share/doc/autohotkey/examples/FUNCTION_COVERAGE.md' /tmp/ahk-deb-contents.txt
@@ -558,6 +615,13 @@ jobs:
           test -f squashfs-root/usr/share/autohotkey/icon_main.ico
           test -f squashfs-root/usr/share/autohotkey/autohotkey.png
           test -x squashfs-root/usr/bin/ahk-inputd
+          test -x squashfs-root/usr/bin/ahk_core_pack
+          if ldd squashfs-root/usr/bin/ahk_core_pack | grep -q 'libei\|liboeffis'; then
+            echo 'AppImage pack runtime unexpectedly links libei' >&2
+            exit 1
+          fi
+          test -f squashfs-root/usr/lib/libei.so.1
+          test -f squashfs-root/usr/lib/liboeffis.so.1
           rm -rf squashfs-root
           ls dist/*.AppImage dist/*.rpm dist/*.vsix
           vsix_version=$(node -p "require('./extensions/vscode-ahk-linux/package.json').version")

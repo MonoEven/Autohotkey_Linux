@@ -65,7 +65,7 @@ bindsym U00E9 exec touch /tmp/wl_key_u00e9
 # Generic 'Control' (not 'Control_L'): sway matches the modifier STATE, and
 # the virtual keyboard pushes the xkb Control bit before the key event.
 bindsym Control+v exec touch /tmp/wl_key_cv
-bindsym button3 exec touch /tmp/wl_btn3
+bindsym --whole-window button3 exec touch /tmp/wl_btn3
 EOF
 cd /tmp/swayhome || exit 1
 WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman XDG_RUNTIME_DIR=/tmp/swayhome \
@@ -127,7 +127,7 @@ run_compare() { # $1 = suite basename, $2 = output file
   local exp="assert_${base}_expect.txt"
   [ -f "$exp" ] || return
   local n=0
-  while IFS= read -r line; do
+  while IFS= read -r line || [ -n "$line" ]; do
     [ -z "$line" ] && continue
     n=$((n+1))
     local name="${line%%=*}" want="${line#*=}"
@@ -145,6 +145,14 @@ if [ "$XWAYLAND" != 1 ]; then
   # Pure Wayland: run the Wayland suite.
   export XDG_RUNTIME_DIR=/tmp/swayhome
   export WAYLAND_DISPLAY=wayland-1
+  # This suite validates the compositor-specific virtual-keyboard baseline.
+  # Never let a headless regression request RemoteDesktop consent on the
+  # caller's real session bus; M6 libei has its own isolated EIS oracle.
+  export AHK_LIBEI="${AHK_WAYLAND_LIBEI:-0}"
+  export AHK_INPUTD_DISABLE=1
+  # Pin the Hotkey() negative assertion to the unavailable X11 route; host
+  # portal/GNOME/inputd services must not change this isolated suite's result.
+  export AHK_INPUT_BACKEND=x11
   unset DISPLAY
   cd "$SCRIPT_DIR" || exit 1
   timeout 60 "$BIN" assert_wayland.ahk > out/assert_wayland.txt 2>&1

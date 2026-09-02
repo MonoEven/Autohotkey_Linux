@@ -24,8 +24,9 @@ if ! command -v rpmbuild >/dev/null 2>&1; then
   exit 1
 fi
 
-CORE=build-core/source/linux/core/ahk_core
-INPUTD=build-core/source/linux/inputd/ahk-inputd
+CORE=${AHK_CORE:-build-core/source/linux/core/ahk_core}
+INPUTD=${AHK_INPUTD:-build-core/source/linux/inputd/ahk-inputd}
+PACK_CORE=${AHK_PACK_CORE:-build-pack-runtime/source/linux/core/ahk_core}
 if [ ! -x "$CORE" ]; then
   echo "pack-rpm.sh: $CORE not found; build first" >&2
   exit 1
@@ -33,6 +34,11 @@ fi
 if [ ! -x "$INPUTD" ]; then
   echo "pack-rpm.sh: $INPUTD not found; build first" >&2
   exit 1
+fi
+if ldd "$CORE" 2>/dev/null | grep -q 'libei\.so\.1'; then
+  [ -x "$PACK_CORE" ] || { echo "pack-rpm.sh: missing feature-off $PACK_CORE" >&2; exit 1; }
+else
+  PACK_CORE="$CORE"
 fi
 
 RPMROOT=$(mktemp -d /tmp/ahk-rpm.XXXXXX)
@@ -43,7 +49,20 @@ mkdir -p "$RPMROOT/BUILD" "$RPMROOT/RPMS" "$RPMROOT/SOURCES" "$RPMROOT/SPECS" \
 SRCTREE="$RPMROOT/src/ahk-$VER"
 mkdir -p "$SRCTREE"
 install -m 0755 "$CORE" "$SRCTREE/ahk_core"
+install -m 0755 "$PACK_CORE" "$SRCTREE/ahk_core_pack"
 install -m 0755 "$INPUTD" "$SRCTREE/ahk-inputd"
+mkdir -p "$SRCTREE/lib"
+for soname in libei.so.1 liboeffis.so.1; do
+  lib=$(ldd "$CORE" 2>/dev/null | awk -v n="$soname" '$1 == n {print $3; exit}')
+  [ -n "$lib" ] && [ -f "$lib" ] && cp -L "$lib" "$SRCTREE/lib/$soname"
+done
+if ldd "$CORE" 2>/dev/null | grep -q 'libei\.so\.1'; then
+  [ -f "$SRCTREE/lib/libei.so.1" ] && [ -f "$SRCTREE/lib/liboeffis.so.1" ] \
+    || { echo "pack-rpm.sh: failed to stage optional libei runtime" >&2; exit 1; }
+fi
+rmdir "$SRCTREE/lib" 2>/dev/null || true
+RPM_LIB_FILES=""
+[ -d "$SRCTREE/lib" ] && RPM_LIB_FILES='%{_datadir}/autohotkey/lib/*'
 mkdir -p "$SRCTREE/systemd"
 cp tools/linux/systemd/ahk-inputd.socket tools/linux/systemd/ahk-inputd.service.in \
   "$SRCTREE/systemd/"
@@ -82,6 +101,9 @@ URL:            https://github.com/MonoEven/Autohotkey_Linux
 Source0:        $SRC
 BuildArch:      $RPM_ARCH
 Requires:       libX11, libXext, libXrandr, libXinerama, libXtst, libxkbcommon-x11, gtk3, dbus-libs, libffi
+# rpmbuild's automatic ELF dependency generator adds libei.so.1 and
+# liboeffis.so.1 only when this binary was feature-enabled. Using SONAME
+# provides keeps this portable across Fedora/openSUSE package naming.
 
 # No debuginfo: stripping needs eu-strip (elfutils) which CI containers may
 # not have; the shipped binary is intentionally as-is (check0820).
@@ -109,6 +131,11 @@ install -d %{buildroot}%{_docdir}/autohotkey
 install -d %{buildroot}%{_datadir}/gnome-shell/extensions/ahk-global-hotkeys@autohotkey.org
 install -d %{buildroot}/usr/lib/systemd/system
 install -m 0755 %{_builddir}/ahk-$VER/ahk_core %{buildroot}%{_datadir}/autohotkey/ahk_core
+install -m 0755 %{_builddir}/ahk-$VER/ahk_core_pack %{buildroot}%{_datadir}/autohotkey/ahk_core_pack
+if [ -d %{_builddir}/ahk-$VER/lib ]; then
+  mkdir -p %{buildroot}%{_datadir}/autohotkey/lib
+  install -m 0755 %{_builddir}/ahk-$VER/lib/* %{buildroot}%{_datadir}/autohotkey/lib/
+fi
 install -m 0755 %{_builddir}/ahk-$VER/ahk-inputd %{buildroot}%{_datadir}/autohotkey/ahk-inputd
 install -m 0644 %{_builddir}/ahk-$VER/systemd/ahk-inputd.socket %{buildroot}/usr/lib/systemd/system/ahk-inputd.socket
 sed 's|@INPUTD_EXEC@|%{_datadir}/autohotkey/ahk-inputd|g' \
@@ -167,6 +194,8 @@ fi
 %files
 %{_bindir}/ahk
 %{_datadir}/autohotkey/ahk_core
+%{_datadir}/autohotkey/ahk_core_pack
+$RPM_LIB_FILES
 %{_datadir}/autohotkey/ahk-inputd
 /usr/lib/systemd/system/ahk-inputd.socket
 /usr/lib/systemd/system/ahk-inputd.service

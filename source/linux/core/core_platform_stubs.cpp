@@ -17,6 +17,7 @@
 #include "core_wayland_linux.h"
 #include "core_gshortcut_linux.h"
 #include "input_backend.h"
+#include "input_backend_libei.h"
 #include "input_event.h"
 #include "core_clipboard_linux.h"
 #include "../gui/script_gui_linux.h"
@@ -119,6 +120,16 @@ extern "C" int LinuxRunDiagnostic()
 		std::printf("portal-global-shortcuts : yes (version %u)\n", gsver);
 	else
 		std::printf("portal-global-shortcuts : no\n");
+	const LinuxLibeiStatus &libei = LinuxLibeiGetStatus();
+	std::printf("libei-build  : %s (libei=%s liboeffis=%s libportal=%s)\n",
+		libei.build_enabled ? "yes" : "no", libei.libei_version,
+		libei.liboeffis_version, libei.libportal_version);
+	std::printf("libei-state  : %s; portal-v%u; keyboard=%d pointer=%d button=%d"
+		" scroll=%d text=%d keymap=%d; outcome=%s; target=unknown\n",
+		LinuxLibeiStateName(libei.state), libei.portal_interface_version,
+		(int)libei.keyboard, (int)libei.pointer, (int)libei.button,
+		(int)libei.scroll, (int)libei.text, (int)libei.keymap,
+		LinuxLibeiOutcomeName(libei.last_outcome));
 	// Portal app-id resolvability: the GNOME 48+ backend requires a valid
 	// app-id, which the portal maps to a .desktop file for non-sandboxed
 	// callers.  We ship org.autohotkey.linux.desktop.

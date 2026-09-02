@@ -37,25 +37,51 @@ fi
 # assert_sys downloads from a local HTTP server (Download assertions).
 HTTP_PORT=18765
 HTTP_DIR=/tmp/ahk_dc_http
+HTTP_PID=""
 if command -v python3 >/dev/null 2>&1; then
   mkdir -p "$HTTP_DIR"
   printf 'AHK_DC_DOWNLOAD' > "$HTTP_DIR/serve.txt"
-  python3 -m http.server "$HTTP_PORT" --directory "$HTTP_DIR" >/dev/null 2>&1 &
+  # A previous interrupted runner may still own the fixed port. Resolve and
+  # terminate only that exact Python fixture, then require the new server to
+  # answer before running assertions (never silently test against no server).
+  for p in $(pgrep -f "python3 -m http.server $HTTP_PORT --directory $HTTP_DIR" 2>/dev/null); do
+    kill "$p" 2>/dev/null || true
+  done
+  python3 -m http.server "$HTTP_PORT" --bind 127.0.0.1 \
+    --directory "$HTTP_DIR" >out/http-server.log 2>&1 &
   HTTP_PID=$!
-  sleep 0.5
+  http_ready=0
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if command -v curl >/dev/null 2>&1 \
+      && curl -fsS "http://127.0.0.1:$HTTP_PORT/serve.txt" >/dev/null; then
+      http_ready=1; break
+    fi
+    kill -0 "$HTTP_PID" 2>/dev/null || break
+    sleep .2
+  done
+  if [ "$http_ready" != 1 ]; then
+    echo "ERROR: local doccheck HTTP fixture failed to start" >&2
+    cat out/http-server.log >&2
+    exit 2
+  fi
 fi
 
-# Display-dependent suite support (assert_win/assert_input): Xvfb + helper clients.
+# Display-dependent suite support. Most suites share :99; dialog tests use a
+# dedicated :98 so queued XTEST input from other suites cannot click them.
 XVFB_PID=""
+DIALOG_XVFB_PID=""
 if [ "$XVFB" = 1 ]; then
   if ! command -v Xvfb >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
     echo "SKIP: assert_win/assert_input (Xvfb or gcc not installed)"
   else
     pkill -f "Xvfb :99" 2>/dev/null
-    rm -f /tmp/.X99-lock
+    pkill -f "Xvfb :98" 2>/dev/null
+    rm -f /tmp/.X99-lock /tmp/.X98-lock
     sleep 0.3
     Xvfb :99 -screen 0 1024x768x24 > out/xvfb.log 2>&1 &
     XVFB_PID=$!
+    Xvfb :98 -screen 0 1024x768x24 > out/xvfb-dialog.log 2>&1 &
+    DIALOG_XVFB_PID=$!
     # Wait for the X socket to be connectable (up to 5 s) instead of a
     # fixed sleep; on loaded CI runners Xvfb can take a moment to start.
     for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -64,6 +90,16 @@ if [ "$XVFB" = 1 ]; then
       fi
       if ! kill -0 "$XVFB_PID" 2>/dev/null; then
         echo "ERROR: Xvfb :99 exited during startup" >&2
+        break
+      fi
+      sleep 0.5
+    done
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      if DISPLAY=:98 timeout 2 xdpyinfo >/dev/null 2>&1; then
+        break
+      fi
+      if ! kill -0 "$DIALOG_XVFB_PID" 2>/dev/null; then
+        echo "ERROR: Xvfb :98 exited during startup" >&2
         break
       fi
       sleep 0.5
@@ -81,7 +117,7 @@ if [ "$XVFB" = 1 ]; then
     chmod +x /tmp/ahk_edit_marker.sh
   fi
 fi
-trap 'kill $HTTP_PID 2>/dev/null; [ -n "$XVFB_PID" ] && kill $XVFB_PID 2>/dev/null; [ -n "$DBUS_PID" ] && kill $DBUS_PID 2>/dev/null' EXIT
+trap '[ -n "$HTTP_PID" ] && kill $HTTP_PID 2>/dev/null; [ -n "$XVFB_PID" ] && kill $XVFB_PID 2>/dev/null; [ -n "$DIALOG_XVFB_PID" ] && kill $DIALOG_XVFB_PID 2>/dev/null; [ -n "$DBUS_PID" ] && kill $DBUS_PID 2>/dev/null' EXIT
 
 pass=0; fail=0
 for ahk in assert_*.ahk; do
@@ -200,7 +236,9 @@ for ahk in assert_*.ahk; do
   # Display-dependent suites run under Xvfb (MsgBox would open a real
   # dialog with a display present); everything else stays headless.
   case "$base" in
-    assert_win|assert_input|assert_ctrl|assert_monitor|assert_timer|assert_hotkey|assert_hotkey_pt|assert_hotkey_btn|assert_hotkey_lr|assert_hotstring|assert_inputhook|assert_unicode_lease|assert_edit|assert_dialog|assert_msg|assert_image|assert_shape|assert_gui|assert_statements|assert_misc_cov|assert_clipboard|assert_clipboard_slow|assert_clipboard_change|assert_layout|assert_repeat)
+    assert_dialog)
+      XDISPLAY=:98 ;;
+    assert_win|assert_input|assert_ctrl|assert_monitor|assert_timer|assert_hotkey|assert_hotkey_pt|assert_hotkey_btn|assert_hotkey_lr|assert_hotstring|assert_inputhook|assert_unicode_lease|assert_edit|assert_msg|assert_image|assert_shape|assert_gui|assert_statements|assert_misc_cov|assert_clipboard|assert_clipboard_slow|assert_clipboard_change|assert_layout|assert_repeat)
       XDISPLAY=:99 ;;
     *) XDISPLAY="" ;;
   esac
@@ -280,7 +318,7 @@ for ahk in assert_*.ahk; do
   # assert_display: the ListVars/ListHotkeys/KeyHistory dumps go to stdout;
   # check the freeform content patterns from assert_display_content.txt.
   if [ "$base" = "assert_display" ] && [ -f "assert_display_content.txt" ]; then
-    while IFS= read -r pat; do
+    while IFS= read -r pat || [ -n "$pat" ]; do
       [ -z "$pat" ] && continue
       if grep -qF -- "$pat" "out/${base}.txt"; then
         pass=$((pass+1))
@@ -290,7 +328,7 @@ for ahk in assert_*.ahk; do
       fi
     done < "assert_display_content.txt"
   fi
-  while IFS= read -r line; do
+  while IFS= read -r line || [ -n "$line" ]; do
     [ -z "$line" ] && continue
     name="${line%%=*}"
     want="${line#*=}"

@@ -15,6 +15,9 @@ case "$ID" in
       libffi-devel dbus-devel gtk3-devel zlib-devel libjpeg-turbo-devel \
       glibc-devel
     $SUDO dnf install -y pkgconf-pkg-config 2>/dev/null || true
+    $SUDO dnf install -y --setopt=install_weak_deps=False \
+      libei-devel libeis-devel liboeffis-devel 2>/dev/null || \
+      echo "optional libei development packages unavailable"
     $SUDO dnf install -y xorg-x11-server-Xvfb xdotool xorg-x11-xauth xorg-x11-xkb-utils 2>/dev/null || \
       echo "xvfb unavailable (smoke will skip)"
     ;;
@@ -30,6 +33,8 @@ case "$ID" in
       $SUDO pacman -Sy --noconfirm --needed xorg-server-xvfb xdotool xorg-xkbcomp 2>/dev/null || \
       echo "xvfb unavailable (smoke will skip)"
     $SUDO pacman -Sy --noconfirm --needed xorg-xauth 2>/dev/null || true
+    $SUDO pacman -Sy --noconfirm --needed libei 2>/dev/null || \
+      echo "optional libei development package unavailable"
     ;;
   debian|ubuntu)
     export DEBIAN_FRONTEND=noninteractive
@@ -45,6 +50,9 @@ case "$ID" in
     # host job); best-effort -- the container jobs only run headless + smoke.
     $SUDO apt-get install -y --no-install-recommends sway xwayland weston 2>/dev/null || \
       echo "sway unavailable (Wayland suite will fail)"
+    $SUDO apt-get install -y --no-install-recommends \
+      libei-dev libeis-dev liboeffis-dev 2>/dev/null || \
+      echo "optional libei development packages unavailable"
     ;;
   *)
     echo "unsupported distro: $ID" >&2

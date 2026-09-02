@@ -3,7 +3,7 @@
 - Linux status: `IMPL` (P3)
 - Example kind: `verified`
 - Environment profile: `x11`
-- Verified source: [tests/doccheck/assert_input.ahk:341](../../tests/doccheck/assert_input.ahk#L341)
+- Verified source: [tests/doccheck/assert_input.ahk:349](../../tests/doccheck/assert_input.ahk#L349)
 - Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
 - Linux adaptation: Records a boolean only; no low-level hook is installed
 
