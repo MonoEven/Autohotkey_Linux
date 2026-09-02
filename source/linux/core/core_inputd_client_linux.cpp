@@ -34,6 +34,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <set>
 
 namespace {
 
@@ -54,6 +55,15 @@ unsigned int sCapsDenied = 0;
 unsigned long long sClientSeq = 0;
 unsigned char sNonce[16] = { 0 };
 bool sNonceReady = false;
+std::set<unsigned long long> sDynamicRegistered;
+struct DecisionRecord {
+	uint64_t eventSeq;
+	uint64_t transactionId;
+	uint64_t registrationId;
+};
+DecisionRecord sDecisionRecords[64] = {};
+unsigned sDecisionHead = 0;
+DWORD sLastRuleRefreshMs = 0;
 /* M2 local monotonic connection generation + authoritative broker snapshot. */
 unsigned long long sConnectionGeneration = 0;
 unsigned long long sLocalHealthSeq = 0;
@@ -100,6 +110,10 @@ void Disconnect(const char *aReason = "broker disconnected")
 	sCapsGranted = 0;
 	sCapsDenied = 0;
 	sClientSeq = 0;
+	sDynamicRegistered.clear();
+	memset(sDecisionRecords, 0, sizeof(sDecisionRecords));
+	sDecisionHead = 0;
+	sLastRuleRefreshMs = 0;
 }
 
 void EnsureNonce()
@@ -311,10 +325,40 @@ bool SendHelloV2()
 	return true;
 }
 
+bool SendFrameV2(unsigned int aType, const unsigned char *aPayload,
+	size_t aPayloadLen)
+{
+	if (!sV2 || sFd < 0 || aPayloadLen > INPUTD_V2_MAX_PAYLOAD)
+		return false;
+	unsigned char *frame = (unsigned char *)malloc(4 + INPUTD_V2_HEADER_LEN
+		+ aPayloadLen);
+	if (!frame) return false;
+	unsigned char *f = frame;
+	st_le32(f, INPUTD_V2_MAGIC); f += 4;
+	st_le16(f, INPUTD_V2_PROTO_VERSION); f += 2;
+	st_le16(f, INPUTD_V2_HEADER_LEN); f += 2;
+	st_le32(f, INPUTD_V2_HEADER_LEN + (unsigned int)aPayloadLen); f += 4;
+	st_le16(f, aType); f += 2;
+	st_le16(f, 0); f += 2;
+	for (int i = 0; i < 8; ++i) *f++ = 0;
+	unsigned long long seq = ++sClientSeq;
+	for (int i = 0; i < 8; ++i) *f++ = (unsigned char)(seq >> (8 * i));
+	if (aPayloadLen) memcpy(f, aPayload, aPayloadLen);
+	bool ok = WriteAll(sFd, frame, 4 + INPUTD_V2_HEADER_LEN + aPayloadLen);
+	free(frame);
+	return ok;
+}
+
 bool SendSubscribeFrame()
 {
 	struct { unsigned int code; unsigned char suppress; } rules[INPUTD_MAX_RULES];
-	int count = 0;
+	struct DynamicRule {
+		unsigned int code;
+		unsigned long long registration_id;
+		int priority;
+		int input_level;
+	} dynamic_rules[INPUTD_MAX_RULES];
+	int count = 0, dynamic_count = 0;
 	bool need_modifier_stream = false;
 	auto add_rule = [&](unsigned int aCode, unsigned char aSuppress) {
 		if (!aCode)
@@ -345,16 +389,31 @@ bool SendSubscribeFrame()
 			need_modifier_stream = true;
 		bool passthrough = (hk->mNoSuppress & (AT_LEAST_ONE_VARIANT_HAS_TILDE
 			| AT_LEAST_ONE_COMBO_HAS_TILDE)) != 0;
-		unsigned char sup = passthrough ? 0 : 1;
+		HotkeyVariant *dynamic_variant = nullptr;
+		for (HotkeyVariant *v = hk->mFirstVariant; v; v = v->mNextVariant)
+			if (v->mEnabled && v->mHotCriterion)
+			{ dynamic_variant = v; break; }
+		bool dynamic = dynamic_variant != nullptr && !passthrough;
+		unsigned char sup = passthrough || dynamic ? 0 : 1;
 		// check_detail0901 §7.2 rule 3: suppression is owner/root-only.  A
 		// client without the SUPPRESS grant subscribes observe-only; the
 		// broker would reject suppress rules with CAPABILITY_DENIED.
 		if (sV2 && !(sCapsGranted & INPUTD_V2_CAP_SUPPRESS))
 			sup = 0;
-		if (hk->mSC)
-			add_rule(LinuxEvdevCodeForScanCode(hk->mSC), sup);
-		else if (hk->mVK)
-			add_rule(LinuxWaylandKeycodeForVk(hk->mVK), sup);
+		unsigned int suffix_code = hk->mSC
+			? LinuxEvdevCodeForScanCode(hk->mSC)
+			: (hk->mVK ? LinuxWaylandKeycodeForVk(hk->mVK) : 0);
+		add_rule(suffix_code, sup);
+		if (dynamic && suffix_code && dynamic_count < INPUTD_MAX_RULES
+			&& (sCapsGranted & INPUTD_V2_CAP_SUPPRESS))
+		{
+			int priority = dynamic_variant->mPriority;
+			if (priority < -32768) priority = -32768;
+			if (priority > 32767) priority = 32767;
+			dynamic_rules[dynamic_count++] = DynamicRule{suffix_code,
+				(unsigned long long)i + 1, priority,
+				(int)dynamic_variant->mInputLevel};
+		}
 		if (hk->mModifierSC)
 			add_rule(LinuxEvdevCodeForScanCode(hk->mModifierSC), sup);
 		else if (hk->mModifierVK)
@@ -417,7 +476,40 @@ bool SendSubscribeFrame()
 		}
 		bool ok = WriteAll(sFd, frame, 4 + INPUTD_V2_HEADER_LEN + payload_len);
 		free(frame);
-		return ok;
+		if (!ok) return false;
+		std::set<unsigned long long> desired;
+		for (int i = 0; i < dynamic_count; ++i)
+			desired.insert(dynamic_rules[i].registration_id);
+		for (unsigned long long old_id : sDynamicRegistered)
+			if (!desired.count(old_id))
+			{
+				unsigned char payload[8];
+				for (int b = 0; b < 8; ++b)
+					payload[b] = (unsigned char)(old_id >> (8 * b));
+				if (!SendFrameV2(INPUTD_V2_ARB_UNREGISTER, payload,
+						sizeof(payload))) return false;
+			}
+		for (int i = 0; i < dynamic_count; ++i)
+		{
+			const DynamicRule &r = dynamic_rules[i];
+			unsigned char payload[INPUTD_V2_ARB_REGISTER_PAYLOAD_LEN];
+			memset(payload, 0, sizeof(payload));
+			for (int b = 0; b < 8; ++b)
+				payload[b] = (unsigned char)(r.registration_id >> (8 * b));
+			st_le32(payload + 8, r.code);
+			payload[12] = INPUTD_V2_ARB_SUPPRESS;
+			payload[13] = INPUTD_V2_ARB_CONFLICT_REJECT;
+			st_le16(payload + 14, (unsigned int)(unsigned short)r.priority);
+			st_le16(payload + 16, (unsigned int)(unsigned short)r.input_level);
+			st_le16(payload + 18, 0);
+			st_le32(payload + 20, INPUTD_V2_ARB_MAX_LEASE_MS);
+			st_le32(payload + 24, 0);
+			st_le16(payload + 28, INPUTD_V2_ARB_FLAG_DYNAMIC_DECISION);
+			if (!SendFrameV2(INPUTD_V2_ARB_REGISTER, payload,
+					sizeof(payload))) return false;
+		}
+		sDynamicRegistered.swap(desired);
+		return true;
 	}
 
 	unsigned int payload_len = 1 + 4 + (unsigned int)count * 5;
@@ -559,6 +651,14 @@ unsigned LinuxInputdClientCapsGranted()
 	return sCapsGranted;
 }
 
+void LinuxInputdClientRecordDecision(uint64_t aEventSeq,
+	uint64_t aTransactionId, uint64_t aRegistrationId)
+{
+	if (!aEventSeq) return;
+	sDecisionRecords[sDecisionHead++ % _countof(sDecisionRecords)]
+		= DecisionRecord{aEventSeq, aTransactionId, aRegistrationId};
+}
+
 void LinuxInputdClientShutdown()
 {
 	Disconnect();
@@ -572,7 +672,9 @@ void LinuxInputdClientUpdateRules()
 	ReportHealth(AhkBackendState::RESUBSCRIBING, "sending desired registration set");
 	if (!SendSubscribeFrame())
 		Disconnect("registration write failed");
-	else if (!sV2)
+	else
+		sLastRuleRefreshMs = GetTickCount();
+	if (sActive && !sV2)
 	{
 		sRegistrationsReconciled = true;
 		ReportHealth(AhkBackendState::AVAILABLE,
@@ -725,6 +827,37 @@ void DispatchFrameV2(LinuxInputdEventFn aFn, void *aUser)
 				"registration ACK received; waiting for health confirmation");
 		}
 		break;
+	case INPUTD_V2_DECISION_REQUEST:
+	{
+		if (payload_len != INPUTD_V2_DECISION_REQUEST_PAYLOAD_LEN)
+			break;
+		uint64_t event_seq = ld_le64(payload);
+		uint64_t source_txn = ld_le64(payload + 8);
+		uint64_t reg_id = ld_le64(payload + 16);
+		uint64_t acceptance = ld_le64(payload + 38);
+		unsigned int action = INPUTD_V2_DYNAMIC_PASS;
+		for (const DecisionRecord &record : sDecisionRecords)
+			if (record.eventSeq == event_seq
+				&& record.transactionId == source_txn
+				&& record.registrationId == reg_id)
+			{
+				action = INPUTD_V2_DYNAMIC_SUPPRESS;
+				break;
+			}
+		unsigned char reply[INPUTD_V2_DECISION_REPLY_PAYLOAD_LEN];
+		memset(reply, 0, sizeof(reply));
+		for (int i = 0; i < 8; ++i)
+		{
+			reply[i] = (unsigned char)(event_seq >> (8 * i));
+			reply[8 + i] = (unsigned char)(source_txn >> (8 * i));
+			reply[16 + i] = (unsigned char)(reg_id >> (8 * i));
+			reply[24 + i] = (unsigned char)(acceptance >> (8 * i));
+		}
+		reply[32] = (unsigned char)action;
+		if (!SendFrameV2(INPUTD_V2_DECISION_REPLY, reply, sizeof(reply)))
+			Disconnect("dynamic decision reply failed");
+		break;
+	}
 	case INPUTD_V2_ARB_DECISION:
 		if (payload_len == INPUTD_V2_ARB_DECISION_PAYLOAD_LEN)
 			LinuxInputPipelineTraceBrokerDecision(sGeneration,
@@ -750,6 +883,13 @@ void LinuxInputdClientDispatch(LinuxInputdEventFn aFn, void *aUser)
 {
 	if (!sActive || sFd < 0)
 		return;
+	DWORD now = GetTickCount();
+	if (sV2 && !sDynamicRegistered.empty()
+		&& now - sLastRuleRefreshMs >= 60000)
+	{
+		LinuxInputdClientUpdateRules();
+		if (!sActive || sFd < 0) return;
+	}
 	struct pollfd pfd = { sFd, POLLIN, 0 };
 	int pr = poll(&pfd, 1, 0);
 	if (pr <= 0)

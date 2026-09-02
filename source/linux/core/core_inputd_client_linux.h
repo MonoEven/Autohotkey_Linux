@@ -48,6 +48,8 @@ uint64_t LinuxInputdClientConnectionGeneration();
 uint64_t LinuxInputdClientAuthorityGeneration();
 uint64_t LinuxInputdClientBrokerHealthSeq();
 unsigned LinuxInputdClientCapsGranted();
+void LinuxInputdClientRecordDecision(uint64_t aEventSeq,
+	uint64_t aTransactionId, uint64_t aRegistrationId);
 
 // Recompute and push the subscription rule set from the Hotkey table
 // (EVDEV-assigned hotkeys only).  No-op when not connected.

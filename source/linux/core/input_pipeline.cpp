@@ -512,9 +512,13 @@ static bool FindBestHotkey(const AhkInputAcceptance &a,
 		if (!key_match || !MatchModifiers(hk, a.state)
 			|| !AhkBackendHotkeyEnabled(hk))
 			continue;
-		HotkeyVariant *vp = hk->FindVariant();
-		if (!vp || !vp->mEnabled || !hk->PerformIsAllowed(*vp))
-			continue;
+		HotkeyVariant *vp = nullptr;
+		for (HotkeyVariant *candidate = hk->mFirstVariant; candidate;
+			candidate = candidate->mNextVariant)
+			if (AhkBackendVariantFireable(hk, candidate)
+				&& hk->PerformIsAllowed(*candidate))
+			{ vp = candidate; break; }
+		if (!vp) continue;
 		if (a.event.send_level >= 0
 			&& !AhkSyntheticMayTrigger(AhkConsumerKind::HOTKEY,
 				AhkSendTransportClass::EVENT, a.event.send_level,
@@ -639,8 +643,12 @@ static bool ComboVariant(Hotkey *hk, HotkeyVariant *&vp)
 {
 	vp = nullptr;
 	if (!hk || !AhkBackendHotkeyEnabled(hk)) return false;
-	vp = hk->FindVariant();
-	return vp && vp->mEnabled && hk->PerformIsAllowed(*vp);
+	for (HotkeyVariant *candidate = hk->mFirstVariant; candidate;
+		candidate = candidate->mNextVariant)
+		if (AhkBackendVariantFireable(hk, candidate)
+			&& hk->PerformIsAllowed(*candidate))
+		{ vp = candidate; return true; }
+	return false;
 }
 
 static bool NativePrefix(unsigned int code)

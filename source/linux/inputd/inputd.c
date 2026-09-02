@@ -190,6 +190,9 @@ struct arb_rule {
 	int replacement_send_level;
 	unsigned char mode;
 	unsigned char conflict_policy;
+	unsigned char dynamic_decision;
+	unsigned char dynamic_disabled;
+	unsigned int dynamic_timeouts;
 	unsigned long long active_replacement_txn;
 	unsigned long long active_parent_txn;
 	unsigned char replacement_down;
@@ -203,6 +206,14 @@ static unsigned long long sNextBrokerTxnId = 0x8000000000000000ULL;
 static unsigned long long sPhysicalTxn[KEY_CNT];
 static unsigned long long sPhysicalOwnerAcceptance[KEY_CNT];
 static unsigned char sPhysicalSuppressed[KEY_CNT];
+struct decision_wait {
+	struct arb_rule *rule;
+	unsigned long long event_seq;
+	unsigned long long source_txn;
+	unsigned long long acceptance_seq;
+	int result; /* -1 pending, 0 pass, 1 suppress */
+};
+static struct decision_wait sDecisionWait = {NULL, 0, 0, 0, -1};
 /* check0901 P0-1: replay-lane health is separate from the panic path.  Once
  * the replay device fails (create or write), every physical grab is released
  * and the broker becomes observe/listen-only; it never grabs again. */
@@ -228,6 +239,7 @@ static long long now_us(void)
 }
 
 static int write_full(int fd, const void *buf, size_t n); /* fwd */
+static void drain_client(struct client *c); /* dynamic decision wait */
 static void send_degraded_v2(struct client *c); /* fwd (defined with the v2 writers) */
 static void broadcast_backend_health(void); /* M2 fwd */
 
@@ -954,15 +966,20 @@ static struct arb_rule *arb_by_acceptance(unsigned long long acceptance_seq)
 	return NULL;
 }
 
-static struct arb_rule *arb_winner(unsigned int code)
+static struct arb_rule *arb_winner_filtered(unsigned int code,
+	const unsigned long long *excluded, int excluded_count)
 {
 	struct arb_rule *exclusive = NULL;
 	struct arb_rule *suppress = NULL;
 	for (int i = 0; i < INPUTD_V2_ARB_MAX_RULES; ++i)
 	{
 		struct arb_rule *r = &sArbRules[i];
-		if (!r->owner || r->code != code)
+		if (!r->owner || r->code != code || r->dynamic_disabled)
 			continue;
+		int skip = 0;
+		for (int e = 0; e < excluded_count; ++e)
+			if (r->acceptance_seq == excluded[e]) { skip = 1; break; }
+		if (skip) continue;
 		if (r->mode == INPUTD_V2_ARB_EXCLUSIVE || r->mode == INPUTD_V2_ARB_REMAP)
 		{
 			if (arb_better(r, exclusive)) exclusive = r;
@@ -973,6 +990,11 @@ static struct arb_rule *arb_winner(unsigned int code)
 		}
 	}
 	return exclusive ? exclusive : suppress;
+}
+
+static struct arb_rule *arb_winner(unsigned int code)
+{
+	return arb_winner_filtered(code, NULL, 0);
 }
 
 static void arb_neutralize(struct arb_rule *r)
@@ -1176,6 +1198,33 @@ static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 		++sHealthSeq;
 		send_backend_health(c);
 		break;
+	case INPUTD_V2_DECISION_REPLY:
+	{
+		if (n != INPUTD_V2_DECISION_REPLY_PAYLOAD_LEN)
+		{
+			send_error_v2(c, INPUTD_V2_ERR_BAD_FRAME,
+				"bad DECISION_REPLY payload");
+			break;
+		}
+		unsigned long long event_seq = ld_le64(payload);
+		unsigned long long source_txn = ld_le64(payload + 8);
+		unsigned long long reg_id = ld_le64(payload + 16);
+		unsigned long long acceptance = ld_le64(payload + 24);
+		unsigned int action = payload[32];
+		if (action > INPUTD_V2_DYNAMIC_SUPPRESS
+			|| !sDecisionWait.rule || sDecisionWait.rule->owner != c
+			|| sDecisionWait.event_seq != event_seq
+			|| sDecisionWait.source_txn != source_txn
+			|| sDecisionWait.rule->registration_id != reg_id
+			|| sDecisionWait.acceptance_seq != acceptance)
+		{
+			send_error_v2(c, INPUTD_V2_ERR_SEQUENCE_VIOLATION,
+				"stale or mismatched DECISION_REPLY");
+			break;
+		}
+		sDecisionWait.result = action == INPUTD_V2_DYNAMIC_SUPPRESS ? 1 : 0;
+		break;
+	}
 	case INPUTD_V2_ARB_REGISTER:
 	{
 		unsigned long long reg_id = n >= 8 ? ld_le64(payload) : 0;
@@ -1197,7 +1246,10 @@ static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 			|| conflict_policy > INPUTD_V2_ARB_CONFLICT_PREEMPT_LOWER
 			|| input_level < 0 || input_level > 100
 			|| replacement_level < 0 || replacement_level > 100
-			|| lease_ms > INPUTD_V2_ARB_MAX_LEASE_MS || flags
+			|| lease_ms > INPUTD_V2_ARB_MAX_LEASE_MS
+			|| (flags & ~INPUTD_V2_ARB_FLAG_DYNAMIC_DECISION)
+			|| ((flags & INPUTD_V2_ARB_FLAG_DYNAMIC_DECISION)
+				&& mode != INPUTD_V2_ARB_SUPPRESS)
 			|| (mode == INPUTD_V2_ARB_REMAP
 				&& (!replacement_code || replacement_code > KEY_MAX
 					|| replacement_code == code))
@@ -1226,8 +1278,13 @@ static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 			/* Stable id refreshes only the lease; changing selector/policy
 			 * under the same id is rejected to avoid ownership confusion. */
 			if (existing->code != code || existing->mode != mode
+				|| existing->conflict_policy != conflict_policy
 				|| existing->replacement_code != replacement_code
-				|| existing->priority != priority)
+				|| existing->priority != priority
+				|| existing->input_level != input_level
+				|| existing->replacement_send_level != replacement_level
+				|| existing->dynamic_decision
+					!= ((flags & INPUTD_V2_ARB_FLAG_DYNAMIC_DECISION) != 0))
 			{
 				send_arb_ack(c, reg_id, INPUTD_V2_ARB_BAD_FRAME, 0,
 					existing->acceptance_seq,
@@ -1304,8 +1361,13 @@ static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 		slot->replacement_send_level = replacement_level;
 		slot->mode = mode;
 		slot->conflict_policy = conflict_policy;
+		slot->dynamic_decision =
+			(flags & INPUTD_V2_ARB_FLAG_DYNAMIC_DECISION) != 0;
 		send_arb_ack(c, reg_id, INPUTD_V2_ARB_GRANTED, reg_id,
 			slot->acceptance_seq, (unsigned long long)slot->lease_expiry_ms);
+		logmsg("client %d arb registered id=%llu code=%u mode=%u dynamic=%u",
+			c->fd, reg_id, code, (unsigned)mode,
+			(unsigned)slot->dynamic_decision);
 		break;
 	}
 	case INPUTD_V2_ARB_UNREGISTER:
@@ -1745,6 +1807,84 @@ static void drain_client_v2(struct client *c)
 		c->rx_used += (size_t)got;
 		read_budget -= (size_t)got;
 	}
+}
+
+static int wait_dynamic_decision(struct arb_rule *rule,
+	unsigned long long event_seq, unsigned long long source_txn,
+	unsigned int code, unsigned int value, unsigned long long deadline_us,
+	unsigned char *reason)
+{
+	struct client *owner = rule ? rule->owner : NULL;
+	if (!rule || !owner || owner->fd < 0 || owner->dead)
+	{
+		*reason = INPUTD_V2_DECISION_DYNAMIC_DISCONNECT;
+		return 0;
+	}
+	if (!deadline_us)
+		deadline_us = (unsigned long long)now_us()
+			+ INPUTD_V2_DYNAMIC_DEADLINE_MS * 1000ULL;
+	unsigned char payload[INPUTD_V2_DECISION_REQUEST_PAYLOAD_LEN];
+	memset(payload, 0, sizeof(payload));
+	st_le64(payload, event_seq);
+	st_le64(payload + 8, source_txn);
+	st_le64(payload + 16, rule->registration_id);
+	st_le32(payload + 24, code);
+	payload[28] = (unsigned char)value;
+	st_le64(payload + 30, deadline_us);
+	st_le64(payload + 38, rule->acceptance_seq);
+	sDecisionWait.rule = rule;
+	sDecisionWait.event_seq = event_seq;
+	sDecisionWait.source_txn = source_txn;
+	sDecisionWait.acceptance_seq = rule->acceptance_seq;
+	sDecisionWait.result = -1;
+	if (send_frame_v2(owner, INPUTD_V2_DECISION_REQUEST, 0,
+			payload, sizeof(payload)) != 0)
+	{
+		sDecisionWait.rule = NULL;
+		*reason = INPUTD_V2_DECISION_DYNAMIC_DISCONNECT;
+		return 0;
+	}
+	while (sDecisionWait.result < 0)
+	{
+		long long remain_us = (long long)deadline_us - now_us();
+		if (remain_us <= 0) break;
+		struct pollfd pfd = { owner->fd, POLLIN | POLLHUP | POLLERR, 0 };
+		int timeout_ms = (int)((remain_us + 999) / 1000);
+		int pr = poll(&pfd, 1, timeout_ms);
+		if (pr < 0 && errno == EINTR) continue;
+		if (pr <= 0) break;
+		if (pfd.revents & (POLLIN | POLLHUP | POLLERR))
+			drain_client(owner);
+		if (owner->fd < 0 || owner->dead || rule->owner != owner)
+			break;
+	}
+	int result = sDecisionWait.result;
+	sDecisionWait.rule = NULL;
+	if (result >= 0)
+	{
+		rule->dynamic_timeouts = 0;
+		*reason = result ? INPUTD_V2_DECISION_DYNAMIC_TRUE
+			: INPUTD_V2_DECISION_DYNAMIC_FALSE;
+		return result;
+	}
+	if (rule->owner != owner || owner->fd < 0 || owner->dead)
+	{
+		*reason = INPUTD_V2_DECISION_DYNAMIC_DISCONNECT;
+		return 0; // keyboard default fail-open.
+	}
+	++rule->dynamic_timeouts;
+	*reason = INPUTD_V2_DECISION_DYNAMIC_TIMEOUT;
+	if (rule->dynamic_timeouts >= INPUTD_V2_DYNAMIC_SLOW_LIMIT)
+	{
+		rule->dynamic_disabled = 1;
+		*reason = INPUTD_V2_DECISION_DYNAMIC_SLOW_DOWNGRADE;
+		send_conflict(owner, rule->registration_id, 0, 0, code,
+			INPUTD_V2_CONFLICT_SLOW_CLIENT, 0, rule->priority);
+		fprintf(stderr, "[inputd] dynamic registration %llu client %llu "
+			"downgraded observe-only after %u timeout(s)\n",
+			rule->registration_id, owner->client_id, rule->dynamic_timeouts);
+	}
+	return 0; // fail-open.
 }
 
 static int is_keyboard(int fd)
@@ -2343,16 +2483,86 @@ int main(int argc, char **argv)
 					unsigned long long winner_id = 0;
 					unsigned long long replacement_txn = 0;
 					int winner_priority = 0;
+					int dynamic_resolved = 0;
+					if (winner && winner->dynamic_decision)
+					{
+						if (ev.value == 1)
+						{
+							unsigned long long deadline_us = (unsigned long long)now_us()
+								+ INPUTD_V2_DYNAMIC_DEADLINE_MS * 1000ULL;
+							unsigned long long excluded[INPUTD_V2_ARB_MAX_RULES];
+							int excluded_count = 0;
+							unsigned char last_reason = INPUTD_V2_DECISION_DYNAMIC_FALSE;
+							unsigned long long last_id = 0;
+							int last_priority = 0;
+							while (winner && winner->dynamic_decision)
+							{
+								last_id = winner->registration_id;
+								last_priority = winner->priority;
+								int dynamic_suppress = 0;
+								if ((unsigned long long)now_us() < deadline_us)
+									dynamic_suppress = wait_dynamic_decision(winner,
+										source_event_seq, source_txn, code,
+										(unsigned int)ev.value, deadline_us, &last_reason);
+								else
+									last_reason = INPUTD_V2_DECISION_DYNAMIC_TIMEOUT;
+								if (dynamic_suppress)
+								{
+									suppress = 1;
+									action = INPUTD_V2_DECISION_SUPPRESS;
+									reason = last_reason;
+									winner_id = last_id;
+									winner_priority = last_priority;
+									dynamic_resolved = 1;
+									break;
+								}
+								excluded[excluded_count++] = winner->acceptance_seq;
+								winner = arb_winner_filtered(code, excluded,
+									excluded_count);
+							}
+							if (!dynamic_resolved && !winner)
+							{
+								suppress = legacy_suppress;
+								action = suppress ? INPUTD_V2_DECISION_SUPPRESS
+									: INPUTD_V2_DECISION_REPLAY;
+								reason = suppress ? INPUTD_V2_DECISION_LEGACY_SUPPRESS
+									: last_reason;
+								winner_id = last_id;
+								winner_priority = last_priority;
+								dynamic_resolved = 1;
+							}
+						}
+						else if (code < KEY_CNT && sPhysicalSuppressed[code])
+						{
+							suppress = 1;
+							action = INPUTD_V2_DECISION_SUPPRESS;
+							reason = INPUTD_V2_DECISION_STICKY_KEYUP;
+							winner_id = winner->registration_id;
+							winner_priority = winner->priority;
+							dynamic_resolved = 1;
+						}
+						else
+						{
+							suppress = legacy_suppress;
+							action = suppress ? INPUTD_V2_DECISION_SUPPRESS
+								: INPUTD_V2_DECISION_REPLAY;
+							reason = suppress ? INPUTD_V2_DECISION_LEGACY_SUPPRESS
+								: INPUTD_V2_DECISION_DYNAMIC_FALSE;
+							winner_id = winner->registration_id;
+							winner_priority = winner->priority;
+							dynamic_resolved = 1;
+						}
+					}
 					/* A suppressed down owns its matching up even if the registration
 					 * disappears before release (balanced target sequence). */
-					if (code < KEY_CNT && sPhysicalSuppressed[code]
+					if (!dynamic_resolved && code < KEY_CNT && sPhysicalSuppressed[code]
 						&& (ev.value == 2 || !down) && !winner)
 					{
 						suppress = 1;
 						action = INPUTD_V2_DECISION_SUPPRESS;
 						reason = INPUTD_V2_DECISION_STICKY_KEYUP;
 					}
-					else if (winner)
+					else if (winner && !dynamic_resolved)
 					{
 						suppress = 1;
 						winner_id = winner->registration_id;
@@ -2419,6 +2629,9 @@ int main(int argc, char **argv)
 							sPhysicalTxn[code] = 0;
 						}
 					}
+					if (reason == INPUTD_V2_DECISION_DYNAMIC_DISCONNECT)
+						logmsg("dynamic decision event %llu owner disconnected; fail-open",
+							source_event_seq);
 					broadcast_decision(source_event_seq, source_txn, code, action, reason,
 						winner_id, replacement_txn, winner_priority);
 					if (!suppress)

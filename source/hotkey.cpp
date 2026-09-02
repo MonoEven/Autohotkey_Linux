@@ -59,9 +59,22 @@ HWND HotCriterionAllowsFiring(HotkeyCriterion *aCriterion, LPTSTR aHotkeyName)
 		break;
 	// L4: Handling of #HotIf (expression) hotkey variants.
 	case HOT_IF_CALLBACK:
-		// Expression evaluation must be done in the main thread. If the message times out, the hotkey/hotstring is not allowed to fire.
+		// Expression evaluation must be done in the main thread. Linux input
+		// adapters (X11/evdev/inputd) are dispatched on that thread and have no
+		// Win32 message window; SendMessageTimeout is only a compatibility stub
+		// there, so validate the criterion then evaluate it directly.
+#ifdef __linux__
+		for (HotkeyCriterion *cp = g_FirstHotExpr; cp; cp = cp->NextExpr)
+			if (cp == aCriterion)
+			{
+				ResultType eval_result = cp->Eval(aHotkeyName);
+				return eval_result == CONDITION_TRUE ? (HWND)1 : NULL;
+			}
+		return NULL;
+#else
 		DWORD_PTR res;
 		return (SendMessageTimeout(g_hWnd, AHK_HOT_IF_EVAL, (WPARAM)aCriterion, (LPARAM)aHotkeyName, SMTO_BLOCK | SMTO_ABORTIFHUNG, g_HotExprTimeout, &res) && res == CONDITION_TRUE) ? (HWND)1 : NULL;
+#endif
 	}
 	return (aCriterion->Type == HOT_IF_ACTIVE || aCriterion->Type == HOT_IF_EXIST) ? found_hwnd : (HWND)!found_hwnd;
 }

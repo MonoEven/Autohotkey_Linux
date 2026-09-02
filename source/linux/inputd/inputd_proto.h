@@ -93,6 +93,8 @@
 #define INPUTD_V2_CONFLICT 22u        /* S2C */
 #define INPUTD_V2_ARB_DECISION 23u    /* S2C */
 #define INPUTD_V2_BACKEND_HEALTH 24u  /* S2C */
+#define INPUTD_V2_DECISION_REQUEST 25u /* S2C: dynamic HotIf */
+#define INPUTD_V2_DECISION_REPLY 26u   /* C2S */
 
 /* capability bits (HELLO caps_requested / HELLO_ACK caps_granted|denied) */
 #define INPUTD_V2_CAP_OBSERVE 0x1u
@@ -283,6 +285,7 @@
 #define INPUTD_V2_CONFLICT_LEASE_EXPIRED 2u
 #define INPUTD_V2_CONFLICT_OWNER_GONE 3u
 #define INPUTD_V2_CONFLICT_CROSS_UID 4u
+#define INPUTD_V2_CONFLICT_SLOW_CLIENT 5u
 
 #define INPUTD_V2_DECISION_REPLAY 0u
 #define INPUTD_V2_DECISION_SUPPRESS 1u
@@ -295,6 +298,24 @@
 #define INPUTD_V2_DECISION_EXCLUSIVE 3u
 #define INPUTD_V2_DECISION_STATIC_REMAP 4u
 #define INPUTD_V2_DECISION_STICKY_KEYUP 5u
+#define INPUTD_V2_DECISION_DYNAMIC_TRUE 6u
+#define INPUTD_V2_DECISION_DYNAMIC_FALSE 7u
+#define INPUTD_V2_DECISION_DYNAMIC_TIMEOUT 8u
+#define INPUTD_V2_DECISION_DYNAMIC_DISCONNECT 9u
+#define INPUTD_V2_DECISION_DYNAMIC_SLOW_DOWNGRADE 10u
+
+#define INPUTD_V2_ARB_FLAG_DYNAMIC_DECISION 0x1u
+#define INPUTD_V2_DYNAMIC_PASS 0u
+#define INPUTD_V2_DYNAMIC_SUPPRESS 1u
+#define INPUTD_V2_DYNAMIC_DEADLINE_MS 60u
+#define INPUTD_V2_DYNAMIC_SLOW_LIMIT 3u
+/* DECISION_REQUEST payload, 46 bytes: event_seq u64, source_txn u64,
+ * registration_id u64, code u32, value u8, reserved u8,
+ * deadline_us u64, registration_acceptance_seq u64.
+ * DECISION_REPLY payload, 33 bytes: event_seq u64, source_txn u64,
+ * registration_id u64, registration_acceptance_seq u64, action u8. */
+#define INPUTD_V2_DECISION_REQUEST_PAYLOAD_LEN 46u
+#define INPUTD_V2_DECISION_REPLY_PAYLOAD_LEN 33u
 
 #define INPUTD_V2_ARB_MAX_RULES 256u
 #define INPUTD_V2_ARB_MAX_PER_CLIENT 64u

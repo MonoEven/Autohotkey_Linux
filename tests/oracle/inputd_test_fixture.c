@@ -9,6 +9,7 @@
  *          inputd_test_fixture --seq-trigger COUNT CODE PATH
  *          inputd_test_fixture --split-trigger CODE DOWN_PATH UP_PATH
  *          inputd_test_fixture --script-trigger PATH CODE:VALUE...
+ *          inputd_test_fixture --two-trigger CODE1 PATH1 [CODE2] PATH2
  *
  * Non-tap modes keep the uinput device alive until killed.
  */
@@ -110,10 +111,11 @@ int main(int argc, char **argv)
 	int seq_trigger = strcmp(argv[1], "--seq-trigger") == 0;
 	int split_trigger = strcmp(argv[1], "--split-trigger") == 0;
 	int script_trigger = strcmp(argv[1], "--script-trigger") == 0;
+	int two_trigger = strcmp(argv[1], "--two-trigger") == 0;
 	int release_after = strcmp(argv[1], "--release-after") == 0;
 	int idle = strcmp(argv[1], "--idle") == 0;
 	if (!hold && !tap && !seq && !seq_delayed && !seq_trigger && !split_trigger
-		&& !script_trigger && !release_after && !idle)
+		&& !script_trigger && !two_trigger && !release_after && !idle)
 		return 2;
 	int seq_count = 0;
 	if (seq || seq_delayed || seq_trigger)
@@ -134,11 +136,30 @@ int main(int argc, char **argv)
 		seq_trigger_path = argv[4];
 	const char *split_down_path = NULL, *split_up_path = NULL;
 	const char *script_trigger_path = NULL;
+	const char *two_first_path = NULL, *two_second_path = NULL;
+	int two_first_code = 0, two_second_code = 0;
 	int split_code = 0;
 	if (script_trigger)
 	{
 		if (argc < 4) return 2;
 		script_trigger_path = argv[2];
+	}
+	if (two_trigger)
+	{
+		if (argc == 5)
+		{
+			two_first_code = two_second_code = atoi(argv[2]);
+			two_first_path = argv[3];
+			two_second_path = argv[4];
+		}
+		else if (argc >= 6)
+		{
+			two_first_code = atoi(argv[2]);
+			two_first_path = argv[3];
+			two_second_code = atoi(argv[4]);
+			two_second_path = argv[5];
+		}
+		else return 2;
 	}
 	if (split_trigger)
 	{
@@ -206,6 +227,21 @@ int main(int argc, char **argv)
 		}
 		for (;;)
 			pause();
+	}
+	if (two_trigger)
+	{
+		/* --two-trigger CODE FIRST_PATH SECOND_PATH: two independently
+		 * released taps, used by dynamic HotIf false/true tests. */
+		const char *paths[2] = {two_first_path, two_second_path};
+		int codes[2] = {two_first_code, two_second_code};
+		for (int i = 0; i < 2; ++i)
+		{
+			while (access(paths[i], F_OK) != 0) usleep(20000);
+			emit(fd, EV_KEY, codes[i], 1); emit(fd, EV_SYN, SYN_REPORT, 0);
+			usleep(70000);
+			emit(fd, EV_KEY, codes[i], 0); emit(fd, EV_SYN, SYN_REPORT, 0);
+		}
+		for (;;) pause();
 	}
 	if (script_trigger)
 	{

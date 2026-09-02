@@ -570,6 +570,22 @@ void LinuxBuildHotkeyIndex(Display *d)
 	}
 }
 
+bool LinuxFireableVariant(Hotkey *aHotkey, HotkeyVariant *&aVariant)
+{
+	aVariant = nullptr;
+	if (!aHotkey || aHotkey->IsCompletelyDisabled())
+		return false;
+	for (HotkeyVariant *variant = aHotkey->mFirstVariant; variant;
+		variant = variant->mNextVariant)
+		if (AhkBackendVariantFireable(aHotkey, variant)
+			&& aHotkey->PerformIsAllowed(*variant))
+		{
+			aVariant = variant;
+			return true;
+		}
+	return false;
+}
+
 // Find the best matching hotkey+enabled variant for (id, mods, side, phase).
 // Unique resolution: exact (non-wildcard) hotkeys beat wildcard ones; among
 // equals the one allowing fewer side bits wins; ties keep registration order
@@ -591,8 +607,8 @@ void LinuxFindHotkey(Display *d, unsigned int aId, unsigned int aEvMods, modLR_t
 			continue;
 		if (!LinuxHotkeyModsMatch(hk, aEvMods, aEvLR))
 			continue;
-		HotkeyVariant *vp = hk->FindVariant();
-		if (!vp || !vp->mEnabled || !hk->PerformIsAllowed(*vp))
+		HotkeyVariant *vp = nullptr;
+		if (!LinuxFireableVariant(hk, vp))
 			continue;
 		int side_bits = 0;
 		for (unsigned t = (unsigned)hk->mModifiersConsolidatedLR; t; t >>= 1)
@@ -624,12 +640,12 @@ bool LinuxKeyUpVariantExists(unsigned int aKeycode,
 			continue;
 		if (!LinuxHotkeyModsMatch(hk, aEvMods, aEvLR))
 			continue;
-		HotkeyVariant *vp = hk->FindVariant();
-		// Press-side ownership must not depend on the current thread being
-		// interruptible or below MaxThreads. Re-evaluate PerformIsAllowed when
-		// the actual release arrives; dropping the grab here loses it forever.
-		if (vp && vp->mEnabled)
-			return true;
+		// Press-side ownership must not depend on criterion truth, current
+		// interruptibility or MaxThreads. The criterion is evaluated on release;
+		// dropping the grab here loses that release forever.
+		for (HotkeyVariant *vp = hk->mFirstVariant; vp; vp = vp->mNextVariant)
+			if (vp->mEnabled)
+				return true;
 	}
 	return false;
 }
@@ -911,8 +927,8 @@ bool LinuxButtonUpVariantExists(Display *d, unsigned int aButton, unsigned int a
 			continue;
 		if (!LinuxHotkeyModsMatch(hk, aEvMods, evlr))
 			continue;
-		HotkeyVariant *vp = hk->FindVariant();
-		if (vp && vp->mEnabled && hk->PerformIsAllowed(*vp))
+		HotkeyVariant *vp = nullptr;
+		if (LinuxFireableVariant(hk, vp))
 			return true;
 	}
 	return false;

@@ -71,6 +71,8 @@
 #define MSG_CONFLICT 22u
 #define MSG_ARB_DECISION 23u
 #define MSG_BACKEND_HEALTH 24u
+#define MSG_DECISION_REQUEST 25u
+#define MSG_DECISION_REPLY 26u
 
 #define CAP_OBSERVE 0x1u
 #define CAP_SUPPRESS 0x2u
@@ -377,6 +379,11 @@ int main(int argc, char **argv)
 	int inject_crash_after_events = 0;
 	int inject_pairs = 1;
 	long inject_stay_ms = 0;
+	int arb_dynamic = 0;
+	int decision_action = -1;
+	long decision_delay_ms = 0;
+	int decision_no_reply = 0;
+	int decision_crash = 0;
 	int i;
 
 	for (i = 3; i < argc; ++i)
@@ -395,6 +402,16 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[i], "--crash-after-events")) inject_crash_after_events = 1;
 		else if (!strcmp(argv[i], "--pairs") && i + 1 < argc) inject_pairs = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "--stay") && i + 1 < argc) inject_stay_ms = atol(argv[++i]);
+		else if (!strcmp(argv[i], "--dynamic")) arb_dynamic = 1;
+		else if (!strcmp(argv[i], "--decision") && i + 1 < argc)
+		{
+			const char *v = argv[++i];
+			decision_action = !strcmp(v, "suppress") ? 1 : 0;
+		}
+		else if (!strcmp(argv[i], "--decision-delay") && i + 1 < argc)
+			decision_delay_ms = atol(argv[++i]);
+		else if (!strcmp(argv[i], "--no-reply")) decision_no_reply = 1;
+		else if (!strcmp(argv[i], "--crash-on-request")) decision_crash = 1;
 		else if (!strcmp(argv[i], "--nonce") && i + 1 < argc)
 		{
 			const char *hex = argv[++i];
@@ -677,13 +694,14 @@ int main(int argc, char **argv)
 		st_le16(ap + 18, (unsigned int)(unsigned short)replacement_level);
 		st_le32(ap + 20, lease_ms);
 		st_le32(ap + 24, replacement_code);
-		st_le16(ap + 28, 0);
+		st_le16(ap + 28, arb_dynamic ? 1u : 0u);
 		if (send_frame(fd, MSG_ARB_REGISTER, 1, ap, sizeof(ap)) != 0) return 1;
 		if (read_one_print(fd, &mtype, rp, &rp_len) != 1
 			|| mtype != MSG_ARB_REGISTER_ACK) return 1;
 		print_arb_ack(rp, rp_len);
 		unsigned int status = rp_len >= 9 ? rp[8] : ARB_BAD_FRAME;
 		long stay_ms = inject_stay_ms;
+		unsigned long long arb_seq = 2;
 		/* Conflicts are followed by a CONFLICT sideband.  A granted rule
 		 * stays connected for --stay so the broker retains ownership. */
 		if (status == ARB_CONFLICTED)
@@ -705,6 +723,39 @@ int main(int argc, char **argv)
 			int r = read_frame(fd, &mtype, rp, &rp_len);
 			if (r <= 0) break;
 			if (mtype == MSG_CONFLICT) print_conflict(rp, rp_len);
+			else if (mtype == MSG_DECISION_REQUEST && rp_len == 46)
+			{
+				unsigned long long event_seq = ld_le64(rp);
+				unsigned long long source_txn = ld_le64(rp + 8);
+				unsigned long long request_reg = ld_le64(rp + 16);
+				unsigned int request_code = ld_le32(rp + 24);
+				unsigned int request_value = rp[28];
+				unsigned long long deadline = ld_le64(rp + 30);
+				unsigned long long acceptance = ld_le64(rp + 38);
+				printf("DECISION_REQUEST seq=%llu txn=%llu reg=%llu code=%u value=%u deadline=%llu acceptance=%llu\n",
+					event_seq, source_txn, request_reg, request_code,
+					request_value, deadline, acceptance);
+				fflush(stdout);
+				if (decision_crash)
+					_exit(98);
+				if (!decision_no_reply)
+				{
+					if (decision_delay_ms > 0)
+						usleep((useconds_t)decision_delay_ms * 1000);
+					unsigned char reply[33];
+					memset(reply, 0, sizeof(reply));
+					st_le64(reply, event_seq);
+					st_le64(reply + 8, source_txn);
+					st_le64(reply + 16, request_reg);
+					st_le64(reply + 24, acceptance);
+					reply[32] = (unsigned char)(decision_action == 1 ? 1 : 0);
+					if (send_frame(fd, MSG_DECISION_REPLY, arb_seq++, reply,
+							sizeof(reply)) != 0) return 1;
+					printf("DECISION_REPLY seq=%llu action=%s\n", event_seq,
+						decision_action == 1 ? "suppress" : "pass");
+					fflush(stdout);
+				}
+			}
 			else if (mtype == MSG_ARB_DECISION) print_decision(rp, rp_len);
 			else if (mtype == MSG_EVENT && rp_len == 98) print_event(rp);
 			else if (mtype == MSG_ARB_REGISTER_ACK) print_arb_ack(rp, rp_len);

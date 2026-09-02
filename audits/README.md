@@ -151,8 +151,26 @@ Closures since check0901 (evidence in the linked oracles):
   [run_input_remap_pipeline_oracle.sh](../tests/oracle/run_input_remap_pipeline_oracle.sh)
   proves physical A→authoritative B child transaction, SendLevel 7 > InputLevel
   5 trigger, parent/child trace linkage, original suppression and a target
-  sequence containing exactly B-down/B-up. Dynamic broker HotIf deadlines are
-  the remaining M5b decision slice.
+  sequence containing exactly B-down/B-up.
+- **M5b-4 (dynamic HotIf deadline/fail-open)** — protocol v2 now carries
+  DECISION_REQUEST/REPLY keyed by authority event, physical transaction,
+  registration and registration-acceptance sequence. Callback HotIf rules are
+  subscribed observe-only and registered as dynamic SUPPRESS arbitration;
+  ahk_core evaluates the criterion on the main input thread, caches the
+  normalized match and replies pass/suppress. The broker waits at most 60 ms,
+  defaults keyboard timeouts and owner disconnects to replay, preserves sticky
+  key-up after a suppress reply, and downgrades a rule observe-only after three
+  consecutive timeouts; leases refresh every 60 s. This also closes the older
+  Linux defect where callback HotIf used a permanent-zero SendMessageTimeout
+  stub and FindVariant never evaluated criterion variants. Oracle:
+  [run_input_dynamic_decision_oracle.sh](../tests/oracle/run_input_dynamic_decision_oracle.sh)
+  independently covers pass, suppress, timeout, owner crash, slow-client
+  downgrade and a false dynamic candidate falling through to the next static
+  winner under one 60 ms event budget. It then proves a real ahk_core F7-down
+  false→pass / F8-up true→sticky balanced suppression transition with one
+  release callback and only the false pair target-visible, plus callback HotIf
+  parity across X11 active/mirror/legacy. M5's normalized decision migration is
+  now closed; IME composition/focus remains M8 host integration.
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),

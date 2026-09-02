@@ -196,11 +196,15 @@ bool EvdevVariantFor(Hotkey *aHotkey, HotkeyVariant *&aVariant)
 	aVariant = nullptr;
 	if (!aHotkey || !AhkBackendHotkeyEnabled(aHotkey))
 		return false;
-	HotkeyVariant *variant = aHotkey->FindVariant();
-	if (!variant || !variant->mEnabled || !aHotkey->PerformIsAllowed(*variant))
-		return false;
-	aVariant = variant;
-	return true;
+	for (HotkeyVariant *variant = aHotkey->mFirstVariant; variant;
+		variant = variant->mNextVariant)
+		if (AhkBackendVariantFireable(aHotkey, variant)
+			&& aHotkey->PerformIsAllowed(*variant))
+		{
+			aVariant = variant;
+			return true;
+		}
+	return false;
 }
 
 void TrackEvdevHotkey(Hotkey *aHotkey)
@@ -587,8 +591,8 @@ bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat, int aSendLeve
 			continue;
 		if (!AhkBackendHotkeyEnabled(hk))
 			continue;
-		HotkeyVariant *vp = hk->FindVariant();
-		if (!vp || !vp->mEnabled || !hk->PerformIsAllowed(*vp))
+		HotkeyVariant *vp = nullptr;
+		if (!EvdevVariantFor(hk, vp))
 			continue;
 		if (aSendLevel >= 0
 			&& !AhkSyntheticMayTrigger(AhkConsumerKind::HOTKEY
@@ -631,8 +635,10 @@ bool HandleEvdevKey(unsigned int evcode, bool down, bool isRepeat, int aSendLeve
 
 bool HandleEvdevNormalized(const AhkInputEvent &event,
 	const AhkInputContext &context, bool backend_can_suppress,
-	AhkInputAcceptance *aOutAccepted = nullptr)
+	AhkInputAcceptance *aOutAccepted = nullptr,
+	uint64_t *aOutRegistrationId = nullptr)
 {
+	if (aOutRegistrationId) *aOutRegistrationId = 0;
 	AhkInputAcceptance accepted = LinuxInputPipelineAccept(event, context);
 	if (aOutAccepted) *aOutAccepted = accepted;
 	bool down = !accepted.event.is_release;
@@ -667,14 +673,24 @@ bool HandleEvdevNormalized(const AhkInputEvent &event,
 		LinuxInputPipelineTraceLegacyComparison(accepted,
 			new_found ? &mirror_match : nullptr, legacy_hk, legacy_vp);
 		if (legacy_hk && legacy_vp)
+		{
+			if (aOutRegistrationId)
+				for (int i = 0; i < Hotkey::sHotkeyCount; ++i)
+					if (Hotkey::shk[i] == legacy_hk)
+					{ *aOutRegistrationId = (uint64_t)i + 1; break; }
 			FireEvdevVariant(legacy_hk, legacy_vp);
+		}
 		return suppressed;
 	}
 
 	AhkInputComboResult combo;
 	if (LinuxInputPipelineProcessCombo(accepted, AhkInputBackendKind::EVDEV,
 		backend_can_suppress, combo, true))
+	{
+		if (aOutRegistrationId && combo.match_count)
+			*aOutRegistrationId = combo.matches[0].registration_id;
 		return combo.suppress_original;
+	}
 
 	AhkInputMatch match;
 	AhkInputDecision decision;
@@ -690,6 +706,8 @@ bool HandleEvdevNormalized(const AhkInputEvent &event,
 				? (decision.action == AhkInputDecisionAction::SUPPRESS_ORIGINAL
 					? "keyup_owned_suppressed" : "keyup_owned_pass")
 				: "passed_no_match"));
+	if (aOutRegistrationId && decision.registration_id)
+		*aOutRegistrationId = decision.registration_id;
 	if (found)
 		LinuxInputPipelineDispatch(accepted, match, decision);
 	LinuxInputPipelineTraceOutcome(accepted, decision, planned_outcome);
@@ -845,7 +863,12 @@ static void EvdevBrokerEventAdapter(const LinuxInputdEvent &aEvent, void *aUser)
 	bool can_suppress = aEvent.v2
 		&& (LinuxInputdClientCapsGranted() & INPUTD_V2_CAP_SUPPRESS);
 	AhkInputAcceptance accepted;
-	HandleEvdevNormalized(normalized, context, can_suppress, &accepted);
+	uint64_t registration_id = 0;
+	HandleEvdevNormalized(normalized, context, can_suppress, &accepted,
+		&registration_id);
+	if (aEvent.v2)
+		LinuxInputdClientRecordDecision(aEvent.eventSeq,
+			aEvent.transactionId, registration_id);
 	bool down = aValue != 0;
 	// Broker character stream: when the script needs Hotstring/InputHook
 	// capture and an X11 layout source exists, decode through the same
