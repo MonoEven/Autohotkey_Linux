@@ -9,7 +9,7 @@ if [ -f /etc/os-release ]; then . /etc/os-release; fi
 case "$ID" in
   fedora)
     $SUDO dnf install -y --setopt=install_weak_deps=False \
-      git cmake gcc-c++ make ninja-build \
+      git cmake gcc-c++ make ninja-build python3 \
       libX11-devel libXext-devel libXrandr-devel libXinerama-devel libXtst-devel libXi-devel libXfixes-devel \
       wayland-devel wayland-protocols-devel libxkbcommon-devel libxkbcommon-x11-devel \
       libffi-devel dbus-devel gtk3-devel zlib-devel libjpeg-turbo-devel \
@@ -23,7 +23,7 @@ case "$ID" in
     ;;
   arch)
     $SUDO pacman -Sy --noconfirm --needed \
-      git cmake gcc make ninja pkgconf \
+      git cmake gcc make ninja pkgconf python \
       libx11 libxext libxrandr libxinerama libxtst libxi libxfixes \
       wayland wayland-protocols libxkbcommon libxkbcommon-x11 \
       libffi dbus gtk3 zlib libjpeg-turbo
@@ -40,7 +40,7 @@ case "$ID" in
     export DEBIAN_FRONTEND=noninteractive
     $SUDO apt-get update -y
     $SUDO apt-get install -y --no-install-recommends \
-      git cmake g++ make ninja-build pkg-config \
+      git cmake g++ make ninja-build pkg-config python3 \
       libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxtst-dev libxi-dev libxfixes-dev \
       libwayland-dev wayland-protocols libxkbcommon-dev libxkbcommon-x11-dev \
       libffi-dev libdbus-1-dev libgtk-3-dev zlib1g-dev libjpeg-dev
