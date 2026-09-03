@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <string>
 #include <mutex>
+#include <atomic>
 
 namespace
 {
@@ -459,15 +460,28 @@ int LinuxImeXkbGroup()
 	return -1;
 }
 
-int LinuxImeFramework()
+// P2-10: framework probing does blocking NameHasOwner calls (up to ~3 s on a
+// dead name).  It must never run on a script callback thread, so the result
+// is cached here and refreshed only from the dispatch context (main loop).
+std::atomic<int> sFrameworkCache{LINUX_IME_NONE};
+std::atomic<unsigned long> sFrameworkProbeTickMs{0};
+
+void RefreshFrameworkCache()
 {
+	int framework = LINUX_IME_NONE;
 	if (NameHasOwner("org.freedesktop.IBus"))
-		return LINUX_IME_IBUS;
-	if (NameHasOwner("org.fcitx.Fcitx5.Controller1")
+		framework = LINUX_IME_IBUS;
+	else if (NameHasOwner("org.fcitx.Fcitx5.Controller1")
 		|| NameHasOwner("org.fcitx.Fcitx5")
 		|| NameHasOwner("org.fcitx.Fcitx.Controller1"))
-		return LINUX_IME_FCITX5;
-	return LINUX_IME_NONE;
+		framework = LINUX_IME_FCITX5;
+	sFrameworkCache.store(framework, std::memory_order_relaxed);
+	sFrameworkProbeTickMs.store(GetTickCount(), std::memory_order_relaxed);
+}
+
+int LinuxImeFramework()
+{
+	return sFrameworkCache.load(std::memory_order_relaxed);
 }
 
 bool LinuxImeStartListener()
@@ -479,6 +493,11 @@ bool LinuxImeStartListener()
 		return false;
 	sListenerAttempted = true;
 	sLastAttemptTick = now;
+	// A fresh script thread may arrive before the first dispatch pass ever
+	// ran: probe once synchronously here (bounded) so the listener setup sees
+	// a real framework instead of an empty cache.
+	if (sFrameworkProbeTickMs.load(std::memory_order_relaxed) == 0)
+		RefreshFrameworkCache();
 	int framework = LinuxImeFramework();
 	std::string address;
 	const char *iface = nullptr;
@@ -526,6 +545,12 @@ void LinuxImeShutdown()
 
 void LinuxImeDispatch()
 {
+	// Refresh the framework probe on the dispatch context only (bounded,
+	// throttled to once per 2 s — see RefreshFrameworkCache).
+	unsigned long now = GetTickCount();
+	unsigned long last = sFrameworkProbeTickMs.load(std::memory_order_relaxed);
+	if (!last || now - last >= 2000)
+		RefreshFrameworkCache();
 	if (!sImeBus)
 	{
 		if (LinuxCaptureActive())
