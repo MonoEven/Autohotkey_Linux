@@ -14,9 +14,10 @@ sudo -n true 2>/dev/null || { echo "combo pipeline oracle needs sudo -n"; exit 1
 cleanup() {
   sudo -n pkill -9 -x ahk-inputd 2>/dev/null || true
   sudo -n pkill -9 -f "^$FIXTURE " 2>/dev/null || true
+  return 0
 }
 trap cleanup EXIT HUP INT TERM
-cleanup
+cleanup || true
 cat >"$WORK/combo.ahk" <<'EOF'
 #Requires AutoHotkey v2.0
 #InputLevel 3
@@ -41,23 +42,40 @@ OnSoloE(*) {
 OnEF(*) {
     Log("e-f")
 }
+OnEG(*) {
+    Log("e-g")
+}
 Finish() {
     global total
     h := HotkeyBackendGet("a & b")
     FileAppend("final mode=" h.pipeline_mode " total=" total "`n", A_Args[1])
-    ExitApp(total = 5 ? 0 : 7)
+    ExitApp(total = 7 ? 0 : 7)
 }
 Hotkey("a & b", OnDown)
 Hotkey("a & c up", OnUp)
 Hotkey("~a & d", OnTilde)
 Hotkey("sc012 & sc021", OnEF)
 Hotkey("e", OnSoloE)
+; P2-11 matrix additions: shared prefix (two combos on the same prefix key
+; must each fire exactly once for their own suffix), extra-modifier tolerance
+; (a&b must still fire while an unrelated Ctrl is held — custom combos ignore
+; extra modifiers, matching the Windows golden behavior; modifier symbols on
+; the PREFIX itself such as "+a & b" are rejected exactly like upstream), a
+; prefix auto-repeat burst (repeat events must never fire the combo or the
+; standalone prefix while the prefix is held), and a wrong-second-key segment
+; (a held, f pressed) that must fire nothing because the e&f prefix is not
+; held.
+Hotkey("e & g", OnEG)
 FileAppend("ready`n", A_Args[2])
 SetTimer(Finish, -5000)
 EOF
 sequence=(29:1 30:1 48:1 48:0 30:0 29:0 \
           30:1 46:1 46:0 30:0 30:1 32:1 32:0 30:0 \
-          18:1 18:0 18:1 33:1 33:0 18:0)
+          18:1 18:0 18:1 33:1 33:0 18:0 \
+          30:1 30:2 30:2 30:0 \
+          30:1 33:1 33:0 30:0 \
+          18:1 34:1 34:0 18:0 \
+          29:1 42:1 30:1 48:1 48:0 30:0 42:0 29:0)
 for mode in active mirror legacy; do
   cleanup; sleep .25
   trigger="$WORK/$mode.trigger"; devfile="$WORK/$mode.dev"
@@ -75,7 +93,7 @@ for mode in active mirror legacy; do
   for _ in $(seq 1 200); do [ -f "$WORK/$mode.ready" ] && grep -q subscribed "$WORK/$mode-broker.log" 2>/dev/null && break; sleep .03; done
   grep -q subscribed "$WORK/$mode-broker.log"
   touch "$trigger"; wait "$AP"
-  grep -q "final mode=$mode total=5" "$WORK/$mode.out"
+  grep -q "final mode=$mode total=7" "$WORK/$mode.out"
 done
 python3 "$ROOT/tests/oracle/verify_input_combo_pipeline.py" "$WORK" \
   "$OUT/input-combo-pipeline-summary.json"
