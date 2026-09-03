@@ -237,6 +237,23 @@ Closures since check0901 (evidence in the linked oracles):
   combined long-running soak additionally exists for RSS/fd slope and event
   consistency (run_mixed_soak.sh, nightly/weekly profiles); its fault
   schedule remains an optional manual extension, not a gate.
+- `P2-10` Unicode/IME hardening (check_detail0901 §22), product-side fixes
+  landed: (a) the Linux `MultiByteToWideChar` shim now enforces
+  `MB_ERR_INVALID_CHARS` — malformed UTF-8 (overlong forms, surrogate
+  halves, out-of-range code points, truncated tails) is rejected instead of
+  silently recoded; (b) an invalid-UTF-8 IME commit is dropped BEFORE any
+  state update — it never reaches LastCommit, the commit counter or the
+  event trace; (c) IME shared state is mutex-protected (dispatch thread
+  writes, hotstring/InputHook callback threads read concurrently); (d) the
+  blocking framework probe (NameHasOwner round trips) moved off script
+  threads into a throttled dispatch-context cache.  A corpus-driven
+  D-Bus protocol oracle (combining marks, Devanagari/Arabic, skin tone,
+  variation selector, family ZWJ as one hotstring unit, flag regional
+  indicators, multi-char commits, supplementary plane, invalid UTF-8) is
+  in progress: the event-stream/hotstring-unit assertions pass against a
+  real Fcitx5-protocol producer, and the remaining work is diagnosing a
+  producer/AHK same-session teardown that kills both processes after the
+  last corpus entry (not observed when either side runs alone).
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),
