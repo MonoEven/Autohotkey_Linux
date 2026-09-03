@@ -3221,22 +3221,75 @@ inline UINT GetACP()
 
 inline int MultiByteToWideChar(UINT aCodePage, DWORD aFlags, LPCSTR aSrc, int aSrcLen, LPWSTR aDst, int aDstLen)
 {
-	// Simplified UTF-8/ANSI -> UTF-16 conversion for the Linux port.
-	(void)aCodePage; (void)aFlags;
+	// UTF-8 -> UTF-16 conversion for the Linux port.  With
+	// MB_ERR_INVALID_CHARS the conversion must fail on malformed input
+	// (check_detail0901 P2-10: invalid UTF-8 in an IME commit is rejected
+	// instead of being silently recoded), matching the Win32 semantics the
+	// pipeline relies on.
+	(void)aCodePage;
 	if (!aSrc)
 		return 0;
 	if (aSrcLen < 0)
 		aSrcLen = (int)strlen(aSrc) + 1;
-	// First pass: determine the required number of wchar_t units.
+	bool strict = (aFlags & MB_ERR_INVALID_CHARS) != 0;
+	// First pass: determine the required number of wchar_t units.  With
+	// strict validation, overlong forms, surrogate halves, out-of-range
+	// code points and truncated tails are all conversion failures.
 	int required = 0;
 	for (int i = 0; i < aSrcLen;)
 	{
 		unsigned char ch = (unsigned char)aSrc[i];
 		if (ch < 0x80) { ++i; required += 1; }
-		else if ((ch & 0xE0) == 0xC0 && i + 1 < aSrcLen) { i += 2; required += 1; }
-		else if ((ch & 0xF0) == 0xE0 && i + 2 < aSrcLen) { i += 3; required += 1; }
-		else if ((ch & 0xF8) == 0xF0 && i + 3 < aSrcLen) { i += 4; required += 2; } // -> surrogate pair
-		else { ++i; required += 1; }
+		else if ((ch & 0xE0) == 0xC0)
+		{
+			if (i + 1 >= aSrcLen || (aSrc[i + 1] & 0xC0) != 0x80
+				|| ch < 0xC2) // overlong or truncated
+			{
+				if (strict) return 0;
+				++i; required += 1;
+				continue;
+			}
+			i += 2; required += 1;
+		}
+		else if ((ch & 0xF0) == 0xE0)
+		{
+			if (i + 2 >= aSrcLen || (aSrc[i + 1] & 0xC0) != 0x80
+				|| (aSrc[i + 2] & 0xC0) != 0x80)
+			{
+				if (strict) return 0;
+				++i; required += 1;
+				continue;
+			}
+			unsigned int cp = ((ch & 0x0F) << 12) | (((unsigned char)aSrc[i + 1] & 0x3F) << 6)
+				| ((unsigned char)aSrc[i + 2] & 0x3F);
+			if (cp < 0x800 || (cp >= 0xD800 && cp <= 0xDFFF)) // overlong / surrogate
+			{
+				if (strict) return 0;
+			}
+			i += 3; required += 1;
+		}
+		else if ((ch & 0xF8) == 0xF0)
+		{
+			if (i + 3 >= aSrcLen || (aSrc[i + 1] & 0xC0) != 0x80
+				|| (aSrc[i + 2] & 0xC0) != 0x80 || (aSrc[i + 3] & 0xC0) != 0x80)
+			{
+				if (strict) return 0;
+				++i; required += 1;
+				continue;
+			}
+			unsigned int cp = ((ch & 0x07) << 18) | (((unsigned char)aSrc[i + 1] & 0x3F) << 12)
+				| (((unsigned char)aSrc[i + 2] & 0x3F) << 6) | ((unsigned char)aSrc[i + 3] & 0x3F);
+			if (cp < 0x10000 || cp > 0x10FFFF) // overlong / out of range
+			{
+				if (strict) return 0;
+			}
+			i += 4; required += 2; // -> surrogate pair
+		}
+		else
+		{
+			if (strict) return 0; // stray continuation/invalid byte.
+			++i; required += 1;
+		}
 	}
 	if (!aDst)
 		return required;
@@ -3249,17 +3302,17 @@ inline int MultiByteToWideChar(UINT aCodePage, DWORD aFlags, LPCSTR aSrc, int aS
 			aDst[written++] = (wchar_t)ch;
 			++i;
 		}
-		else if ((ch & 0xE0) == 0xC0 && i + 1 < aSrcLen)
+		else if ((ch & 0xE0) == 0xC0)
 		{
 			aDst[written++] = (wchar_t)(((ch & 0x1F) << 6) | ((unsigned char)aSrc[i + 1] & 0x3F));
 			i += 2;
 		}
-		else if ((ch & 0xF0) == 0xE0 && i + 2 < aSrcLen)
+		else if ((ch & 0xF0) == 0xE0)
 		{
 			aDst[written++] = (wchar_t)(((ch & 0x0F) << 12) | (((unsigned char)aSrc[i + 1] & 0x3F) << 6) | ((unsigned char)aSrc[i + 2] & 0x3F));
 			i += 3;
 		}
-		else if ((ch & 0xF8) == 0xF0 && i + 3 < aSrcLen)
+		else if ((ch & 0xF8) == 0xF0)
 		{
 			unsigned int cp = ((ch & 0x07) << 18) | (((unsigned char)aSrc[i + 1] & 0x3F) << 12)
 				| (((unsigned char)aSrc[i + 2] & 0x3F) << 6) | ((unsigned char)aSrc[i + 3] & 0x3F);

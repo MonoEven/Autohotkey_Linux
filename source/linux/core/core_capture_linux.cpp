@@ -647,13 +647,16 @@ void LinuxCaptureImePreedit(const char *aUtf8, bool aVisible)
 	sImePreeditActive = active;
 }
 
-void LinuxCaptureImeCommit(const char *aUtf8, AhkInputOrigin aOrigin)
+// P2-10: converts and validates the UTF-8 commit.  Returns false when the
+// text is empty or not valid UTF-8 — the caller must then drop the commit
+// entirely (no trace entry, no LastCommit update, no commit counter).
+bool LinuxCaptureImeCommit(const char *aUtf8, AhkInputOrigin aOrigin)
 {
 	std::wstring committed;
 	if (!LinuxImeUtf8ToWide(aUtf8, committed) || committed.empty())
 	{
 		sImePreeditActive = false;
-		return;
+		return false;
 	}
 	sImePreeditActive = false;
 	sImePhysicalSuppressUntilUs = LinuxInputEventMonotonicUs() + 200000ULL;
@@ -668,6 +671,7 @@ void LinuxCaptureImeCommit(const char *aUtf8, AhkInputOrigin aOrigin)
 				return notify.input == g_input && notify.kind == NOTIFY_CHAR
 					&& notify.ime_candidate;
 			}), sInputNotifies.end());
+	return true;
 }
 
 wchar_t LinuxCharFromKeySym(KeySym aKs)

@@ -16,6 +16,7 @@
 #include <cstring>
 #include <cstdio>
 #include <string>
+#include <mutex>
 
 namespace
 {
@@ -24,6 +25,11 @@ DBusConnection *sImeBus = nullptr;
 int sListenerFramework = LINUX_IME_NONE;
 bool sListenerAttempted = false;
 DWORD sLastAttemptTick = 0;
+// P2-10: IME state is written on the dispatch thread (LinuxImeDispatch ->
+// HandleCommit/HandlePreedit) and read from script threads via ImeStatus()
+// (hotstring/InputHook callbacks run on their own threads).  std::string is
+// not safe under concurrent read/write, so all state access is serialized.
+std::mutex sImeStateMutex;
 bool sPreeditActive = false;
 std::string sEngine;
 bool sFocusTrackingSeen = false;
@@ -293,15 +299,23 @@ void HandleCommit(const std::string &aText, AhkInputOrigin aOrigin)
 {
 	if (aText.empty())
 		return;
+	// P2-10: validate BEFORE publishing. An invalid-UTF-8 commit must not
+	// update LastCommit or the commit counter — it is dropped entirely.
+	if (!LinuxCaptureImeCommit(aText.c_str(), aOrigin))
+	{
+		ImeDump("commit-invalid-utf8-dropped", aText, false);
+		return;
+	}
+	std::lock_guard<std::mutex> lock(sImeStateMutex);
 	sPreeditActive = false;
 	sLastCommit = aText;
 	++sCommitCount;
 	ImeDump("commit", aText, false);
-	LinuxCaptureImeCommit(aText.c_str(), aOrigin);
 }
 
 void HandlePreedit(const std::string &aText, bool aVisible)
 {
+	std::lock_guard<std::mutex> lock(sImeStateMutex);
 	sPreeditActive = aVisible && !aText.empty();
 	++sPreeditCount;
 	ImeDump("preedit", aText, sPreeditActive);
@@ -319,6 +333,7 @@ bool HandleFocusMessage(DBusMessage *aMessage, const char *aInterface)
 		return false;
 	if (!strcmp(member, "FocusIn"))
 	{
+		std::lock_guard<std::mutex> lock(sImeStateMutex);
 		sFocusTrackingSeen = true;
 		sFocusedContextPath = path;
 		ImeDump("focus-in", sFocusedContextPath, true);
@@ -326,6 +341,7 @@ bool HandleFocusMessage(DBusMessage *aMessage, const char *aInterface)
 	}
 	if (!strcmp(member, "FocusOut"))
 	{
+		std::lock_guard<std::mutex> lock(sImeStateMutex);
 		sFocusTrackingSeen = true;
 		if (sFocusedContextPath == path)
 			sFocusedContextPath.clear();
@@ -407,6 +423,7 @@ void HandleFcitxMessage(DBusMessage *aMessage)
 		{
 			const char *name = nullptr;
 			dbus_message_iter_get_basic(&it, &name);
+			std::lock_guard<std::mutex> lock(sImeStateMutex);
 			sEngine = name ? name : "";
 		}
 	}
@@ -420,6 +437,7 @@ void CloseListener()
 		dbus_connection_unref(sImeBus);
 		sImeBus = nullptr;
 	}
+	std::lock_guard<std::mutex> lock(sImeStateMutex);
 	sListenerFramework = LINUX_IME_NONE;
 	sEngine.clear();
 	sFocusTrackingSeen = false;
@@ -489,8 +507,12 @@ bool LinuxImeStartListener()
 	}
 	sImeBus = connection;
 	sListenerFramework = framework;
-	sEngine = framework == LINUX_IME_IBUS
+	std::string engine = framework == LINUX_IME_IBUS
 		? QueryIbusEngine(connection) : QueryFcitxEngine(connection);
+	{
+		std::lock_guard<std::mutex> lock(sImeStateMutex);
+		sEngine = engine;
+	}
 	ImeDump("listener", sEngine, false);
 	return true;
 }
@@ -527,6 +549,7 @@ void LinuxImeDispatch()
 
 const char *LinuxImeEngine()
 {
+	std::lock_guard<std::mutex> lock(sImeStateMutex);
 	return sEngine.c_str();
 }
 
@@ -544,6 +567,7 @@ bool LinuxImeCommitCaptureActive()
 {
 	if (!sImeBus || sListenerFramework == LINUX_IME_NONE)
 		return false;
+	std::lock_guard<std::mutex> lock(sImeStateMutex);
 	if (sListenerFramework == LINUX_IME_IBUS)
 	{
 		if (!sFocusTrackingSeen || sFocusedContextPath.empty())
@@ -566,15 +590,24 @@ const char *LinuxImeListenerScope()
 
 unsigned long LinuxImeCommitCount()
 {
+	std::lock_guard<std::mutex> lock(sImeStateMutex);
 	return sCommitCount;
 }
 
 unsigned long LinuxImePreeditCount()
 {
+	std::lock_guard<std::mutex> lock(sImeStateMutex);
 	return sPreeditCount;
 }
 
+// P2-10: the returned pointer aliases the locked state, so the value is
+// copied into a caller-provided snapshot buffer instead of exposing the
+// std::string across the mutex boundary.
+static char sLastCommitSnapshot[4096];
 const char *LinuxImeLastCommit()
 {
-	return sLastCommit.c_str();
+	std::lock_guard<std::mutex> lock(sImeStateMutex);
+	snprintf(sLastCommitSnapshot, sizeof(sLastCommitSnapshot), "%s",
+		sLastCommit.c_str());
+	return sLastCommitSnapshot;
 }

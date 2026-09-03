@@ -70,7 +70,8 @@ void LinuxCaptureDispatchInputNotifies();
 
 // IME bridge: physical key events continue to drive key options/end keys, but
 // preedit characters are rolled back/frozen and only committed UTF-8 enters the
-// Hotstring/InputHook character streams.
+// Hotstring/InputHook character streams.  Commit returns false when the text
+// is empty or not valid UTF-8 (P2-10: invalid commits are dropped entirely).
 void LinuxCaptureImePreedit(const char *aUtf8, bool aVisible);
-void LinuxCaptureImeCommit(const char *aUtf8, AhkInputOrigin aOrigin);
+bool LinuxCaptureImeCommit(const char *aUtf8, AhkInputOrigin aOrigin);
 bool LinuxCaptureImePreeditActive();
