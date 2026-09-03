@@ -81,10 +81,26 @@ ExitApp(0)
 EOF
 unset DISPLAY WAYLAND_DISPLAY
 # Run with a live X DISPLAY: required mode must still choose EIS and must not
-# bypass the consent contract through XTEST/XWayland.
-timeout -k 2s 25s xvfb-run -a env XDG_SESSION_TYPE=wayland AHK_LIBEI=required \
+# bypass the consent contract through XTEST/XWayland. Start Xvfb directly (the
+# xvfb-run wrapper is absent from Fedora's Xvfb package).
+command -v Xvfb >/dev/null || { echo "INPUT_LIBEI_ORACLE_SKIP Xvfb-missing"; exit 2; }
+XVFB_DISPLAY=":98"
+rm -f "/tmp/.X98-lock"
+Xvfb "$XVFB_DISPLAY" -screen 0 1024x768x24 >"$WORK/xvfb.log" 2>&1 &
+XVFB_PID=$!
+for _ in $(seq 1 100); do
+  [ -S "/tmp/.X11-unix/X98" ] && break
+  kill -0 "$XVFB_PID" 2>/dev/null || break
+  sleep .05
+done
+[ -S "/tmp/.X11-unix/X98" ] \
+  || { echo "INPUT_LIBEI_ORACLE_FAIL Xvfb-did-not-start"; cat "$WORK/xvfb.log"; exit 1; }
+timeout -k 2s 25s env DISPLAY="$XVFB_DISPLAY" XDG_SESSION_TYPE=wayland AHK_LIBEI=required \
   AHK_LIBEI_SOCKET="$SOCK" AHK_LIBEI_TRACE="$TRACE" "$AHK" "$WORK/libei.ahk" "$WORK/result" \
   >"$WORK/ahk.log" 2>&1
+kill "$XVFB_PID" 2>/dev/null || true
+wait "$XVFB_PID" 2>/dev/null || true
+rm -f "/tmp/.X98-lock"
 if [ "$HAVE_PING" = 1 ]; then
   for _ in $(seq 1 100); do grep -q EIS_SYNC "$LOG" 2>/dev/null && break; sleep .02; done
 fi
