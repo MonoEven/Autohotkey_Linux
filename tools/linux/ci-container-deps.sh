@@ -18,8 +18,12 @@ case "$ID" in
     $SUDO dnf install -y --setopt=install_weak_deps=False \
       libei-devel libeis-devel liboeffis-devel 2>/dev/null || \
       echo "optional libei development packages unavailable"
-    $SUDO dnf install -y xorg-x11-server-Xvfb xdotool xorg-x11-xauth xorg-x11-xkb-utils 2>/dev/null || \
+    # Xvfb in its own transaction: a missing sibling must not take it down.
+    $SUDO dnf install -y --setopt=install_weak_deps=False \
+      xorg-x11-server-Xvfb 2>/dev/null || \
       echo "xvfb unavailable (smoke will skip)"
+    $SUDO dnf install -y xdotool xorg-x11-xauth xorg-x11-xkb-utils 2>/dev/null || \
+      echo "optional X11 test tools unavailable"
     ;;
   arch)
     $SUDO pacman -Sy --noconfirm --needed \
