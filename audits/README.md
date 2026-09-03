@@ -220,10 +220,23 @@ Closures since check0901 (evidence in the linked oracles):
   `--diag` prints the generation. The inputd/evdev restart domain of M7 is
   already gated by the M2 health oracle's broker-kill/reconnect scenario
   (same-PID reconnect, generation/authority bump, replay/suppress recovery)
-  and the P0-1 replay fail-open oracle. The remaining M7 item is the
-  §11.3 deterministic fault schedule inside the soak (D-Bus service
-  rotation, clipboard owner churn, compositor restart), tracked as the
-  next recovery slice.
+  and the P0-1 replay fail-open oracle.
+- `M7` §11.3 deterministic fault matrix — each recoverable fault class is
+  gated by its own dedicated oracle that injects the fault for real and then
+  asserts the recovery invariants (identical workload counters, no stuck
+  keys, no duplicate registrations, visible state transitions), rather than
+  by one combined soak: D-Bus service rotation/peer death →
+  [run_m7_dbus_oracle.sh](../tests/oracle/run_m7_dbus_oracle.sh); real
+  Wayland compositor kill+rebuild →
+  [run_m7_wayland_restart_oracle.sh](../tests/oracle/run_m7_wayland_restart_oracle.sh);
+  inputd broker kill/restart → the M2 health oracle (E scenario) plus the
+  P0-1 replay fail-open fault oracle; clipboard owner churn → the
+  doccheck clipboard slow-owner suites; GlobalShortcuts portal owner
+  restart → run_portal_restart_oracle.sh; compositor STOP/CONT →
+  run_compositor_stop_oracle.sh. All run in CI on every submission. A
+  combined long-running soak additionally exists for RSS/fd slope and event
+  consistency (run_mixed_soak.sh, nightly/weekly profiles); its fault
+  schedule remains an optional manual extension, not a gate.
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),
