@@ -4246,7 +4246,7 @@
         },
         {
           "file": "tests/doccheck/assert_unicode_lease.ahk",
-          "line": 52,
+          "line": 53,
           "profile": "x11"
         },
         {
@@ -5662,7 +5662,7 @@
         },
         {
           "file": "tests/doccheck/assert_unicode_lease.ahk",
-          "line": 53,
+          "line": 54,
           "profile": "x11"
         },
         {
@@ -8983,7 +8983,7 @@
         },
         {
           "file": "tests/doccheck/assert_unicode_lease.ahk",
-          "line": 60,
+          "line": 61,
           "profile": "x11"
         },
         {
