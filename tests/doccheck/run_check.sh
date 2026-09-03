@@ -235,10 +235,12 @@ for ahk in assert_*.ahk; do
   esac
   # Display-dependent suites run under Xvfb (MsgBox would open a real
   # dialog with a display present); everything else stays headless.
+  # Dialog and unicode-lease suites use the dedicated :98 so queued XTEST
+  # input from other suites cannot click their dialogs / capture clients.
   case "$base" in
-    assert_dialog)
+    assert_dialog|assert_unicode_lease)
       XDISPLAY=:98 ;;
-    assert_win|assert_input|assert_ctrl|assert_monitor|assert_timer|assert_hotkey|assert_hotkey_pt|assert_hotkey_btn|assert_hotkey_lr|assert_hotstring|assert_inputhook|assert_unicode_lease|assert_edit|assert_msg|assert_image|assert_shape|assert_gui|assert_statements|assert_misc_cov|assert_clipboard|assert_clipboard_slow|assert_clipboard_change|assert_layout|assert_repeat)
+    assert_win|assert_input|assert_ctrl|assert_monitor|assert_timer|assert_hotkey|assert_hotkey_pt|assert_hotkey_btn|assert_hotkey_lr|assert_hotstring|assert_inputhook|assert_edit|assert_msg|assert_image|assert_shape|assert_gui|assert_statements|assert_misc_cov|assert_clipboard|assert_clipboard_slow|assert_clipboard_change|assert_layout|assert_repeat)
       XDISPLAY=:99 ;;
     *) XDISPLAY="" ;;
   esac
