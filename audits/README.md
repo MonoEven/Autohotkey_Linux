@@ -195,6 +195,16 @@ Closures since check0901 (evidence in the linked oracles):
   This direct-EIS oracle deliberately does not impersonate a portal;
   M6b remains open for GNOME/KDE native CreateSession/consent/ConnectToEIS,
   libei 1.6 TEXT, pause/revoke and persistent restore-token recovery evidence.
+- `M7` unified D-Bus/portal/service recovery slice 1 (check_detail0901 §10.1–§10.5):
+  the Linux COM layer (`core_com_dbus_linux.cpp`) replaces libdbus's pseudo-blocking
+  `send_with_reply_and_block` with bounded `LinuxComPendingReply` calls. Deadlines
+  are capped (default 5 s, `AHK_COM_CALL_TIMEOUT_MS` bounded 100–30000 ms), short
+  dispatch slices pump the AHK message loop so script timers/hotkeys stay live
+  during stalls, and timeouts cancel the pending call with machine-readable
+  errors. Peer death surfaces as clean errors instead of freezing the main
+  thread. Verified by static source guard
+  [check_com_pending_calls.sh](../tests/oracle/check_com_pending_calls.sh) and
+  fault-injecting [run_m7_dbus_oracle.sh](../tests/oracle/run_m7_dbus_oracle.sh).
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),

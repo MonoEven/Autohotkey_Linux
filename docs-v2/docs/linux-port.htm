@@ -281,7 +281,10 @@ and 20 for the D-Bus COM layer). The port has two display backends:</p>
     COM interfaces (IUnknown/IDispatch pointers, SafeArrays, events) do
     not exist on Linux; ComObjQuery/ComObjConnect/ComObjArray raise an
     error. Known Windows ProgIDs such as <code>Excel.Application</code> raise
-    migration guidance instead of becoming malformed D-Bus proxies.</li>
+    migration guidance instead of becoming malformed D-Bus proxies.
+    Remote D-Bus method calls use bounded, non-blocking pending calls
+    (default 5 s, configurable via <code>AHK_COM_CALL_TIMEOUT_MS</code>)
+    that pump script timers and events during the wait.</li>
   <li><b>DllCall is supported</b> for native Linux shared objects (.so):
     functions are resolved with dlopen/dlsym and called through libffi,
     with Int/Int64/Short/Char/Float/Double/Ptr/Str/AStr/WStr argument

@@ -207,6 +207,14 @@ jobs:
         if: matrix.build == 'core'
         run: bash tests/oracle/check_atspi_pending_calls.sh
 
+      - name: COM D-Bus bounded pending-call source guard (check0901 M7)
+        if: matrix.build == 'core'
+        run: bash tests/oracle/check_com_pending_calls.sh
+
+      - name: COM D-Bus bounded recovery oracle (check0901 M7)
+        if: matrix.build == 'core'
+        run: bash tests/oracle/run_m7_dbus_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
+
       - name: Set up Node for VS Code extension
         if: matrix.build == 'core'
         uses: actions/setup-node@v4

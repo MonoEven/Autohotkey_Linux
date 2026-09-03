@@ -5,6 +5,10 @@
 #include "../../globaldata.h"
 #include "../../script_func_impl.h"
 #include "../../StringConv.h"
+#include "../../application.h"
+
+#include <time.h>
+#include <stdlib.h>
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -424,6 +428,82 @@ static void LinuxComReplyToToken(DBusMessageIter *aIter, ResultToken &aResultTok
 // D-Bus method call / property access
 // ---------------------------------------------------------------------------
 
+static uint64_t LinuxComNowUs()
+{
+	struct timespec ts;
+	if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+		return 0;
+	return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
+}
+
+// Bounded pending-call wait that pumps the AHK message loop in short slices
+// (check_detail0901 §10: the COM layer must never hold the main event thread
+// in a pseudo-blocking wait with an opaque budget).  The deadline covers the
+// whole call: flush, poll/dispatch slices and reply parse.  On timeout the
+// pending call is cancelled (local side only; remote side effects cannot be
+// undone, so retries remain the script's explicit choice).  A test-only env
+// hook delays the observed completion to exercise the timeout path.
+static DBusMessage *LinuxComPendingReply(DBusConnection *aConn, DBusMessage *aMsg,
+	int aTimeoutMs, DBusError *aError)
+{
+	if (aTimeoutMs <= 0)
+	{
+		if (aError)
+			dbus_set_error(aError, DBUS_ERROR_NO_REPLY, "COM call budget expired");
+		return nullptr;
+	}
+	DBusPendingCall *pending = nullptr;
+	if (!dbus_connection_send_with_reply(aConn, aMsg, &pending, aTimeoutMs) || !pending)
+	{
+		if (aError)
+			dbus_set_error(aError, DBUS_ERROR_NO_MEMORY, "Unable to allocate COM pending call");
+		return nullptr;
+	}
+	dbus_connection_flush(aConn);
+	uint64_t start = LinuxComNowUs();
+	uint64_t deadline = start + (uint64_t)aTimeoutMs * 1000ULL;
+	uint64_t injected_not_before = 0;
+	if (const char *delay = getenv("AHK_COM_TEST_REPLY_DELAY_MS"))
+	{
+		int delay_ms = atoi(delay);
+		if (delay_ms > 0 && delay_ms < aTimeoutMs)
+			injected_not_before = start + (uint64_t)delay_ms * 1000ULL;
+	}
+	DBusMessage *reply = nullptr;
+	for (;;)
+	{
+		uint64_t now = LinuxComNowUs();
+		bool completed = dbus_pending_call_get_completed(pending);
+		if (completed && (!injected_not_before || now >= injected_not_before))
+		{
+			reply = dbus_pending_call_steal_reply(pending);
+			dbus_pending_call_unref(pending);
+			return reply;
+		}
+		if (now && now >= deadline)
+		{
+			dbus_pending_call_cancel(pending);
+			dbus_pending_call_unref(pending);
+			if (aError)
+				dbus_set_error(aError, DBUS_ERROR_NO_REPLY, "COM D-Bus call timed out after %d ms", aTimeoutMs);
+			return nullptr;
+		}
+		int remain_ms = deadline > now ? (int)((deadline - now + 999ULL) / 1000ULL) : 10;
+		int slice_ms = remain_ms > 10 ? 10 : remain_ms;
+		if (slice_ms < 1)
+			slice_ms = 1;
+		if (!dbus_connection_read_write_dispatch(aConn, slice_ms))
+		{
+			dbus_pending_call_cancel(pending);
+			dbus_pending_call_unref(pending);
+			if (aError)
+				dbus_set_error(aError, DBUS_ERROR_DISCONNECTED, "COM D-Bus connection disconnected");
+			return nullptr;
+		}
+		MsgSleep(0, RETURN_AFTER_MESSAGES_SPECIAL_FILTER);
+	}
+}
+
 // Perform a D-Bus call.  aMember is the method/property name, aIface the
 // interface (may be null -> the proxy's own interface), aProperty indicates
 // a property access (uses org.freedesktop.DBus.Properties).
@@ -513,9 +593,18 @@ static ResultType LinuxComDbusCall(ComObject &aObj, LPTSTR aMember, ExprTokenTyp
 		}
 	}
 
+	// Explicit, bounded call budget (check_detail0901 §10.2): user-level
+	// Control calls get a few seconds, never the library default ~25 s.
+	int timeout_ms = 5000;
+	if (const char *t = getenv("AHK_COM_CALL_TIMEOUT_MS"))
+	{
+		long parsed = strtol(t, nullptr, 10);
+		if (parsed >= 100 && parsed <= 30000)
+			timeout_ms = (int)parsed;
+	}
 	DBusError err;
 	dbus_error_init(&err);
-	DBusMessage *reply = dbus_connection_send_with_reply_and_block(aObj.mConn, msg, -1, &err);
+	DBusMessage *reply = LinuxComPendingReply(aObj.mConn, msg, timeout_ms, &err);
 	dbus_message_unref(msg);
 	if (!reply)
 	{
