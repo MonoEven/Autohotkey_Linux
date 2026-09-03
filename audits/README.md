@@ -251,9 +251,13 @@ Closures since check0901 (evidence in the linked oracles):
   variation selector, family ZWJ as one hotstring unit, flag regional
   indicators, multi-char commits, supplementary plane, invalid UTF-8) is
   in progress: the event-stream/hotstring-unit assertions pass against a
-  real Fcitx5-protocol producer, and the remaining work is diagnosing a
-  producer/AHK same-session teardown that kills both processes after the
-  last corpus entry (not observed when either side runs alone).
+  real Fcitx5-protocol producer, and the remaining work is isolating a
+  same-session teardown in which a continuous UpdateFormattedPreedit signal
+  stream from the producer correlates with the runtime exiting silently
+  (no producer: the runtime's Report timer and clean exit work as
+  designed).  The suspicion is the preedit freeze path in the hotstring
+  character feed; the investigation is self-contained on the test-harness
+  side and does not block any other milestone.
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),
