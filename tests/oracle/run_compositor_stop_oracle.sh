@@ -75,7 +75,7 @@ FileAppend("ready`n", "/tmp/ahk_compositor_ready")
 SetTimer(() => ExitApp(9), -15000)
 EOF
 rm -f /tmp/ahk_compositor_{ready,ticks,continue,after,done,tree,runtime.log,key_before,key_after}
-env -u DISPLAY XDG_SESSION_TYPE=wayland XDG_RUNTIME_DIR="$RUNTIME" \
+env -u DISPLAY AHK_LIBEI=0 XDG_SESSION_TYPE=wayland XDG_RUNTIME_DIR="$RUNTIME" \
   WAYLAND_DISPLAY="$wayland_socket" "$BIN" /tmp/ahk_compositor_stop.ahk \
   >/tmp/ahk_compositor_runtime.log 2>&1 &
 APID=$!

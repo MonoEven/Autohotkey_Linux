@@ -27,6 +27,7 @@
 extern "C" const char *LinuxParityLookup(const char *aName, int &aLevel);
 #include "core_win_linux.h"
 #include "core_input_linux.h"
+#include "core_wayland_linux.h"
 #include "core_ctrl_linux.h"
 #include "core_screen_linux.h"
 #include "core_image_linux.h"
@@ -2303,6 +2304,15 @@ BIF_DECL(BIF_Linux_HotkeyBackendGet)
 	set_utf8(_T("libei_state"), LinuxLibeiStateName(libei.state));
 	set_utf8(_T("libei_reason"), libei.reason);
 	obj->SetOwnProp(_T("libei_generation"), (__int64)libei.generation);
+	// M7 (§9): Wayland session generation — increments after every
+	// successful compositor reconnect so scripts/diagnostics can observe
+	// recovery without relying on health polling.  LinuxWaylandActive() is
+	// evaluated first so a lazy first connect / bounded reconnect happens
+	// before the generation snapshot (single-call self-consistency).
+	bool wayland_live = LinuxWaylandActive();
+	obj->SetOwnProp(_T("wayland_generation"),
+		(__int64)LinuxWaylandGeneration());
+	obj->SetOwnProp(_T("wayland_active"), (__int64)(wayland_live ? 1 : 0));
 	obj->SetOwnProp(_T("libei_health_seq"), (__int64)libei.health_seq);
 	obj->SetOwnProp(_T("libei_last_errno"), (__int64)libei.last_errno);
 	obj->SetOwnProp(_T("libei_keyboard"), (__int64)libei.keyboard);

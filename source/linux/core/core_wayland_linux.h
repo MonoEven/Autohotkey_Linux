@@ -62,3 +62,8 @@ bool LinuxWaylandCaptureScreen(int aLeft, int aTop, int aWidth, int aHeight
 // True when a Wayland connection attempt should be made (WAYLAND_DISPLAY
 // set or a default socket exists) and no X display is in use.
 bool LinuxWaylandShouldUse();
+
+// M7 (check_detail0901 §9): current Wayland session generation. It increments
+// on every successful connect/reconnect so diagnostics can show that the
+// compositor/session was rebuilt. 0 = never connected.
+uint64_t LinuxWaylandGeneration();

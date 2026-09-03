@@ -205,6 +205,19 @@ Closures since check0901 (evidence in the linked oracles):
   thread. Verified by static source guard
   [check_com_pending_calls.sh](../tests/oracle/check_com_pending_calls.sh) and
   fault-injecting [run_m7_dbus_oracle.sh](../tests/oracle/run_m7_dbus_oracle.sh).
+- `M7` Wayland compositor restart recovery (check_detail0901 §9.2/§9.4): the
+  Wayland session layer gained full generation-tracked teardown/rebuild — on
+  fatal dispatch/flush errors the whole proxy tree (windows, virtual devices,
+  managers, globals, registry, data-device clipboard) is destroyed in
+  dependency order, and the next lazy connect rebuilds on the compositor's
+  fresh socket (probing the runtime dir when the socket name changed) with an
+  incremented `wayland_generation`. Reconnect is throttled (250 ms) and
+  transient failures no longer stick after a first successful generation. One
+  long-lived process is proven to survive a real SIGKILL of a headless sway,
+  reconnect as generation 2 and deliver input through both generations:
+  [run_m7_wayland_restart_oracle.sh](../tests/oracle/run_m7_wayland_restart_oracle.sh).
+  `HotkeyBackendGet()` exposes `wayland_generation`/`wayland_active` and
+  `--diag` prints the generation.
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),

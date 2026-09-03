@@ -284,7 +284,11 @@ and 20 for the D-Bus COM layer). The port has two display backends:</p>
     migration guidance instead of becoming malformed D-Bus proxies.
     Remote D-Bus method calls use bounded, non-blocking pending calls
     (default 5 s, configurable via <code>AHK_COM_CALL_TIMEOUT_MS</code>)
-    that pump script timers and events during the wait.</li>
+    that pump script timers and events during the wait. On Wayland, a
+    compositor restart is recovered in the same process: the session is
+    rebuilt on the new socket with an incremented
+    <code>wayland_generation</code> (visible via
+    <code>HotkeyBackendGet()</code> and <code>--diag</code>).</li>
   <li><b>DllCall is supported</b> for native Linux shared objects (.so):
     functions are resolved with dlopen/dlsym and called through libffi,
     with Int/Int64/Short/Char/Float/Double/Ptr/Str/AStr/WStr argument

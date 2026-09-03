@@ -663,6 +663,27 @@ void LinuxClipboardWaylandSeat(wl_seat *aSeat)
 	}
 }
 
+void LinuxClipboardWaylandTeardown()
+{
+	if (gClipWlSource)
+	{
+		wl_data_source_destroy(gClipWlSource);
+		gClipWlSource = nullptr;
+	}
+	if (gClipWlDevice)
+	{
+		// wl_data_device has no generated destroy wrapper in the system
+		// header set; wl_proxy_destroy is the generic teardown for it.
+		wl_proxy_destroy((struct wl_proxy *)gClipWlDevice);
+		gClipWlDevice = nullptr;
+	}
+	if (gClipWlMgr)
+	{
+		wl_data_device_manager_destroy(gClipWlMgr);
+		gClipWlMgr = nullptr;
+	}
+}
+
 // Pump the GNOME-extension clipboard listener (D-Bus, display-independent).
 // Called from LinuxInputBackendDispatch on every main-loop pass.
 void LinuxClipboardDispatchWayland()

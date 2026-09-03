@@ -53,9 +53,12 @@ extern "C" int LinuxRunDiagnostic()
 	else
 		std::printf("x11         : (none)\n");
 	if (LinuxWaylandActive())
-		std::printf("wayland-backend-active : yes\n");
+		std::printf("wayland-backend-active : yes (generation=%llu)\n",
+			(unsigned long long)LinuxWaylandGeneration());
 	else
-		std::printf("wayland-backend-active : %s\n", display ? "no (X11)" : "no");
+		std::printf("wayland-backend-active : %s (generation=%llu)\n",
+			display ? "no (X11)" : "no",
+			(unsigned long long)LinuxWaylandGeneration());
 	// Input backend + capability summary.
 	const char *backend = LinuxInputBackendName();
 	std::printf("input-backend: %s\n", backend ? backend : "(unknown)");

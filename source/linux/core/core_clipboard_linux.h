@@ -70,3 +70,6 @@ void LinuxClipboardDispatchWayland();
 void LinuxClipboardWaylandRegistry(void *aData, wl_registry *aReg, uint32_t aName
 	, const char *aIface, uint32_t aVersion);
 void LinuxClipboardWaylandSeat(wl_seat *aSeat);
+// M7 (§9.2): drop the current generation's data-device proxies when the
+// Wayland connection is torn down; the next connect re-binds them.
+void LinuxClipboardWaylandTeardown();

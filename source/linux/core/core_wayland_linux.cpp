@@ -39,6 +39,8 @@
 #include <unistd.h>
 #include <poll.h>
 #include <cerrno>
+#include <time.h>
+#include <glob.h>
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -76,6 +78,11 @@ struct LinuxWaylandState
 	bool vptr_used = false;
 	unsigned int vkbd_mods_depressed = 0; // Tracked for the modifiers request.
 	bool active = false;
+	// M7 (check_detail0901 §9): monotonic session generation. It increments on
+	// every successful (re)connect and lets callers drop stale proxies/state.
+	uint64_t generation = 0;
+	// Earliest monotonic tick at which a reconnect attempt may run again.
+	uint64_t reconnect_not_before_ms = 0;
 	bool connect_failed = false;
 	std::vector<LinuxWaylandWindow *> windows;
 };
@@ -272,7 +279,7 @@ bool LinuxWaylandShouldUse()
 {
 	if (LinuxWlXInUse())
 		return false;
-	if (LinuxWl().active || LinuxWl().connect_failed)
+	if (LinuxWl().active)
 		return false; // Already decided.
 	// Only attempt a connection when a Wayland display is plausibly
 	// present (WAYLAND_DISPLAY set, or the default socket exists).
@@ -290,15 +297,122 @@ bool LinuxWaylandShouldUse()
 }
 
 // Lazily connect (call only after LinuxWaylandShouldUse()).
+// M7 (§9.2): destroy every proxy of the current generation in dependency
+// order (windows -> devices -> managers -> globals -> registry), drop any
+// protocol fds and disconnect.  Called on fatal dispatch/flush errors and
+// before a fresh connect so a dead generation can never be reused.
+static void LinuxWlTeardown()
+{
+	LinuxWaylandState &s = LinuxWl();
+	// Script-owned windows first: they hold surfaces/buffers created from
+	// the globals being destroyed below.
+	for (LinuxWaylandWindow *win : s.windows)
+	{
+		if (!win)
+			continue;
+		if (win->toplevel)
+			xdg_toplevel_destroy(win->toplevel);
+		if (win->xdg)
+			xdg_surface_destroy(win->xdg);
+		if (win->buffer)
+			wl_buffer_destroy(win->buffer);
+		if (win->pool)
+			wl_shm_pool_destroy(win->pool);
+		if (win->shm_fd >= 0)
+			close(win->shm_fd);
+		if (win->surface)
+			wl_surface_destroy(win->surface);
+		delete win;
+	}
+	s.windows.clear();
+	if (s.vkbd)
+	{
+		zwp_virtual_keyboard_v1_destroy(s.vkbd);
+		s.vkbd = nullptr;
+	}
+	if (s.vptr)
+	{
+		zwlr_virtual_pointer_v1_destroy(s.vptr);
+		s.vptr = nullptr;
+	}
+	s.vptr_used = false;
+	s.vkbd_mods_depressed = 0;
+	LinuxClipboardWaylandTeardown();
+	if (s.seat)
+	{
+		wl_seat_destroy(s.seat);
+		s.seat = nullptr;
+	}
+	if (s.wm_base)
+	{
+		xdg_wm_base_destroy(s.wm_base);
+		s.wm_base = nullptr;
+	}
+	if (s.vkbd_mgr)
+	{
+		zwp_virtual_keyboard_manager_v1_destroy(s.vkbd_mgr);
+		s.vkbd_mgr = nullptr;
+	}
+	if (s.vptr_mgr)
+	{
+		zwlr_virtual_pointer_manager_v1_destroy(s.vptr_mgr);
+		s.vptr_mgr = nullptr;
+	}
+	s.compositor = nullptr;
+	s.shm = nullptr;
+	if (s.registry)
+	{
+		wl_registry_destroy(s.registry);
+		s.registry = nullptr;
+	}
+	if (s.display)
+	{
+		wl_display_disconnect(s.display);
+		s.display = nullptr;
+	}
+	s.active = false;
+}
+
 static bool LinuxWlConnect()
 {
 	LinuxWaylandState &s = LinuxWl();
 	if (s.active || s.connect_failed || s.display)
 		return s.active;
+	// A previous generation may have died without a teardown (e.g. the
+	// process never hit a dispatch error between attempts): start clean.
+	LinuxWlTeardown();
 	s.display = wl_display_connect(nullptr);
+	if (!s.display && s.generation)
+	{
+		// M7 reconnect (§9.2): a restarted compositor may expose a NEW
+		// socket name inside the same runtime dir.  Probe every
+		// wayland-* socket instead of pinning the stale name.
+		if (const char *rt = getenv("XDG_RUNTIME_DIR"))
+		{
+			for (int pass = 0; pass < 2 && !s.display; ++pass)
+			{
+				std::string pattern = std::string(rt) + (pass ? "/wayland-*" : "/wayland-0");
+				glob_t gl;
+				if (glob(pattern.c_str(), GLOB_NOSORT, nullptr, &gl) == 0)
+				{
+					for (size_t i = 0; i < gl.gl_pathc && !s.display; ++i)
+					{
+						const char *name = strrchr(gl.gl_pathv[i], '/');
+						if (name && *++name)
+							s.display = wl_display_connect(name);
+					}
+				}
+				globfree(&gl);
+			}
+		}
+	}
 	if (!s.display)
 	{
-		s.connect_failed = true;
+		// M7: a transient reconnect failure (compositor not yet listening)
+		// must not become a sticky failure when a previous generation
+		// existed; only the initial-ever connect is sticky.
+		if (!s.generation)
+			s.connect_failed = true;
 		return false;
 	}
 	s.registry = wl_display_get_registry(s.display);
@@ -308,9 +422,9 @@ static bool LinuxWlConnect()
 	if (!s.wm_base)
 	{
 		// No xdg-shell: not a usable compositor for this backend.
-		wl_display_disconnect(s.display);
-		s.display = nullptr;
-		s.connect_failed = true;
+		LinuxWlTeardown();
+		if (!s.generation)
+			s.connect_failed = true;
 		return false;
 	}
 	xdg_wm_base_add_listener(s.wm_base, &sWmBaseListener, nullptr);
@@ -384,6 +498,43 @@ static bool LinuxWlConnect()
 		wl_display_roundtrip(s.display);
 	}
 	s.active = true;
+	++s.generation;
+	return true;
+}
+
+// Monotonic milliseconds (M7 reconnect throttling).
+static uint64_t LinuxWlNowMs()
+{
+	struct timespec ts;
+	if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+		return 0;
+	return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
+}
+
+// True when the connection has suffered a fatal protocol/IO error; the
+// display object must not be used afterwards (§9.1: old proxies, keymap fds
+// and virtual devices are all invalid).
+static bool LinuxWlFatal()
+{
+	LinuxWaylandState &s = LinuxWl();
+	if (!s.display)
+		return false;
+	if (wl_display_get_error(s.display) != 0)
+		return true;
+	// A dead compositor usually shows up as EPIPE/ECONNRESET on flush.
+	return wl_display_flush(s.display) < 0 && errno != EAGAIN;
+}
+
+// Detect a dead generation, tear it down and schedule a bounded reconnect.
+// Returns true when the connection is gone (callers must skip operations).
+static bool LinuxWlCheckDead()
+{
+	LinuxWaylandState &s = LinuxWl();
+	if (!s.display || !LinuxWlFatal())
+		return false;
+	LinuxWlTeardown();
+	// Bounded reconnect (§5.3 spirit): retry, but never hot-loop.
+	s.reconnect_not_before_ms = LinuxWlNowMs() + 250;
 	return true;
 }
 
@@ -391,14 +542,31 @@ bool LinuxWaylandActive()
 {
 	LinuxWaylandState &s = LinuxWl();
 	if (s.active)
+	{
+		// A previously healthy generation may have died in the background
+		// (compositor restart).  Detect it here so the next operation either
+		// rebuilds (below) or fails cleanly instead of using dead proxies.
+		if (LinuxWlCheckDead())
+			return false;
 		return true;
-	if (s.connect_failed)
-		return false;
+	}
+	if (s.connect_failed && !s.generation)
+		return false; // Never connected successfully: keep the sticky failure.
 	if (LinuxWlXInUse())
 		return false;
 	if (!LinuxWaylandShouldUse())
 		return false;
+	// M7: bounded reconnect after a compositor restart (§9.2).
+	if (s.reconnect_not_before_ms && LinuxWlNowMs() < s.reconnect_not_before_ms)
+		return false;
 	return LinuxWlConnect();
+}
+
+// Current Wayland session generation (increments on every successful
+// reconnect; 0 = never connected).  Exposed for diagnostics (M7).
+uint64_t LinuxWaylandGeneration()
+{
+	return LinuxWl().generation;
 }
 
 bool LinuxWaylandCanInjectKeys()
@@ -817,11 +985,19 @@ void LinuxWaylandDispatch()
 	LinuxWaylandState &s = LinuxWl();
 	if (!s.display)
 		return;
+	if (LinuxWlCheckDead())
+		return;
 	wl_display_flush(s.display);
 	while (wl_display_prepare_read(s.display) != 0)
 		wl_display_dispatch_pending(s.display);
-	wl_display_read_events(s.display);
+	if (wl_display_read_events(s.display) < 0)
+	{
+		LinuxWlCheckDead();
+		return;
+	}
 	wl_display_dispatch_pending(s.display);
+	if (LinuxWlCheckDead())
+		return;
 }
 
 // ---------------------------------------------------------------------------
