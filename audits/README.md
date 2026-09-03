@@ -217,7 +217,13 @@ Closures since check0901 (evidence in the linked oracles):
   reconnect as generation 2 and deliver input through both generations:
   [run_m7_wayland_restart_oracle.sh](../tests/oracle/run_m7_wayland_restart_oracle.sh).
   `HotkeyBackendGet()` exposes `wayland_generation`/`wayland_active` and
-  `--diag` prints the generation.
+  `--diag` prints the generation. The inputd/evdev restart domain of M7 is
+  already gated by the M2 health oracle's broker-kill/reconnect scenario
+  (same-PID reconnect, generation/authority bump, replay/suppress recovery)
+  and the P0-1 replay fail-open oracle. The remaining M7 item is the
+  §11.3 deterministic fault schedule inside the soak (D-Bus service
+  rotation, clipboard owner churn, compositor restart), tracked as the
+  next recovery slice.
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),
