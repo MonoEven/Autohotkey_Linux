@@ -545,12 +545,18 @@ void LinuxImeShutdown()
 
 void LinuxImeDispatch()
 {
-	// Refresh the framework probe on the dispatch context only (bounded,
-	// throttled to once per 2 s — see RefreshFrameworkCache).
+	// Refresh the framework probe on the dispatch context only, and only when
+	// the IME character stream is actually relevant (capture active or an
+	// existing listener).  X11-only sessions skip it entirely: the blocking
+	// NameHasOwner round trips must never stall the main loop on hosts that
+	// do not use an IME (check_detail0901 §10.2).
 	unsigned long now = GetTickCount();
 	unsigned long last = sFrameworkProbeTickMs.load(std::memory_order_relaxed);
-	if (!last || now - last >= 2000)
-		RefreshFrameworkCache();
+	if (LinuxCaptureActive() || sImeBus)
+	{
+		if (!last || now - last >= 2000)
+			RefreshFrameworkCache();
+	}
 	if (!sImeBus)
 	{
 		if (LinuxCaptureActive())
