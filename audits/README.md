@@ -258,6 +258,17 @@ Closures since check0901 (evidence in the linked oracles):
   designed).  The suspicion is the preedit freeze path in the hotstring
   character feed; the investigation is self-contained on the test-harness
   side and does not block any other milestone.
+- `P2-10` corpus oracle gated: [run_p2_10_unicode_oracle.sh](../tests/oracle/
+  run_p2_10_unicode_oracle.sh) drives the full §22 corpus over real
+  Fcitx5 D-Bus signals and asserts (a) each commit arrives as a whole text
+  transaction, (b) the family-ZWJ grapheme fires a hotstring exactly once
+  as a single matching unit, (c) the event stream carries every code point
+  (BMP values plus supplementary-plane surrogate halves), and (d) the
+  invalid-UTF-8 entry is rejected at the D-Bus marshal layer.  Known
+  follow-up bug: calling ImeStatus() from a hotstring callback thread still
+  crashes (the engine snapshot fix removed one dangling pointer, but a
+  second same-thread crash remains); scripts must read ImeStatus from the
+  main thread or a timer until that is fixed.
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),
