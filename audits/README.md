@@ -246,29 +246,31 @@ Closures since check0901 (evidence in the linked oracles):
   event trace; (c) IME shared state is mutex-protected (dispatch thread
   writes, hotstring/InputHook callback threads read concurrently); (d) the
   blocking framework probe (NameHasOwner round trips) moved off script
-  threads into a throttled dispatch-context cache.  A corpus-driven
+  threads into a throttled dispatch-context cache.  The corpus-driven
   D-Bus protocol oracle (combining marks, Devanagari/Arabic, skin tone,
   variation selector, family ZWJ as one hotstring unit, flag regional
   indicators, multi-char commits, supplementary plane, invalid UTF-8) is
-  in progress: the event-stream/hotstring-unit assertions pass against a
-  real Fcitx5-protocol producer, and the remaining work is isolating a
-  same-session teardown in which a continuous UpdateFormattedPreedit signal
-  stream from the producer correlates with the runtime exiting silently
-  (no producer: the runtime's Report timer and clean exit work as
-  designed).  The suspicion is the preedit freeze path in the hotstring
-  character feed; the investigation is self-contained on the test-harness
-  side and does not block any other milestone.
+  now gated and stable (see below); the earlier intermittent-failure
+  suspicion is resolved as an oracle-side startup race.
 - `P2-10` corpus oracle gated: [run_p2_10_unicode_oracle.sh](../tests/oracle/
   run_p2_10_unicode_oracle.sh) drives the full §22 corpus over real
   Fcitx5 D-Bus signals and asserts (a) each commit arrives as a whole text
   transaction, (b) the family-ZWJ grapheme fires a hotstring exactly once
   as a single matching unit, (c) the event stream carries every code point
   (BMP values plus supplementary-plane surrogate halves), and (d) the
-  invalid-UTF-8 entry is rejected at the D-Bus marshal layer.  Known
-  follow-up bug: calling ImeStatus() from a hotstring callback thread still
-  crashes (the engine snapshot fix removed one dangling pointer, but a
-  second same-thread crash remains); scripts must read ImeStatus from the
-  main thread or a timer until that is fixed.
+  invalid-UTF-8 entry is rejected at the D-Bus marshal layer.
+  The earlier "silent runtime exit under a continuous preedit stream" was
+  diagnosed as an oracle-side startup race, not a runtime defect: the
+  producer auto-sends corpus entry 0 about one second after start, and a
+  loaded runner can boot the interpreter slower than that, so the first
+  commit raced the eavesdrop match registration.  The oracle now SIGSTOPs
+  the producer until the script logs `ready` after its listener-establishing
+  `ImeStatus()` call, then SIGCONTs it; three consecutive full-corpus runs
+  plus a mid-stream SIGKILL teardown stress pass with no stuck bus
+  daemons.  Remaining follow-up: calling ImeStatus() from a hotstring
+  callback thread still crashes (the engine snapshot fix removed one
+  dangling pointer, but a second same-thread crash remains); scripts must
+  read ImeStatus from the main thread or a timer until that is fixed.
 - `P2-6` rich `ClipboardAll` (check_detail0901 §18) — snapshot model landed
   and independently verified.  The Linux clipboard layer persists a
   versioned `AHKCB1` snapshot (MIME name, byte length, FNV-1a checksum,
