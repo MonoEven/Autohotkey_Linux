@@ -301,7 +301,7 @@ protected:
 		void ReturnMove(ResultToken &result);
 		void Free();
 	
-		inline void ToToken(ExprTokenType &aToken); // Used when we want the value as is, in a token.  Does not AddRef() or copy strings.
+		void ToToken(ExprTokenType &aToken); // Used when we want the value as is, in a token.  Does not AddRef() or copy strings.
 	};
 
 	struct FieldType : Variant

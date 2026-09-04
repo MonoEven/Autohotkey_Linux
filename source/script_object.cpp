@@ -1812,6 +1812,9 @@ void Object::Variant::ReturnMove(ResultToken &result)
 }
 
 // Used when we want the value as is, in a token.  Does not AddRef() or copy strings.
+// The definition must not repeat "inline": script.h declares the member without
+// it, and a mismatched inline out-of-class definition lets GCC discard the
+// symbol at -O0/-O1, breaking Debug/ASan links from other TUs.
 void Object::Variant::ToToken(ExprTokenType &aToken)
 {
 	switch (aToken.symbol = symbol) // Assign.

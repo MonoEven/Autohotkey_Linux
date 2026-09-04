@@ -90,7 +90,9 @@ static int add_multi_rep(const char *spec)
 
     if (!spec || g_multi_count >= MULTI_MAX)
         return 0;
-    eq = strchr(spec, '=');
+    eq = strrchr(spec, '='); /* Split at the LAST '=': MIME type names may
+                              * themselves carry parameters (charset=utf-8),
+                              * while our data side is always plain hex. */
     if (!eq || eq == spec)
         return 0;
     name_len = (size_t)(eq - spec);

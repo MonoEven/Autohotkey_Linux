@@ -4971,8 +4971,12 @@ inline LPTSTR Script::ParseActionType(LPTSTR aBufTarget, LPTSTR aBufSource, bool
 
 
 
-inline ActionTypeType Script::ConvertActionType(LPCTSTR aActionTypeString)
-// inline since it's called so often, but don't keep it in the .h due to #include issues.
+ActionTypeType Script::ConvertActionType(LPCTSTR aActionTypeString)
+// Kept out of the .h due to #include issues.  Note: this must NOT be marked
+// inline — the in-class declaration in script.h is not inline, and an
+// out-of-class "inline" definition of a non-inline member makes the symbol
+// discardable, breaking Debug/ASan builds that call it from other TUs
+// (var.cpp ValidateName).
 {
 	// For the loop's index:
 	// Use an int rather than ActionTypeType since it's sure to be large enough to go beyond
