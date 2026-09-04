@@ -76,7 +76,7 @@ Every row has Linux-executed evidence or an explicit interaction/safety boundary
 | [DirDelete](generated/DirDelete.md) | `headless` | `verified` | [tests/doccheck/assert_file.ahk:12](../tests/doccheck/assert_file.ahk#L12) | yes |
 | [DirExist](generated/DirExist.md) | `headless` | `verified` | [tests/doccheck/assert_file.ahk:7](../tests/doccheck/assert_file.ahk#L7) | yes |
 | [DirMove](generated/DirMove.md) | `headless` | `verified` | [tests/doccheck/assert_file.ahk:37](../tests/doccheck/assert_file.ahk#L37) | yes |
-| [DirSelect](generated/DirSelect.md) | `x11` | `verified` | [tests/doccheck/assert_dialog.ahk:54](../tests/doccheck/assert_dialog.ahk#L54) | yes |
+| [DirSelect](generated/DirSelect.md) | `x11` | `verified` | [tests/doccheck/assert_dialog.ahk:56](../tests/doccheck/assert_dialog.ahk#L56) | yes |
 | [DllCall](generated/DllCall.md) | `headless` | `verified` | [tests/doccheck/assert_dllcall.ahk:6](../tests/doccheck/assert_dllcall.ahk#L6) | yes |
 | [Download](generated/Download.md) | `headless` | `verified` | [tests/doccheck/assert_sys.ahk:297](../tests/doccheck/assert_sys.ahk#L297) | yes |
 | [DriveEject](generated/DriveEject.md) | `headless` | `verified` | [tests/doccheck/assert_sys.ahk:328](../tests/doccheck/assert_sys.ahk#L328) | yes |
@@ -106,7 +106,7 @@ Every row has Linux-executed evidence or an explicit interaction/safety boundary
 | [EnvSet](generated/EnvSet.md) | `x11` | `verified` | [tests/doccheck/assert_ctrl.ahk:101](../tests/doccheck/assert_ctrl.ahk#L101) | yes |
 | [Error](generated/Error.md) | `headless` | `verified` | [tests/doccheck/assert_statements.ahk:108](../tests/doccheck/assert_statements.ahk#L108) | no |
 | [Exit](generated/Exit.md) | `lifecycle` | `lifecycle` | [examples/lifecycle/exit_current_thread.ahk:5](../examples/lifecycle/exit_current_thread.ahk#L5) | yes |
-| [ExitApp](generated/ExitApp.md) | `x11` | `verified` | [tests/doccheck/assert_dialog.ahk:67](../tests/doccheck/assert_dialog.ahk#L67) | yes |
+| [ExitApp](generated/ExitApp.md) | `x11` | `verified` | [tests/doccheck/assert_dialog.ahk:69](../tests/doccheck/assert_dialog.ahk#L69) | yes |
 | [Exp](generated/Exp.md) | `headless` | `verified` | [tests/doccheck/assert_math.ahk:20](../tests/doccheck/assert_math.ahk#L20) | no |
 | [FileAppend](generated/FileAppend.md) | `x11` | `verified` | [tests/doccheck/assert_clipboard.ahk:16](../tests/doccheck/assert_clipboard.ahk#L16) | yes |
 | [FileCopy](generated/FileCopy.md) | `headless` | `verified` | [tests/doccheck/assert_sys.ahk:211](../tests/doccheck/assert_sys.ahk#L211) | yes |
@@ -125,7 +125,7 @@ Every row has Linux-executed evidence or an explicit interaction/safety boundary
 | [FileRead](generated/FileRead.md) | `x11` | `verified` | [tests/doccheck/assert_clipboard.ahk:31](../tests/doccheck/assert_clipboard.ahk#L31) | yes |
 | [FileRecycle](generated/FileRecycle.md) | `headless` | `verified` | [tests/doccheck/assert_sys.ahk:268](../tests/doccheck/assert_sys.ahk#L268) | yes |
 | [FileRecycleEmpty](generated/FileRecycleEmpty.md) | `headless` | `verified` | [tests/doccheck/assert_sys.ahk:272](../tests/doccheck/assert_sys.ahk#L272) | yes |
-| [FileSelect](generated/FileSelect.md) | `x11` | `verified` | [tests/doccheck/assert_dialog.ahk:16](../tests/doccheck/assert_dialog.ahk#L16) | yes |
+| [FileSelect](generated/FileSelect.md) | `x11` | `verified` | [tests/doccheck/assert_dialog.ahk:18](../tests/doccheck/assert_dialog.ahk#L18) | yes |
 | [FileSetAttrib](generated/FileSetAttrib.md) | `headless` | `verified` | [tests/doccheck/assert_file.ahk:64](../tests/doccheck/assert_file.ahk#L64) | yes |
 | [FileSetTime](generated/FileSetTime.md) | `headless` | `verified` | [tests/doccheck/assert_file.ahk:54](../tests/doccheck/assert_file.ahk#L54) | yes |
 | [Float](generated/Float.md) | `x11` | `verified` | [tests/doccheck/assert_misc_cov.ahk:45](../tests/doccheck/assert_misc_cov.ahk#L45) | no |

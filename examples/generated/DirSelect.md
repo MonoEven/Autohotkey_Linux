@@ -3,7 +3,7 @@
 - Linux status: `IMPL` (P1)
 - Example kind: `verified`
 - Environment profile: `x11`
-- Verified source: [tests/doccheck/assert_dialog.ahk:54](../../tests/doccheck/assert_dialog.ahk#L54)
+- Verified source: [tests/doccheck/assert_dialog.ahk:56](../../tests/doccheck/assert_dialog.ahk#L56)
 - Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
 
 Displays a standard dialog  that allows the user to select a folder.

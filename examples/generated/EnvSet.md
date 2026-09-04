@@ -8,7 +8,7 @@
 
 ## Additional verified environments
 
-- `x11`: [tests/doccheck/assert_dialog.ahk:13](../../tests/doccheck/assert_dialog.ahk#L13)
+- `x11`: [tests/doccheck/assert_dialog.ahk:15](../../tests/doccheck/assert_dialog.ahk#L15)
 - `x11`: [tests/doccheck/assert_edit.ahk:107](../../tests/doccheck/assert_edit.ahk#L107)
 - `headless`: [tests/doccheck/assert_general.ahk:5](../../tests/doccheck/assert_general.ahk#L5)
 - `headless`: [tests/doccheck/assert_registry.ahk:7](../../tests/doccheck/assert_registry.ahk#L7)

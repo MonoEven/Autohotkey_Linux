@@ -3,7 +3,7 @@
 - Linux status: `IMPL` (P1)
 - Example kind: `verified`
 - Environment profile: `x11`
-- Verified source: [tests/doccheck/assert_dialog.ahk:16](../../tests/doccheck/assert_dialog.ahk#L16)
+- Verified source: [tests/doccheck/assert_dialog.ahk:18](../../tests/doccheck/assert_dialog.ahk#L18)
 - Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
 
 Displays a standard dialog  that allows the user to open or save file(s).

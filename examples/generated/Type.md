@@ -8,7 +8,7 @@
 
 ## Additional verified environments
 
-- `x11`: [tests/doccheck/assert_dialog.ahk:24](../../tests/doccheck/assert_dialog.ahk#L24)
+- `x11`: [tests/doccheck/assert_dialog.ahk:26](../../tests/doccheck/assert_dialog.ahk#L26)
 - `x11`: [tests/doccheck/assert_gui.ahk:94](../../tests/doccheck/assert_gui.ahk#L94)
 - `desktop-session`: [tests/doccheck/assert_ime.ahk:30](../../tests/doccheck/assert_ime.ahk#L30)
 - `headless`: [tests/doccheck/assert_math.ahk:44](../../tests/doccheck/assert_math.ahk#L44)

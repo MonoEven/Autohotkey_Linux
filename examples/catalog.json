@@ -2257,12 +2257,12 @@
       "verified_source": {
         "excerpt": "\n; --- DirSelect: returns the chosen folder (pre-filled from StartingFolder) ---\nLog(\"ds_path=\" (DirSelect(\"/tmp/ahk_dc_dir\") = \"/tmp/ahk_dc_dir\" ? 1 : 0))\n; \"root*initial\": the part after '*' is the initial folder (docs).\nLog(\"ds_initial=\" (DirSelect(\"/rootpart*/tmp/ahk_dc_initial\") = \"/tmp/ahk_dc_initial\" ? 1 : 0))\n; Options: 0 disables the create-new-folder button (accepted, no effect on",
         "file": "tests/doccheck/assert_dialog.ahk",
-        "line": 54
+        "line": 56
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_dialog.ahk",
-          "line": 54,
+          "line": 56,
           "profile": "x11"
         }
       ]
@@ -3065,7 +3065,7 @@
         },
         {
           "file": "tests/doccheck/assert_dialog.ahk",
-          "line": 64,
+          "line": 66,
           "profile": "x11"
         },
         {
@@ -3111,7 +3111,7 @@
         },
         {
           "file": "tests/doccheck/assert_dialog.ahk",
-          "line": 13,
+          "line": 15,
           "profile": "x11"
         },
         {
@@ -3224,12 +3224,12 @@
       "verified_source": {
         "excerpt": "\n; --- Cleanup. ---\nExitApp(0)",
         "file": "tests/doccheck/assert_dialog.ahk",
-        "line": 67
+        "line": 69
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_dialog.ahk",
-          "line": 67,
+          "line": 69,
           "profile": "x11"
         },
         {
@@ -4339,12 +4339,12 @@
       "verified_source": {
         "excerpt": "\n; --- FileSelect: returns the chosen path (pre-filled from RootDir\\Filename) ---\nLog(\"fs_path=\" (FileSelect(\"\", \"/tmp/ahk_dc_pick.txt\") = \"/tmp/ahk_dc_pick.txt\" ? 1 : 0))\n; An existing directory as RootDir is the initial directory (docs).\nLog(\"fs_dir=\" (FileSelect(0, \"/tmp\") = \"/tmp\" ? 1 : 0))\n; Numeric option bits (1 = FileMustExist, docs) are accepted; the flags have",
         "file": "tests/doccheck/assert_dialog.ahk",
-        "line": 16
+        "line": 18
       },
       "verified_sources": [
         {
           "file": "tests/doccheck/assert_dialog.ahk",
-          "line": 16,
+          "line": 18,
           "profile": "x11"
         }
       ]
@@ -11180,7 +11180,7 @@
         },
         {
           "file": "tests/doccheck/assert_dialog.ahk",
-          "line": 24,
+          "line": 26,
           "profile": "x11"
         },
         {
