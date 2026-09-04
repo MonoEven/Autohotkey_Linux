@@ -55,6 +55,7 @@ ZwjHit(*) {
 }
 s := ImeStatus()
 Log("start commits=" s.Commits)
+Log("ready")
 SetTimer(Heartbeat, 1000)
 SetTimer(Report, -12000)
 Heartbeat() {
@@ -101,6 +102,17 @@ AHK_IME_DUMP=/tmp/fcitx5_ime_dump AHK_INPUT_EVENT_TRACE=/tmp/fcitx5_ime_trace \
 AHK_PID=$!
 for _ in $(seq 1 200); do test -f /tmp/p2_10_result && break; sleep .02; done
 test -f /tmp/p2_10_result || { echo P2_10_FAIL no-start; cat /tmp/p2_10_ahk.log; exit 11; }
+# The runtime must have its eavesdrop match registered BEFORE the first corpus
+# commit: the producer sends idx0 ~1s after start, and a busy runner can boot
+# the interpreter slower than that (commit0 was lost under load).  Wait until
+# the AHK script reached the ImeStatus() call (which also starts the listener
+# and logs "ready") before the producer's first second elapses... the probe
+# cannot be paused, so instead require the first corpus commit to be sent
+# AFTER the listener confirmed registration: hold the producer with SIGSTOP
+# until now.
+kill -STOP "$PRODUCER_PID" 2>/dev/null
+for _ in $(seq 1 300); do grep -q '^ready$' /tmp/p2_10_result 2>/dev/null && break; sleep .02; done
+kill -CONT "$PRODUCER_PID" 2>/dev/null
 # The probe auto-sends the corpus (1 entry/second); the AHK script's Report
 # timer writes the final line and exits by itself.  Give it ample time.
 for _ in $(seq 1 400); do
