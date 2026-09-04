@@ -40,6 +40,7 @@
 - `wayland`: [tests/doccheck/assert_wayland.ahk:28](../../tests/doccheck/assert_wayland.ahk#L28)
 - `x11`: [tests/doccheck/assert_win.ahk:9](../../tests/doccheck/assert_win.ahk#L9)
 - `x11`: [tests/doccheck/assert_misc_cov.ahk:30](../../tests/doccheck/assert_misc_cov.ahk#L30)
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:32](../../tests/doccheck/assert_clipboard_all.ahk#L32)
 
 Deletes one or more files permanently.
 

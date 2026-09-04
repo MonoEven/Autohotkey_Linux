@@ -30,6 +30,7 @@
 - `wayland`: [tests/doccheck/assert_wayland.ahk:40](../../tests/doccheck/assert_wayland.ahk#L40)
 - `x11`: [tests/doccheck/assert_win.ahk:23](../../tests/doccheck/assert_win.ahk#L23)
 - `x11`: [tests/doccheck/assert_misc_cov.ahk:237](../../tests/doccheck/assert_misc_cov.ahk#L237)
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:62](../../tests/doccheck/assert_clipboard_all.ahk#L62)
 
 Waits the specified amount of time before continuing.
 

@@ -6,6 +6,10 @@
 - Verified source: [tests/doccheck/assert_misc_cov.ahk:166](../../tests/doccheck/assert_misc_cov.ahk#L166)
 - Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
 
+## Additional verified environments
+
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:164](../../tests/doccheck/assert_clipboard_all.ahk#L164)
+
 Waits for all matching processes to close.
 
 ## Syntax

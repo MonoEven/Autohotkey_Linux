@@ -6,6 +6,10 @@
 - Verified source: [tests/doccheck/assert_interop.ahk:8](../../tests/doccheck/assert_interop.ahk#L8)
 - Profile command: `bash tests/doccheck/run_check.sh "$BIN"`
 
+## Additional verified environments
+
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:90](../../tests/doccheck/assert_clipboard_all.ahk#L90)
+
 Returns the binary number stored at the specified address+offset.
 
 ## Syntax

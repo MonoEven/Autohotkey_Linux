@@ -3,8 +3,12 @@
 - Linux status: `IMPL` (P1)
 - Example kind: `verified`
 - Environment profile: `x11`
-- Verified source: [tests/doccheck/assert_misc_cov.ahk:222](../../tests/doccheck/assert_misc_cov.ahk#L222)
+- Verified source: [tests/doccheck/assert_clipboard_all.ahk:129](../../tests/doccheck/assert_clipboard_all.ahk#L129)
 - Profile command: `bash tests/doccheck/run_check.sh --xvfb "$BIN"`
+
+## Additional verified environments
+
+- `x11`: [tests/doccheck/assert_misc_cov.ahk:222](../../tests/doccheck/assert_misc_cov.ahk#L222)
 
 Creates an object containing everything on the clipboard (such as pictures and formatting).
 
@@ -19,12 +23,12 @@ ClipSaved := ClipboardAll(Data, Size)
 This excerpt is executed by the profile command above; surrounding setup and assertions remain in the linked source.
 
 ````ahk
-ClipAll() {
-    b := Buffer(8, 0x41)
-    ca := ClipboardAll(b, 8)
-    return Type(ca)
+    NumPut("UInt", 0x08000001, raw, 15) ; declared data length
+    NumPut("UInt", 0, raw, 19)          ; checksum (never reached)
+    return ClipboardAll(raw, raw.Size)
 }
-Check("clipboardall", ClipAll)
+
+; Start the external owner asynchronously.  Waiting is only for its explicit
 ````
 
 ## Upstream reference example

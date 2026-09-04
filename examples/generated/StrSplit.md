@@ -13,6 +13,7 @@
 - `x11`: [tests/doccheck/assert_layout.ahk:28](../../tests/doccheck/assert_layout.ahk#L28)
 - `x11`: [tests/doccheck/assert_repeat.ahk:35](../../tests/doccheck/assert_repeat.ahk#L35)
 - `headless`: [tests/doccheck/assert_string.ahk:34](../../tests/doccheck/assert_string.ahk#L34)
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:69](../../tests/doccheck/assert_clipboard_all.ahk#L69)
 
 Separates a string into an array of substrings using the specified delimiters.
 

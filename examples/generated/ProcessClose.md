@@ -6,6 +6,10 @@
 - Verified source: [tests/doccheck/assert_general.ahk:38](../../tests/doccheck/assert_general.ahk#L38)
 - Profile command: `bash tests/doccheck/run_check.sh "$BIN"`
 
+## Additional verified environments
+
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:167](../../tests/doccheck/assert_clipboard_all.ahk#L167)
+
 Forces the first matching process to close.
 
 ## Syntax

@@ -9,6 +9,7 @@
 ## Additional verified environments
 
 - `headless`: [tests/doccheck/assert_string.ahk:25](../../tests/doccheck/assert_string.ahk#L25)
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:49](../../tests/doccheck/assert_clipboard_all.ahk#L49)
 
 ## Linux-verified example excerpt
 

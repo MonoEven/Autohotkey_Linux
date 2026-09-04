@@ -43,9 +43,10 @@ X11_SUITES = {
     "assert_hotkey_lr.ahk", "assert_unicode_lease.ahk",
     "assert_hotkey_pt.ahk", "assert_clipboard.ahk", "assert_repeat.ahk",
     "assert_clipboard_slow.ahk", "assert_clipboard_change.ahk",
-    "assert_input.ahk", "assert_dialog.ahk", "assert_layout.ahk",
-    "assert_misc_cov.ahk", "assert_hotstring.ahk", "assert_inputhook.ahk",
-    "assert_hotkey.ahk", "assert_edit.ahk", "assert_ctrl.ahk",
+    "assert_clipboard_all.ahk", "assert_input.ahk", "assert_dialog.ahk",
+    "assert_layout.ahk", "assert_misc_cov.ahk", "assert_hotstring.ahk",
+    "assert_inputhook.ahk", "assert_hotkey.ahk", "assert_edit.ahk",
+    "assert_ctrl.ahk",
 }
 
 CURATED = {
@@ -135,7 +136,23 @@ def call_candidates(name: str) -> list[tuple[Path, int]]:
                 continue
             if pattern.search(line):
                 found.append((path, line_no))
-    found.sort(key=lambda item: (item[0].name == "assert_misc_cov.ahk", item[0].name, item[1]))
+    # Keep primary examples stable when a new focused suite happens to call
+    # many helper BIFs.  ClipboardAll itself should use the new byte-exact
+    # oracle; incidental Buffer/File*/Process* calls in that oracle remain
+    # additional evidence and must not steal their existing primary example.
+    def candidate_priority(item: tuple[Path, int]) -> tuple[int, str, int]:
+        base = item[0].name
+        if name == "ClipboardAll" and base == "assert_clipboard_all.ahk":
+            rank = 0
+        elif base == "assert_clipboard_all.ahk":
+            rank = 2
+        elif base == "assert_misc_cov.ahk":
+            rank = 1
+        else:
+            rank = 0
+        return rank, base, item[1]
+
+    found.sort(key=candidate_priority)
     return found
 
 

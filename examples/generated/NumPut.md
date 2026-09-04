@@ -9,6 +9,7 @@
 ## Additional verified environments
 
 - `headless`: [tests/doccheck/assert_registry.ahk:75](../../tests/doccheck/assert_registry.ahk#L75)
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:90](../../tests/doccheck/assert_clipboard_all.ahk#L90)
 
 Stores one or more numbers in binary format at the specified address+offset.
 

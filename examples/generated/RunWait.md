@@ -22,6 +22,7 @@
 - `x11`: [tests/doccheck/assert_unicode_lease.ahk:62](../../tests/doccheck/assert_unicode_lease.ahk#L62)
 - `wayland`: [tests/doccheck/assert_wayland.ahk:80](../../tests/doccheck/assert_wayland.ahk#L80)
 - `x11`: [tests/doccheck/assert_misc_cov.ahk:251](../../tests/doccheck/assert_misc_cov.ahk#L251)
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:43](../../tests/doccheck/assert_clipboard_all.ahk#L43)
 
 ## Linux-verified example excerpt
 

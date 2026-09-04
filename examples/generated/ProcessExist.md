@@ -10,6 +10,7 @@
 
 - `headless`: [tests/doccheck/assert_sys.ahk:155](../../tests/doccheck/assert_sys.ahk#L155)
 - `x11`: [tests/doccheck/assert_misc_cov.ahk:164](../../tests/doccheck/assert_misc_cov.ahk#L164)
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:60](../../tests/doccheck/assert_clipboard_all.ahk#L60)
 
 Checks if the specified process exists.
 

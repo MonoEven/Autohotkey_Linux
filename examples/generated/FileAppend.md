@@ -38,6 +38,7 @@
 - `wayland`: [tests/doccheck/assert_wayland.ahk:29](../../tests/doccheck/assert_wayland.ahk#L29)
 - `x11`: [tests/doccheck/assert_win.ahk:10](../../tests/doccheck/assert_win.ahk#L10)
 - `x11`: [tests/doccheck/assert_misc_cov.ahk:31](../../tests/doccheck/assert_misc_cov.ahk#L31)
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:33](../../tests/doccheck/assert_clipboard_all.ahk#L33)
 
 Writes text or binary data to the end of a file (first creating the file, if necessary).
 

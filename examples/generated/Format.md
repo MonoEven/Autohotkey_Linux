@@ -6,6 +6,10 @@
 - Verified source: [tests/doccheck/assert_string.ahk:37](../../tests/doccheck/assert_string.ahk#L37)
 - Profile command: `bash tests/doccheck/run_check.sh "$BIN"`
 
+## Additional verified environments
+
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:137](../../tests/doccheck/assert_clipboard_all.ahk#L137)
+
 Formats a variable number of input values according to a format string.
 
 ## Syntax

@@ -25,6 +25,7 @@
 - `headless`: [tests/doccheck/assert_sys.ahk:141](../../tests/doccheck/assert_sys.ahk#L141)
 - `x11`: [tests/doccheck/assert_unicode_lease.ahk:54](../../tests/doccheck/assert_unicode_lease.ahk#L54)
 - `wayland`: [tests/doccheck/assert_wayland.ahk:82](../../tests/doccheck/assert_wayland.ahk#L82)
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:49](../../tests/doccheck/assert_clipboard_all.ahk#L49)
 
 Retrieves the contents of a file.
 

@@ -27,6 +27,7 @@
 - `x11`: [tests/doccheck/assert_unicode_lease.ahk:16](../../tests/doccheck/assert_unicode_lease.ahk#L16)
 - `x11`: [tests/doccheck/assert_win.ahk:13](../../tests/doccheck/assert_win.ahk#L13)
 - `x11`: [tests/doccheck/assert_misc_cov.ahk:233](../../tests/doccheck/assert_misc_cov.ahk#L233)
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:146](../../tests/doccheck/assert_clipboard_all.ahk#L146)
 
 Runs an external program. Unlike Run, RunWait will wait until the program finishes before continuing.
 

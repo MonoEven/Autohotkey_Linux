@@ -13,6 +13,7 @@
 - `headless`: [tests/doccheck/assert_registry.ahk:74](../../tests/doccheck/assert_registry.ahk#L74)
 - `headless`: [tests/doccheck/assert_statements.ahk:104](../../tests/doccheck/assert_statements.ahk#L104)
 - `x11`: [tests/doccheck/assert_misc_cov.ahk:92](../../tests/doccheck/assert_misc_cov.ahk#L92)
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:88](../../tests/doccheck/assert_clipboard_all.ahk#L88)
 
 ## Syntax
 

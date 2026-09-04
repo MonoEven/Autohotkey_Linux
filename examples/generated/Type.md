@@ -17,6 +17,7 @@
 - `host-tools`: [tests/doccheck/assert_sound_etc.ahk:49](../../tests/doccheck/assert_sound_etc.ahk#L49)
 - `headless`: [tests/doccheck/assert_sys.ahk:194](../../tests/doccheck/assert_sys.ahk#L194)
 - `x11`: [tests/doccheck/assert_misc_cov.ahk:46](../../tests/doccheck/assert_misc_cov.ahk#L46)
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:155](../../tests/doccheck/assert_clipboard_all.ahk#L155)
 
 Returns the class name of a value.
 

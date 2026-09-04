@@ -9,6 +9,7 @@
 ## Additional verified environments
 
 - `headless`: [tests/doccheck/assert_string.ahk:42](../../tests/doccheck/assert_string.ahk#L42)
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:126](../../tests/doccheck/assert_clipboard_all.ahk#L126)
 
 Returns the ordinal value (numeric character code) of the first character in the specified string.
 

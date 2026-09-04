@@ -17,6 +17,7 @@
 - `headless`: [tests/doccheck/assert_sys.ahk:224](../../tests/doccheck/assert_sys.ahk#L224)
 - `x11`: [tests/doccheck/assert_unicode_lease.ahk:32](../../tests/doccheck/assert_unicode_lease.ahk#L32)
 - `wayland`: [tests/doccheck/assert_wayland.ahk:41](../../tests/doccheck/assert_wayland.ahk#L41)
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:49](../../tests/doccheck/assert_clipboard_all.ahk#L49)
 
 Checks for the existence of a file or folder and returns its attributes.
 

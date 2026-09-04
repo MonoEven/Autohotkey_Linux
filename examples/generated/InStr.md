@@ -29,6 +29,7 @@
 - `headless`: [tests/doccheck/assert_string.ahk:12](../../tests/doccheck/assert_string.ahk#L12)
 - `x11`: [tests/doccheck/assert_unicode_lease.ahk:55](../../tests/doccheck/assert_unicode_lease.ahk#L55)
 - `wayland`: [tests/doccheck/assert_wayland.ahk:82](../../tests/doccheck/assert_wayland.ahk#L82)
+- `x11`: [tests/doccheck/assert_clipboard_all.ahk:56](../../tests/doccheck/assert_clipboard_all.ahk#L56)
 
 Searches for a given occurrence of a string, from the left or the right.
 

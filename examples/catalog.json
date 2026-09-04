@@ -255,6 +255,11 @@
           "file": "tests/doccheck/assert_misc_cov.ahk",
           "line": 92,
           "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 88,
+          "profile": "x11"
         }
       ]
     },
@@ -522,11 +527,16 @@
       "status": "IMPL",
       "syntax": "ClipSaved := ClipboardAll(Data, Size)",
       "verified_source": {
-        "excerpt": "ClipAll() {\n    b := Buffer(8, 0x41)\n    ca := ClipboardAll(b, 8)\n    return Type(ca)\n}\nCheck(\"clipboardall\", ClipAll)",
-        "file": "tests/doccheck/assert_misc_cov.ahk",
-        "line": 222
+        "excerpt": "    NumPut(\"UInt\", 0x08000001, raw, 15) ; declared data length\n    NumPut(\"UInt\", 0, raw, 19)          ; checksum (never reached)\n    return ClipboardAll(raw, raw.Size)\n}\n\n; Start the external owner asynchronously.  Waiting is only for its explicit",
+        "file": "tests/doccheck/assert_clipboard_all.ahk",
+        "line": 129
       },
       "verified_sources": [
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 129,
+          "profile": "x11"
+        },
         {
           "file": "tests/doccheck/assert_misc_cov.ahk",
           "line": 222,
@@ -3479,6 +3489,11 @@
           "file": "tests/doccheck/assert_misc_cov.ahk",
           "line": 31,
           "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 33,
+          "profile": "x11"
         }
       ]
     },
@@ -3732,6 +3747,11 @@
           "file": "tests/doccheck/assert_misc_cov.ahk",
           "line": 30,
           "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 32,
+          "profile": "x11"
         }
       ]
     },
@@ -3839,6 +3859,11 @@
           "file": "tests/doccheck/assert_wayland.ahk",
           "line": 41,
           "profile": "wayland"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 49,
+          "profile": "x11"
         }
       ]
     },
@@ -4253,6 +4278,11 @@
           "file": "tests/doccheck/assert_wayland.ahk",
           "line": 82,
           "profile": "wayland"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 49,
+          "profile": "x11"
         }
       ]
     },
@@ -4497,6 +4527,11 @@
           "file": "tests/doccheck/assert_string.ahk",
           "line": 37,
           "profile": "headless"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 137,
+          "profile": "x11"
         }
       ]
     },
@@ -5669,6 +5704,11 @@
           "file": "tests/doccheck/assert_wayland.ahk",
           "line": 82,
           "profile": "wayland"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 56,
+          "profile": "x11"
         }
       ]
     },
@@ -7289,6 +7329,11 @@
           "file": "tests/doccheck/assert_interop.ahk",
           "line": 8,
           "profile": "headless"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 90,
+          "profile": "x11"
         }
       ]
     },
@@ -7325,6 +7370,11 @@
           "file": "tests/doccheck/assert_registry.ahk",
           "line": 75,
           "profile": "headless"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 90,
+          "profile": "x11"
         }
       ]
     },
@@ -7943,6 +7993,11 @@
           "file": "tests/doccheck/assert_string.ahk",
           "line": 42,
           "profile": "headless"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 126,
+          "profile": "x11"
         }
       ]
     },
@@ -8165,6 +8220,11 @@
           "file": "tests/doccheck/assert_general.ahk",
           "line": 38,
           "profile": "headless"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 167,
+          "profile": "x11"
         }
       ]
     },
@@ -8205,6 +8265,11 @@
         {
           "file": "tests/doccheck/assert_misc_cov.ahk",
           "line": 164,
+          "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 60,
           "profile": "x11"
         }
       ]
@@ -8388,6 +8453,11 @@
           "file": "tests/doccheck/assert_misc_cov.ahk",
           "line": 166,
           "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 164,
+          "profile": "x11"
         }
       ]
     },
@@ -8420,6 +8490,11 @@
           "file": "tests/doccheck/assert_string.ahk",
           "line": 25,
           "profile": "headless"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 49,
+          "profile": "x11"
         }
       ]
     },
@@ -8867,6 +8942,11 @@
           "file": "tests/doccheck/assert_misc_cov.ahk",
           "line": 233,
           "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 146,
+          "profile": "x11"
         }
       ]
     },
@@ -8994,6 +9074,11 @@
         {
           "file": "tests/doccheck/assert_misc_cov.ahk",
           "line": 251,
+          "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 43,
           "profile": "x11"
         }
       ]
@@ -9992,6 +10077,11 @@
           "file": "tests/doccheck/assert_misc_cov.ahk",
           "line": 237,
           "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 62,
+          "profile": "x11"
         }
       ]
     },
@@ -10699,6 +10789,11 @@
           "file": "tests/doccheck/assert_string.ahk",
           "line": 34,
           "profile": "headless"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 69,
+          "profile": "x11"
         }
       ]
     },
@@ -11221,6 +11316,11 @@
         {
           "file": "tests/doccheck/assert_misc_cov.ahk",
           "line": 46,
+          "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_all.ahk",
+          "line": 155,
           "profile": "x11"
         }
       ]
@@ -12914,7 +13014,7 @@
     "verified-error": 6
   },
   "mapped_count": 370,
-  "multi_environment_entries": 51,
+  "multi_environment_entries": 56,
   "official_reference_examples": 230,
   "profile_evidence": {
     "dbus": 9,
@@ -12925,7 +13025,7 @@
     "lifecycle": 2,
     "safety-boundary": 1,
     "wayland": 18,
-    "x11": 233
+    "x11": 238
   },
   "profiles": {
     "dbus": 7,
@@ -12939,5 +13039,5 @@
   },
   "schema": 1,
   "source": "tests/doccheck/worklist.tsv",
-  "verified_source_links": 716
+  "verified_source_links": 736
 }

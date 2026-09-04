@@ -1,7 +1,7 @@
 # Complete Function Example Coverage
 
 Generated from `tests/doccheck/worklist.tsv`: **370/370 IMPL entries mapped**.
-Linux-verified source links: **716**; multi-environment entries: **51**; upstream reference code blocks: **230**.
+Linux-verified source links: **736**; multi-environment entries: **56**; upstream reference code blocks: **230**.
 Every row has Linux-executed evidence or an explicit interaction/safety boundary; an upstream snippet alone never counts as coverage.
 
 | Function | Profile | Kind | Linux-verified example | Upstream code |
@@ -22,7 +22,7 @@ Every row has Linux-executed evidence or an explicit interaction/safety boundary
 | [Class](generated/Class.md) | `headless` | `verified` | [examples/language/runtime_types.ahk:14](../examples/language/runtime_types.ahk#L14) | no |
 | [Click](generated/Click.md) | `x11` | `verified` | [tests/doccheck/assert_input.ahk:285](../tests/doccheck/assert_input.ahk#L285) | yes |
 | [ClipWait](generated/ClipWait.md) | `x11` | `verified` | [tests/doccheck/assert_clipboard.ahk:93](../tests/doccheck/assert_clipboard.ahk#L93) | yes |
-| [ClipboardAll](generated/ClipboardAll.md) | `x11` | `verified` | [tests/doccheck/assert_misc_cov.ahk:222](../tests/doccheck/assert_misc_cov.ahk#L222) | yes |
+| [ClipboardAll](generated/ClipboardAll.md) | `x11` | `verified` | [tests/doccheck/assert_clipboard_all.ahk:129](../tests/doccheck/assert_clipboard_all.ahk#L129) | yes |
 | [ComCall](generated/ComCall.md) | `x11` | `verified-error` | [tests/doccheck/assert_misc_cov.ahk:193](../tests/doccheck/assert_misc_cov.ahk#L193) | yes |
 | [ComObjActive](generated/ComObjActive.md) | `x11` | `verified` | [tests/doccheck/assert_misc_cov.ahk:189](../tests/doccheck/assert_misc_cov.ahk#L189) | yes |
 | [ComObjFlags](generated/ComObjFlags.md) | `dbus` | `verified` | [tests/doccheck/assert_com.ahk:76](../tests/doccheck/assert_com.ahk#L76) | yes |
