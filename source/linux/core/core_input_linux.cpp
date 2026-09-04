@@ -755,6 +755,13 @@ static Display *sLeaseDpy = nullptr;
 static Window sLeaseWin = 0;
 static Atom sLeaseSel = 0;
 static int sLeaseDepth = 0;   // Reentrant borrows within one process.
+// A literal run keeps one outer lease while its per-character borrows use the
+// existing reentrant depth.  This prevents another process from timing out
+// between our immediately-reacquired 30 ms character windows (CI reproduced
+// ~10% starvation with the old 150 ms per-character-only lease).  The wait is
+// still bounded: a dead owner is reclaimed by X automatically; a live owner
+// which sends an unusually long run cannot freeze this caller indefinitely.
+static const int GS_BORROW_RUN_TIMEOUT_MS = 5000;
 
 // Acquire the cross-process borrow lease.  Waits (bounded) when another
 // process is mid-borrow; returns false when the lease cannot be taken
@@ -1020,12 +1027,29 @@ static bool LinuxSendLiteralRun(Display *d, const wchar_t *aStart, const wchar_t
 	if (!has_non_ascii || d || aHeld.Any() || LinuxLibeiShouldAttempt()
 		|| (LinuxWaylandActive() && LinuxWaylandCanInjectKeys()))
 	{
+		// The X11 mapping is server-global.  Acquire one OUTER lease for the
+		// complete literal run so another AHK process waits for a transaction
+		// boundary instead of racing our immediate per-character reacquires.
+		// LinuxUnicodeKeycode()/LinuxUnicodeRestore() nest inside this depth.
+		bool run_lease = d && has_non_ascii;
+		if (run_lease && !LinuxBorrowLeaseAcquire(d, GS_BORROW_RUN_TIMEOUT_MS))
+		{
+			for (const wchar_t *q = aStart; q < aEnd; ++q)
+				if (*q > 0x7E) { sLastUnsendable = *q; break; }
+			return false;
+		}
 		for (const wchar_t *q = aStart; q < aEnd; ++q)
 		{
 			LinuxSendChar(d, *q, aHeld);
 			if (sLastUnsendable)
+			{
+				if (run_lease)
+					LinuxBorrowLeaseRelease(d);
 				return false; // A Unicode char could not be delivered.
+			}
 		}
+		if (run_lease)
+			LinuxBorrowLeaseRelease(d);
 		return true;
 	}
 	// Pure Wayland with non-ASCII text, no virtual keyboard, and no modifiers

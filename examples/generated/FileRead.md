@@ -23,7 +23,7 @@
 - `x11`: [tests/doccheck/assert_shape.ahk:34](../../tests/doccheck/assert_shape.ahk#L34)
 - `headless`: [tests/doccheck/assert_statements.ahk:134](../../tests/doccheck/assert_statements.ahk#L134)
 - `headless`: [tests/doccheck/assert_sys.ahk:141](../../tests/doccheck/assert_sys.ahk#L141)
-- `x11`: [tests/doccheck/assert_unicode_lease.ahk:54](../../tests/doccheck/assert_unicode_lease.ahk#L54)
+- `x11`: [tests/doccheck/assert_unicode_lease.ahk:60](../../tests/doccheck/assert_unicode_lease.ahk#L60)
 - `wayland`: [tests/doccheck/assert_wayland.ahk:82](../../tests/doccheck/assert_wayland.ahk#L82)
 - `x11`: [tests/doccheck/assert_clipboard_all.ahk:49](../../tests/doccheck/assert_clipboard_all.ahk#L49)
 

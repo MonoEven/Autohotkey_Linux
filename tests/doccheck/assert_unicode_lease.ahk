@@ -23,9 +23,14 @@ CHILD := "/tmp/ahk_lease_child.ahk"
 childBody := "
 (
 #Requires AutoHotkey v2.0
-SendText("世界世界世界世界")
-FileAppend("done", "/tmp/ahk_lease_child_done.txt")
-ExitApp 0
+try {
+    SendText("世界世界世界世界")
+    FileAppend("done", "/tmp/ahk_lease_child_done.txt")
+    ExitApp 0
+} catch as e {
+    FileAppend(e.Message, "/tmp/ahk_lease_child_error.txt")
+    ExitApp 5
+}
 )"
 FileDelete(CHILD)
 FileAppend(childBody, CHILD)
@@ -33,8 +38,11 @@ Log("step[child-written]=" (FileExist(CHILD) ? 1 : 0))
 
 ; --- start the child, then send this process's text concurrently ---
 childDone := "/tmp/ahk_lease_child_done.txt"
+childError := "/tmp/ahk_lease_child_error.txt"
 FileDelete(childDone)
-Run(A_AhkPath ' "' CHILD '"')
+FileDelete(childError)
+childPid := 0
+Run(A_AhkPath ' "' CHILD '"',,, &childPid)
 Sleep(150)
 Log("step[before-parent-send]=1")
 SendText("你好你好你好")
@@ -44,10 +52,14 @@ Log("step[after-parent-send]=1")
 ; windows at a fraction of native speed, so the wait must comfortably
 ; exceed the parent's own SendText) ---
 i := 0
-while !FileExist(childDone) && i < 24000 {
+while !FileExist(childDone) && ProcessExist(childPid) && i < 24000 {
     Sleep(10)
     i += 1
 }
+if FileExist(childError)
+    Log("step[child-error]=" FileRead(childError))
+else if ProcessExist(childPid)
+    Log("step[child-timeout-pid]=" childPid)
 Sleep(500)
 
 ; --- verify that all keysyms arrived at the foreground capture ---

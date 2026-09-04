@@ -19,7 +19,7 @@
 - `headless`: [tests/doccheck/assert_parity.ahk:11](../../tests/doccheck/assert_parity.ahk#L11)
 - `x11`: [tests/doccheck/assert_repeat.ahk:93](../../tests/doccheck/assert_repeat.ahk#L93)
 - `x11`: [tests/doccheck/assert_shape.ahk:31](../../tests/doccheck/assert_shape.ahk#L31)
-- `x11`: [tests/doccheck/assert_unicode_lease.ahk:62](../../tests/doccheck/assert_unicode_lease.ahk#L62)
+- `x11`: [tests/doccheck/assert_unicode_lease.ahk:74](../../tests/doccheck/assert_unicode_lease.ahk#L74)
 - `wayland`: [tests/doccheck/assert_wayland.ahk:80](../../tests/doccheck/assert_wayland.ahk#L80)
 - `x11`: [tests/doccheck/assert_misc_cov.ahk:251](../../tests/doccheck/assert_misc_cov.ahk#L251)
 - `x11`: [tests/doccheck/assert_clipboard_all.ahk:43](../../tests/doccheck/assert_clipboard_all.ahk#L43)

@@ -3852,7 +3852,7 @@
         },
         {
           "file": "tests/doccheck/assert_unicode_lease.ahk",
-          "line": 32,
+          "line": 37,
           "profile": "x11"
         },
         {
@@ -4271,7 +4271,7 @@
         },
         {
           "file": "tests/doccheck/assert_unicode_lease.ahk",
-          "line": 54,
+          "line": 60,
           "profile": "x11"
         },
         {
@@ -5697,7 +5697,7 @@
         },
         {
           "file": "tests/doccheck/assert_unicode_lease.ahk",
-          "line": 55,
+          "line": 67,
           "profile": "x11"
         },
         {
@@ -8263,6 +8263,11 @@
           "profile": "headless"
         },
         {
+          "file": "tests/doccheck/assert_unicode_lease.ahk",
+          "line": 55,
+          "profile": "x11"
+        },
+        {
           "file": "tests/doccheck/assert_misc_cov.ahk",
           "line": 164,
           "profile": "x11"
@@ -9063,7 +9068,7 @@
         },
         {
           "file": "tests/doccheck/assert_unicode_lease.ahk",
-          "line": 62,
+          "line": 74,
           "profile": "x11"
         },
         {
@@ -9460,7 +9465,7 @@
         },
         {
           "file": "tests/doccheck/assert_unicode_lease.ahk",
-          "line": 26,
+          "line": 27,
           "profile": "x11"
         },
         {
@@ -13039,5 +13044,5 @@
   },
   "schema": 1,
   "source": "tests/doccheck/worklist.tsv",
-  "verified_source_links": 736
+  "verified_source_links": 737
 }

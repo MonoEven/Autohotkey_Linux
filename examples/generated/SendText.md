@@ -11,7 +11,7 @@
 - `x11`: [tests/doccheck/assert_input.ahk:89](../../tests/doccheck/assert_input.ahk#L89)
 - `x11`: [tests/doccheck/assert_inputhook.ahk:103](../../tests/doccheck/assert_inputhook.ahk#L103)
 - `x11`: [tests/doccheck/assert_repeat.ahk:52](../../tests/doccheck/assert_repeat.ahk#L52)
-- `x11`: [tests/doccheck/assert_unicode_lease.ahk:26](../../tests/doccheck/assert_unicode_lease.ahk#L26)
+- `x11`: [tests/doccheck/assert_unicode_lease.ahk:27](../../tests/doccheck/assert_unicode_lease.ahk#L27)
 - `wayland`: [tests/doccheck/assert_wayland.ahk:60](../../tests/doccheck/assert_wayland.ahk#L60)
 
 ## Linux-verified example excerpt

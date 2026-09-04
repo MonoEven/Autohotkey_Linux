@@ -1,7 +1,7 @@
 # Complete Function Example Coverage
 
 Generated from `tests/doccheck/worklist.tsv`: **370/370 IMPL entries mapped**.
-Linux-verified source links: **736**; multi-environment entries: **56**; upstream reference code blocks: **230**.
+Linux-verified source links: **737**; multi-environment entries: **56**; upstream reference code blocks: **230**.
 Every row has Linux-executed evidence or an explicit interaction/safety boundary; an upstream snippet alone never counts as coverage.
 
 | Function | Profile | Kind | Linux-verified example | Upstream code |

@@ -9,6 +9,7 @@
 ## Additional verified environments
 
 - `headless`: [tests/doccheck/assert_sys.ahk:155](../../tests/doccheck/assert_sys.ahk#L155)
+- `x11`: [tests/doccheck/assert_unicode_lease.ahk:55](../../tests/doccheck/assert_unicode_lease.ahk#L55)
 - `x11`: [tests/doccheck/assert_misc_cov.ahk:164](../../tests/doccheck/assert_misc_cov.ahk#L164)
 - `x11`: [tests/doccheck/assert_clipboard_all.ahk:60](../../tests/doccheck/assert_clipboard_all.ahk#L60)
 
