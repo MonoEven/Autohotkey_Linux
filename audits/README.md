@@ -267,10 +267,20 @@ Closures since check0901 (evidence in the linked oracles):
   the producer until the script logs `ready` after its listener-establishing
   `ImeStatus()` call, then SIGCONTs it; three consecutive full-corpus runs
   plus a mid-stream SIGKILL teardown stress pass with no stuck bus
-  daemons.  Remaining follow-up: calling ImeStatus() from a hotstring
-  callback thread still crashes (the engine snapshot fix removed one
-  dangling pointer, but a second same-thread crash remains); scripts must
-  read ImeStatus from the main thread or a timer until that is fixed.
+  daemons.  The remaining "ImeStatus() from a hotstring callback thread"
+  crash follow-up was re-tested on the current build and is closed: 5/5
+  core runs and 3/3 ASan runs with a preedit-stream stress read
+  ImeStatus() inside hotstring callbacks successfully (the earlier report
+  predated the engine-snapshot fix and could not be verified under ASan
+  because mismatched `inline` member definitions broke the Debug/ASan
+  link — fixed in the same session).
+- `P2-10` build hygiene: `Object::Variant::ToToken` and
+  `Script::ConvertActionType` defined out-of-class with a repeated
+  `inline` keyword are discarded by GCC at -O0/-O1, breaking Debug and
+  ASan links (undefined references from error.cpp/var.cpp) while release
+  -O2 linked by accident.  The mismatched keyword is removed with a
+  comment explaining the constraint; ASan ahk_core now builds and runs
+  the IME suites clean.
 - `P2-6` rich `ClipboardAll` (check_detail0901 §18) — snapshot model landed
   and independently verified.  The Linux clipboard layer persists a
   versioned `AHKCB1` snapshot (MIME name, byte length, FNV-1a checksum,
