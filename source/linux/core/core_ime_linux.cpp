@@ -578,10 +578,17 @@ void LinuxImeDispatch()
 	}
 }
 
+// P2-10: snapshot accessors — the previous API returned `sEngine.c_str()`
+// from inside the lock, leaving the caller with a dangling pointer as soon
+// as the dispatch thread appended to the string on another connection event
+// (crash observed on the hotstring callback thread).  Both accessors now
+// copy into caller-visible static snapshots while holding the mutex.
+static char sEngineSnapshot[256];
 const char *LinuxImeEngine()
 {
 	std::lock_guard<std::mutex> lock(sImeStateMutex);
-	return sEngine.c_str();
+	snprintf(sEngineSnapshot, sizeof(sEngineSnapshot), "%s", sEngine.c_str());
+	return sEngineSnapshot;
 }
 
 bool LinuxImePreeditActive()
