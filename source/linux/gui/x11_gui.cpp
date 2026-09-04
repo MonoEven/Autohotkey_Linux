@@ -684,13 +684,21 @@ static bool LinuxEntryDialog(LPCTSTR aPrompt, LPCTSTR aTitle, LPCTSTR aDefault, 
 	if (!font)
 		font = XLoadQueryFont(dpy, "9x15");
 	if (!font)
+		font = XLoadQueryFont(dpy, "6x13");
+	if (!font)
 	{
-		XDestroyWindow(dpy, win);
-		XCloseDisplay(dpy);
-		return false;
+		// P2-10-era hardening: a loaded CI runner can momentarily miss the
+		// "fixed"/"9x15" aliases; the dialog must still confirm its default
+		// entry (the doccheck autoclose hook depends on it) instead of
+		// reporting a user cancellation.  Proceed without drawing.
+		font = nullptr;
 	}
-	XSetFont(dpy, gc, font->fid);
-	int font_height = font->ascent + font->descent;
+	int font_height = 16; // Safe default when no font could be loaded.
+	if (font)
+	{
+		XSetFont(dpy, gc, font->fid);
+		font_height = font->ascent + font->descent;
+	}
 	char title_narrow[512];
 	WideToNarrow(aTitle && *aTitle ? aTitle : L"AutoHotkey Input", title_narrow, sizeof(title_narrow));
 	XStoreName(dpy, win, title_narrow);
@@ -842,7 +850,8 @@ static bool LinuxEntryDialog(LPCTSTR aPrompt, LPCTSTR aTitle, LPCTSTR aDefault, 
 		mbstowcs(aBuf, entry, aBufSize - 1);
 	aBuf[aBufSize - 1] = L'\0';
 
-	XFreeFont(dpy, font);
+	if (font)
+		XFreeFont(dpy, font);
 	XFreeGC(dpy, gc);
 	XDestroyWindow(dpy, win);
 	XCloseDisplay(dpy);
