@@ -16,9 +16,13 @@ OUT="$ROOT/tests/oracle/out"
 mkdir -p "$OUT"
 
 command -v pkg-config >/dev/null || { echo PR_SKIP pkg-config; exit 2; }
-PROBE="$ROOT/tests/doccheck/out/xclip_probe"
-[ -x "$PROBE" ] || PROBE="$ROOT/out/xclip_probe"
-[ -x "$PROBE" ] || { echo PR_SKIP probe-missing; exit 2; }
+command -v Xvfb >/dev/null || { echo PR_SKIP no-xvfb; exit 2; }
+# The xclip_probe binary is normally built by the doccheck runner; this
+# oracle may run before that step, so compile it into the oracle out dir
+# from the shared single-file source (same code the doccheck uses).
+PROBE="$OUT/xclip_probe"
+${CC:-gcc} -O2 -Wall -o "$PROBE" "$ROOT/tests/doccheck/xclip_probe.c" \
+	$(pkg-config --cflags --libs x11) || { echo PR_FAIL probe-build; exit 1; }
 
 XVFB_DISPLAY=":63"
 XVFB_PID=""
