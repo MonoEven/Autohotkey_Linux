@@ -8,6 +8,7 @@
 
 ## Additional verified environments
 
+- `headless`: [tests/doccheck/assert_clipboard_pasterestore.ahk:24](../../tests/doccheck/assert_clipboard_pasterestore.ahk#L24)
 - `x11`: [tests/doccheck/assert_clipboard_slow.ahk:24](../../tests/doccheck/assert_clipboard_slow.ahk#L24)
 - `x11`: [tests/doccheck/assert_ctrl.ahk:20](../../tests/doccheck/assert_ctrl.ahk#L20)
 - `x11`: [tests/doccheck/assert_edit.ahk:34](../../tests/doccheck/assert_edit.ahk#L34)

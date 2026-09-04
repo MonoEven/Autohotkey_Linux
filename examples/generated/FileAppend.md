@@ -9,6 +9,7 @@
 ## Additional verified environments
 
 - `x11`: [tests/doccheck/assert_clipboard_change.ahk:21](../../tests/doccheck/assert_clipboard_change.ahk#L21)
+- `headless`: [tests/doccheck/assert_clipboard_pasterestore.ahk:20](../../tests/doccheck/assert_clipboard_pasterestore.ahk#L20)
 - `x11`: [tests/doccheck/assert_clipboard_slow.ahk:13](../../tests/doccheck/assert_clipboard_slow.ahk#L13)
 - `x11`: [tests/doccheck/assert_ctrl.ahk:9](../../tests/doccheck/assert_ctrl.ahk#L9)
 - `x11`: [tests/doccheck/assert_dialog.ahk:11](../../tests/doccheck/assert_dialog.ahk#L11)

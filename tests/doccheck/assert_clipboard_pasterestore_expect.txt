@@ -1,0 +1,5 @@
+caseA_restored=1
+caseB_user_copy=1
+caseB_original_gone=1
+caseB_final_empty=1
+caseC_empty_restore=1

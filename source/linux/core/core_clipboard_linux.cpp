@@ -926,6 +926,14 @@ static const wl_data_source_listener sClipWlSourceListener = {
 	LinuxClipWlSourceAction,
 };
 
+// Expose the Wayland ownership state to the paste transaction below (file
+// scope outside the anonymous namespace; the paste code may not include
+// Wayland headers directly).
+bool LinuxClipWlOwnsSelection()
+{
+	return gClipWlSource != nullptr;
+}
+
 } // namespace
 
 // The Wayland registry hook (called from core_wayland_linux.cpp):
@@ -1240,6 +1248,29 @@ uint64_t LinuxClipboardOwnerGeneration()
 // an originally-empty clipboard comes back empty (check0820 P1).
 
 static std::wstring sPasteOriginal; // Clipboard text saved at PasteSet time.
+// Audit §18 concurrent-user-copy guard: PasteRestore re-offers the original
+// ONLY when this process still owns the clipboard.  If a user (or another
+// app) copied new content while the paste text was installed, the user's
+// copy wins and the old original is abandoned -- restoring it would destroy
+// the user's new clipboard.  Ownership is re-queried per backend in
+// PasteRestore: the in-process gClipOwnerGen only tracks OUR writes and
+// cannot see a foreign takeover.  On a headless fallback clipboard no
+// foreign owner can exist, so restore is unconditional there.
+
+// Does the active backend still report OUR window as the clipboard owner?
+bool LinuxClipPasteStillOurs()
+{
+	Display *d = LinuxX11Display();
+	if (d)
+	{
+		LinuxClipX11Ensure(d);
+		Window owner = XGetSelectionOwner(d, gClipX11Clipboard);
+		return owner == gClipX11Window; // Our hidden window still owns it.
+	}
+	if (LinuxWaylandActive())
+		return LinuxClipWlOwnsSelection();
+	return true; // Headless fallback: no foreign owner can exist.
+}
 
 bool LinuxClipboardPasteSet(const std::wstring &aText, const std::wstring &aSaved)
 {
@@ -1272,6 +1303,24 @@ bool LinuxClipboardPasteWaitConsumed(int aTimeoutMs)
 void LinuxClipboardPasteRestore(bool aHadText)
 {
 	sPasteActive = false;
+	// Compare-and-swap (audit §18): restore only when this transaction still
+	// owns the clipboard.  A concurrent user copy transferred selection
+	// ownership to another window while the paste text was installed; the
+	// user's new copy wins and our original is abandoned (restoring it would
+	// destroy the user's content).
+	if (!LinuxClipPasteStillOurs())
+	{
+		static bool sPasteClobberWarned = false;
+		if (!sPasteClobberWarned)
+		{
+			fprintf(stderr,
+				"AHK info: paste-fallback restore skipped — the clipboard "
+				"was replaced by another owner while the paste text was "
+				"installed; the user's new copy is preserved.\n");
+			sPasteClobberWarned = true;
+		}
+		return;
+	}
 	if (aHadText)
 		LinuxClipboardSetText(sPasteOriginal);
 	else

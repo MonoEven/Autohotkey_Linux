@@ -215,6 +215,10 @@ jobs:
         if: matrix.build == 'core'
         run: bash tests/oracle/run_m7_dbus_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
 
+      - name: Paste-restore CAS unit oracle (check0901 P2-6)
+        if: matrix.build == 'core'
+        run: bash tests/oracle/run_pasterestore_unit_oracle.sh
+
       - name: Wayland compositor restart recovery oracle (check0901 M7)
         if: matrix.build == 'core'
         run: bash tests/oracle/run_m7_wayland_restart_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"

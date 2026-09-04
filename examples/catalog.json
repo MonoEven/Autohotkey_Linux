@@ -3346,6 +3346,11 @@
           "profile": "x11"
         },
         {
+          "file": "tests/doccheck/assert_clipboard_pasterestore.ahk",
+          "line": 20,
+          "profile": "headless"
+        },
+        {
           "file": "tests/doccheck/assert_clipboard_slow.ahk",
           "line": 13,
           "profile": "x11"
@@ -3592,6 +3597,11 @@
           "file": "tests/doccheck/assert_clipboard_change.ahk",
           "line": 19,
           "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_pasterestore.ahk",
+          "line": 19,
+          "profile": "headless"
         },
         {
           "file": "tests/doccheck/assert_clipboard_slow.ahk",
@@ -8859,6 +8869,11 @@
           "profile": "x11"
         },
         {
+          "file": "tests/doccheck/assert_clipboard_pasterestore.ahk",
+          "line": 42,
+          "profile": "headless"
+        },
+        {
           "file": "tests/doccheck/assert_clipboard_slow.ahk",
           "line": 21,
           "profile": "x11"
@@ -9972,6 +9987,11 @@
           "file": "tests/doccheck/assert_clipboard.ahk",
           "line": 28,
           "profile": "x11"
+        },
+        {
+          "file": "tests/doccheck/assert_clipboard_pasterestore.ahk",
+          "line": 24,
+          "profile": "headless"
         },
         {
           "file": "tests/doccheck/assert_clipboard_slow.ahk",
@@ -13019,12 +13039,12 @@
     "verified-error": 6
   },
   "mapped_count": 370,
-  "multi_environment_entries": 56,
+  "multi_environment_entries": 57,
   "official_reference_examples": 230,
   "profile_evidence": {
     "dbus": 9,
     "desktop-session": 8,
-    "headless": 153,
+    "headless": 155,
     "host-tools": 15,
     "interactive": 1,
     "lifecycle": 2,
@@ -13044,5 +13064,5 @@
   },
   "schema": 1,
   "source": "tests/doccheck/worklist.tsv",
-  "verified_source_links": 737
+  "verified_source_links": 741
 }

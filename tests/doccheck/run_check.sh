@@ -211,6 +211,10 @@ for ahk in assert_*.ahk; do
     echo "SKIP: assert_clipboard_all (run with --xvfb: multi-MIME xclip_probe oracle)"
     continue
   fi
+  if [ "$base" = "assert_clipboard_pasterestore" ] && [ "$XVFB" != 1 ]; then
+    echo "SKIP: assert_clipboard_pasterestore (run with --xvfb: paste-restore CAS oracle)"
+    continue
+  fi
   if [ "$base" = "assert_clipboard_slow" ] && [ "$XVFB" != 1 ]; then
     echo "SKIP: assert_clipboard_slow (run with --xvfb: slow-owner xclip_probe)"
     continue
@@ -242,7 +246,7 @@ for ahk in assert_*.ahk; do
   # Dialog and unicode-lease suites use the dedicated :98 so queued XTEST
   # input from other suites cannot click their dialogs / capture clients.
   case "$base" in
-    assert_dialog|assert_unicode_lease|assert_clipboard_all)
+    assert_dialog|assert_unicode_lease|assert_clipboard_all|assert_clipboard_pasterestore)
       XDISPLAY=:98 ;;
     assert_win|assert_input|assert_ctrl|assert_monitor|assert_timer|assert_hotkey|assert_hotkey_pt|assert_hotkey_btn|assert_hotkey_lr|assert_hotstring|assert_inputhook|assert_edit|assert_msg|assert_image|assert_shape|assert_gui|assert_statements|assert_misc_cov|assert_clipboard|assert_clipboard_slow|assert_clipboard_change|assert_layout|assert_repeat)
       XDISPLAY=:99 ;;
@@ -306,6 +310,7 @@ for ahk in assert_*.ahk; do
     assert_misc_cov) out_src="/tmp/ahk_dc_misc_out.txt" ;;
     assert_clipboard) out_src="/tmp/ahk_dc_clip_out.txt" ;;
     assert_clipboard_all) out_src="/tmp/ahk_dc_clipall_out.txt" ;;
+    assert_clipboard_pasterestore) out_src="/tmp/ahk_dc_pasterestore_out.txt" ;;
     assert_clipboard_slow) out_src="/tmp/ahk_dc_clip_slow_out.txt" ;;
     assert_clipboard_change) out_src="/tmp/ahk_dc_clip_change_out.txt" ;;
     assert_layout) out_src="/tmp/ahk_dc_layout_out.txt" ;;
