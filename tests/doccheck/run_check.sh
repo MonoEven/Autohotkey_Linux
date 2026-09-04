@@ -261,8 +261,12 @@ for ahk in assert_*.ahk; do
   fi
   # The interpreter installs a SIGTERM handler (Reload protocol), so a
   # plain `timeout` SIGTERM alone may not terminate a stuck script; -k 5
-  # escalates to SIGKILL as a hard safety net.
-  DISPLAY=$XDISPLAY timeout -k 5 60 "$BIN" "$ahk" "${extra[@]}" > "$raw" 2>&1
+  # escalates to SIGKILL as a hard safety net.  The unicode-lease suite
+  # spawns a second interpreter and serializes two borrow windows, which
+  # under ASan/loaded runners can take a few minutes in total.
+  suite_timeout=60
+  [ "$base" = "assert_unicode_lease" ] && suite_timeout=240
+  DISPLAY=$XDISPLAY timeout -k 5 "$suite_timeout" "$BIN" "$ahk" "${extra[@]}" > "$raw" 2>&1
   rc=$?
   if [ $rc -ne 0 ]; then
     fail=$((fail+1))
