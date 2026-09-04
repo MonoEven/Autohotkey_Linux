@@ -297,14 +297,29 @@ Closures since check0901 (evidence in the linked oracles):
   declared-128 MiB snapshots are rejected without replacing any part of
   the clipboard.  Oracle:
   [assert_clipboard_all.ahk](../tests/doccheck/assert_clipboard_all.ahk)
-  (20/20, doc-check total 1165/1165) drives the flow through an
+  (20/20, doc-check total 1170/1170) drives the flow through an
   independent `xclip_probe --set-mime` owner process on a dedicated
   Xvfb display: the foreign owner advertises five representations,
   ClipboardAll captures while it serves, the owner process exits, AHK
   restores, and fresh probe clients verify TARGETS and every
-  representation byte-for-byte.  Follow-up phases: X11↔Wayland
-  clipboard bridge evidence and concurrent-user-copy compare-and-swap
-  owner checks.
+  representation byte-for-byte.
+- `P2-6` phase 2 (concurrent-user-copy CAS + bridge evidence) closed:
+  `LinuxClipboardPasteRestore` is now a compare-and-swap on selection
+  ownership — a user copy made while the paste text is installed wins and
+  the saved original is abandoned (skipped restores are reported once on
+  stderr).  Evidence: a unit oracle
+  (`tests/oracle/run_pasterestore_unit_oracle.sh`, CI core job) drives the
+  paste transaction against X11 with an independent probe as the
+  concurrent user (happy path restores the original; takeover leaves
+  USER-COPY intact), plus the 5-assertion
+  `assert_clipboard_pasterestore.ahk` doccheck (round-trip, takeover wins,
+  empty-original restores empty).  The X11↔Wayland clipboard "bridge"
+  item is resolved as an environment capability: measured on sway
+  1.10.1/wlroots headless + XWayland, neither direction is bridged
+  automatically (wl-copy leaves no X CLIPBOARD owner; X-owned selections
+  are invisible to wl-paste), matching open upstream wlroots issue #295 —
+  the port reads/writes whichever server owns the data and documents this
+  in the capability matrix instead of inventing a bridge.
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),

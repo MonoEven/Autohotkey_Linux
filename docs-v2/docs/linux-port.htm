@@ -470,6 +470,20 @@ Highlights of this release:</p>
   <li><b>Clipboard slow-owner timeout</b>:
     <code>AHK_CLIPBOARD_TIMEOUT_MS</code> (default 2000) bounds reads;
     regression with a slow-owner probe.</li>
+  <li><b>Rich ClipboardAll + paste-restore ownership arbitration
+    (check_detail0901 §18)</b>: multi-MIME snapshots (text/HTML/PNG/
+    URI-list/custom, checksummed, bounded) survive a foreign owner exit and
+    restore byte-exact (20-assertion Xvfb oracle); the Wayland paste
+    fallback's restore is a compare-and-swap on selection ownership — a user
+    copy made while the paste text is installed wins and the saved original
+    is abandoned (unit oracle + 5-assertion doccheck).<b>X11↔Wayland
+    clipboard bridging is a compositor environment capability, not a port
+    feature:</b> measured on sway 1.10.1/wlroots headless + XWayland, neither
+    direction is bridged automatically (wl-copy content has no X CLIPBOARD
+    owner; an X-owned selection is invisible to <code>wl-paste</code>) —
+    matching upstream wlroots issue #295; environments that ship a sync agent
+    (clipboard managers) provide the bridge, and the port reads/writes
+    whichever server owns the data without inventing content.</li>
   <li><b>OnClipboardChange on pure Wayland (check_detail0821 §4 / R2)</b>:
     Mutter implements no ext-data-control protocol, so on a GNOME session the
     bundled shell extension listens to <code>Meta.Selection</code>'s
