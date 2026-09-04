@@ -263,9 +263,10 @@ for ahk in assert_*.ahk; do
   # plain `timeout` SIGTERM alone may not terminate a stuck script; -k 5
   # escalates to SIGKILL as a hard safety net.  The unicode-lease suite
   # spawns a second interpreter and serializes two borrow windows, which
-  # under ASan/loaded runners can take a few minutes in total.
+  # under ASan/loaded runners can take a few minutes in total; the runner
+  # timeout must exceed the child-wait budget inside the script (240 s).
   suite_timeout=60
-  [ "$base" = "assert_unicode_lease" ] && suite_timeout=240
+  [ "$base" = "assert_unicode_lease" ] && suite_timeout=480
   DISPLAY=$XDISPLAY timeout -k 5 "$suite_timeout" "$BIN" "$ahk" "${extra[@]}" > "$raw" 2>&1
   rc=$?
   if [ $rc -ne 0 ]; then
