@@ -24,8 +24,8 @@ body:
     id: version
     attributes:
       label: Port version
-      description: Output of `ahk --version` (e.g. v2.0.26-linux.19) or the commit you built from
-      placeholder: v2.0.26-linux.19
+      description: Output of `ahk --version` (e.g. v2.0.26-linux.20) or the commit you built from
+      placeholder: v2.0.26-linux.20
     validations:
       required: true
   - type: dropdown

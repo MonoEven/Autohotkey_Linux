@@ -16,6 +16,88 @@
 
 <h2 id="linux">Linux port changes</h2>
 
+<h2 id="linux.20">v2.0.26-linux.20</h2>
+<p><b>Input safety and semantics closures (P0-1/P0-2/P0-3, M2a, M5, M6a, M7,
+P2-6, P2-10, P2-11); rich ClipboardAll; doc-check 1170/1170.</b></p>
+<ul>
+  <li><b>P0-1 inputd replay fail-open.</b> The replay uinput device is
+    created and fully validated before any grab; every
+    <code>UI_SET_*</code>/<code>UI_DEV_CREATE</code> result is checked;
+    runtime replay write failures release all grabs, broadcast
+    <code>BACKEND_DEGRADED</code> and set systemd
+    <code>STATUS=degraded</code>; two-phase <code>EVIOCGKEY</code> grab with
+    defer/retry removes stuck keys at the grab boundary. 12/12 fault
+    oracle.</li>
+  <li><b>P0-2/P1-3 SendLevel semantics.</b> One unified policy entry
+    (<code>input_semantics.h</code>) enforces the official strict
+    <code>send_level &gt; input_level</code> rule for hotkeys/hotstrings,
+    MinSendLevel semantics for InputHook, hotstring level-0 buffer
+    exclusion, and hook-unloaded <code>SendMode "Input"</code>; hotkey
+    threads start at their InputLevel. 22/22 Windows-golden policy
+    oracle.</li>
+  <li><b>P0-3/M3 protocol v2.</b> The broker socket speaks versioned
+    <code>AHK2</code> frames with HELLO/HELLO_ACK capability negotiation,
+    per-process script nonces bound to broker-assigned client ids,
+    authoritative provenance envelopes (authority/generation/event_seq,
+    send_level, transaction ids) on every broker event, machine-readable
+    errors, and v1 fallback.  M4a adds broker-owned INJECT transactions
+    (BEGIN/EVENT/COMMIT/ABORT with TTL, quotas, crash auto-abort and
+    held-key balancing).  Oracles: v2 protocol 25/25, injection 24/24,
+    arbitration 29/29.</li>
+  <li><b>M2a backend health.</b> Static capabilities are separated from
+    live <code>BackendHealth</code>/<code>RouteGuarantees</code>; stale
+    generation updates are rejected; inputd publishes typed
+    <code>BACKEND_HEALTH</code>; the client walks
+    PROBING→BINDING→RESUBSCRIBING→RECONCILING→HEALTHY and preserves
+    registrations across broker SIGKILL/restart (23/23 oracle).</li>
+  <li><b>M5 normalized pipeline.</b> A typed pipeline separates facts
+    (InputEvent), decisions (InputDecision) and injection transactions; the
+    reducer, matcher (ordinary, wildcard/LR/key-up, InputHook/Hotstring,
+    custom combos, remap) and dynamic HotIf deadlines (60 ms, fail-open,
+    slow-client downgrade) all consume one acceptance identity with JSONL
+    trace and an <code>AHK_INPUT_PIPELINE</code> rollback gate (six
+    dedicated oracles).</li>
+  <li><b>M6a consented libei injection.</b> Optional libei/liboeffis build
+    adds a user-session RemoteDesktop injection route (CreateSession →
+    SelectDevices → Start → ConnectToEIS), seat/device capability binding,
+    per-device keymaps, ping/pong-only EIS-processed evidence and
+    REAUTH_REQUIRED on portal-owned disconnects (direct-EIS oracle).</li>
+  <li><b>M7 unified recovery.</b> The Linux COM layer replaces libdbus
+    pseudo-blocking calls with bounded pending waits that pump the AHK loop
+    (5 s cap, <code>AHK_COM_CALL_TIMEOUT_MS</code>); Wayland compositor
+    restarts tear down the whole proxy tree by generation and rebuild lazily
+    (real SIGKILL oracle); each §11.3 fault class is gated by its own
+    dedicated oracle.</li>
+  <li><b>P2-6 rich ClipboardAll.</b> Multi-MIME snapshots (text/HTML/PNG/
+    URI-list/custom) with version, length, FNV-1a checksum and bounded
+    sizes; restore re-offers every representation; corrupt/truncated/
+    declared-oversized blobs are rejected without partial replacement; the
+    paste-fallback restore is a compare-and-swap on selection ownership so
+    a concurrent user copy wins (20+5 assertion doccheck oracles plus a CI
+    unit oracle).  X11↔Wayland clipboard bridging is documented as a
+    compositor environment capability (wlroots #295) rather than a port
+    feature.</li>
+  <li><b>P2-10 Unicode/IME hardening.</b> The UTF-8 shim enforces
+    <code>MB_ERR_INVALID_CHARS</code>; invalid-UTF-8 IME commits are dropped
+    before any state update; IME state is mutex-protected; the framework
+    probe moved off script threads; the corpus oracle gates the full §22
+    grapheme/ZWJ corpus over real Fcitx5 D-Bus signals (startup race fixed
+    by holding the producer until the listener is ready).</li>
+  <li><b>P2-11 combo coverage.</b> The combo pipeline oracle adds
+    shared-prefix, modifier and repeat rows.</li>
+  <li><b>Stability fixes.</b> The cross-process Unicode borrow lease is now
+    held once per literal run (bounded 5 s) instead of per character,
+    removing CI flakiness where a concurrent sender starved; Debug/ASan
+    builds link again after mismatched <code>inline</code> member
+    definitions were dropped (<code>Object::Variant::ToToken</code>,
+    <code>Script::ConvertActionType</code>); IME engine snapshots are
+    mutex-copied.</li>
+  <li><b>Doc-check 1170/1170</b> (normal + ASan; five new
+    paste-restore-CAS assertions included), headless regression 27/27,
+    Wayland 17/17, XWayland 234/234, plus all P0-1/P0-3/M2/M4/M5/M6/M7
+    oracles and the four-distro container matrix in CI.</li>
+</ul>
+
 <h2 id="linux.19">v2.0.26-linux.19</h2>
 <p><b>GTK GUI event and rendering fixes; VS Code debugger reliability fixes.</b></p>
 <ul>

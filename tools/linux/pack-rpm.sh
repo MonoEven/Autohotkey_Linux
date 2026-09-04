@@ -12,7 +12,7 @@ set -u
 REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$REPO_DIR" || exit 1
 
-VER="${1:-2.0.26-linux.19}"
+VER="${1:-2.0.26-linux.20}"
 ARCH=$(uname -m)
 case "$ARCH" in
   x86_64) RPM_ARCH=x86_64 ;;

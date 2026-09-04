@@ -1,7 +1,7 @@
 #!/bin/sh
 # AutoHotkey v2 Linux port launcher (shared template).
 # Substituted by install.sh and pack.sh: @PREFIX@, @LIB_SUB@, @BIN_SUB@,
-# @DOC_SUB@, @AHK_VERSION@ (e.g. "2.0.26-linux.19").  Installed as
+# @DOC_SUB@, @AHK_VERSION@ (e.g. "2.0.26-linux.20").  Installed as
 # <prefix>/bin/ahk (tarball) or /usr/bin/ahk (deb).
 #
 # Commands are all "--" prefixed so plain names (e.g. `ahk check.ahk`,
@@ -14,7 +14,7 @@
 #   ahk --check               integrity / install method / latest release
 #   ahk --uninstall           cleanly remove this installation
 #   ahk --update [VER]        update (or downgrade) to latest / given release
-#                              (VER like 2.0.26-linux.19; blank = latest)
+#                              (VER like 2.0.26-linux.20; blank = latest)
 AHK_PREFIX="@PREFIX@"
 AHK_VERSION="@AHK_VERSION@"
 AHK_LIB="$AHK_PREFIX/@LIB_SUB@"
