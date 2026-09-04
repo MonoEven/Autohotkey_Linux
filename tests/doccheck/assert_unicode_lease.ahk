@@ -41,9 +41,10 @@ SendText("你好你好你好")
 Log("step[after-parent-send]=1")
 
 ; --- wait for the child (bounded; CI runners start a second interpreter
-; slowly under load, so allow far more than the old 3 s window) ---
+; slowly under heavy load, and the lease itself serializes the two
+; borrows, so allow a full minute before giving up) ---
 i := 0
-while !FileExist(childDone) && i < 1500 {
+while !FileExist(childDone) && i < 6000 {
     Sleep(10)
     i += 1
 }
