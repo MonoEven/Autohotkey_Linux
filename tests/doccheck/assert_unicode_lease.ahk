@@ -40,11 +40,11 @@ Log("step[before-parent-send]=1")
 SendText("你好你好你好")
 Log("step[after-parent-send]=1")
 
-; --- wait for the child (bounded; CI runners start a second interpreter
-; slowly under heavy load, and the lease itself serializes the two
-; borrows, so allow a full minute before giving up) ---
+; --- wait for the child (bounded; ASan builds serialize the two borrow
+; windows at a fraction of native speed, so the wait must comfortably
+; exceed the parent's own SendText) ---
 i := 0
-while !FileExist(childDone) && i < 6000 {
+while !FileExist(childDone) && i < 24000 {
     Sleep(10)
     i += 1
 }
