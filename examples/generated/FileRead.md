@@ -23,7 +23,7 @@
 - `x11`: [tests/doccheck/assert_shape.ahk:34](../../tests/doccheck/assert_shape.ahk#L34)
 - `headless`: [tests/doccheck/assert_statements.ahk:134](../../tests/doccheck/assert_statements.ahk#L134)
 - `headless`: [tests/doccheck/assert_sys.ahk:141](../../tests/doccheck/assert_sys.ahk#L141)
-- `x11`: [tests/doccheck/assert_unicode_lease.ahk:53](../../tests/doccheck/assert_unicode_lease.ahk#L53)
+- `x11`: [tests/doccheck/assert_unicode_lease.ahk:54](../../tests/doccheck/assert_unicode_lease.ahk#L54)
 - `wayland`: [tests/doccheck/assert_wayland.ahk:82](../../tests/doccheck/assert_wayland.ahk#L82)
 
 Retrieves the contents of a file.
