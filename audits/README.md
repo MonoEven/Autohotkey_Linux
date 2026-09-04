@@ -269,15 +269,30 @@ Closures since check0901 (evidence in the linked oracles):
   crashes (the engine snapshot fix removed one dangling pointer, but a
   second same-thread crash remains); scripts must read ImeStatus from the
   main thread or a timer until that is fixed.
-- `P2-6` rich `ClipboardAll` (check_detail0901 §18) work starts here: the
-  Linux port currently persists only the text representation (the Windows
-  multi-format HGLOBAL walk in var.cpp runs unchanged against a text-only
-  X11/Wayland clipboard), so ClipboardAll round-trips survive text but drop
-  HTML/PNG/URI-list/custom-MIME representations.  The plan follows the
-  audit's snapshot model: serialize every negotiated MIME with version,
-  length, per-item checksum and bounded sizes, restore by re-offering all
-  items, and gate with a multi-representation oracle (text+HTML, PNG,
-  URI list, unknown MIME, bounded-failure).
+- `P2-6` rich `ClipboardAll` (check_detail0901 §18) — snapshot model landed
+  and independently verified.  The Linux clipboard layer persists a
+  versioned `AHKCB1` snapshot (MIME name, byte length, FNV-1a checksum,
+  bounded item/total sizes) instead of the text-only HGLOBAL walk, so
+  `ClipboardAll()` round-trips every negotiated representation —
+  text/plain UTF-8, text/html, image/png, text/uri-list and custom MIME —
+  and restore re-offers all items.  Hardening: MIME names are validated
+  (printable, ≤255 bytes), per-item and total byte budgets reject
+  oversized payloads before allocation, Xlib format=32 TARGETS reads are
+  decoded as element counts (LP64 `unsigned long` expansion) instead of
+  byte counts, and an empty clipboard is a valid zero-item container so
+  `A_Clipboard := ClipboardAll()` can clear rather than be mistaken for
+  corruption.  Corrupt (checksum), truncated and synthetic
+  declared-128 MiB snapshots are rejected without replacing any part of
+  the clipboard.  Oracle:
+  [assert_clipboard_all.ahk](../tests/doccheck/assert_clipboard_all.ahk)
+  (20/20, doc-check total 1165/1165) drives the flow through an
+  independent `xclip_probe --set-mime` owner process on a dedicated
+  Xvfb display: the foreign owner advertises five representations,
+  ClipboardAll captures while it serves, the owner process exits, AHK
+  restores, and fresh probe clients verify TARGETS and every
+  representation byte-for-byte.  Follow-up phases: X11↔Wayland
+  clipboard bridge evidence and concurrent-user-copy compare-and-swap
+  owner checks.
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),
