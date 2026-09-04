@@ -1559,6 +1559,20 @@ void BIV_Clipboard(ResultToken &aResultToken, LPTSTR aVarName)
 void BIV_Clipboard_Set(ResultToken &aResultToken, LPTSTR aVarName, ExprTokenType &aValue)
 {
 	(void)aResultToken; (void)aVarName;
+	// P2-6 (check_detail0901 §18): a ClipboardAll object restores the
+	// multi-representation snapshot (upstream BIV_Clipboard_Set in
+	// lib/vars.cpp dispatches the same way on Windows).
+	if (auto *obj = TokenToObject(aValue))
+	{
+		if (ClipboardAll *cba = dynamic_cast<ClipboardAll *>(obj))
+		{
+			if (!Var::SetClipboardAll(cba->Data(), cba->Size()))
+				aResultToken.SetExitResult(FAIL);
+			return;
+		}
+		aResultToken.Error(_T("Type mismatch."), _T(""), ErrorPrototype::Type);
+		return;
+	}
 	TCHAR buf[65536];
 	buf[0] = L'\0';
 	size_t len = 0;

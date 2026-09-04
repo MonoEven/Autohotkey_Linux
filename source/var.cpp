@@ -20,6 +20,9 @@ GNU General Public License for more details.
 #include "var.h"
 #include "globaldata.h" // for g_script
 #include <utility>
+#ifdef __linux__
+#include "linux/core/core_clipboard_linux.h" // P2-6 rich ClipboardAll
+#endif
 
 
 // Init static vars:
@@ -272,6 +275,26 @@ ResultType Var::MoveToNewFreeVar(Var &aFV)
 
 ResultType Var::GetClipboardAll(void **aData, size_t *aDataSize)
 {
+#ifdef __linux__
+	// P2-6 (check_detail0901 §18): Linux reads a multi-MIME AHKCB1 snapshot
+	// through the Linux clipboard layer (the Windows HGLOBAL walk below has
+	// no meaning there — Clipboard::Open() is a platform stub).
+	*aData = NULL;
+	*aDataSize = 0;
+	static std::vector<unsigned char> sBlob;
+	if (!LinuxClipboardGetAll(sBlob))
+		return g_script.RuntimeError(ERR_INTERNAL_CALL); // Bound violation.
+	if (!sBlob.empty())
+	{
+		void *copy = malloc(sBlob.size());
+		if (!copy)
+			return MemoryError();
+		memcpy(copy, sBlob.data(), sBlob.size());
+		*aData = copy;
+		*aDataSize = sBlob.size();
+	}
+	return OK;
+#else
 	*aData = NULL; // Set default in case of early return or empty data.
 	*aDataSize = 0;
 
@@ -468,12 +491,19 @@ ResultType Var::GetClipboardAll(void **aData, size_t *aDataSize)
 
 	*aDataSize = (DWORD)actual_space_used;
 	return OK;
+#endif // __linux__
 }
 
 
 
 ResultType Var::SetClipboardAll(void *aData, size_t aDataSize)
 {
+#ifdef __linux__
+	// P2-6: restore a multi-MIME AHKCB1 snapshot (see GetClipboardAll).
+	if (!LinuxClipboardSetAll((const unsigned char *)aData, aDataSize))
+		return g_script.RuntimeError(ERR_INTERNAL_CALL); // Corrupt blob.
+	return OK;
+#else
 	if (!g_clip.Open())
 		return g_script.RuntimeError(CANT_OPEN_CLIPBOARD_WRITE);
 	EmptyClipboard(); // Failure is not checked for since it's probably impossible under these conditions.
@@ -524,6 +554,7 @@ ResultType Var::SetClipboardAll(void *aData, size_t aDataSize)
 	}
 
 	return g_clip.Close();
+#endif // __linux__
 }
 
 

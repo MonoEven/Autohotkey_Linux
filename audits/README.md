@@ -269,6 +269,15 @@ Closures since check0901 (evidence in the linked oracles):
   crashes (the engine snapshot fix removed one dangling pointer, but a
   second same-thread crash remains); scripts must read ImeStatus from the
   main thread or a timer until that is fixed.
+- `P2-6` rich `ClipboardAll` (check_detail0901 §18) work starts here: the
+  Linux port currently persists only the text representation (the Windows
+  multi-format HGLOBAL walk in var.cpp runs unchanged against a text-only
+  X11/Wayland clipboard), so ClipboardAll round-trips survive text but drop
+  HTML/PNG/URI-list/custom-MIME representations.  The plan follows the
+  audit's snapshot model: serialize every negotiated MIME with version,
+  length, per-item checksum and bounded sizes, restore by re-offering all
+  items, and gate with a multi-representation oracle (text+HTML, PNG,
+  URI list, unknown MIME, bounded-failure).
 
 For current user-facing status, use the repository [README](../README.md),
 [Linux capability matrix](../docs-v2/docs/linux-port.htm),

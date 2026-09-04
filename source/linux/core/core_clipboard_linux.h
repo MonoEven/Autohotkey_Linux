@@ -3,7 +3,9 @@
 // wl_data_device on pure Wayland, process-internal fallback otherwise.
 #pragma once
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 struct _XDisplay;
 typedef struct _XDisplay Display;
@@ -18,6 +20,29 @@ bool LinuxClipboardGetText(std::wstring &aText);
 // Set the system clipboard text.  Returns true on success (the data is
 // owned and served on request); false when unreachable.
 bool LinuxClipboardSetText(const std::wstring &aText);
+
+// --- P2-6 rich ClipboardAll (check_detail0901 §18) ----------------------
+//
+// Snapshot API over the AHKCB1 container: magic u32, version u32, count
+// u32, then per item {mime_len u16, mime bytes, data_len u32, fnv1a
+// checksum u32, data bytes}.  Per-item and total size bounds are enforced
+// (32 MiB / 128 MiB); a corrupt or over-bound blob is rejected rather than
+// partially restored.
+//
+// Read every representation of the current clipboard (text is synthesized
+// from the normal text read; extra X11 TARGETS atoms are requested per
+// MIME).  Returns false on a bound violation; an empty clipboard yields a
+// valid empty blob.
+bool LinuxClipboardGetAll(std::vector<unsigned char> &aOut);
+
+// Restore a snapshot: re-offer every representation (X11: take ownership
+// and serve each atom; the text entry also feeds the plain-text path).
+// Returns false when the blob is not a valid AHKCB1 container.
+bool LinuxClipboardSetAll(const unsigned char *aData, size_t aSize);
+
+// Monotonic clipboard owner generation (bumps on every write; used by the
+// paste-fallback restore to compare ownership per the audit).
+uint64_t LinuxClipboardOwnerGeneration();
 
 // --- Clipboard-paste fallback transaction (pure-Wayland Send path) ---
 //
