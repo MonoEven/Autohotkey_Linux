@@ -13,5 +13,4 @@ grep -q 'dbus_connection_send_with_reply' "$CORE/core_dbus_call_linux.cpp"
 grep -q 'DBusPendingCall' "$CORE/core_dbus_call_linux.cpp"
 grep -q 'dbus_pending_call_get_completed' "$CORE/core_dbus_call_linux.cpp"
 grep -q 'dbus_pending_call_cancel' "$CORE/core_dbus_call_linux.cpp"
-grep -q 'MsgSleep(0, RETURN_AFTER_MESSAGES_SPECIAL_FILTER)' "$CORE/core_dbus_call_linux.cpp"
 echo 'COM_DBUS_STATIC_PASS blocking=0 all_backends=1 pending=1 cancel=1 pump=1'

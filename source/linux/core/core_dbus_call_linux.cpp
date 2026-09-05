@@ -1,6 +1,5 @@
 // Shared bounded D-Bus request/reply helper.
 #include "../../stdafx.h"
-#include "../../application.h"
 #include "core_dbus_call_linux.h"
 #include <ctime>
 
@@ -67,7 +66,5 @@ DBusMessage *LinuxDbusPendingReply(DBusConnection *aConnection,
 					"D-Bus connection disconnected");
 			return nullptr;
 		}
-		// Keep script timers and queued callbacks moving while a backend waits.
-		MsgSleep(0, RETURN_AFTER_MESSAGES_SPECIAL_FILTER);
 	}
 }

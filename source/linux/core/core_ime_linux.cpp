@@ -32,6 +32,7 @@ DWORD sLastAttemptTick = 0;
 // (hotstring/InputHook callbacks run on their own threads).  std::string is
 // not safe under concurrent read/write, so all state access is serialized.
 std::mutex sImeStateMutex;
+std::recursive_mutex sImeListenerMutex;
 bool sPreeditActive = false;
 std::string sEngine;
 bool sFocusTrackingSeen = false;
@@ -433,6 +434,7 @@ void HandleFcitxMessage(DBusMessage *aMessage)
 
 void CloseListener()
 {
+	std::lock_guard<std::recursive_mutex> listener_lock(sImeListenerMutex);
 	if (sImeBus)
 	{
 		dbus_connection_close(sImeBus);
@@ -487,6 +489,7 @@ int LinuxImeFramework()
 
 bool LinuxImeStartListener()
 {
+	std::lock_guard<std::recursive_mutex> listener_lock(sImeListenerMutex);
 	if (sImeBus)
 		return true;
 	DWORD now = GetTickCount();
@@ -539,6 +542,7 @@ bool LinuxImeStartListener()
 
 void LinuxImeShutdown()
 {
+	std::lock_guard<std::recursive_mutex> listener_lock(sImeListenerMutex);
 	CloseListener();
 	sListenerAttempted = false;
 	sLastAttemptTick = 0;
@@ -546,6 +550,7 @@ void LinuxImeShutdown()
 
 void LinuxImeDispatch()
 {
+	std::lock_guard<std::recursive_mutex> listener_lock(sImeListenerMutex);
 	// Refresh the framework probe on the dispatch context only, and only when
 	// the IME character stream is actually relevant (capture active or an
 	// existing listener).  X11-only sessions skip it entirely: the blocking
@@ -594,16 +599,23 @@ const char *LinuxImeEngine()
 
 bool LinuxImePreeditActive()
 {
-	return sPreeditActive || LinuxCaptureImePreeditActive();
+	bool active = false;
+	{
+		std::lock_guard<std::mutex> lock(sImeStateMutex);
+		active = sPreeditActive;
+	}
+	return active || LinuxCaptureImePreeditActive();
 }
 
 bool LinuxImeListening()
 {
+	std::lock_guard<std::recursive_mutex> listener_lock(sImeListenerMutex);
 	return sImeBus != nullptr;
 }
 
 bool LinuxImeCommitCaptureActive()
 {
+	std::lock_guard<std::recursive_mutex> listener_lock(sImeListenerMutex);
 	if (!sImeBus || sListenerFramework == LINUX_IME_NONE)
 		return false;
 	std::lock_guard<std::mutex> lock(sImeStateMutex);
@@ -622,9 +634,9 @@ bool LinuxImeCommitCaptureActive()
 
 const char *LinuxImeListenerScope()
 {
-	if (sImeBus)
-		return "eavesdrop";
-	return LinuxImeFramework() == LINUX_IME_NONE ? "none" : "state-only";
+	std::lock_guard<std::recursive_mutex> listener_lock(sImeListenerMutex);
+	return sImeBus ? "eavesdrop"
+		: LinuxImeFramework() == LINUX_IME_NONE ? "none" : "state-only";
 }
 
 unsigned long LinuxImeCommitCount()
