@@ -154,4 +154,22 @@ Windows 差分测试的方向也正确：使用官方 Windows 版本的结果，
 
 对使用者，我会建议从**纯语言脚本和范围明确的 X11 自动化**开始逐项验收；在上述安全缺口关闭前，不宜把未经验证的 evdev 兜底当作主力桌面的全局输入接管方案。
 
+## 五、闭环实施记录（2026-09-05）
+
+本审计的源码缺口已在后续提交中逐项处理，原文保留为 2026-09-04/09-05 的基线快照：
+
+| 项目 | 实施提交/证据 | 状态 |
+|---|---|---|
+| 进程内 evdev 键盘筛选、uinput 预检、写失败 fail-open | `98f6e6b0`; `check_evdev_failopen_source.sh`; VM 编译、headless 27/27 | 已关闭 |
+| inputd v1/v2 capability parity | `da648e68`; v2 protocol 28/28，v1 `nobody` suppress denial | 已关闭 |
+| `SYN_DROPPED`、per-device state、stable device identity | `417c396e`, `c52e4c00`; state guard；protocol 28/28 | 已关闭 |
+| Wayland paste dispatch/cancel/CAS 与 ClipboardAll bounds/UTF-8/MIME/INCR | `a1432c26`, `934a4733`; ClipboardAll 3/3、paste CAS PASS | 已关闭 |
+| production D-Bus bounded pending calls、systemd readiness | `37b31965`, `38440354`, `4e200a73`; static guard、M7 oracle PASS | 已关闭 |
+| injection phase/value 与 incomplete commit validation | `0f878035`; injection oracle 26/26 | 已关闭 |
+| accelerator capability contract、CI gate、current docs totals/IME status | `2f41c2fc`, `6d517c38`, `d9d609d7`; report guard 1170/17/234 | 已关闭 |
+
+后续修正了两次 CI 回归：inputd 的 `offsetof` 显式包含在 `b98bf507`，slow-owner clipboard 的单预算和 portal adapted contract 在 `934a4733`。其后的 CI run `33959135331` 对核心、ASan、TSan、四发行版容器、no-XWayland、pack acceptance 和 package job 全部报告 success。
+
+仍不能从受控 VM 推导出的范围保持明确：本 VM 没有可用的真实 `/dev/input`/`/dev/uinput`，所以进程内 evdev hotplug oracle 是 `EVDEV_HOTPLUG_SKIP input-read-and-uinput-write-required`；真实 Fcitx5 桌面、KDE、Flatpak、InputCapture 和 24 小时 soak 仍是 not-run/unsupported 或未完成场景，不标记为实机完成。
+
 对维护者，下一阶段最有价值的不是再增加几十个“已实现函数”，而是补上三条完整链路：**输入失败不影响用户操作、普通用户权限与脚本语义一致、真实 Wayland/中文/应用场景可重复验收。**这三项改善，比测试总数继续增长更能缩小与实际需求的距离。

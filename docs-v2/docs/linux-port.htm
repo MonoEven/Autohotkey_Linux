@@ -410,7 +410,7 @@ alongside the <code>.tar.gz</code> and <code>.deb</code>, so
 downgrade</i> (rollback) to any published release.  Releases before linux.15
 were removed when the new installer line shipped; their source remains on
 the <code>v2.0.26-linux.*</code> git tags.  The latest release is
-<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.20</a>.
+<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.21</a>.
 Highlights of this release:</p>
 <ul>
   <li><b><code>Hotkey()</code> works on Wayland</b>: the X-only guard is
@@ -432,7 +432,7 @@ Highlights of this release:</p>
     Selection-backed list APIs and Value-backed scalar Get/Set are real (Qt
     QListWidget/QSlider callbacks prove effects and clear/error semantics).
     Each operation updates <code>A_LastError</code> with Linux errno (0 success;
-    match/interface/bus/timeout failures have stable codes). All D-Bus calls use
+    match/interface/bus/timeout failures have stable codes). AT-SPI calls use
     bounded pending waits which pump GTK/Wayland/hotkey/timer events; diagnostics
     publish pending-call/pump-slice counts and nested AT-SPI reports EBUSY.
     WinTitle probes/cache requests run concurrently and load only the matching
@@ -467,7 +467,24 @@ Highlights of this release:</p>
     preedit cleanliness and InputHook matching. Fcitx5 has CI protocol coverage;
     real desktop/Flatpak visibility remains explicit. See
     <code>docs/IME-Integration.md</code>.</li>
-  <li><b>Clipboard slow-owner timeout</b>:
+     <li><b>Input safety and lifecycle hardening</b>: the in-process evdev
+     fallback filters keyboard-capable devices, preflights uinput and releases
+     all local grabs on replay failure. The broker applies one capability policy
+     to v1/v2, drops and reopens a device after <code>SYN_DROPPED</code>, keeps
+     physical state per device and publishes stable device identities. Its
+     systemd unit uses <code>Type=notify</code> and reports healthy/degraded
+     readiness. Portal/GNOME registered accelerators expose adapted, not
+     hook-equivalent, suppression guarantees.</li>
+   <li><b>Bounded D-Bus lifecycle</b>: production Linux backends use a shared
+     pending-call helper with deadline, cancellation and short D-Bus dispatch
+     slices; no production backend uses <code>send_with_reply_and_block</code>.
+     IME listener lifetime and state snapshots are synchronized across dispatch
+     and script status calls.</li>
+   <li><b>Clipboard integrity</b>: X11 transfers enforce size/time limits and
+     support bounded <code>INCR</code> chunks; ClipboardAll validates MIME names,
+     checksums and strict UTF-8, while Wayland paste waits dispatch pending
+     offers and invalidates restore on cancellation.</li>
+   <li><b>Clipboard slow-owner timeout</b>:
     <code>AHK_CLIPBOARD_TIMEOUT_MS</code> (default 2000) bounds reads;
     regression with a slow-owner probe.</li>
   <li><b>Rich ClipboardAll + paste-restore ownership arbitration

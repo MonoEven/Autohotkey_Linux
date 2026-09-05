@@ -14,7 +14,10 @@ old counts and findings are not mistaken for the latest release status.
 | [check0824.md](check0824.md) | 2026-08-24 independent technical audit (commit `eaeeaf74`) |
 | [check_detail0824.md](check_detail0824.md) | Detailed gap breakdown and per-item solution designs derived from check0824 |
 | [check0901.md](check0901.md) | 2026-08-30 independent technical audit (commit `5bc26e5a`) |
-| [check_detail0901.md](check_detail0901.md) | Per-item designs for every P0-P3 gap; milestone plan MF-M9 |
+| [check0905.md](check0905.md) | 2026-09-04/09-05 full repository audit and closure evidence |
+
+Current closure follow-up for check0905 is recorded in the audit itself; the
+original findings remain dated review evidence and are not rewritten in place.
 
 Closures since check0901 (evidence in the linked oracles):
 

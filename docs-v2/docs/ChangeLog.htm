@@ -16,6 +16,26 @@
 
 <h2 id="linux">Linux port changes</h2>
 
+<h2 id="linux.21">v2.0.26-linux.21</h2>
+<p><b>Repository hardening closure (check0905); doc-check totals synchronized.</b></p>
+<ul>
+  <li>In-process evdev now filters keyboard-capable devices, preflights uinput,
+    propagates write failures and releases local grabs fail-open.</li>
+  <li>inputd v1/v2 share capability policy; dropped frames clear per-device
+    state, stable device identities are published, injection plans validate
+    phase/value and complete event counts, and systemd readiness uses
+    <code>Type=notify</code>.</li>
+  <li>Wayland paste ownership cancellation and dispatch are transactional;
+    ClipboardAll uses bounded X11/Wayland reads, X11 <code>INCR</code>, strict
+    UTF-8 and MIME/checksum validation.</li>
+  <li>All production Linux D-Bus calls use bounded pending dispatch; IME
+    listener lifetime is synchronized and accelerator suppression guarantees
+    distinguish adapted portal/GNOME registration from hook-equivalent evdev/X11.</li>
+  <li>Current verification totals are 1170/1170 X11/headless, 17/17 Wayland and
+    234/234 XWayland; remaining real KDE/Fcitx5/Flatpak/InputCapture and long-soak
+    limitations remain explicit.</li>
+</ul>
+
 <h2 id="linux.20">v2.0.26-linux.20</h2>
 <p><b>Input safety and semantics closures (P0-1/P0-2/P0-3, M2a, M5, M6a, M7,
 P2-6, P2-10, P2-11); rich ClipboardAll; doc-check 1170/1170.</b></p>
