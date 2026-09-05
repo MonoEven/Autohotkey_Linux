@@ -80,7 +80,7 @@ OnF12(*) {
     FileAppend("fire`n", A_Args[1])
     ExitApp
 }
-Hotkey("F12", OnF12)
+Hotkey("~F12", OnF12)
 SetTimer(() => ExitApp(8), -5000)
 EOF
 python3 "$SERVER" "$SOCK" >"$SERVER_LOG" 2>&1 &
