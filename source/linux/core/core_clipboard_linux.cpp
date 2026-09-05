@@ -84,6 +84,26 @@ static std::string LinuxWideToUtf8(const std::wstring &aWide)
 	for (size_t i = 0; i < aWide.size(); ++i)
 	{
 		unsigned int c = (unsigned int)aWide[i];
+		// Be defensive if a caller supplied Windows-style UTF-16 units on
+		// Linux: combine a valid pair before encoding, replace an orphan.
+		if (c >= 0xD800 && c <= 0xDBFF)
+		{
+			if (i + 1 < aWide.size())
+			{
+				unsigned int low = (unsigned int)aWide[i + 1];
+				if (low >= 0xDC00 && low <= 0xDFFF)
+				{
+					c = 0x10000 + ((c - 0xD800) << 10) + (low - 0xDC00);
+					++i;
+				}
+				else
+					c = 0xFFFD;
+			}
+			else
+				c = 0xFFFD;
+		}
+		else if (c >= 0xDC00 && c <= 0xDFFF || c > 0x10FFFF)
+			c = 0xFFFD;
 		if (c < 0x80)
 			out += (char)c;
 		else if (c < 0x800)
@@ -108,34 +128,54 @@ static std::string LinuxWideToUtf8(const std::wstring &aWide)
 	return out;
 }
 
-static std::wstring LinuxUtf8ToWide(const std::string &aUtf8)
+static bool LinuxUtf8ToWide(const std::string &aUtf8, std::wstring &aOut)
 {
-	std::wstring out;
-	size_t i = 0;
-	while (i < aUtf8.size())
+	aOut.clear();
+	for (size_t i = 0; i < aUtf8.size();)
 	{
 		unsigned char c = (unsigned char)aUtf8[i];
 		unsigned int cp = 0;
-		int extra = 0;
-		if (c < 0x80) { cp = c; }
-		else if ((c & 0xE0) == 0xC0) { cp = c & 0x1F; extra = 1; }
-		else if ((c & 0xF0) == 0xE0) { cp = c & 0x0F; extra = 2; }
-		else if ((c & 0xF8) == 0xF0) { cp = c & 0x07; extra = 3; }
-		else { ++i; continue; }
+		size_t extra = 0;
+		if (c <= 0x7F)
+		{
+			cp = c;
+		}
+		else if (c >= 0xC2 && c <= 0xDF)
+		{
+			cp = c & 0x1F;
+			extra = 1;
+		}
+		else if (c >= 0xE0 && c <= 0xEF)
+		{
+			cp = c & 0x0F;
+			extra = 2;
+		}
+		else if (c >= 0xF0 && c <= 0xF4)
+		{
+			cp = c & 0x07;
+			extra = 3;
+		}
+		else
+			return false;
 		if (i + extra >= aUtf8.size())
-			break;
-		bool ok = true;
-		for (int k = 1; k <= extra; ++k)
+			return false;
+		for (size_t k = 1; k <= extra; ++k)
 		{
 			unsigned char cc = (unsigned char)aUtf8[i + k];
-			if ((cc & 0xC0) != 0x80) { ok = false; break; }
+			if ((cc & 0xC0) != 0x80)
+				return false;
 			cp = (cp << 6) | (cc & 0x3F);
 		}
-		if (!ok) { ++i; continue; }
-		out += (wchar_t)cp;
+		if ((extra == 1 && cp < 0x80)
+			|| (extra == 2 && cp < 0x800)
+			|| (extra == 3 && cp < 0x10000)
+			|| (cp >= 0xD800 && cp <= 0xDFFF)
+			|| cp > 0x10FFFF)
+			return false;
+		aOut.push_back((wchar_t)cp);
 		i += extra + 1;
 	}
-	return out;
+	return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +187,7 @@ static std::wstring LinuxUtf8ToWide(const std::string &aUtf8)
 // public paste API below.  File scope so either handler can observe them.
 static bool sPasteActive = false;
 static bool sPasteServed = false;
+static bool sPasteOwnershipLost = false;
 
 namespace {
 
@@ -156,6 +197,7 @@ Atom gClipX11Utf8 = 0;
 Atom gClipX11Prop = 0;            // Property name used for transfers.
 Atom gClipX11Clipboard = 0;       // CLIPBOARD selection atom.
 Atom gClipX11Targets = 0;         // TARGETS atom.
+Atom gClipX11Incr = 0;            // INCR large-transfer marker.
 std::wstring gClipX11Data;        // Our owned data.
 bool gClipX11Owned = false;
 
@@ -193,6 +235,7 @@ void LinuxClipX11Ensure(Display *d)
 	gClipX11Prop = XInternAtom(d, "AHK_CLIPBOARD", False);
 	gClipX11Clipboard = XInternAtom(d, "CLIPBOARD", False);
 	gClipX11Targets = XInternAtom(d, "TARGETS", False);
+	gClipX11Incr = XInternAtom(d, "INCR", False);
 	gClipX11TextAtom = gClipX11Utf8;
 }
 
@@ -329,6 +372,11 @@ static bool LinuxClipSnapshotDeserialize(const unsigned char *a, size_t n,
 		LinuxClipboardItem item;
 		item.mime.assign((const char *)a + i, mime_len);
 		i += mime_len;
+		if (!LinuxClipMimeSafe(item.mime))
+			return false;
+		for (const auto &existing : aSnap.items)
+			if (existing.mime == item.mime)
+				return false;
 		uint32_t data_len = get32(i), checksum = get32(i);
 		if (i + (size_t)data_len > n || data_len > AHK_CB_MAX_ITEM_BYTES)
 			return false;
@@ -385,59 +433,118 @@ static bool LinuxClipX11RequestTarget(Display *d, Atom aTarget,
 	XConvertSelection(d, gClipX11Clipboard, aTarget, gClipX11Prop,
 		gClipX11Window, CurrentTime);
 	XFlush(d);
-	time_t deadline = time(nullptr) + LinuxClipTimeoutMs() / 1000;
-	if (LinuxClipTimeoutMs() % 1000)
-		++deadline;
-	while (!gClipX11ReadDone && !gClipX11ReadFailed && time(nullptr) < deadline)
-	{
-		struct pollfd pfd;
-		pfd.fd = ConnectionNumber(d);
-		pfd.events = POLLIN;
-		pfd.revents = 0;
-		if (poll(&pfd, 1, 20) > 0)
+	const unsigned long max_longs =
+		(unsigned long)(AHK_CB_MAX_ITEM_BYTES / 4u + 1u);
+	const DWORD started = GetTickCount();
+	bool incr = false;
+	bool transfer_done = false;
+	auto read_property_chunk = [&](bool &aDone) -> bool {
+		Atom type = None;
+		int format = 0;
+		unsigned long nitems = 0, after = 0;
+		unsigned char *data = nullptr;
+		if (XGetWindowProperty(d, gClipX11Window, gClipX11Prop,
+				0, max_longs, True, AnyPropertyType, &type, &format,
+				&nitems, &after, &data) != Success)
+			return false;
+		if (type == gClipX11Incr)
 		{
-			while (XPending(d) > 0)
+			XFree(data);
+			return false; // INCR is only valid for the initial property.
+		}
+		size_t bytes = format == 32
+			? (size_t)nitems * sizeof(unsigned long)
+			: format == 16 ? (size_t)nitems * 2 : (size_t)nitems;
+		if (after != 0 || bytes > AHK_CB_MAX_ITEM_BYTES
+			|| bytes > AHK_CB_MAX_ITEM_BYTES - aOut.size())
+		{
+			XFree(data);
+			return false;
+		}
+		if (bytes && data)
+			aOut.insert(aOut.end(), data, data + bytes);
+		XFree(data);
+		aDone = bytes == 0;
+		return true;
+	};
+	while (!gClipX11ReadDone && !gClipX11ReadFailed
+		&& (DWORD)(GetTickCount() - started) < (DWORD)LinuxClipTimeoutMs())
+	{
+		struct pollfd pfd = {ConnectionNumber(d), POLLIN, 0};
+		if (poll(&pfd, 1, 20) <= 0)
+			continue;
+		while (XPending(d) > 0)
+		{
+			XEvent ev;
+			XNextEvent(d, &ev);
+			if (ev.type == SelectionNotify
+				&& ev.xselection.requestor == gClipX11Window)
 			{
-				XEvent ev;
-				XNextEvent(d, &ev);
-				if (ev.type == SelectionNotify
-					&& ev.xselection.requestor == gClipX11Window)
+				if (ev.xselection.property == None)
 				{
-					gClipX11ReadDone = true;
-					if (ev.xselection.property == None)
-					{
-						gClipX11ReadFailed = true;
-						break;
-					}
-					Atom type;
-					int format;
-					unsigned long nitems, after;
-					unsigned char *data = nullptr;
-					if (XGetWindowProperty(d, gClipX11Window, gClipX11Prop,
-							0, 0x7fffffff, True, AnyPropertyType, &type,
-							&format, &nitems, &after, &data) == Success && data)
-					{
-						// Xlib expands format=32 values to unsigned long on LP64;
-						// nitems is an element count, never a byte count.
-						size_t bytes = format == 32
-							? (size_t)nitems * sizeof(unsigned long)
-							: format == 16 ? (size_t)nitems * 2
-							: (size_t)nitems;
-						if (bytes > AHK_CB_MAX_ITEM_BYTES)
-							gClipX11ReadFailed = true;
-						else
-							aOut.assign(data, data + bytes);
-						XFree(data);
-					}
-					else
-						gClipX11ReadFailed = true;
+					gClipX11ReadFailed = true;
 					break;
 				}
-				if (ev.type == SelectionRequest)
-					LinuxClipX11ServeRequest(d, &ev.xselectionrequest);
+				Atom type = None;
+				int format = 0;
+				unsigned long nitems = 0, after = 0;
+				unsigned char *data = nullptr;
+				if (XGetWindowProperty(d, gClipX11Window, gClipX11Prop,
+						0, max_longs, True, AnyPropertyType, &type, &format,
+						&nitems, &after, &data) != Success)
+				{
+					gClipX11ReadFailed = true;
+					break;
+				}
+				if (type == gClipX11Incr)
+				{
+					// The initial INCR value is only a size hint. Subsequent
+					// chunks arrive as PropertyNotify(NewValue) events.
+					incr = true;
+					transfer_done = false;
+					XSelectInput(d, gClipX11Window, PropertyChangeMask);
+					XFree(data);
+					continue;
+				}
+				size_t bytes = format == 32
+					? (size_t)nitems * sizeof(unsigned long)
+					: format == 16 ? (size_t)nitems * 2 : (size_t)nitems;
+				if (after != 0 || bytes > AHK_CB_MAX_ITEM_BYTES)
+					gClipX11ReadFailed = true;
+				else if (bytes && data)
+					aOut.assign(data, data + bytes);
+				XFree(data);
+				if (!gClipX11ReadFailed)
+				{
+					gClipX11ReadDone = true;
+					break;
+				}
+				break;
 			}
+			if (incr && ev.type == PropertyNotify
+				&& ev.xproperty.window == gClipX11Window
+				&& ev.xproperty.atom == gClipX11Prop
+				&& ev.xproperty.state == PropertyNewValue)
+			{
+				if (!read_property_chunk(transfer_done))
+				{
+					gClipX11ReadFailed = true;
+					break;
+				}
+				if (transfer_done)
+				{
+					gClipX11ReadDone = true;
+					break;
+				}
+			}
+			if (ev.type == SelectionRequest)
+				LinuxClipX11ServeRequest(d, &ev.xselectionrequest);
 		}
 	}
+	// Do not leave PropertyNotify selected: dispatch would otherwise keep
+	// re-seeing stale property events and starve SelectionRequest handling.
+	if (incr)
+		XSelectInput(d, gClipX11Window, 0);
 	gClipX11Reading = false;
 	return gClipX11ReadDone && !gClipX11ReadFailed;
 }
@@ -472,77 +579,13 @@ static bool LinuxClipboardX11Read(Display *d, std::wstring &aText)
 {
 	aText.clear();
 	LinuxClipX11Ensure(d);
-	Window owner = XGetSelectionOwner(d, gClipX11Clipboard);
-	if (!owner)
+	if (!XGetSelectionOwner(d, gClipX11Clipboard))
 		return true; // Empty clipboard, no error.
-
-	// Request the selection as UTF8_STRING into our property.  We must NOT
-	// take ownership here: XConvertSelection asks the current owner for
-	// data (taking ownership would steal the selection from its owner).
-	gClipX11Reading = true;
-	gClipX11ReadDone = false;
-	gClipX11ReadFailed = false;
-	XConvertSelection(d, gClipX11Clipboard, gClipX11Utf8, gClipX11Prop, gClipX11Window, CurrentTime);
-	XFlush(d);
-
-	// Wait for SelectionNotify (bounded: AHK_CLIPBOARD_TIMEOUT_MS, default
-	// 2 s - a slow owner may take a while to serve the request, check0820).
-	time_t deadline = time(nullptr) + LinuxClipTimeoutMs() / 1000;
-	if (LinuxClipTimeoutMs() % 1000)
-		++deadline; // Round up partial seconds.
-	while (!gClipX11ReadDone && !gClipX11ReadFailed && time(nullptr) < deadline)
-	{
-		struct pollfd pfd;
-		pfd.fd = ConnectionNumber(d);
-		pfd.events = POLLIN;
-		pfd.revents = 0;
-		if (poll(&pfd, 1, 20) > 0)
-		{
-			while (XPending(d) > 0)
-			{
-				XEvent ev;
-				XNextEvent(d, &ev);
-				if (ev.type == SelectionNotify && ev.xselection.requestor == gClipX11Window)
-				{
-					gClipX11ReadDone = true;
-					if (ev.xselection.property == None)
-					{
-						gClipX11ReadFailed = true; // Owner declined.
-						break;
-					}
-					// Read the property.
-					Atom type;
-					int format;
-					unsigned long nitems, after;
-					unsigned char *data = nullptr;
-					if (XGetWindowProperty(d, gClipX11Window, gClipX11Prop, 0, 0x7fffffff,
-						True, AnyPropertyType, &type, &format, &nitems, &after, &data) == Success
-						&& data)
-					{
-						std::string utf8((const char *)data, nitems);
-						aText = LinuxUtf8ToWide(utf8);
-						XFree(data);
-					}
-					else
-						gClipX11ReadFailed = true;
-					break;
-				}
-				// SelectionRequest while reading: we own the selection (a
-				// self-conversion or a foreign request); serve it directly
-				// -- the event has already been dequeued.
-				if (ev.type == SelectionRequest)
-					LinuxClipX11ServeRequest(d, &ev.xselectionrequest);
-			}
-		}
-	}
-	gClipX11Reading = false;
-	if (gClipX11ReadFailed)
-	{
-		// Fall back to STRING if the owner only offers that.
-		// (Retried only when we did not get any SelectionNotify at all.)
+	std::vector<unsigned char> raw;
+	if (!LinuxClipX11RequestTarget(d, gClipX11Utf8, raw)
+		&& !LinuxClipX11RequestTarget(d, XA_STRING, raw))
 		return false;
-	}
-	return true;
+	return LinuxUtf8ToWide(std::string(raw.begin(), raw.end()), aText);
 }
 
 // Write: take ownership; serve SelectionRequest events later.
@@ -628,6 +671,8 @@ void LinuxClipboardDispatchX11(Display *d)
 		if (ev.type == SelectionClear)
 		{
 			gClipX11Owned = false;
+			if (sPasteActive)
+				sPasteOwnershipLost = true;
 			continue;
 		}
 		if (ev.type == SelectionRequest)
@@ -881,24 +926,45 @@ static const wl_data_device_listener sClipWlDeviceListener = {
 void LinuxClipWlSourceSend(void *aData, wl_data_source *aSource, const char *aMime, int32_t aFd)
 {
 	std::string utf8 = LinuxWideToUtf8(gClipWlData);
+	bool complete = true;
 	if (aFd >= 0)
 	{
 		size_t off = 0;
 		while (off < utf8.size())
 		{
 			ssize_t n = write(aFd, utf8.data() + off, utf8.size() - off);
-			if (n <= 0)
-				break;
-			off += (size_t)n;
+			if (n > 0)
+			{
+				off += (size_t)n;
+				continue;
+			}
+			if (n < 0 && errno == EINTR)
+				continue;
+			if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+			{
+				struct pollfd pfd = {aFd, POLLOUT, 0};
+				if (poll(&pfd, 1, 50) > 0 && (pfd.revents & POLLOUT))
+					continue;
+			}
+			complete = false;
+			break;
 		}
 		close(aFd);
-		if (sPasteActive)
-			sPasteServed = true; // The app pulled our offer (the actual paste).
+		if (sPasteActive && complete)
+			sPasteServed = true; // The app pulled and received the full offer.
 	}
 }
 
 void LinuxClipWlSourceCancelled(void *aData, wl_data_source *aSource)
 {
+	if (aSource != gClipWlSource)
+		return;
+	if (sPasteActive)
+		sPasteOwnershipLost = true;
+	// The protocol declares the source cancelled; do not retain a stale
+	// non-null proxy that would make PasteRestore believe we still own it.
+	gClipWlSource = nullptr;
+	wl_data_source_destroy(aSource);
 }
 
 void LinuxClipWlSourceTarget(void *aData, wl_data_source *aSource, const char *aMime)
@@ -931,7 +997,7 @@ static const wl_data_source_listener sClipWlSourceListener = {
 // Wayland headers directly).
 bool LinuxClipWlOwnsSelection()
 {
-	return gClipWlSource != nullptr;
+	return gClipWlSource != nullptr && !sPasteOwnershipLost;
 }
 
 } // namespace
@@ -955,6 +1021,8 @@ void LinuxClipboardWaylandSeat(wl_seat *aSeat)
 
 void LinuxClipboardWaylandTeardown()
 {
+	if (sPasteActive)
+		sPasteOwnershipLost = true;
 	if (gClipWlSource)
 	{
 		wl_data_source_destroy(gClipWlSource);
@@ -1055,7 +1123,14 @@ static bool LinuxClipboardWaylandRead(wl_display *dpy, std::wstring &aText)
 		{
 			ssize_t n = read(fds[0], buf.data(), buf.size());
 			if (n > 0)
+			{
+				if ((size_t)n > AHK_CB_MAX_ITEM_BYTES - gClipWlOfferData.size())
+				{
+					close(fds[0]);
+					return false;
+				}
 				gClipWlOfferData.append(buf.data(), (size_t)n);
+			}
 			else
 				break;
 		}
@@ -1067,7 +1142,11 @@ static bool LinuxClipboardWaylandRead(wl_display *dpy, std::wstring &aText)
 		wl_data_offer_destroy(gClipWlOffer);
 		gClipWlOffer = nullptr;
 	}
-	aText = LinuxUtf8ToWide(gClipWlOfferData);
+	if (!LinuxUtf8ToWide(gClipWlOfferData, aText))
+	{
+		aText.clear();
+		return false;
+	}
 	return true;
 }
 
@@ -1162,7 +1241,9 @@ bool LinuxClipboardGetAll(std::vector<unsigned char> &aOut)
 					XFree(name);
 					bool is_text = mime == "UTF8_STRING"
 						|| mime == "STRING" || mime == "TEXT"
-						|| mime == "COMPOUND_TEXT";
+						|| mime == "COMPOUND_TEXT"
+						|| mime == "text/plain;charset=utf-8"
+						|| mime == "text/plain";
 					if (is_text)
 						continue; // Covered by the synthesized text entry.
 					std::vector<unsigned char> data;
@@ -1208,8 +1289,11 @@ bool LinuxClipboardSetAll(const unsigned char *aData, size_t aSize)
 		if (item.mime == "text/plain;charset=utf-8"
 			|| item.mime == "text/plain")
 		{
-			text = LinuxUtf8ToWide(std::string(item.data.begin(),
-				item.data.end()));
+			std::string bytes(item.data.begin(), item.data.end());
+			std::wstring decoded;
+			if (!LinuxUtf8ToWide(bytes, decoded))
+				return false;
+			text = std::move(decoded);
 			break;
 		}
 	// Keep the process-internal store in sync no matter which system
@@ -1276,6 +1360,7 @@ bool LinuxClipboardPasteSet(const std::wstring &aText, const std::wstring &aSave
 {
 	sPasteActive = true;
 	sPasteServed = false;
+	sPasteOwnershipLost = false;
 	sPasteOriginal = aSaved;
 	if (!LinuxClipboardSetText(aText))
 	{
@@ -1289,11 +1374,26 @@ bool LinuxClipboardPasteSet(const std::wstring &aText, const std::wstring &aSave
 // caller restores after the deadline regardless (the paste may still land).
 bool LinuxClipboardPasteWaitConsumed(int aTimeoutMs)
 {
-	if (sPasteServed)
-		return true;
-	int waited = 0;
-	while (sPasteActive && !sPasteServed && waited < aTimeoutMs)
+	if (sPasteServed || sPasteOwnershipLost)
+		return sPasteServed;
+	if (LinuxWaylandActive())
 	{
+		if (wl_display *dpy = LinuxWaylandDisplay())
+		{
+			LinuxClipWlWait(dpy, sPasteServed, aTimeoutMs);
+			return sPasteServed;
+		}
+	}
+	int waited = 0;
+	while (sPasteActive && !sPasteServed && !sPasteOwnershipLost
+		&& waited < aTimeoutMs)
+	{
+		// X11 SelectionRequest/SelectionClear callbacks are queued on the
+		// same connection; dispatch them during the transaction as well.
+		if (Display *d = LinuxX11Display())
+			LinuxClipboardDispatchX11(d);
+		if (sPasteServed || sPasteOwnershipLost)
+			break;
 		usleep(5000);
 		waited += 5;
 	}
