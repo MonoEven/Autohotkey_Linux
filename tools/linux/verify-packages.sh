@@ -65,7 +65,7 @@ chk "deb: ships official AHK SNI pixmap" "test -f /usr/share/autohotkey/autohotk
 chk "deb: installs themed AutoHotkey icon" "test -f /usr/share/icons/hicolor/16x16/apps/autohotkey.png"
 chk "deb: ships ahk-inputd daemon" "test -x /usr/share/autohotkey/ahk-inputd"
 chk "deb: ships standalone pack runtime" "test -x /usr/share/autohotkey/ahk_core_pack && ! ldd /usr/share/autohotkey/ahk_core_pack | grep -q 'libei\\|liboeffis'"
-chk "deb: ships socket-activation units" "test -f /usr/lib/systemd/system/ahk-inputd.socket && test -f /usr/lib/systemd/system/ahk-inputd.service && grep -q '^SocketMode=0660$' /usr/lib/systemd/system/ahk-inputd.socket"
+chk "deb: ships socket-activation units" "test -f /usr/lib/systemd/system/ahk-inputd.socket && test -f /usr/lib/systemd/system/ahk-inputd.service && grep -q '^SocketMode=0660$' /usr/lib/systemd/system/ahk-inputd.socket && grep -q '^Type=notify$' /usr/lib/systemd/system/ahk-inputd.service && grep -q '^NotifyAccess=main$' /usr/lib/systemd/system/ahk-inputd.service"
 # The deb's postinst enable-hint text is verified on the GNOME VM with
 # `dpkg-deb -e` (it prints exactly the per-user steps); CI cannot read
 # DEBIAN/* through dpkg-deb -c, so the install-side assertions here are
