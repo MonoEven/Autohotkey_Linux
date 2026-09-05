@@ -398,7 +398,10 @@ bool SendSubscribeFrame()
 		// check_detail0901 §7.2 rule 3: suppression is owner/root-only.  A
 		// client without the SUPPRESS grant subscribes observe-only; the
 		// broker would reject suppress rules with CAPABILITY_DENIED.
-		if (sV2 && !(sCapsGranted & INPUTD_V2_CAP_SUPPRESS))
+		// v1 has no negotiated capability grant.  Keep the compatibility
+		// connection observe-only; v1 suppress requests are rejected by a
+		// hardened daemon instead of becoming a downgrade path.
+		if (!sV2 || !(sCapsGranted & INPUTD_V2_CAP_SUPPRESS))
 			sup = 0;
 		unsigned int suffix_code = hk->mSC
 			? LinuxEvdevCodeForScanCode(hk->mSC)

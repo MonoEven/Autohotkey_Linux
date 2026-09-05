@@ -1062,6 +1062,13 @@ static void sweep_arb_leases(void)
 
 /* ---- protocol v2 command handling ------------------------------------------ */
 
+static int client_can_privileged_input(const struct client *c)
+{
+	/* A per-user daemon may grant its own UID; the packaged root daemon must
+	 * not turn root:input socket membership into suppress/exclusive authority. */
+	return c && (c->uid == 0 || c->uid == geteuid());
+}
+
 static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 	, const unsigned char *payload, size_t n, unsigned long long client_seq)
 {
@@ -1115,7 +1122,7 @@ static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 		 * socket owner (or root). REMAP requires both EXCLUSIVE and INJECT.
 		 * caps_denied reports every requested-but-not-granted bit. */
 		unsigned int caps_granted = INPUTD_V2_CAP_OBSERVE;
-		if (c->uid == 0 || c->uid == geteuid())
+		if (client_can_privileged_input(c))
 			caps_granted |= INPUTD_V2_CAP_SUPPRESS | INPUTD_V2_CAP_EXCLUSIVE
 				| INPUTD_V2_CAP_INJECT;
 		unsigned int caps_denied = caps_requested & ~caps_granted;
@@ -1631,6 +1638,17 @@ static void handle_client_cmd(struct client *c, const unsigned char *cmd, size_t
 				return;
 			}
 		}
+		/* v1 has no capability field, but it must not be a privilege
+		 * downgrade.  Keep observe-only subscriptions available to the
+		 * socket-authorized user and reject any legacy suppress request. */
+		for (unsigned int i = 0; i < count; ++i)
+			if (cmd[5 + (size_t)i * 5 + 4] && !client_can_privileged_input(c))
+			{
+				c->rule_count = 0;
+				send_ack(c, 0, INPUTD_V1_DETAIL_CAPABILITY_DENIED);
+				logmsg("client %d v1 suppress subscription denied by capability policy", c->fd);
+				return;
+			}
 		c->rule_count = 0;
 		for (unsigned int i = 0; i < count; ++i)
 		{

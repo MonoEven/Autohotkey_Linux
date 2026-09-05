@@ -179,6 +179,10 @@ expect_contains proto_bad_type "ERROR code=2" "$probe_out"
 v1out=$("$V1CLIENT" "$WORK/protoa.sock" "30:0" --timeout-ms 1500)
 expect_contains proto_v1_coexist_hello "ACK HELLO ok=1 proto=1" "$v1out"
 expect_contains proto_v1_coexist_sub "ACK SUBSCRIBE ok=1 count=1" "$v1out"
+# v1 must not bypass v2 capability policy: the root broker's 0666 test
+# socket is deliberately reachable by nobody, but suppress remains denied.
+v1deny=$(sudo -n -u nobody "$V1CLIENT" "$WORK/protoa.sock" "30:1" --timeout-ms 800)
+expect_contains proto_v1_suppress_denied "ACK SUBSCRIBE ok=0 count=1" "$v1deny"
 
 # ---- Case 13: capability denial for a non-owner uid -------------------------
 probe_out=$(sudo -n -u nobody "$PROBE" "$WORK/protoa.sock" deny-sup)
