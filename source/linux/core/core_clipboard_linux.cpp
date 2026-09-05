@@ -1338,6 +1338,8 @@ uint64_t LinuxClipboardOwnerGeneration()
 // an originally-empty clipboard comes back empty (check0820 P1).
 
 static std::wstring sPasteOriginal; // Clipboard text saved at PasteSet time.
+static std::vector<unsigned char> sPasteOriginalAll;
+static bool sPasteOriginalAllValid = false;
 // Audit §18 concurrent-user-copy guard: PasteRestore re-offers the original
 // ONLY when this process still owns the clipboard.  If a user (or another
 // app) copied new content while the paste text was installed, the user's
@@ -1362,12 +1364,17 @@ bool LinuxClipPasteStillOurs()
 	return true; // Headless fallback: no foreign owner can exist.
 }
 
-bool LinuxClipboardPasteSet(const std::wstring &aText, const std::wstring &aSaved)
+bool LinuxClipboardPasteSet(const std::wstring &aText, const std::wstring &aSaved,
+	const std::vector<unsigned char> *aSavedAll)
 {
 	sPasteActive = true;
 	sPasteServed = false;
 	sPasteOwnershipLost = false;
 	sPasteOriginal = aSaved;
+	sPasteOriginalAll.clear();
+	sPasteOriginalAllValid = aSavedAll && !aSavedAll->empty();
+	if (sPasteOriginalAllValid)
+		sPasteOriginalAll = *aSavedAll;
 	if (!LinuxClipboardSetText(aText))
 	{
 		sPasteActive = false;
@@ -1414,6 +1421,40 @@ void LinuxClipboardPasteRestore(bool aHadText)
 	// ownership to another window while the paste text was installed; the
 	// user's new copy wins and our original is abandoned (restoring it would
 	// destroy the user's content).
+	Display *d = LinuxX11Display();
+	if (d)
+	{
+		// X11 has no compare-and-swap selection primitive. Serializing the
+		// owner check and replacement at the server prevents another client
+		// from winning between those two requests; its queued copy then wins
+		// after the server is released instead of being overwritten.
+		XGrabServer(d);
+		LinuxClipX11Ensure(d);
+		bool ours = XGetSelectionOwner(d, gClipX11Clipboard) == gClipX11Window;
+		if (ours)
+		{
+			if (sPasteOriginalAllValid)
+				LinuxClipboardSetAll(sPasteOriginalAll.data(), sPasteOriginalAll.size());
+			else if (aHadText)
+				LinuxClipboardSetText(sPasteOriginal);
+			else
+				LinuxClipboardSetText(L"");
+		}
+		XUngrabServer(d);
+		XFlush(d);
+		if (!ours)
+		{
+			static bool sPasteClobberWarned = false;
+			if (!sPasteClobberWarned)
+			{
+				fprintf(stderr,
+					"AHK info: paste-fallback restore skipped — the clipboard "
+					"was replaced by another owner; the user's new copy is preserved.\n");
+				sPasteClobberWarned = true;
+			}
+		}
+		return;
+	}
 	if (!LinuxClipPasteStillOurs())
 	{
 		static bool sPasteClobberWarned = false;

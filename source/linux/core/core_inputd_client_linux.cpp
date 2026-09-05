@@ -360,6 +360,7 @@ bool SendSubscribeFrame()
 	} dynamic_rules[INPUTD_MAX_RULES];
 	int count = 0, dynamic_count = 0;
 	bool need_modifier_stream = false;
+	bool required_suppression_unavailable = false;
 	auto add_rule = [&](unsigned int aCode, unsigned char aSuppress) {
 		if (!aCode)
 			return;
@@ -401,8 +402,11 @@ bool SendSubscribeFrame()
 		// v1 has no negotiated capability grant.  Keep the compatibility
 		// connection observe-only; v1 suppress requests are rejected by a
 		// hardened daemon instead of becoming a downgrade path.
-		if (!sV2 || !(sCapsGranted & INPUTD_V2_CAP_SUPPRESS))
+		if (sup && (!sV2 || !(sCapsGranted & INPUTD_V2_CAP_SUPPRESS)))
+		{
+			required_suppression_unavailable = true;
 			sup = 0;
+		}
 		unsigned int suffix_code = hk->mSC
 			? LinuxEvdevCodeForScanCode(hk->mSC)
 			: (hk->mVK ? LinuxWaylandKeycodeForVk(hk->mVK) : 0);
@@ -454,6 +458,14 @@ bool SendSubscribeFrame()
 		}
 	}
 
+	if (required_suppression_unavailable)
+	{
+		sLastErrno = EACCES;
+		sPermission = AhkPermissionState::DENIED;
+		ReportHealth(AhkBackendState::PERMISSION_DENIED,
+			"required suppression unavailable for this inputd protocol/grant");
+		return false;
+	}
 	if (sV2)
 	{
 		// v2 SUBSCRIBE: frame header + count + rules (same rule layout).

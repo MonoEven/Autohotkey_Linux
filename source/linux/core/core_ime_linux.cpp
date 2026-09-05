@@ -24,7 +24,7 @@ namespace
 {
 
 DBusConnection *sImeBus = nullptr;
-int sListenerFramework = LINUX_IME_NONE;
+std::atomic<int> sListenerFramework{LINUX_IME_NONE};
 bool sListenerAttempted = false;
 DWORD sLastAttemptTick = 0;
 // P2-10: IME state is written on the dispatch thread (LinuxImeDispatch ->
@@ -49,9 +49,10 @@ void ImeDump(const char *aKind, const std::string &aText, bool aVisible)
 	FILE *file = fopen(path, "a");
 	if (!file)
 		return;
+	int framework = sListenerFramework.load(std::memory_order_relaxed);
 	fprintf(file, "%s\tframework=%s\tvisible=%d\ttext=%s\n", aKind,
-		sListenerFramework == LINUX_IME_IBUS ? "ibus" :
-		sListenerFramework == LINUX_IME_FCITX5 ? "fcitx5" : "none",
+		framework == LINUX_IME_IBUS ? "ibus" :
+		framework == LINUX_IME_FCITX5 ? "fcitx5" : "none",
 		aVisible ? 1 : 0, aText.c_str());
 	fclose(file);
 }
@@ -589,7 +590,7 @@ void LinuxImeDispatch()
 // as the dispatch thread appended to the string on another connection event
 // (crash observed on the hotstring callback thread).  Both accessors now
 // copy into caller-visible static snapshots while holding the mutex.
-static char sEngineSnapshot[256];
+static thread_local char sEngineSnapshot[256];
 const char *LinuxImeEngine()
 {
 	std::lock_guard<std::mutex> lock(sImeStateMutex);
@@ -654,7 +655,7 @@ unsigned long LinuxImePreeditCount()
 // P2-10: the returned pointer aliases the locked state, so the value is
 // copied into a caller-provided snapshot buffer instead of exposing the
 // std::string across the mutex boundary.
-static char sLastCommitSnapshot[4096];
+static thread_local char sLastCommitSnapshot[4096];
 const char *LinuxImeLastCommit()
 {
 	std::lock_guard<std::mutex> lock(sImeStateMutex);

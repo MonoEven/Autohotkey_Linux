@@ -1,7 +1,7 @@
 # AutoHotkey v2 Linux port — current goals
 
 Baseline: AutoHotkey v2.0.26 · branch: `linux-port` · release:
-`v2.0.26-linux.21` · project status: **technology preview**.
+`v2.0.26-linux.22` · project status: **technology preview**.
 
 This file is the current engineering status, not a chronological diary.
 Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
@@ -43,8 +43,12 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 
 - deb, RPM, tarball, AppImage, AUR PKGBUILD and Flatpak manifest.
 - `ahk_core --pack`, `A_IsCompiled` and embedded FileInstall resources.
-- CI: regular + ASan, scenario gate, no-XWayland, packed-binary acceptance,
-  RSS/event-count soak and fedora/arch/debian/ubuntu container builds.
+- Audit47 closures: local evdev raw replay/SYN_DROPPED/watchdog fail-open;
+  per-device remap replacement and shared synthetic held-key ownership;
+  strict required-suppression capability rejection; rich paste restore;
+  explicit Xlib fatal-disconnect policy; checked/atomic --pack failures;
+  linux.22 AUR/Flatpak pins; launcher capability diagnostics; real Syntax
+  Studio UI oracle and required VS Code extension-host/DAP gate.
 - External input oracle: independent XI2.1 JSONL recorder and XTEST injector
   gate both Send output and hotkey input directions; uinput covers the VM
   physical-device lane.
@@ -122,8 +126,8 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
   fixed five real parity defects. Physical-Windows pass-through, remap and wider option matrices remain open.
 - M6 mixed soak: one parameterized hotkey/Hotstring/clipboard/Timer workload runs
   30s in CI and retains an optional 86400s manual profile. A 5-minute VM profile
-  passed 1408 rounds; warm RSS grew 148KB (29.60KB/min). The 24h run was cancelled
-  by user request and is not a linux.17 completion/release criterion.
+  passed 1408 rounds; warm RSS grew 148KB (29.60KB/min). A 24h run is still
+  not a linux.22 completion/release criterion.
 - M6 evdev hotplug: zero-device rescans recover; removed device fds are ungrabbed,
   closed and pruned. Three uinput add/fire/remove cycles returned fd count 5→6→5
   with one stable runtime PID, no stale descriptor and no held-prefix ghost state.

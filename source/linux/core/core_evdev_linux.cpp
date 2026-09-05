@@ -33,6 +33,7 @@
 #include <linux/input.h>
 #include <sys/poll.h>
 #include <unistd.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <dirent.h>
@@ -50,6 +51,10 @@ struct EvdevDevice
 {
 	int fd = -1;
 	bool grabbed = false; // EVIOCGRAB succeeded (suppress mode for this device).
+	int watchdog_fd = -1; // Parent heartbeat pipe; child owns the read end.
+	pid_t watchdog_pid = -1;
+	bool dropped = false; // Discard input until the next SYN_REPORT.
+	unsigned char down[KEY_CNT / 8 + 1] = { 0 };
 };
 
 std::vector<EvdevDevice> sDevices;
@@ -347,6 +352,120 @@ bool DeviceNameSkipped(const char *name)
 	return false;
 }
 
+#define LOCAL_GRAB_WATCHDOG_MS 1500
+
+void LocalGrabWatchdogChild(int aReadFd, int aDeviceFd)
+{
+	char heartbeat;
+	for (;;)
+	{
+		struct pollfd pfd = {aReadFd, POLLIN, 0};
+		int rc = poll(&pfd, 1, LOCAL_GRAB_WATCHDOG_MS);
+		if (rc <= 0)
+		{
+			if (rc < 0 && errno == EINTR)
+				continue;
+			ioctl(aDeviceFd, EVIOCGRAB, 0);
+			close(aReadFd);
+			close(aDeviceFd);
+			_exit(rc == 0 ? 0 : 1);
+		}
+		if (pfd.revents & (POLLHUP | POLLERR | POLLNVAL))
+		{
+			ioctl(aDeviceFd, EVIOCGRAB, 0);
+			close(aReadFd);
+			close(aDeviceFd);
+			_exit(0);
+		}
+		if (read(aReadFd, &heartbeat, 1) <= 0)
+		{
+			ioctl(aDeviceFd, EVIOCGRAB, 0);
+			close(aReadFd);
+			close(aDeviceFd);
+			_exit(0);
+		}
+	}
+}
+
+bool StartLocalGrabWatchdog(EvdevDevice &aDevice)
+{
+	if (!aDevice.grabbed)
+		return true;
+	int pipe_fds[2];
+	if (pipe2(pipe_fds, O_CLOEXEC | O_NONBLOCK) != 0)
+		return false;
+	pid_t child = fork();
+	if (child < 0)
+	{
+		close(pipe_fds[0]);
+		close(pipe_fds[1]);
+		return false;
+	}
+	if (child == 0)
+	{
+		close(pipe_fds[1]);
+		LocalGrabWatchdogChild(pipe_fds[0], aDevice.fd);
+	}
+	close(pipe_fds[0]);
+	aDevice.watchdog_fd = pipe_fds[1];
+	aDevice.watchdog_pid = child;
+	return true;
+}
+
+void StopLocalGrabWatchdog(EvdevDevice &aDevice)
+{
+	if (aDevice.watchdog_fd >= 0)
+	{
+		close(aDevice.watchdog_fd);
+		aDevice.watchdog_fd = -1;
+	}
+	if (aDevice.watchdog_pid > 0)
+	{
+		int status = 0;
+		if (waitpid(aDevice.watchdog_pid, &status, WNOHANG) == 0)
+		{
+			kill(aDevice.watchdog_pid, SIGTERM);
+			waitpid(aDevice.watchdog_pid, &status, 0);
+		}
+		aDevice.watchdog_pid = -1;
+	}
+}
+
+void ReleaseLocalGrabsForReplayFailure(const char *aReason);
+
+void ServiceLocalGrabWatchdogs()
+{
+	const char heartbeat = 'h';
+	for (auto &device : sDevices)
+		if (device.grabbed && device.watchdog_fd >= 0)
+			if (write(device.watchdog_fd, &heartbeat, 1) < 0
+				&& errno != EAGAIN && errno != EWOULDBLOCK)
+				ReleaseLocalGrabsForReplayFailure("local grab watchdog expired");
+}
+
+void RebuildLocalAggregateState()
+{
+	memset(sDown, 0, sizeof(sDown));
+	for (const auto &device : sDevices)
+		for (unsigned int code = 1; code < KEY_CNT; ++code)
+			if (device.down[code / 8] & (1u << (code & 7)))
+			{
+				unsigned int vk = VkForEvdev(code);
+				if (vk)
+					SetDown(vk, true);
+				SetModifierFromEvdev(code, true);
+			}
+}
+
+bool ReconcileLocalDevice(EvdevDevice &aDevice)
+{
+	unsigned char current[KEY_CNT / 8 + 1] = { 0 };
+	if (ioctl(aDevice.fd, EVIOCGKEY(sizeof(current)), current) < 0)
+		return false;
+	memcpy(aDevice.down, current, sizeof(aDevice.down));
+	RebuildLocalAggregateState();
+	return true;
+}
 bool DeviceHasKeyboardCapabilities(int fd)
 {
 	unsigned char bits[KEY_CNT / 8 + 1] = { 0 };
@@ -354,8 +473,22 @@ bool DeviceHasKeyboardCapabilities(int fd)
 		return false;
 	// Require stable keyboard capabilities, not merely an EV_KEY bit: mice,
 	// touchpads and tablet buttons can expose EV_KEY without being keyboards.
-	return (bits[KEY_A / 8] & (1u << (KEY_A & 7)))
-		&& (bits[KEY_ENTER / 8] & (1u << (KEY_ENTER & 7)));
+	if (!(bits[KEY_A / 8] & (1u << (KEY_A & 7)))
+		|| !(bits[KEY_ENTER / 8] & (1u << (KEY_ENTER & 7))))
+		return false;
+	// Composite keyboard/mouse nodes are unsafe to grab in the local lane:
+	// the replay device cannot faithfully reproduce their pointer/absolute
+	// event stream. The broker has a separate device policy for such nodes.
+	unsigned char rel[REL_CNT / 8 + 1] = { 0 };
+	unsigned char abs[ABS_CNT / 8 + 1] = { 0 };
+	if (ioctl(fd, EVIOCGBIT(EV_REL, sizeof(rel)), rel) < 0
+		|| ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(abs)), abs) < 0)
+		return false;
+	for (unsigned char byte : rel)
+		if (byte) return false;
+	for (unsigned char byte : abs)
+		if (byte) return false;
+	return true;
 }
 
 void ReleaseLocalGrabsForReplayFailure(const char *aReason)
@@ -364,6 +497,7 @@ void ReleaseLocalGrabsForReplayFailure(const char *aReason)
 	{
 		if (device.fd >= 0 && device.grabbed)
 			ioctl(device.fd, EVIOCGRAB, 0);
+		StopLocalGrabWatchdog(device);
 		device.grabbed = false;
 	}
 	sAnyGrabbed = false;
@@ -421,7 +555,16 @@ bool OpenDevice(const char *path)
 	EvdevDevice dev;
 	dev.fd = fd;
 	dev.grabbed = grab != 0;
-	sDevices.push_back(dev);
+	if (dev.grabbed && !StartLocalGrabWatchdog(dev))
+	{
+		ioctl(fd, EVIOCGRAB, 0);
+		close(fd);
+		snprintf(sError, sizeof(sError),
+			"AHK_INPUT_BACKEND=evdev: independent grab watchdog unavailable; "
+			"running listen-only fail-open");
+		return false;
+	}
+	sDevices.push_back(std::move(dev));
 	sAnyGrabbed = sAnyGrabbed || dev.grabbed;
 	const char *t = getenv("AHK_EVDEV_TRACE");
 	if (t && strcmp(t, "0") != 0)
@@ -938,6 +1081,7 @@ static void CloseRemovedDevice(EvdevDevice &aDevice)
 		return;
 	if (aDevice.grabbed)
 		ioctl(aDevice.fd, EVIOCGRAB, 0);
+	StopLocalGrabWatchdog(aDevice);
 	if (sEvT)
 		fprintf(stderr, "[evdev] hot-remove fd%d\n", aDevice.fd);
 	close(aDevice.fd);
@@ -956,7 +1100,7 @@ static void PruneRemovedDevices()
 		// Device disappearance supplies no reliable key-up events. Fail open
 		// instead of carrying ghost modifiers/custom-combo prefixes to the next
 		// keyboard which is hot-plugged.
-		memset(sDown, 0, sizeof(sDown));
+		RebuildLocalAggregateState();
 		memset(sPrefixDown, 0, sizeof(sPrefixDown));
 		memset(sPrefixUsed, 0, sizeof(sPrefixUsed));
 		memset(sPrefixPassthrough, 0, sizeof(sPrefixPassthrough));
@@ -988,6 +1132,7 @@ void LinuxEvdevDispatch()
 	// Scan even when there are currently zero devices; otherwise a backend
 	// which started before the first keyboard appeared can never recover.
 	LinuxEvdevActive();
+	ServiceLocalGrabWatchdogs();
 	RescanIfDue(); // Pick up uinput/hot-plugged devices (check0820).
 	if (sDevices.empty())
 		return;
@@ -1023,8 +1168,46 @@ void LinuxEvdevDispatch()
 						remove_device = true;
 					break;
 				}
-				if (ev.type != EV_KEY)
+				if (ev.type == EV_SYN && ev.code == SYN_DROPPED)
+				{
+					sDevices[i].dropped = true;
+					memset(sDevices[i].down, 0, sizeof(sDevices[i].down));
+					memset(sPrefixDown, 0, sizeof(sPrefixDown));
+					memset(sPrefixUsed, 0, sizeof(sPrefixUsed));
+					memset(sComboSuppressed, 0, sizeof(sComboSuppressed));
+					fprintf(stderr, "[evdev] fd%d SYN_DROPPED; waiting for frame boundary\n",
+						sDevices[i].fd);
 					continue;
+				}
+				if (sDevices[i].dropped)
+				{
+					if (ev.type == EV_SYN && ev.code == SYN_REPORT)
+					{
+						sDevices[i].dropped = false;
+						if (!ReconcileLocalDevice(sDevices[i]))
+						{
+							remove_device = true;
+							break;
+						}
+					}
+					continue;
+				}
+				if (ev.type != EV_KEY)
+				{
+					// A grabbed local keyboard is only accepted when its stream
+					// is keyboard-only; do not silently invent replay for other
+					// event classes.
+					continue;
+				}
+				if (ev.code <= KEY_MAX && ev.value != 2)
+				{
+					if (ev.value)
+						sDevices[i].down[ev.code / 8] |= (unsigned char)(1u << (ev.code & 7));
+					else
+						sDevices[i].down[ev.code / 8] &= (unsigned char)~(1u << (ev.code & 7));
+					RebuildLocalAggregateState();
+				}
+
 				unsigned int event_vk = VkForEvdev(ev.code);
 				AhkInputEvent normalized = {
 					LinuxInputEventMonotonicUs(), (uint32_t)ev.code,
@@ -1051,12 +1234,10 @@ void LinuxEvdevDispatch()
 				// compositor still receives the key.
 				if (sDevices[i].grabbed && !suppressed)
 				{
-					unsigned int vk = VkForEvdev(ev.code);
-					if (vk && vk <= 0xFF
-						&& !LinuxUinputKeyEvent(vk, ev.value != 0))
+					if (!LinuxUinputRawKeyEvent(ev.code, ev.value))
 					{
 						ReleaseLocalGrabsForReplayFailure(
-							"uinput replay write failed");
+							"uinput raw-key replay write failed");
 					}
 				}
 			}
@@ -1077,6 +1258,7 @@ void LinuxEvdevShutdown()
 	{
 		if (dev.grabbed)
 			ioctl(dev.fd, EVIOCGRAB, 0); // Release the grab (fail-open).
+		StopLocalGrabWatchdog(dev);
 		close(dev.fd);
 	}
 	sDevices.clear();

@@ -55,7 +55,8 @@ uint64_t LinuxClipboardOwnerGeneration();
 //   PasteWaitConsumed(aMs)   wait for the target to request the offer
 //   PasteRestore(aHadText)   restore aSaved (or clear when the clipboard
 //                            originally had no text); falls back on timeout.
-bool LinuxClipboardPasteSet(const std::wstring &aText, const std::wstring &aSaved);
+bool LinuxClipboardPasteSet(const std::wstring &aText, const std::wstring &aSaved,
+	const std::vector<unsigned char> *aSavedAll = nullptr);
 bool LinuxClipboardPasteWaitConsumed(int aTimeoutMs);
 void LinuxClipboardPasteRestore(bool aHadText);
 

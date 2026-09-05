@@ -255,6 +255,10 @@ and 20 for the D-Bus COM layer). The port has two display backends:</p>
     Release packages include a same-version feature-off
     <code>ahk_core_pack</code> template, so <code>--pack</code> remains a
     dependency-free single ELF even when the interactive runtime links libei.
+     FileInstall resource failures abort before output replacement; footer lengths
+     use checked arithmetic and successful packs finalize through an atomic rename.
+     The packed executable uses the feature-off template and does not inherit
+     interactive libei capability.
     Generic tar/AppImage/RPM payloads privately carry their matched optional
     libei/liboeffis SONAMEs; Debian packages use build-version-floored runtime
     dependencies.
@@ -410,7 +414,7 @@ alongside the <code>.tar.gz</code> and <code>.deb</code>, so
 downgrade</i> (rollback) to any published release.  Releases before linux.15
 were removed when the new installer line shipped; their source remains on
 the <code>v2.0.26-linux.*</code> git tags.  The latest release is
-<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.21</a>.
+<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.22</a>.
 Highlights of this release:</p>
 <ul>
   <li><b><code>Hotkey()</code> works on Wayland</b>: the X-only guard is
@@ -450,7 +454,7 @@ Highlights of this release:</p>
     DBGp runtime (<code>--debug host:port</code>); D2 contributes the
     <code>ahk-linux</code> inline DAP debugger for breakpoints, continue/step,
     stack/scopes/scalars/evaluate and termination. Independent protocol/DAP
-    oracles and a VS Code 1.134 extension-host tracker pass. D3 Array/Map/Object
+    oracles and a VS Code extension-host tracker pass (required in core CI). D3 Array/Map/Object
     trees support nested handles and paging (20-item/two-page oracle). Exception
     filters stop caught errors at throw, expose Message and continue into catch.
     Persistent idle Pause is bounded below 500 ms and exposes an explicit
@@ -467,14 +471,29 @@ Highlights of this release:</p>
     preedit cleanliness and InputHook matching. Fcitx5 has CI protocol coverage;
     real desktop/Flatpak visibility remains explicit. See
     <code>docs/IME-Integration.md</code>.</li>
-     <li><b>Input safety and lifecycle hardening</b>: the in-process evdev
-     fallback filters keyboard-capable devices, preflights uinput and releases
+     <li><b>Syntax Studio teaching GUI</b>: <code>examples/gui/syntax_studio.ahk</code>
+      combines ten lessons, ListBox filtering, syntax cards, runnable examples,
+      editable practice, Check/Run/Reset/Copy navigation, TreeView concepts and
+      status/activity panels. The VM captured overview, lesson, filter, Check and
+      Run states; the core CI runs an X11 interaction oracle that verifies lesson
+      selection, filtering, practice pass, exit code 0 and output creation.</li>
+    <li><b>Input safety and lifecycle hardening</b>: the in-process evdev
+     fallback filters keyboard-only devices, rejects composite pointer nodes, preflights uinput and releases
      all local grabs on replay failure. The broker applies one capability policy
      to v1/v2, drops and reopens a device after <code>SYN_DROPPED</code>, keeps
      physical state per device and publishes stable device identities. Its
      systemd unit uses <code>Type=notify</code> and reports healthy/degraded
      readiness. Portal/GNOME registered accelerators expose adapted, not
-     hook-equivalent, suppression guarantees.</li>
+     hook-equivalent, suppression guarantees. Required suppression is rejected when
+      the negotiated grant is absent; the local evdev lane preserves raw
+      keycode/value/repeat replay and uses an independent 1.5-second grab
+      watchdog plus SYN_DROPPED/EVIOCGKEY reconciliation. Replacement and
+      synthetic held-key ownership is tracked per device/transaction.</li>
+    <li><b>Bounded X11 failure policy</b>: the Xlib fatal I/O exit hook marks
+      the connection unusable; later normal access discards the stale
+      <code>Display</code> pointer and reconnects. No Xlib request is made from
+      the fatal callback, and this is a display-lane reset rather than a
+      promise to restore every GUI/clipboard/input registration.</li>
    <li><b>Bounded D-Bus lifecycle</b>: production Linux backends use a shared
      pending-call helper with deadline, cancellation and short D-Bus dispatch
      slices; no production backend uses <code>send_with_reply_and_block</code>.
@@ -490,8 +509,10 @@ Highlights of this release:</p>
   <li><b>Rich ClipboardAll + paste-restore ownership arbitration
     (check_detail0901 §18)</b>: multi-MIME snapshots (text/HTML/PNG/
     URI-list/custom, checksummed, bounded) survive a foreign owner exit and
-    restore byte-exact (20-assertion Xvfb oracle); the Wayland paste
-    fallback's restore is a compare-and-swap on selection ownership — a user
+    restore byte-exact (20-assertion Xvfb oracle); the paste fallback saves a ClipboardAll snapshot when available and restores
+     only while ownership is still held; X11 serializes the owner check and
+     restore briefly at the server; Wayland
+    cancellation abandons the restore; a user
     copy made while the paste text is installed wins and the saved original
     is abandoned (unit oracle + 5-assertion doccheck).<b>X11↔Wayland
     clipboard bridging is a compositor environment capability, not a port
@@ -648,15 +669,15 @@ support of the AutoHotkey, Linux and open-source communities:</p>
     <code>eu-strip</code> is needed).  Suitable for Fedora/openSUSE
     users.</li>
   <li><b>Arch Linux PKGBUILD</b> &mdash; <code>tools/linux/PKGBUILD</code>
-    builds from the git tag (v2.0.26-linux.N); package name
+    builds from the pinned current git source with a checked SHA-256 archive checksum; package name
     <code>autohotkey-linux</code>.</li>
-  <li><b>Flatpak/Snap</b> &mdash; <b>not provided</b>.  Flatpak sandboxes
-    would block the global-key injection/capture lanes (grab/uinput/XTEST
-    need host access) and require portal plumbing that does not exist yet;
-    Snap's confinement has the same problem and needs a store account.
-    The host-side ahk-inputd privilege model is now packaged, but granting a
-    Flatpak access to that host socket still requires an explicit portal/host
-    integration and a real sandbox oracle; it is not claimed here.</li>
+  <li><b>Flatpak manifest</b> &mdash; <code>tools/linux/org.autohotkey.AHK.yml</code>
+     is an experimental X11/Wayland + portal/a11y build and grants only
+     <code>--device=input</code>. It intentionally does not expose
+     <code>/dev/uinput</code> or claim native global suppression/injection; a
+     real host broker and sandbox consent matrix remain required.</li>
+   <li><b>Snap</b> &mdash; <b>not provided</b>. Snap confinement would need a
+     separate interface and store integration for global input and capture.</li>
   <li><b>A distribution repository</b> (Debian/Fedora/Arch official
     packages) &mdash; not yet; the project is a technology preview.  The
     <code>.deb</code>/RPM/PKGBUILD skeletons are the starting point the
@@ -675,6 +696,11 @@ build-core/source/linux/core/ahk_core your-script.ahk</pre>
 <p>Prebuilt packages (tar.gz / .deb) and an installer are published with
 each GitHub Release:
 <a href="https://github.com/MonoEven/Autohotkey_Linux/releases">releases</a>.</p>
+
+<p>After installation, <code>ahk --check</code> reports the install method and
+integrity plus the selected input backend, broker socket presence, and whether
+<code>/dev/uinput</code> is writable. These are diagnostics only: the broker
+still negotiates SUPPRESS/INJECT grants per client.</p>
 
 <h2>Version history</h2>
 <p>This port is based on <a href="ChangeLog.htm">AutoHotkey v2.0.26</a>.

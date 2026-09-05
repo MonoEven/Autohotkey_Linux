@@ -184,6 +184,14 @@ bool LinuxUinputKeyEvent(unsigned int aVK, bool aDown)
 	return WriteUinputEvent(EV_KEY, (int)kc, aDown ? 1 : 0);
 }
 
+bool LinuxUinputRawKeyEvent(unsigned int aCode, int aValue)
+{
+	if (!LinuxUinputInjectionAvailable() || !aCode || aCode > KEY_MAX
+		|| aValue < 0 || aValue > 2)
+		return false;
+	return WriteUinputEvent(EV_KEY, (int)aCode, aValue);
+}
+
 bool LinuxUinputButtonEvent(unsigned int aButton, bool aDown)
 {
 	if (!LinuxUinputInjectionAvailable())

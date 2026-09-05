@@ -678,6 +678,20 @@ static bool CapsSatisfy(const AhkInputBackendCaps *c, bool aPassthrough, bool aK
 	return true;
 }
 
+static bool RuntimeCapsSatisfy(AhkInputBackendKind aKind, bool aRequireSuppression)
+{
+	if (!aRequireSuppression)
+		return true;
+	// Portal and GNOME registered accelerators consume their registered
+	// shortcut but are not hook-equivalent suppression/replay lanes.
+	if (aKind == AhkInputBackendKind::PORTAL
+		|| aKind == AhkInputBackendKind::GNOME_SHELL)
+		return false;
+	if (aKind == AhkInputBackendKind::EVDEV && LinuxInputdClientActive())
+		return (LinuxInputdClientCapsGranted() & INPUTD_V2_CAP_SUPPRESS) != 0;
+	return true; // Runtime health is probed when the lane is activated.
+}
+
 // Per-hotkey backend routing (check_detail0821 §1-A / R3): pick the best
 // backend whose caps satisfy the hotkey's needs.  The effective backend wins
 // when it qualifies; otherwise walk the other lanes in priority order.
@@ -687,7 +701,8 @@ AhkInputBackendKind LinuxInputBackendRoute(bool aPassthrough, bool aKeyUp, bool 
 {
 	const AhkInputBackendKind eff = CurrentKind();
 	if (CapsSatisfy(KindCaps(eff), aPassthrough, aKeyUp, aBare, aWildcard,
-		aScanCode, aCustomCombo, aRequireLevelGate, aRequireSuppression))
+		aScanCode, aCustomCombo, aRequireLevelGate, aRequireSuppression)
+		&& RuntimeCapsSatisfy(eff, aRequireSuppression))
 		return eff;
 	// Priority: prefer non-root, integration-light lanes first.
 	static const AhkInputBackendKind kCandidates[] = {
@@ -700,7 +715,8 @@ AhkInputBackendKind LinuxInputBackendRoute(bool aPassthrough, bool aKeyUp, bool 
 	{
 		if (k == eff) continue;
 		if (!CapsSatisfy(KindCaps(k), aPassthrough, aKeyUp, aBare, aWildcard,
-			aScanCode, aCustomCombo, aRequireLevelGate, aRequireSuppression))
+			aScanCode, aCustomCombo, aRequireLevelGate, aRequireSuppression)
+			|| !RuntimeCapsSatisfy(k, aRequireSuppression))
 			continue;
 		if (k == AhkInputBackendKind::X11)
 		{

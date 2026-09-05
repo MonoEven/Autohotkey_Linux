@@ -8,5 +8,8 @@ grep -q 'lock_guard<std::recursive_mutex> listener_lock' "$SRC"
 grep -q 'lock_guard<std::mutex> lock(sImeStateMutex)' "$SRC"
 grep -q 'bool LinuxImePreeditActive' "$SRC"
 grep -q 'LinuxDbusPendingReply' "$SRC"
+grep -q 'atomic<int> sListenerFramework' "$SRC"
+grep -q 'thread_local char sEngineSnapshot' "$SRC"
+grep -q 'thread_local char sLastCommitSnapshot' "$SRC"
 ! grep -q 'send_with_reply_and_block' "$SRC"
-echo 'IME_STATE_STATIC_PASS listener_lifetime=1 state_lock=1 bounded_dbus=1'
+echo 'IME_STATE_STATIC_PASS listener_lifetime=1 state_lock=1 bounded_dbus=1 atomic_snapshots=1'

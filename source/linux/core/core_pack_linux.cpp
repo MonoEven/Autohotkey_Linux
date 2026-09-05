@@ -23,11 +23,19 @@ bool g_LinuxPacked = false; // True when this process started from a packed bina
 
 static bool ReadAllFd(int aFd, std::vector<unsigned char> &aOut)
 {
+	aOut.clear();
 	unsigned char buf[65536];
-	ssize_t n;
-	while ((n = read(aFd, buf, sizeof(buf))) > 0)
+	for (;;)
+	{
+		ssize_t n = read(aFd, buf, sizeof(buf));
+		if (n == 0)
+			return true;
+		if (n < 0 && errno == EINTR)
+			continue;
+		if (n < 0)
+			return false;
 		aOut.insert(aOut.end(), buf, buf + n);
-	return n == 0;
+	}
 }
 
 static void AppendU64(std::vector<unsigned char> &aOut, uint64_t v)
@@ -54,17 +62,21 @@ bool LinuxPackFooter(const char *aPath, size_t &aScriptLen, size_t &aResLen, siz
 	close(fd);
 	if (n != (ssize_t)sizeof(tail) || memcmp(tail + 16, AHK_PACK_MAGIC, 8) != 0)
 		return false;
+	uint64_t file_size = (uint64_t)st.st_size;
 	uint64_t slen = 0, rlen = 0;
 	for (int i = 0; i < 8; ++i)
 	{
 		slen |= (uint64_t)tail[i] << (8 * i);
 		rlen |= (uint64_t)tail[8 + i] << (8 * i);
 	}
-	if (slen + rlen > (uint64_t)st.st_size || slen + rlen > (64u << 20))
-		return false; // Sanity: bounded payload.
+	const uint64_t footer_size = sizeof(tail);
+	if (slen > file_size - footer_size || rlen > file_size - footer_size - slen
+		|| slen + rlen > (64u << 20)
+		|| slen > (uint64_t)SIZE_MAX || rlen > (uint64_t)SIZE_MAX)
+		return false; // Sanity: bounded payload, checked without wraparound.
 	aScriptLen = (size_t)slen;
 	aResLen = (size_t)rlen;
-	aResOff = (size_t)(st.st_size - (off_t)(8 + 8 + 8 + slen + rlen));
+	aResOff = (size_t)(file_size - footer_size - slen - rlen);
 	return true;
 }
 
@@ -172,74 +184,104 @@ bool LinuxPackExecutable(const char *aOut, const char *aScript)
 		return false;
 	}
 	close(sfd);
-	// Collect + read the FileInstall resources.
+	// Collect + read the FileInstall resources as synchronized name/data tuples.
 	std::vector<std::string> sources;
 	LinuxCollectFileInstallSources(script, sources);
-	std::vector<std::vector<unsigned char>> res_data;
+	struct PackedResource
+	{
+		std::string name;
+		std::vector<unsigned char> data;
+	};
+	std::vector<PackedResource> resources;
+	resources.reserve(sources.size());
 	for (auto &s : sources)
 	{
-		int rfd = open(s.c_str(), O_RDONLY);
-		std::vector<unsigned char> data;
-		if (rfd >= 0 && ReadAllFd(rfd, data))
+		int rfd = open(s.c_str(), O_RDONLY | O_CLOEXEC);
+		if (rfd < 0)
 		{
-			res_data.push_back(std::move(data));
-			// Keep the source list in sync (res_data[i] matches sources[i]).
+			fprintf(stderr, "AutoHotkey Linux: cannot read FileInstall resource '%s': %s.\n",
+				s.c_str(), strerror(errno));
+			return false;
 		}
-		else if (rfd >= 0)
-			close(rfd);
-		if (rfd >= 0)
-			close(rfd);
+		PackedResource resource;
+		resource.name = s;
+		bool ok = ReadAllFd(rfd, resource.data);
+		int saved_errno = errno;
+		close(rfd);
+		if (!ok)
+		{
+			fprintf(stderr, "AutoHotkey Linux: failed reading FileInstall resource '%s': %s.\n",
+				s.c_str(), strerror(saved_errno));
+			return false;
+		}
+		resources.push_back(std::move(resource));
 	}
 	// Build the resources blob: (name\0 size:8 data)*.
 	std::vector<unsigned char> res;
-	for (size_t i = 0; i < sources.size(); ++i)
+	for (const auto &resource : resources)
 	{
-		res.insert(res.end(), sources[i].begin(), sources[i].end());
+		res.insert(res.end(), resource.name.begin(), resource.name.end());
 		res.push_back(0);
-		AppendU64(res, res_data[i].size());
-		res.insert(res.end(), res_data[i].begin(), res_data[i].end());
+		AppendU64(res, resource.data.size());
+		res.insert(res.end(), resource.data.begin(), resource.data.end());
 	}
-	// Write outfile = runtime + resources + script + [slen:8][rlen:8][magic:8].
-	int out = open(aOut, O_WRONLY | O_CREAT | O_TRUNC, 0755);
+	std::string temp_path = std::string(aOut) + ".tmp." + std::to_string((long long)getpid());
+	int out = open(temp_path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0755);
 	if (out < 0)
 	{
-		fprintf(stderr, "AutoHotkey Linux: cannot write '%s'.\n", aOut);
+		fprintf(stderr, "AutoHotkey Linux: cannot create temporary pack '%s': %s.\n",
+			temp_path.c_str(), strerror(errno));
 		return false;
 	}
-	size_t written = 0;
+	bool output_ok = true;
 	auto w = [&](const void *p, size_t n) {
 		const unsigned char *b = (const unsigned char *)p;
 		while (n > 0)
 		{
 			ssize_t k = write(out, b, n);
+			if (k < 0 && errno == EINTR)
+				continue;
 			if (k <= 0)
 				return false;
 			b += k;
 			n -= (size_t)k;
 		}
-		written += (size_t)(b - (const unsigned char *)p);
 		return true;
 	};
-	if (   !w(runtime.data(), runtime.size())
+	if (!w(runtime.data(), runtime.size())
 		|| !w(res.data(), res.size())
 		|| !w(script.data(), script.size()))
-	{
-		close(out);
-		unlink(aOut);
-		return false;
-	}
+		output_ok = false;
 	uint64_t slen = script.size(), rlen = res.size();
 	unsigned char fb[24];
 	for (int i = 0; i < 8; ++i) fb[i] = (unsigned char)(slen >> (8 * i));
 	for (int i = 0; i < 8; ++i) fb[8 + i] = (unsigned char)(rlen >> (8 * i));
 	memcpy(fb + 16, AHK_PACK_MAGIC, 8);
-	if (!w(fb, sizeof(fb)))
+	if (output_ok && !w(fb, sizeof(fb)))
+		output_ok = false;
+	int saved_errno = 0;
+	if (!output_ok)
+		saved_errno = errno;
+	if (output_ok && fsync(out) != 0)
 	{
-		close(out);
-		unlink(aOut);
-		return false;
+		output_ok = false;
+		saved_errno = errno;
+	}
+	if (output_ok && fchmod(out, 0755) != 0)
+	{
+		output_ok = false;
+		saved_errno = errno;
 	}
 	close(out);
+	if (!output_ok || rename(temp_path.c_str(), aOut) != 0)
+	{
+		if (output_ok)
+			saved_errno = errno;
+		unlink(temp_path.c_str());
+		fprintf(stderr, "AutoHotkey Linux: failed to finalize packed executable '%s': %s.\n",
+			aOut, strerror(saved_errno));
+		return false;
+	}
 	return true;
 }
 

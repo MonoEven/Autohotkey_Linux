@@ -143,7 +143,7 @@ expect_contains inj_nobody_begin_denied "status=4" "$out"
 cat > "$WORK/gate.ahk" <<'EOF'
 #Requires AutoHotkey v2.0
 #InputLevel 5
-F7:: {
+~F7:: {
     FileAppend("fired`n", A_Args[1])
     ExitApp(0)
 }

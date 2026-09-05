@@ -19,6 +19,11 @@ bool LinuxUinputInjectionAvailable();
 // virtual key; returning false when the lane is unavailable.
 bool LinuxUinputKeyEvent(unsigned int aVK, bool aDown);
 
+// Replay an evdev key code without converting through the VK table.  This is
+// used only for a grabbed local evdev stream; the uinput device advertises the
+// complete key range and the write path adds SYN_REPORT.
+bool LinuxUinputRawKeyEvent(unsigned int aCode, int aValue);
+
 // Mouse events through the uinput virtual pointer.  aButton uses the X11
 // numbering (1/2/3/8/9, 4-7 wheel); motion is relative deltas.
 bool LinuxUinputButtonEvent(unsigned int aButton, bool aDown);

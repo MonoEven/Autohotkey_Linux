@@ -51,27 +51,42 @@ static int LinuxXErrorHandler(Display *, XErrorEvent *)
 	return 0;
 }
 
-// X11 connection-level (I/O) error handler.  The default Xlib handler
-// prints "X connection to :99 broken ..." to stderr and calls exit(1),
-// which corrupts doc-check output files (they share stderr via 2>&1) and
-// kills the interpreter on a transient server disconnect.  Return instead;
-// every X call checks its result, and LinuxWinDisplay reconnects below.
+// X11 connection-level (I/O) error handler. The Xlib contract treats this
+// as fatal; the paired exit handler below changes the default exit(1) into a
+// lane reset. No Xlib request is made from either handler.
+static Display *sWinDisplay = nullptr;
+static volatile sig_atomic_t sWinDisplayIoFailed = 0;
+
 static int LinuxXIOErrorHandler(Display *)
 {
+	sWinDisplayIoFailed = 1;
 	return 0;
+}
+
+static void LinuxXIOExitHandler(Display *, void *)
+{
+	sWinDisplayIoFailed = 1;
 }
 
 static Display *LinuxWinDisplay()
 {
-	static Display *sDpy = nullptr;
-	if (!sDpy)
-		sDpy = XOpenDisplay(nullptr);
-	if (sDpy)
+	if (sWinDisplayIoFailed)
+	{
+		// The old Display is unusable after a fatal I/O error. Do not call
+		// XCloseDisplay from the handler; discard the pointer and reconnect
+		// from normal code on the next accessor call.
+		sWinDisplay = nullptr;
+		sWinDisplayIoFailed = 0;
+	}
+	if (!sWinDisplay)
+		sWinDisplay = XOpenDisplay(nullptr);
+	if (sWinDisplay)
 	{
 		XSetErrorHandler(LinuxXErrorHandler);
 		XSetIOErrorHandler(LinuxXIOErrorHandler);
+		XSetIOErrorExitHandler(sWinDisplay, LinuxXIOExitHandler, nullptr);
 	}
-	return sDpy;
+	return sWinDisplay;
 }
 
 // ---------------------------------------------------------------------------

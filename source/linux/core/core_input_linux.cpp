@@ -978,8 +978,11 @@ static bool LinuxSendRunPaste(const wchar_t *aStart, const wchar_t *aEnd)
 
 	std::wstring saved;
 	bool had = LinuxClipboardGetText(saved);
+	std::vector<unsigned char> saved_all;
+	bool saved_all_valid = LinuxClipboardGetAll(saved_all);
 	std::wstring run(aStart, aEnd);
-	if (!LinuxClipboardPasteSet(run, saved))
+	if (!LinuxClipboardPasteSet(run, saved,
+		saved_all_valid ? &saved_all : nullptr))
 		return false;
 	// Ctrl+V via the virtual keyboard (wlroots compositors deliver these to
 	// the focused surface).  The focused app reads the clipboard when it

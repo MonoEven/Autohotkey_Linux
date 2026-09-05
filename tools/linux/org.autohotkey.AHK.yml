@@ -1,9 +1,9 @@
 # Flatpak manifest for the AutoHotkey v2 Linux port.
 # check_detail0821 §12 / R4.  Builds ahk_core from the tagged source into a
-# sandbox; the launcher wraps it.  Note: flatpak needs its sandbox + portals
-# for the host sessions; SendText inside the sandbox goes through the XDG
-# desktop portal / uinput paths (recorded as a follow-up verification on a
-# Flatpak host).
+# sandbox: X11/Wayland + portal/a11y integration. `--device=input` exposes
+# /dev/input when the host grants it; it intentionally does not expose
+# /dev/uinput, so native global suppression/injection remains unavailable in
+# this sandbox and must use a separately authorized host broker.
 app-id: org.autohotkey.AHK
 runtime: org.freedesktop.Platform
 runtime-version: '24.08'
@@ -17,6 +17,7 @@ finish-args:
   - --talk-name=org.a11y.Bus
   - --talk-name=org.freedesktop.portal.*
   - --device=dri
+  - --device=input
 modules:
   - name: autohotkey
     buildsystem: simple
@@ -31,4 +32,4 @@ modules:
     sources:
       - type: git
         url: https://github.com/MonoEven/Autohotkey_Linux.git
-        tag: v2.0.26-linux.20
+        tag: v2.0.26-linux.22

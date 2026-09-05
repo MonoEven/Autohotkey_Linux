@@ -12,4 +12,8 @@ grep -q 'static unsigned long long stable_device_id' "$SRC"
 grep -q 'EVIOCGUNIQ' "$SRC"
 grep -q 'sDevIds\[slot\] = stable_device_id' "$SRC"
 ! grep -q 'sNextDeviceId' "$SRC"
-echo 'INPUTD_STATE_STATIC_PASS syn_dropped=1 per_device_state=1 held_reconcile=1 stable_device_id=1'
+grep -q 'struct arb_replacement_state' "$SRC"
+grep -q 'replacement\[MAX_DEVICES\]' "$SRC"
+grep -q 'arb_neutralize_device' "$SRC"
+grep -q 'sSyntheticHeld' "$SRC"
+echo 'INPUTD_STATE_STATIC_PASS syn_dropped=1 per_device_state=1 held_reconcile=1 stable_device_id=1 replacement_owner=1 synthetic_refs=1'

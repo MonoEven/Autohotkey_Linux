@@ -1,11 +1,16 @@
 #Requires AutoHotkey v2.0
-#ErrorStdOut UTF-8
 #SingleInstance Force
 Persistent
 
 ; A runnable, self-contained syntax course using the Linux-tested GUI controls.
 ; Code examples use @@ as a display placeholder for a double quote.
 Code(text) => StrReplace(text, "@@", Chr(34))
+
+StudioTrace(line) {
+    path := EnvGet("AHK_SYNTAX_STUDIO_TRACE")
+    if path != ""
+        FileAppend(line "`n", path)
+}
 
 class Lesson {
     __New(id, title, level, summary, syntax, example, exercise, tip, checkWords) {
@@ -152,6 +157,7 @@ FilterLessons(*) {
         lessonList.Value := 1
         LoadLesson()
     }
+    StudioTrace("filter query=" query " count=" visibleIds.Length)
 }
 
 WatchLessonSelection(*) {
@@ -189,6 +195,7 @@ LoadLessonNow(*) {
     progressText.Text := "Lesson " currentLesson.id " of " lessons.Length
     status.SetText("Ready | " currentLesson.title)
     activity.Value := "lesson=" currentLesson.id " loaded`nlevel=" currentLesson.level "`nstatus=ready"
+    StudioTrace("lesson id=" currentLesson.id " title=" currentLesson.title)
 }
 
 CopyExample(*) {
@@ -208,9 +215,11 @@ RunPractice(*) {
         code := RunWait(command, , "Hide")
         status.SetText("Run complete | Exit code " code)
         activity.Value := "action=run`nexit_code=" code "`nstatus=complete"
+        StudioTrace("run exit=" code)
     } catch as err {
         status.SetText("Run failed | " err.Message)
         activity.Value := "action=run`nstatus=error`nmessage=" err.Message
+        StudioTrace("run error=" err.Message)
     }
 }
 
@@ -225,9 +234,11 @@ CheckPractice(*) {
     if missing.Length {
         status.SetText("Needs another pass | Missing " missing.Length " key ideas")
         activity.Value := "action=check`nresult=keep-learning`nmissing=" JoinArray(missing, ", ")
+        StudioTrace("check result=keep-learning")
     } else {
         status.SetText("Practice check passed | Keep experimenting")
         activity.Value := "action=check`nresult=pass`nideas=" checkLesson.checkWords.Length
+        StudioTrace("check result=pass ideas=" checkLesson.checkWords.Length)
     }
 }
 

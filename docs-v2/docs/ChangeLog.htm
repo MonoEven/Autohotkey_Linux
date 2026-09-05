@@ -16,6 +16,30 @@
 
 <h2 id="linux">Linux port changes</h2>
 
+<h2 id="linux.22">v2.0.26-linux.22</h2>
+<p><b>AutoHotkey Linux Audit47 closure and release qualification.</b></p>
+<ul>
+  <li>Local evdev suppression now uses keyboard-only device admission, raw
+    keycode/value/repeat replay, SYN_DROPPED frame reconciliation with
+    EVIOCGKEY, and an independent grab watchdog that fails open after a stalled
+    owner.</li>
+  <li>inputd remap replacement state is per physical device; shared synthetic
+    held-key references prevent concurrent transactions from releasing each
+    other's keys. Required suppression no longer silently downgrades when the
+    negotiated capability grant is absent.</li>
+  <li>Clipboard paste fallback preserves a rich ClipboardAll snapshot when
+    available; X11 owner check/restore is server-serialized and Wayland
+    cancellation remains conservative.</li>
+  <li>Xlib fatal I/O has an explicit stale-Display discard/reconnect policy;
+    --pack now rejects missing resources, checks footer arithmetic and uses
+    atomic output finalization.</li>
+  <li>AUR is pinned to linux.22 with a SHA-256 source checksum; Flatpak is
+    pinned to linux.22 and documents its intentional input-only device boundary.</li>
+  <li>Syntax Studio now has a real X11 interaction oracle; VS Code extension-host
+    and DAP validation is a required core CI gate. VM and headless verification
+    evidence is stored with the release.</li>
+</ul>
+
 <h2 id="linux.21">v2.0.26-linux.21</h2>
 <p><b>Repository hardening closure (check0905); doc-check totals synchronized.</b></p>
 <ul>

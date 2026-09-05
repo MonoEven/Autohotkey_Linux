@@ -175,9 +175,15 @@ struct inject_txn {
 	unsigned char held[KEY_CNT / 8];
 };
 static struct inject_txn sTxns[INPUTD_V2_INJECT_MAX_TOTAL];
+static unsigned int sSyntheticHeld[KEY_CNT];
 static long long sLastTtlSweepMs = 0;
 
 /* M4b static arbitration rules (check_detail0901 §7). */
+struct arb_replacement_state {
+	unsigned long long active_replacement_txn;
+	unsigned long long active_parent_txn;
+	unsigned char replacement_down;
+};
 struct arb_rule {
 	struct client *owner;  /* NULL = free */
 	unsigned long long registration_id;
@@ -193,9 +199,7 @@ struct arb_rule {
 	unsigned char dynamic_decision;
 	unsigned char dynamic_disabled;
 	unsigned int dynamic_timeouts;
-	unsigned long long active_replacement_txn;
-	unsigned long long active_parent_txn;
-	unsigned char replacement_down;
+	struct arb_replacement_state replacement[MAX_DEVICES];
 };
 static struct arb_rule sArbRules[INPUTD_V2_ARB_MAX_RULES];
 static unsigned long long sNextArbAcceptanceSeq;
@@ -291,6 +295,7 @@ static void replay_dead(void)
 	memset(sPhysicalTxn, 0, sizeof(sPhysicalTxn));
 	memset(sPhysicalOwnerAcceptance, 0, sizeof(sPhysicalOwnerAcceptance));
 	memset(sPhysicalSuppressed, 0, sizeof(sPhysicalSuppressed));
+	memset(sSyntheticHeld, 0, sizeof(sSyntheticHeld));
 	for (int i = 0; i < MAX_CLIENTS; ++i)
 	{
 		struct client *cl = &sClients[i];
@@ -850,8 +855,12 @@ static void txn_balance_and_close(struct inject_txn *t)
 	for (unsigned int code = 1; code < KEY_CNT; ++code)
 		if (t->held[code / 8] & (1u << (code & 7)))
 		{
-			/* replay_key() fails open (replay_dead) when the lane is gone. */
-			(void)replay_key(code, 0);
+			if (sSyntheticHeld[code] > 0)
+				--sSyntheticHeld[code];
+			/* Only the final owner emits the physical key-up. Every owner
+			 * still receives its balanced diagnostic publication below. */
+			if (sSyntheticHeld[code] == 0)
+				(void)replay_key(code, 0);
 			if (owner && owner->fd >= 0 && !owner->dead)
 				inject_publish(owner, t, code, 0);
 		}
@@ -1014,21 +1023,32 @@ static struct arb_rule *arb_winner(unsigned int code)
 	return arb_winner_filtered(code, NULL, 0);
 }
 
-static void arb_neutralize(struct arb_rule *r)
+static void arb_neutralize_device(struct arb_rule *r, int device_id)
 {
-	if (!r || !r->owner || !r->replacement_down || !r->replacement_code)
+	if (!r || !r->owner || device_id < 0 || device_id >= MAX_DEVICES)
+		return;
+	struct arb_replacement_state *state = &r->replacement[device_id];
+	if (!state->replacement_down || !r->replacement_code)
 		return;
 	struct inject_txn synthetic;
 	memset(&synthetic, 0, sizeof(synthetic));
 	synthetic.owner = r->owner;
-	synthetic.id = r->active_replacement_txn;
-	synthetic.parent = r->active_parent_txn;
+	synthetic.id = state->active_replacement_txn;
+	synthetic.parent = state->active_parent_txn;
 	synthetic.send_level = r->replacement_send_level;
 	(void)replay_key(r->replacement_code, 0);
 	inject_publish(r->owner, &synthetic, r->replacement_code, 0);
-	r->replacement_down = 0;
-	r->active_replacement_txn = 0;
-	r->active_parent_txn = 0;
+	state->replacement_down = 0;
+	state->active_replacement_txn = 0;
+	state->active_parent_txn = 0;
+}
+
+static void arb_neutralize(struct arb_rule *r)
+{
+	if (!r || !r->owner)
+		return;
+	for (int device_id = 0; device_id < MAX_DEVICES; ++device_id)
+		arb_neutralize_device(r, device_id);
 }
 
 static void arb_remove(struct arb_rule *r)
@@ -1494,17 +1514,43 @@ static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 			txn_balance_and_close(t);
 			break;
 		}
-		if (replay_key(code, (int)value) != 0)
+		if (t->events_seen >= t->event_count)
+		{
+			send_inject_ack(c, id, INPUTD_V2_INJECT_BAD_FRAME,
+				"event_count plan exceeded");
+			txn_balance_and_close(t);
+			break;
+		}
+		int emit_to_device = 1;
+		if (value == 1 && !(t->held[code / 8] & (1u << (code & 7))))
+		{
+			if (sSyntheticHeld[code] > 0)
+				emit_to_device = 0;
+		}
+		else if (value == 0 && (t->held[code / 8] & (1u << (code & 7))))
+			emit_to_device = sSyntheticHeld[code] <= 1;
+		if (emit_to_device && replay_key(code, (int)value) != 0)
 		{
 			send_inject_ack(c, id, INPUTD_V2_INJECT_DEGRADED, "replay write failed");
 			txn_balance_and_close(t);
 			break;
 		}
 		/* Track held keys so commit/abort/crash can balance the set. */
-		if (value)
+		if (value == 1)
+		{
+			if (!(t->held[code / 8] & (1u << (code & 7))))
+				++sSyntheticHeld[code];
 			t->held[code / 8] |= (unsigned char)(1u << (code & 7));
-		else
-			t->held[code / 8] &= (unsigned char)~(1u << (code & 7));
+		}
+		else if (value == 0)
+		{
+			if (t->held[code / 8] & (1u << (code & 7)))
+			{
+				if (sSyntheticHeld[code] > 0)
+					--sSyntheticHeld[code];
+				t->held[code / 8] &= (unsigned char)~(1u << (code & 7));
+			}
+		}
 		++t->events_seen;
 		if (t->events_seen > t->event_count)
 		{
@@ -2585,6 +2631,8 @@ int main(int argc, char **argv)
 					if (ev.type == EV_SYN && ev.code == SYN_DROPPED)
 					{
 						int held = device_has_held_keys(sDevFds[i]);
+						for (int r = 0; r < INPUTD_V2_ARB_MAX_RULES; ++r)
+							arb_neutralize_device(&sArbRules[r], i);
 						clear_device_physical_state(i);
 						sHeldStateReconciled = 0;
 						fprintf(stderr,
@@ -2735,23 +2783,25 @@ int main(int argc, char **argv)
 						{
 							action = INPUTD_V2_DECISION_REMAP;
 							reason = INPUTD_V2_DECISION_STATIC_REMAP;
+							struct arb_replacement_state *replacement =
+								&winner->replacement[i];
 							if (down && ev.value != 2)
 							{
 								replacement_txn = ++sNextBrokerTxnId;
-								winner->active_replacement_txn = replacement_txn;
-								winner->active_parent_txn = source_txn;
-								winner->replacement_down = 1;
+								replacement->active_replacement_txn = replacement_txn;
+								replacement->active_parent_txn = source_txn;
+								replacement->replacement_down = 1;
 							}
 							else
-								replacement_txn = winner->active_replacement_txn;
+								replacement_txn = replacement->active_replacement_txn;
 							if (replacement_txn)
 							{
 								struct inject_txn synthetic;
 								memset(&synthetic, 0, sizeof(synthetic));
 								synthetic.owner = winner->owner;
 								synthetic.id = replacement_txn;
-								synthetic.parent = winner->active_parent_txn
-									? winner->active_parent_txn : source_txn;
+								synthetic.parent = replacement->active_parent_txn
+									? replacement->active_parent_txn : source_txn;
 								synthetic.send_level = winner->replacement_send_level;
 								if (replay_key(winner->replacement_code, ev.value) != 0)
 								{
@@ -2765,9 +2815,9 @@ int main(int argc, char **argv)
 							}
 							if (!down)
 							{
-								winner->replacement_down = 0;
-								winner->active_replacement_txn = 0;
-								winner->active_parent_txn = 0;
+								replacement->replacement_down = 0;
+								replacement->active_replacement_txn = 0;
+								replacement->active_parent_txn = 0;
 							}
 						}
 						else
@@ -2811,6 +2861,8 @@ int main(int argc, char **argv)
 			}
 			if (remove_device)
 			{
+				for (int r = 0; r < INPUTD_V2_ARB_MAX_RULES; ++r)
+					arb_neutralize_device(&sArbRules[r], i);
 				clear_device_physical_state(i);
 				ioctl(sDevFds[i], EVIOCGRAB, 0);
 				fprintf(stderr, "[inputd] hot-remove %s\n", sGrabbedNames[i]);

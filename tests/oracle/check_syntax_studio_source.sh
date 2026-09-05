@@ -6,15 +6,17 @@ SRC="$ROOT/examples/gui/syntax_studio.ahk"
 for needle in \
   'lesson10 := Lesson(10' \
   'Gui("+Resize", "AHK v2 Syntax Studio")' \
-  '"ListBox"' \
-  'AddDropDownList' \
-  '"TreeView"' \
-  'AddEdit' \
-  '"StatusBar"' \
+  'DropDownList' \
+  'TreeView' \
+  'Edit' \
+  'StatusBar' \
   'FilterLessons' \
   'RunPractice' \
   'CheckPractice' \
-  'SetTimer(WatchLessonSelection, 50)'; do
+  'SetTimer(WatchLessonSelection, 50)' \
+  'StudioTrace("lesson id="' \
+  'StudioTrace("check result=pass' \
+  'StudioTrace("run exit="'; do
   grep -Fq "$needle" "$SRC"
 done
 for image in \
