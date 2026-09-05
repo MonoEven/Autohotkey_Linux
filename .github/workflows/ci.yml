@@ -275,8 +275,7 @@ jobs:
       - name: VS Code extension-host and DAP oracle (Audit47 I13)
         if: matrix.build == 'core'
         run: bash tests/oracle/run_vscode_extension_oracle.sh extensions/vscode-ahk-linux/autohotkey-linux-tools-0.2.1.vsix "$BUILD_DIR/source/linux/core/ahk_core"
-
-
+      - name: Linux DBGp-to-DAP adapter oracle
         if: matrix.build == 'core'
         run: bash tests/oracle/run_dap_adapter_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
 
