@@ -484,8 +484,10 @@ Highlights of this release:</p>
      physical state per device and publishes stable device identities. Its
      systemd unit uses <code>Type=notify</code> and reports healthy/degraded
      readiness. Portal/GNOME registered accelerators expose adapted, not
-     hook-equivalent, suppression guarantees. Required suppression is rejected when
-      the negotiated grant is absent; the local evdev lane preserves raw
+     hook-equivalent, suppression guarantees. Automatic routing rejects required
+      the negotiated grant is absent; an explicit portal/GNOME backend override is
+      allowed as an adapted opt-in and does not claim hook-equivalent behavior.
+      The local evdev lane preserves raw
       keycode/value/repeat replay and uses an independent 1.5-second grab
       watchdog plus SYN_DROPPED/EVIOCGKEY reconciliation. Replacement and
       synthetic held-key ownership is tracked per device/transaction.</li>

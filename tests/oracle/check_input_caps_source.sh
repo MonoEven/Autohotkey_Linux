@@ -11,8 +11,10 @@ grep -A1 'AHK_INPUT_CAPS(PORTAL, "portal"' "$DEF" | grep -q 'true, true'
 grep -A1 'AHK_INPUT_CAPS(GNOME_SHELL, "gnome-shell"' "$DEF" | grep -q 'true, true'
 grep -q 'adapted_suppression' "$SRC"
 grep -q 'aRequireSuppression' "$HDR"
+grep -q 'ExplicitBackendRequested' "$SRC"
 grep -q 'RuntimeCapsSatisfy' "$SRC"
 grep -q 'if (aRequireSuppression && !c->suppress)' "$SRC"
+grep -q 'automatic routing must not silently weaken' "$SRC"
 grep -q 'required suppression unavailable' "$ROOT/source/linux/core/core_inputd_client_linux.cpp"
 grep -q '!passthrough);' "$SRC"
 echo 'INPUT_CAPS_STATIC_PASS accelerator_suppression=adapted route_requirement=1'

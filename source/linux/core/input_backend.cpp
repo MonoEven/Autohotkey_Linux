@@ -678,15 +678,25 @@ static bool CapsSatisfy(const AhkInputBackendCaps *c, bool aPassthrough, bool aK
 	return true;
 }
 
+static bool ExplicitBackendRequested(AhkInputBackendKind aKind)
+{
+	const char *value = getenv("AHK_INPUT_BACKEND");
+	if (!value)
+		return false;
+	return (aKind == AhkInputBackendKind::PORTAL && !strcmp(value, "portal"))
+		|| (aKind == AhkInputBackendKind::GNOME_SHELL && !strcmp(value, "gnome-shell"));
+}
+
 static bool RuntimeCapsSatisfy(AhkInputBackendKind aKind, bool aRequireSuppression)
 {
 	if (!aRequireSuppression)
 		return true;
-	// Portal and GNOME registered accelerators consume their registered
-	// shortcut but are not hook-equivalent suppression/replay lanes.
+	// Portal and GNOME registered accelerators are adapted rather than
+	// hook-equivalent. They may be selected only by an explicit backend
+	// override; automatic routing must not silently weaken required semantics.
 	if (aKind == AhkInputBackendKind::PORTAL
 		|| aKind == AhkInputBackendKind::GNOME_SHELL)
-		return false;
+		return ExplicitBackendRequested(aKind);
 	if (aKind == AhkInputBackendKind::EVDEV && LinuxInputdClientActive())
 		return (LinuxInputdClientCapsGranted() & INPUTD_V2_CAP_SUPPRESS) != 0;
 	return true; // Runtime health is probed when the lane is activated.
