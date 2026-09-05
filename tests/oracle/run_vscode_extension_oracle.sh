@@ -4,12 +4,16 @@
 # an adapter tracker records breakpoint/step/stack/variables/termination.
 set -u
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-VSIX="${1:-$ROOT/extensions/vscode-ahk-linux/autohotkey-linux-tools-0.2.0.vsix}"
+VSIX="${1:-$ROOT/extensions/vscode-ahk-linux/autohotkey-linux-tools-0.2.1.vsix}"
 BIN="${2:-$ROOT/build-core/source/linux/core/ahk_core}"
 case "$VSIX" in /*) ;; *) VSIX="$ROOT/$VSIX" ;; esac
+EXT_VERSION="$(unzip -p "$VSIX" extension/package.json 2>/dev/null \
+  | sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
 case "$BIN" in /*) ;; *) BIN="$ROOT/$BIN" ;; esac
 command -v code >/dev/null || { echo "VSCODE_ORACLE_SKIP code-not-installed"; exit 2; }
+command -v unzip >/dev/null || { echo "VSCODE_ORACLE_SKIP unzip-not-installed"; exit 2; }
 test -f "$VSIX" || { echo "VSCODE_ORACLE_FAIL missing-vsix=$VSIX"; exit 1; }
+[ -n "$EXT_VERSION" ] || { echo "VSCODE_ORACLE_FAIL vsix-version-missing=$VSIX"; exit 1; }
 test -x "$BIN" || { echo "VSCODE_ORACLE_FAIL missing-runtime=$BIN"; exit 1; }
 
 WORK=/tmp/ahk-vscode-oracle
@@ -42,8 +46,8 @@ code --user-data-dir "$USER_DATA" --extensions-dir "$EXTENSIONS" \
   || { echo VSCODE_INSTALL_FAIL; cat /tmp/ahk-vscode-install.log; exit 1; }
 installed="$(code --user-data-dir "$USER_DATA" --extensions-dir "$EXTENSIONS" \
   --list-extensions --show-versions | grep '^autohotkey-linux-community.autohotkey-linux-tools@' | head -1)"
-[ "$installed" = "autohotkey-linux-community.autohotkey-linux-tools@0.2.0" ] \
-  || { echo "VSCODE_LIST_FAIL installed=[$installed]"; exit 1; }
+[ "$installed" = "autohotkey-linux-community.autohotkey-linux-tools@$EXT_VERSION" ] \
+  || { echo "VSCODE_LIST_FAIL installed=[$installed] expected=[$EXT_VERSION]"; exit 1; }
 
 AHK_LINUX_VSCODE_SELFTEST="$EVIDENCE" \
 AHK_LINUX_VSCODE_SELFTEST_SCRIPT="$WORK/oracle.ahk" \
@@ -62,13 +66,13 @@ test -f "$EVIDENCE" || {
 }
 kill "$VPID" 2>/dev/null; wait "$VPID" 2>/dev/null
 pkill -f "$USER_DATA" 2>/dev/null
-python3 - "$EVIDENCE" <<'PY'
+python3 - "$EVIDENCE" "$EXT_VERSION" <<'PY'
 import json, pathlib, sys
 p = pathlib.Path(sys.argv[1])
 data = json.loads(p.read_text(encoding="utf-8"))
 assert data["schema"] == 1
 assert data["activated"] is True
-assert data["extensionVersion"] == "0.2.0"
+assert data["extensionVersion"] == sys.argv[2]
 assert data["languageRegistered"] is True
 assert len(data["commands"]) == 7, data
 assert data["diagnosticsEntries"] >= 3, data

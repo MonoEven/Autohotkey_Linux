@@ -72,11 +72,12 @@ real frames and readable Global state. It also expands a D-Bus proxy and typed
 ComValue, asserting only side-effect-free local metadata. The final lanes detach,
 reconnect the same PID twice around an ungraceful IDE socket close, and prove a
 separate tight-running script services the signal from its execution hook. `run_dap_adapter_oracle.sh` drives the inline adapter as an external DAP
-client over that real runtime. `run_vscode_extension_oracle.sh` installs the
-packaged 0.2.0 VSIX into VS Code
+client over that real runtime. `run_vscode_extension_oracle.sh` installs the packaged 0.2.1 VSIX into VS Code
 and proves extension-host activation, language/command registration, `--diag`
 parsing and real script execution, then observes breakpoint/step/scalar variables
-and termination through VS Code's DebugAdapterTracker. `run_gui_host_matrix.sh` then aggregates
+and termination through VS Code's DebugAdapterTracker. The repeatable VM visual smoke
+flow and screenshot evidence are recorded in [VSCODE_VM_VISUAL.md](VSCODE_VM_VISUAL.md).
+`run_gui_host_matrix.sh` then aggregates
 independent GTK3, Qt6 and VS Code/Electron capture oracles. The Qt lane also
 uses QListWidget/QSlider callbacks to prove AT-SPI Selection and Value produce
 real toolkit changes, then fault-injects timeout/bus/interface/input failures to

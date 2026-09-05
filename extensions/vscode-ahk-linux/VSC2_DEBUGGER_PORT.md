@@ -52,7 +52,7 @@ The dependency-free inline Debug Adapter Protocol implementation translates:
 Two layers enforce acceptance. `run_dap_adapter_oracle.sh` is an external DAP
 client over the real runtime; it proves breakpoint line 3, step line 4,
 `x=10`, `y=15` and result 30. `run_vscode_extension_oracle.sh` installs the
-0.2.0 VSIX into VS Code 1.134, starts the contributed `ahk-linux` debugger,
+0.2.1 VSIX into VS Code 1.134, starts the contributed `ahk-linux` debugger,
 and observes the same breakpoint/step/variables through a DebugAdapterTracker
 before clean termination.
 
