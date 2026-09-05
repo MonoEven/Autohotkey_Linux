@@ -242,6 +242,7 @@ static int write_full(int fd, const void *buf, size_t n); /* fwd */
 static void drain_client(struct client *c); /* dynamic decision wait */
 static void send_degraded_v2(struct client *c); /* fwd (defined with the v2 writers) */
 static void broadcast_backend_health(void); /* M2 fwd */
+static void systemd_notify(const char *aState); /* optional NOTIFY_SOCKET */
 
 static void logmsg(const char *fmt, ...)
 {
@@ -311,6 +312,7 @@ static void replay_dead(void)
 	fprintf(stderr, "[inputd] replay lane failed: grabs released, "
 		"listen-only from now on\n");
 	fprintf(stderr, "STATUS=degraded: replay unavailable, grabs released\n");
+	systemd_notify("READY=1\nSTATUS=degraded: replay unavailable, grabs released");
 }
 
 static int panic_step(unsigned int code, int down)
@@ -1573,6 +1575,38 @@ static void close_client(struct client *c)
 	memset(c->nonce, 0, sizeof(c->nonce));
 }
 
+static void systemd_notify(const char *aState)
+{
+	const char *socket_path = getenv("NOTIFY_SOCKET");
+	if (!socket_path || !*socket_path || !aState)
+		return;
+	int fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	if (fd < 0)
+		return;
+	struct sockaddr_un addr;
+	memset(&addr, 0, sizeof(addr));
+	addr.sun_family = AF_UNIX;
+	size_t len = strlen(socket_path);
+	if (len >= sizeof(addr.sun_path))
+	{
+		close(fd);
+		return;
+	}
+	if (socket_path[0] == '@')
+	{
+		addr.sun_path[0] = '\0';
+		memcpy(addr.sun_path + 1, socket_path + 1, len - 1);
+	}
+	else
+		memcpy(addr.sun_path, socket_path, len + 1);
+	socklen_t addr_len = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + len + 1);
+	if (socket_path[0] == '@')
+		addr_len = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + len);
+	(void)sendto(fd, aState, strlen(aState), MSG_NOSIGNAL,
+		(struct sockaddr *)&addr, addr_len);
+	close(fd);
+}
+
 static int active_client_count(void)
 {
 	int count = 0;
@@ -2399,6 +2433,14 @@ int main(int argc, char **argv)
 			sReplayErrno = 0;
 			scan_devices();
 		}
+	}
+	if (!protocol_only)
+	{
+		/* check0905: Type=notify readiness is emitted only after replay
+		 * preflight and the initial device scan have completed. */
+		systemd_notify(sReplayDead
+			? "READY=1\nSTATUS=degraded: replay unavailable, grabs disabled"
+			: "READY=1\nSTATUS=healthy: replay ready and device scan complete");
 	}
 	fprintf(stderr, "[inputd] ready on %s (%d keyboard(s) grabbed%s%s)\n",
 		socket_path, sDevCount,
