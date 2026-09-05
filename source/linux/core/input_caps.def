@@ -8,10 +8,10 @@ AHK_INPUT_CAPS(X11, "x11",
     true, true, true, true, true, true, true, true, true,
     true, false, true, HEURISTIC, true, true)
 AHK_INPUT_CAPS(PORTAL, "portal",
-    true, true, false, false, false, false, false, true, false,
+    true, false, true, false, false, false, false, true, false,
     false, false, false, NONE, false, false)
 AHK_INPUT_CAPS(GNOME_SHELL, "gnome-shell",
-    true, true, false, false, false, true, true, true, true,
+    true, false, false, false, false, true, true, true, true,
     false, false, false, NONE, false, false)
 AHK_INPUT_CAPS(EVDEV, "evdev",
     true, true, true, true, true, true, true, true, true,

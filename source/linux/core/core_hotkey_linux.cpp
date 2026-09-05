@@ -1686,7 +1686,7 @@ BIF_DECL(BIF_Linux_Hotkey)
 	bool wildcard = wcschr(name, L'*') != nullptr;
 	bool passthrough = wcschr(name, L'~') != nullptr;
 	AhkInputBackendKind target_hint = LinuxInputBackendRoute(passthrough, key_up,
-		false, wildcard, explicit_scan, custom_combo);
+		false, wildcard, explicit_scan, custom_combo, false, !passthrough);
 	if (target_hint == AhkInputBackendKind::AUTO)
 	{
 		aResultToken.Error(_T("No available Linux input backend satisfies this hotkey's capability requirements."), name, ErrorPrototype::OS);

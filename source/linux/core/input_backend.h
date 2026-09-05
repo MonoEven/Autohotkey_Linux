@@ -245,7 +245,7 @@ struct Hotkey; // ../../hotkey.h
 // satisfy the flags.
 AhkInputBackendKind LinuxInputBackendRoute(bool aPassthrough, bool aKeyUp, bool aBare,
 	bool aWildcard, bool aScanCode = false, bool aCustomCombo = false,
-	bool aRequireLevelGate = false);
+	bool aRequireLevelGate = false, bool aRequireSuppression = false);
 AhkInputBackendKind LinuxInputBackendForHotkey(Hotkey *aHotkey);
 bool LinuxInputBackendHotkeyAssigned(Hotkey *aHotkey, AhkInputBackendKind aKind);
 bool LinuxInputBackendMuxUses(AhkInputBackendKind aKind);

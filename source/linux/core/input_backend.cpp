@@ -660,9 +660,10 @@ AhkCompatibilityOutcome LinuxInputBackendCompatibilityFor(AhkInputBackendKind aK
 
 static bool CapsSatisfy(const AhkInputBackendCaps *c, bool aPassthrough, bool aKeyUp,
 	bool aBare, bool aWildcard, bool aScanCode, bool aCustomCombo,
-	bool aRequireLevelGate)
+	bool aRequireLevelGate, bool aRequireSuppression)
 {
 	if (!c || !c->global_hotkeys) return false;
+	if (aRequireSuppression && !c->suppress) return false;
 	if (aPassthrough && !c->passthrough) return false;
 	if (aKeyUp && !c->key_up) return false;
 	if (aBare && !c->bare_keys) return false;
@@ -677,11 +678,12 @@ static bool CapsSatisfy(const AhkInputBackendCaps *c, bool aPassthrough, bool aK
 // backend whose caps satisfy the hotkey's needs.  The effective backend wins
 // when it qualifies; otherwise walk the other lanes in priority order.
 AhkInputBackendKind LinuxInputBackendRoute(bool aPassthrough, bool aKeyUp, bool aBare,
-	bool aWildcard, bool aScanCode, bool aCustomCombo, bool aRequireLevelGate)
+	bool aWildcard, bool aScanCode, bool aCustomCombo, bool aRequireLevelGate,
+	bool aRequireSuppression)
 {
 	const AhkInputBackendKind eff = CurrentKind();
 	if (CapsSatisfy(KindCaps(eff), aPassthrough, aKeyUp, aBare, aWildcard,
-		aScanCode, aCustomCombo, aRequireLevelGate))
+		aScanCode, aCustomCombo, aRequireLevelGate, aRequireSuppression))
 		return eff;
 	// Priority: prefer non-root, integration-light lanes first.
 	static const AhkInputBackendKind kCandidates[] = {
@@ -694,7 +696,7 @@ AhkInputBackendKind LinuxInputBackendRoute(bool aPassthrough, bool aKeyUp, bool 
 	{
 		if (k == eff) continue;
 		if (!CapsSatisfy(KindCaps(k), aPassthrough, aKeyUp, aBare, aWildcard,
-			aScanCode, aCustomCombo, aRequireLevelGate))
+			aScanCode, aCustomCombo, aRequireLevelGate, aRequireSuppression))
 			continue;
 		if (k == AhkInputBackendKind::X11)
 		{
@@ -735,7 +737,7 @@ AhkInputBackendKind LinuxInputBackendForHotkey(Hotkey *aHotkey)
 		if (v->mInputLevel > 0) { require_level_gate = true; break; }
 	return LinuxInputBackendRoute(passthrough, aHotkey->mKeyUp, bare,
 		aHotkey->mAllowExtraModifiers != 0, scan, combo || acts_as_prefix,
-		require_level_gate);
+		require_level_gate, !passthrough);
 }
 
 bool LinuxInputBackendHotkeyAssigned(Hotkey *aHotkey, AhkInputBackendKind aKind)
