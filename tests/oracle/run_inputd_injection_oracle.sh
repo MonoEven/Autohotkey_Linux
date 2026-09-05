@@ -251,6 +251,12 @@ kill_probe "txn 85"
 out=$(sudo -n "$PROBE" "$WORK/inja.sock" inject $KEY_F7 3 --pairs 300 || true)
 expect_contains inj_preflight_bound "status=6" "$out"
 
+# ---- 9b: strict phase/value validation and incomplete commit ---------------
+out=$(sudo -n "$PROBE" "$WORK/inja.sock" inject-bad-phase $KEY_F7 3 --txn 86 || true)
+expect_contains inj_bad_phase "status=6" "$out"
+out=$(sudo -n "$PROBE" "$WORK/inja.sock" inject-incomplete $KEY_F7 3 --txn 87 || true)
+expect_contains inj_incomplete_commit "status=6" "$out"
+
 # ---- 10: total transaction quota ---------------------------------------------
 for i in $(seq 1 17); do
   sudo -n "$PROBE" "$WORK/inja.sock" inject $KEY_F7 3 --begin-only --no-commit --stay 1500 --txn "$((100 + i))" \

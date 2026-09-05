@@ -1479,7 +1479,10 @@ static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 		unsigned int value = k[13];
 		unsigned int phase = k[12];
 		if (!code || code > KEY_MAX || value > 2
-			|| (value == 2) != (phase == INPUTD_V2_PHASE_REPEAT))
+			|| phase > INPUTD_V2_PHASE_REPEAT
+			|| (phase == INPUTD_V2_PHASE_DOWN && value != 1)
+			|| (phase == INPUTD_V2_PHASE_UP && value != 0)
+			|| (phase == INPUTD_V2_PHASE_REPEAT && value != 2))
 		{
 			send_inject_ack(c, id, INPUTD_V2_INJECT_BAD_FRAME, "bad key payload");
 			txn_balance_and_close(t);
@@ -1529,9 +1532,15 @@ static void handle_client_cmd_v2(struct client *c, unsigned int mtype
 			send_inject_ack(c, id, INPUTD_V2_INJECT_STALE, "unknown transaction");
 			break;
 		}
-		/* Commit balances any key the client forgot to release, then closes
-		 * the transaction; the released events carry the same transaction
-		 * identity so observers see a balanced stream. */
+		/* Commit only closes a complete plan.  A short plan is an explicit
+		 * partial abort and is balanced, but never reported as OK_COMMIT. */
+		if (!is_abort && t->events_seen != t->event_count)
+		{
+			txn_balance_and_close(t);
+			send_inject_ack(c, id, INPUTD_V2_INJECT_BAD_FRAME,
+				"commit event_count incomplete");
+			break;
+		}
 		txn_balance_and_close(t);
 		send_inject_ack(c, id, is_abort ? INPUTD_V2_INJECT_OK_ABORT
 			: INPUTD_V2_INJECT_OK_COMMIT, "transaction closed");

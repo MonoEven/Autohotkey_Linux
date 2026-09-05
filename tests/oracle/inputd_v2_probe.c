@@ -17,10 +17,13 @@
  *   sub RULES              HELLO + SUBSCRIBE (expect SUBSCRIBE_ACK)
  *   deny-sup               HELLO(caps=OBSERVE|SUPPRESS) + SUBSCRIBE "30:1"
  *                          -> expect ERROR CAPABILITY_DENIED
+ *   inject SOCKET CODE LEVEL [--txn N] [--down-only] [--begin-only]
+ *          [--pairs N] [--no-commit] [--stay MS]
+ *   inject-bad-phase SOCKET CODE LEVEL -> BAD_FRAME for phase/value mismatch
+ *   inject-incomplete SOCKET CODE LEVEL -> BAD_FRAME for short COMMIT plan
  *   watch RULES [--until-events N] [--timeout-ms N]
  *
  * Prints machine-greppable lines:
- *   HELLO_ACK proto=P client_id=N authority=HEX generation=N caps=0xX denied=0xX flags=0xX seq_start=N
  *   SUBSCRIBE_ACK ok=N granted=N
  *   ERROR code=N detail=...
  *   EVENT seq=N ts=N dev=N src=N conf=N level=D code=N phase=N value=N
@@ -377,6 +380,8 @@ int main(int argc, char **argv)
 	int inject_begin_only = 0;
 	int inject_no_commit = 0;
 	int inject_crash_after_events = 0;
+	int inject_bad_phase = !strcmp(mode, "inject-bad-phase");
+	int inject_incomplete = !strcmp(mode, "inject-incomplete");
 	int inject_pairs = 1;
 	long inject_stay_ms = 0;
 	int arb_dynamic = 0;
@@ -766,9 +771,10 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	if (!strcmp(mode, "inject") || !strcmp(mode, "inject-event"))
+	if (!strcmp(mode, "inject") || !strcmp(mode, "inject-event")
+		|| inject_bad_phase || inject_incomplete)
 	{
-		int is_single = mode[7] == 'e';
+		int is_single = !strcmp(mode, "inject-event");
 		int code, level;
 		int p;
 		unsigned long long seq = 1;
@@ -815,6 +821,35 @@ int main(int argc, char **argv)
 			if (mtype != MSG_INJECT_ACK) { printf("EXPECTED_INJECT_ACK_GOT=%u\n", mtype); return 1; }
 			print_inject_ack(rp, rp_len);
 			if ((unsigned)rp[8] != INJECT_OK_BEGIN) return 1;
+			if (inject_bad_phase)
+			{
+				unsigned char ep[24];
+				st_le64(ep, inject_txn_id);
+				memset(ep + 8, 0, 16);
+				st_le32(ep + 8, (unsigned int)code);
+				ep[20] = 0; /* DOWN phase with value=0 is malformed. */
+				ep[21] = 0;
+				if (send_frame(fd, MSG_INJECT_EVENT, seq++, ep, sizeof(ep)) != 0) return 1;
+				if (read_one_print(fd, &mtype, rp, &rp_len) != 1) return 1;
+				print_inject_ack(rp, rp_len);
+				return (unsigned)rp[8] == INJECT_BAD_FRAME ? 0 : 1;
+			}
+			if (inject_incomplete)
+			{
+				unsigned char ep[24];
+				st_le64(ep, inject_txn_id);
+				key_payload_fill((unsigned int)code, 1, ep + 8);
+				if (send_frame(fd, MSG_INJECT_EVENT, seq++, ep, sizeof(ep)) != 0) return 1;
+				if (read_one_print(fd, &mtype, rp, &rp_len) != 1
+					|| mtype != MSG_INJECT_ACK || (unsigned)rp[8] != INJECT_OK_EVENT)
+					return 1;
+				unsigned char cp[8];
+				st_le64(cp, inject_txn_id);
+				if (send_frame(fd, MSG_INJECT_COMMIT, seq++, cp, sizeof(cp)) != 0) return 1;
+				if (read_one_print(fd, &mtype, rp, &rp_len) != 1) return 1;
+				print_inject_ack(rp, rp_len);
+				return (unsigned)rp[8] == INJECT_BAD_FRAME ? 0 : 1;
+			}
 
 			if (!inject_begin_only)
 				for (p = 0; p < inject_pairs; ++p)
