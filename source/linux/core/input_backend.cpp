@@ -605,10 +605,14 @@ AhkRouteGuarantees LinuxInputBackendGuaranteesFor(AhkInputBackendKind aKind)
 		bool denied_by_client_caps = aKind == AhkInputBackendKind::EVDEV
 			&& LinuxInputdClientActive()
 			&& !(LinuxInputdClientCapsGranted() & INPUTD_V2_CAP_SUPPRESS);
+		bool adapted_suppression = aKind == AhkInputBackendKind::PORTAL
+			|| aKind == AhkInputBackendKind::GNOME_SHELL;
 		g.suppression = (denied_by_client_caps
 			|| (aKind == AhkInputBackendKind::EVDEV
 				&& (!health->replay_available || health->state != AhkBackendState::HEALTHY)))
-			? AhkGuaranteeGrade::NONE : AhkGuaranteeGrade::GUARANTEED;
+			? AhkGuaranteeGrade::NONE
+			: adapted_suppression ? AhkGuaranteeGrade::ADAPTED
+			: AhkGuaranteeGrade::GUARANTEED;
 	}
 	if (caps && caps->char_stream)
 		g.character_stream = AhkGuaranteeGrade::GUARANTEED;

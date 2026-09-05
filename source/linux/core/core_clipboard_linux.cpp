@@ -213,6 +213,7 @@ Atom gClipX11TextAtom = 0;       // UTF8_STRING (text => Type 1).
 bool gClipX11Reading = false;
 bool gClipX11ReadDone = false;
 bool gClipX11ReadFailed = false;
+bool gClipX11TargetDeclined = false;
 
 int LinuxClipX11ErrorHandler(Display *d, XErrorEvent *e)
 {
@@ -429,6 +430,7 @@ static bool LinuxClipX11RequestTarget(Display *d, Atom aTarget,
 	gClipX11Reading = true;
 	gClipX11ReadDone = false;
 	gClipX11ReadFailed = false;
+	gClipX11TargetDeclined = false;
 	aOut.clear();
 	XConvertSelection(d, gClipX11Clipboard, aTarget, gClipX11Prop,
 		gClipX11Window, CurrentTime);
@@ -482,6 +484,7 @@ static bool LinuxClipX11RequestTarget(Display *d, Atom aTarget,
 			{
 				if (ev.xselection.property == None)
 				{
+					gClipX11TargetDeclined = true;
 					gClipX11ReadFailed = true;
 					break;
 				}
@@ -582,9 +585,12 @@ static bool LinuxClipboardX11Read(Display *d, std::wstring &aText)
 	if (!XGetSelectionOwner(d, gClipX11Clipboard))
 		return true; // Empty clipboard, no error.
 	std::vector<unsigned char> raw;
-	if (!LinuxClipX11RequestTarget(d, gClipX11Utf8, raw)
-		&& !LinuxClipX11RequestTarget(d, XA_STRING, raw))
-		return false;
+	if (!LinuxClipX11RequestTarget(d, gClipX11Utf8, raw))
+	{
+		if (!gClipX11TargetDeclined
+			|| !LinuxClipX11RequestTarget(d, XA_STRING, raw))
+			return false;
+	}
 	return LinuxUtf8ToWide(std::string(raw.begin(), raw.end()), aText);
 }
 
