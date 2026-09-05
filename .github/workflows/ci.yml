@@ -313,6 +313,7 @@ jobs:
         if: matrix.build == 'core'
         run: |
           python3 tools/gen_examples_catalog.py --check
+          bash tests/oracle/check_syntax_studio_source.sh
           bash examples/run.sh all-curated "$BUILD_DIR/source/linux/core/ahk_core"
 
       # M6-T4: the same parameterized hotkey+Hotstring+clipboard+Timer workload
