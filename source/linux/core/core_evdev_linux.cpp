@@ -62,6 +62,8 @@ DWORD sBrokerReconnectLastMs = 0;
 #define BROKER_RECONNECT_BUDGET_MS 5000
 bool sAnyGrabbed = false; // At least one device suppressed.
 bool sPanicked = false;   // Panic sequence fired: grabs released, fail-open.
+bool sReplayFailed = false; // Runtime replay failure permanently disables local grabs.
+bool sLocalReplayAvailable = false;
 char sError[256] = { 0 };
 DWORD sLastRescanMs = 0;  // Periodic device discovery (check0820 direction-B:
                           // uinput test devices appear after startup; the
@@ -345,6 +347,35 @@ bool DeviceNameSkipped(const char *name)
 	return false;
 }
 
+bool DeviceHasKeyboardCapabilities(int fd)
+{
+	unsigned char bits[KEY_CNT / 8 + 1] = { 0 };
+	if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(bits)), bits) < 0)
+		return false;
+	// Require stable keyboard capabilities, not merely an EV_KEY bit: mice,
+	// touchpads and tablet buttons can expose EV_KEY without being keyboards.
+	return (bits[KEY_A / 8] & (1u << (KEY_A & 7)))
+		&& (bits[KEY_ENTER / 8] & (1u << (KEY_ENTER & 7)));
+}
+
+void ReleaseLocalGrabsForReplayFailure(const char *aReason)
+{
+	for (auto &device : sDevices)
+	{
+		if (device.fd >= 0 && device.grabbed)
+			ioctl(device.fd, EVIOCGRAB, 0);
+		device.grabbed = false;
+	}
+	sAnyGrabbed = false;
+	sReplayFailed = true;
+	sLocalReplayAvailable = false;
+	const char *reason = aReason && *aReason ? aReason
+		: "uinput replay failed; local evdev grabs released";
+	fprintf(stderr, "[evdev] %s; entering listen-only fail-open mode\n", reason);
+	ReportLocalEvdevHealth(AhkBackendState::DEGRADED, reason,
+		AhkPermissionState::DENIED, false);
+}
+
 bool OpenDevice(const char *path)
 {
 	// name via sysfs
@@ -374,17 +405,18 @@ bool OpenDevice(const char *path)
 			path, strerror(errno));
 		return false;
 	}
-	// Only accept devices that can produce key events (try a grab; if it
-	// fails with ENODEV the device is not a keyboard we can use, or simply
-	// no read permission -> the grab error tells us which).
+	if (!DeviceHasKeyboardCapabilities(fd))
+	{
+		close(fd);
+		return false;
+	}
+	// A local grab is safe only while a replay lane has been successfully
+	// created.  Without it this device remains a listen-only observer.
 	int grab = 0;
-	if (ioctl(fd, EVIOCGRAB, 1) == 0)
+	if (!sReplayFailed && sLocalReplayAvailable
+		&& ioctl(fd, EVIOCGRAB, 1) == 0)
 	{
 		grab = 1; // Suppress mode for this device.
-	}
-	else
-	{
-		grab = 0; // Listen mode (no permission / grab unsupported).
 	}
 	EvdevDevice dev;
 	dev.fd = fd;
@@ -393,7 +425,8 @@ bool OpenDevice(const char *path)
 	sAnyGrabbed = sAnyGrabbed || dev.grabbed;
 	const char *t = getenv("AHK_EVDEV_TRACE");
 	if (t && strcmp(t, "0") != 0)
-		fprintf(stderr, "[evdev] opened %s grab=%d\n", path, dev.grabbed);
+		fprintf(stderr, "[evdev] opened %s grab=%d replay=%d\n", path,
+			dev.grabbed, sLocalReplayAvailable ? 1 : 0);
 	return true;
 }
 
@@ -443,6 +476,7 @@ void RescanIfDue()
 	if (now - sLastRescanMs < 2000)
 		return;
 	sLastRescanMs = now;
+	sLocalReplayAvailable = !sReplayFailed && LinuxUinputInjectionAvailable();
 	ScanDevices();
 }
 
@@ -774,6 +808,7 @@ bool LinuxEvdevActive()
 	if (!sScanned)
 	{
 		sScanned = true;
+		sLocalReplayAvailable = !sReplayFailed && LinuxUinputInjectionAvailable();
 		ScanDevices();
 		fprintf(stderr, "[evdev] %zu device(s) opened, %s%s\n",
 			sDevices.size(), sAnyGrabbed ? "suppress" : "listen-only",
@@ -791,6 +826,10 @@ bool LinuxEvdevActive()
 			ReportLocalEvdevHealth(AhkBackendState::DEGRADED,
 				"in-process EVIOCGRAB active; replay is lazy/non-authoritative",
 				AhkPermissionState::GRANTED, true);
+		else if (!sLocalReplayAvailable)
+			ReportLocalEvdevHealth(AhkBackendState::DEGRADED,
+				"uinput replay unavailable; in-process evdev is listen-only",
+				AhkPermissionState::DENIED, true);
 		else
 			ReportLocalEvdevHealth(AhkBackendState::HEALTHY,
 				"in-process evdev listen-only observer",
@@ -1013,8 +1052,12 @@ void LinuxEvdevDispatch()
 				if (sDevices[i].grabbed && !suppressed)
 				{
 					unsigned int vk = VkForEvdev(ev.code);
-					if (vk && vk <= 0xFF)
-						LinuxUinputKeyEvent(vk, ev.value != 0);
+					if (vk && vk <= 0xFF
+						&& !LinuxUinputKeyEvent(vk, ev.value != 0))
+					{
+						ReleaseLocalGrabsForReplayFailure(
+							"uinput replay write failed");
+					}
 				}
 			}
 		if (remove_device)

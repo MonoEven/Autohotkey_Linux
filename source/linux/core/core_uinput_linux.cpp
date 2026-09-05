@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <sys/poll.h>
 #include <cerrno>
 #include <cstring>
 #include <cstdio>
@@ -95,42 +96,60 @@ fail:
 	}
 }
 
-// Write one kernel input event (input_event requires >=16 bytes; the
-// kernel fills tv_sec/tv_usec when the fd is a uinput device).
-void WriteUinputEvent(int aType, int aCode, int aValue)
+// Write one kernel input event and its frame terminator.  Returning the
+// result is important: a grabbed evdev device must never be retained when
+// replay stopped working.
+bool WriteUinputEvent(int aType, int aCode, int aValue)
 {
 	if (sFD < 0)
-		return;
+		return false;
 	struct input_event e;
 	memset(&e, 0, sizeof(e));
 	e.type  = (__u16)aType;
 	e.code  = (__u16)aCode;
 	e.value = (__s32)aValue;
-	if (write(sFD, &e, sizeof(e)) != (ssize_t)sizeof(e))
+	for (;;)
 	{
-		if (errno != EAGAIN)
+		ssize_t written = write(sFD, &e, sizeof(e));
+		if (written == (ssize_t)sizeof(e))
+			break;
+		if (written < 0 && errno == EINTR)
+			continue;
+		if (written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
 		{
-			// Hard failure: the device vanished (user unplugged? kernel
-			// limits).  Recreate on the next call.
-			close(sFD);
-			sFD = -1;
-			sUsable = false;
+			struct pollfd pfd = {sFD, POLLOUT, 0};
+			if (poll(&pfd, 1, 20) > 0 && (pfd.revents & POLLOUT))
+				continue;
 		}
-		return;
+		close(sFD);
+		sFD = -1;
+		sUsable = false;
+		return false;
 	}
-	// The kernel only hands events to libinput/compositors when the frame
-	// is closed with EV_SYN/SYN_REPORT (a uinput device without the SYN
-	// terminator would silently buffer everything - check0820catch).
+	// The kernel only hands events to libinput/compositors when the frame is
+	// closed with EV_SYN/SYN_REPORT.
 	struct input_event syn;
 	memset(&syn, 0, sizeof(syn));
 	syn.type  = EV_SYN;
 	syn.code  = SYN_REPORT;
 	syn.value = 0;
-	if (write(sFD, &syn, sizeof(syn)) != (ssize_t)sizeof(syn))
+	for (;;)
 	{
+		ssize_t written = write(sFD, &syn, sizeof(syn));
+		if (written == (ssize_t)sizeof(syn))
+			return true;
+		if (written < 0 && errno == EINTR)
+			continue;
+		if (written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+		{
+			struct pollfd pfd = {sFD, POLLOUT, 0};
+			if (poll(&pfd, 1, 20) > 0 && (pfd.revents & POLLOUT))
+				continue;
+		}
 		close(sFD);
 		sFD = -1;
 		sUsable = false;
+		return false;
 	}
 }
 
@@ -162,8 +181,7 @@ bool LinuxUinputKeyEvent(unsigned int aVK, bool aDown)
 	unsigned int kc = LinuxWaylandKeycodeForVk(aVK); // Same evdev table.
 	if (!kc)
 		return false;
-	WriteUinputEvent(EV_KEY, (int)kc, aDown ? 1 : 0);
-	return true;
+	return WriteUinputEvent(EV_KEY, (int)kc, aDown ? 1 : 0);
 }
 
 bool LinuxUinputButtonEvent(unsigned int aButton, bool aDown)
@@ -180,8 +198,7 @@ bool LinuxUinputButtonEvent(unsigned int aButton, bool aDown)
 	case 9: btn = BTN_EXTRA;  break;
 	default: return false;
 	}
-	WriteUinputEvent(EV_KEY, (int)btn, aDown ? 1 : 0);
-	return true;
+	return WriteUinputEvent(EV_KEY, (int)btn, aDown ? 1 : 0);
 }
 
 bool LinuxUinputWheelEvent(unsigned int aButton, bool aDown)
@@ -192,10 +209,10 @@ bool LinuxUinputWheelEvent(unsigned int aButton, bool aDown)
 		return true;
 	switch (aButton)
 	{
-	case 4: WriteUinputEvent(EV_REL, REL_WHEEL, 1);  return true;
-	case 5: WriteUinputEvent(EV_REL, REL_WHEEL, -1); return true;
-	case 6: WriteUinputEvent(EV_REL, REL_HWHEEL, 1);  return true;
-	case 7: WriteUinputEvent(EV_REL, REL_HWHEEL, -1); return true;
+	case 4: return WriteUinputEvent(EV_REL, REL_WHEEL, 1);
+	case 5: return WriteUinputEvent(EV_REL, REL_WHEEL, -1);
+	case 6: return WriteUinputEvent(EV_REL, REL_HWHEEL, 1);
+	case 7: return WriteUinputEvent(EV_REL, REL_HWHEEL, -1);
 	default: return false;
 	}
 }
@@ -204,9 +221,9 @@ bool LinuxUinputMotionEvent(int aDX, int aDY)
 {
 	if (!LinuxUinputInjectionAvailable())
 		return false;
-	if (aDX)
-		WriteUinputEvent(EV_REL, REL_X, aDX);
-	if (aDY)
-		WriteUinputEvent(EV_REL, REL_Y, aDY);
+	if (aDX && !WriteUinputEvent(EV_REL, REL_X, aDX))
+		return false;
+	if (aDY && !WriteUinputEvent(EV_REL, REL_Y, aDY))
+		return false;
 	return true;
 }

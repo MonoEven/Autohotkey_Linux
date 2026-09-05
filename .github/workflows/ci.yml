@@ -167,6 +167,10 @@ jobs:
         if: matrix.build == 'core'
         run: bash tests/oracle/run_input_backend_health_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd" "$BUILD_DIR/source/linux/core/ahk_core"
 
+      - name: In-process evdev fail-open source guard (check0905 P0)
+        if: matrix.build == 'core'
+        run: bash tests/oracle/check_evdev_failopen_source.sh
+
       - name: SendLevel/InputLevel policy oracle (check0901 P0-2/P1-3)
         if: matrix.build == 'core'
         run: bash tests/oracle/run_sendlevel_policy_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
