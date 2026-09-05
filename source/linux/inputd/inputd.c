@@ -203,9 +203,9 @@ static unsigned long long sNextBrokerTxnId = 0x8000000000000000ULL;
 /* Per-key physical press identity + sticky suppression ownership: if a down
  * was suppressed/remapped, the corresponding up stays suppressed even if the
  * owner crashes or its lease expires before release. */
-static unsigned long long sPhysicalTxn[KEY_CNT];
-static unsigned long long sPhysicalOwnerAcceptance[KEY_CNT];
-static unsigned char sPhysicalSuppressed[KEY_CNT];
+static unsigned long long sPhysicalTxn[MAX_DEVICES][KEY_CNT];
+static unsigned long long sPhysicalOwnerAcceptance[MAX_DEVICES][KEY_CNT];
+static unsigned char sPhysicalSuppressed[MAX_DEVICES][KEY_CNT];
 struct decision_wait {
 	struct arb_rule *rule;
 	unsigned long long event_seq;
@@ -287,6 +287,9 @@ static void replay_dead(void)
 			sGrabbedNames[i][0] = '\0';
 		}
 	sDevCount = 0;
+	memset(sPhysicalTxn, 0, sizeof(sPhysicalTxn));
+	memset(sPhysicalOwnerAcceptance, 0, sizeof(sPhysicalOwnerAcceptance));
+	memset(sPhysicalSuppressed, 0, sizeof(sPhysicalSuppressed));
 	for (int i = 0; i < MAX_CLIENTS; ++i)
 	{
 		struct client *cl = &sClients[i];
@@ -445,6 +448,17 @@ static int replay_key(unsigned int code, int value)
 }
 
 /* True when any key (including modifiers) is currently reported down. */
+static void clear_device_physical_state(int device_index)
+{
+	if (device_index < 0 || device_index >= MAX_DEVICES)
+		return;
+	memset(sPhysicalTxn[device_index], 0, sizeof(sPhysicalTxn[device_index]));
+	memset(sPhysicalOwnerAcceptance[device_index], 0,
+		sizeof(sPhysicalOwnerAcceptance[device_index]));
+	memset(sPhysicalSuppressed[device_index], 0,
+		sizeof(sPhysicalSuppressed[device_index]));
+}
+
 static int device_has_held_keys(int fd)
 {
 	unsigned char keys[KEY_CNT / 8];
@@ -2086,6 +2100,14 @@ static void prune_removed_devices(void)
 			memcpy(sGrabbedNames[write_index], sGrabbedNames[read_index],
 				sizeof(sGrabbedNames[write_index]));
 			sDevIds[write_index] = sDevIds[read_index];
+			memcpy(sPhysicalTxn[write_index], sPhysicalTxn[read_index],
+				sizeof(sPhysicalTxn[write_index]));
+			memcpy(sPhysicalOwnerAcceptance[write_index],
+				sPhysicalOwnerAcceptance[read_index],
+				sizeof(sPhysicalOwnerAcceptance[write_index]));
+			memcpy(sPhysicalSuppressed[write_index],
+				sPhysicalSuppressed[read_index],
+				sizeof(sPhysicalSuppressed[write_index]));
 		}
 		++write_index;
 	}
@@ -2094,6 +2116,7 @@ static void prune_removed_devices(void)
 		sDevFds[i] = -1;
 		sGrabbedNames[i][0] = '\0';
 		sDevIds[i] = 0;
+		clear_device_physical_state(i);
 	}
 	sDevCount = write_index;
 	sAnyGrabbed = sDevCount > 0;
@@ -2452,6 +2475,21 @@ int main(int argc, char **argv)
 							remove_device = true;
 						break;
 					}
+					if (ev.type == EV_SYN && ev.code == SYN_DROPPED)
+					{
+						int held = device_has_held_keys(sDevFds[i]);
+						clear_device_physical_state(i);
+						sHeldStateReconciled = 0;
+						fprintf(stderr,
+							"[inputd] %s: SYN_DROPPED; dropping queued frame "
+							"and reopening device (held=%d)\n",
+							sGrabbedNames[i], held);
+						// No reliable key-up ownership survives a dropped frame.
+						// Close/ungrab now: future input is fail-open, and the next
+						// scan uses EVIOCGKEY before attempting another grab.
+						remove_device = true;
+						break;
+					}
 					if (ev.type != EV_KEY) continue;
 					if (panic_step((unsigned int)ev.code, ev.value != 0))
 						continue;
@@ -2467,10 +2505,10 @@ int main(int argc, char **argv)
 					int down = ev.value != 0;
 					if (code < KEY_CNT)
 					{
-						if (down && ev.value != 2 && !sPhysicalTxn[code])
-							sPhysicalTxn[code] = ++sNextBrokerTxnId;
+						if (down && ev.value != 2 && !sPhysicalTxn[i][code])
+							sPhysicalTxn[i][code] = ++sNextBrokerTxnId;
 					}
-					unsigned long long source_txn = code < KEY_CNT ? sPhysicalTxn[code] : 0;
+					unsigned long long source_txn = code < KEY_CNT ? sPhysicalTxn[i][code] : 0;
 					/* distribute to subscribed clients first */
 					int legacy_suppress = 0;
 					for (int c = 0; c < MAX_CLIENTS; ++c)
@@ -2491,9 +2529,9 @@ int main(int argc, char **argv)
 							}
 					}
 					struct arb_rule *winner = arb_winner(code);
-					if (code < KEY_CNT && sPhysicalSuppressed[code]
+					if (code < KEY_CNT && sPhysicalSuppressed[i][code]
 						&& (ev.value == 2 || !down))
-						winner = arb_by_acceptance(sPhysicalOwnerAcceptance[code]);
+						winner = arb_by_acceptance(sPhysicalOwnerAcceptance[i][code]);
 					int suppress = legacy_suppress;
 					unsigned char action = legacy_suppress
 						? INPUTD_V2_DECISION_SUPPRESS : INPUTD_V2_DECISION_REPLAY;
@@ -2551,7 +2589,7 @@ int main(int argc, char **argv)
 								dynamic_resolved = 1;
 							}
 						}
-						else if (code < KEY_CNT && sPhysicalSuppressed[code])
+						else if (code < KEY_CNT && sPhysicalSuppressed[i][code])
 						{
 							suppress = 1;
 							action = INPUTD_V2_DECISION_SUPPRESS;
@@ -2574,7 +2612,7 @@ int main(int argc, char **argv)
 					}
 					/* A suppressed down owns its matching up even if the registration
 					 * disappears before release (balanced target sequence). */
-					if (!dynamic_resolved && code < KEY_CNT && sPhysicalSuppressed[code]
+					if (!dynamic_resolved && code < KEY_CNT && sPhysicalSuppressed[i][code]
 						&& (ev.value == 2 || !down) && !winner)
 					{
 						suppress = 1;
@@ -2637,15 +2675,15 @@ int main(int argc, char **argv)
 					{
 						if (down && ev.value != 2)
 						{
-							sPhysicalSuppressed[code] = suppress ? 1 : 0;
-							sPhysicalOwnerAcceptance[code] = winner
+							sPhysicalSuppressed[i][code] = suppress ? 1 : 0;
+							sPhysicalOwnerAcceptance[i][code] = winner
 								? winner->acceptance_seq : 0;
 						}
 						else if (!down)
 						{
-							sPhysicalSuppressed[code] = 0;
-							sPhysicalOwnerAcceptance[code] = 0;
-							sPhysicalTxn[code] = 0;
+							sPhysicalSuppressed[i][code] = 0;
+							sPhysicalOwnerAcceptance[i][code] = 0;
+							sPhysicalTxn[i][code] = 0;
 						}
 					}
 					if (reason == INPUTD_V2_DECISION_DYNAMIC_DISCONNECT)
@@ -2666,6 +2704,7 @@ int main(int argc, char **argv)
 			}
 			if (remove_device)
 			{
+				clear_device_physical_state(i);
 				ioctl(sDevFds[i], EVIOCGRAB, 0);
 				fprintf(stderr, "[inputd] hot-remove %s\n", sGrabbedNames[i]);
 				if (sDevIds[i])
