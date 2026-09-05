@@ -107,7 +107,7 @@ default. Release tar/deb/RPM payloads include the complete examples catalog.
 | Developer tooling | VS Code 0.2.1: syntax/run/tasks/diagnostics, gutter breakpoints, DBGp/DAP stepping, paged variables, exceptions, idle Pause and same-PID reconnect |
 | Distribution | deb, RPM, tarball, AppImage, VSIX, AUR PKGBUILD, Flatpak manifest and `--pack` |
 
-The authoritative test totals are **1145/1145** X11/headless assertions,
+The authoritative test totals are **1170/1170** X11/headless assertions,
 **17/17** native-Wayland assertions and **234/234** XWayland assertions. CI
 also runs regular, ASan and TSan-input builds, four distro containers,
 no-XWayland, packed-binary acceptance, identity-bound scenarios, a mixed

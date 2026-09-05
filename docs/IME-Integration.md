@@ -1,11 +1,11 @@
 # Input Method (IME) Integration Assessment
 
-Status: **evaluated — not implemented yet**
+Status: **implemented with explicit desktop boundaries**
 
-This document assesses how the AutoHotkey v2 Linux port can integrate with
-input method frameworks (ibus / fcitx), and what would be required to
-implement it.  It is an engineering assessment, not a promise of a
-specific timeline.
+This document describes the implemented AutoHotkey v2 Linux IME integration and
+its verified limits. Framework state, engine/preedit status and commit capture
+are available where the desktop exposes them; real Fcitx5 desktop and
+Flatpak/portal visibility remain environment-dependent.
 
 ## Background
 
@@ -36,7 +36,10 @@ input.  Two layers matter for an automation tool like AutoHotkey:
 - **Wayland**: the port's virtual keyboard (`zwp_virtual_keyboard_v1`)
   sends evdev keycodes; composed text input via the
   `zwp_text_input_v3` / `zwp_input_method_v2` protocols is **not** used.
-- There is **no IME state API** (`A_IME` or equivalent) in the port.
+- **Implemented state/status API**: `ImeGetState` and `ImeStatus` expose the
+  framework, engine, scope, preedit and last-commit snapshot. Commit capture
+  feeds the existing Hotstring/InputHook pipeline where the toolkit exposes
+  the relevant signals.
 
 ## What implementing IME support would involve
 

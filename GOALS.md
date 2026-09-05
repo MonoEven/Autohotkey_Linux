@@ -133,7 +133,7 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 - Complete examples: all 370 worklist IMPL functions map to generated pages and
   executable Linux evidence; 230 include upstream code. Curated headless/X11/
   lifecycle/safety profiles pass, CI rejects omissions/drift, and packages ship them.
-- Machine totals: 1143/1143 X11/headless, 17/17 Wayland and 234/234
+- Machine totals: 1170/1170 X11/headless, 17/17 Wayland and 234/234
   XWayland assertions; 27/27 headless regression tests.
 
 ## Active constraints / remaining work

@@ -1,7 +1,7 @@
 # AutoHotkey v2.0.26 Linux 移植 —— 模块验证矩阵
 
 > 对照 AutoHotkey v2 官方文档逐模块确认可用性。完整逐模块校验报告见
-> `tests/doccheck/CHECK_REPORT.md`（1143/1143 断言，普通 + ASan 双构建）。
+> `tests/doccheck/CHECK_REPORT.md`（1170/1170 断言，普通 + ASan 双构建）。
 > 状态图例：✅ 已实现并有 .ahk 验证；⚠️ 部分实现/依赖外部工具；❌ 未实现（明确报错）。
 > GUI 类功能区分「有画面」(DISPLAY 可用，X11/WSLg/XFCE/XWayland) 与「无画面」(headless)。
 
@@ -114,7 +114,7 @@
 
 ## 汇总
 
-- **1143/1143** X11/headless doc-check 断言通过（普通 + ASan 双构建）
+- **1170/1170** X11/headless doc-check 断言通过（普通 + ASan 双构建）
 - **27/27** headless 回归测试；Wayland **17/17** + XWayland **234/234** 独立套件
 - VS Code 0.2.1：语言/运行/诊断 + 编辑器gutter断点声明 + DBGp/DAP断点/分页变量/异常/idle Pause/同PID重连；raw/DAP/真实 extension-host oracle
 - Examples：370/370 IMPL生成页、703个Linux实测source链接、230个官方参考代码；环境profile与互动/安全边界明确，CI零遗漏/漂移门禁

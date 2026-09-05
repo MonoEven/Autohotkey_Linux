@@ -10,6 +10,7 @@
 # stale hand-maintained numbers impossible.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$SCRIPT_DIR" || exit 1
 REPORT=CHECK_REPORT.md
 fail=0
@@ -99,6 +100,26 @@ check_pass "$xw"
 tr -d '\r' < "$REPORT" \
   | grep -qE "^\| XWayland 回退 .*\| $xw \|$" \
   || { echo "FAIL: XWayland row != $xw"; fail=1; }
+
+# Current user-facing summaries must use the same generated totals. Historical
+# audit files intentionally retain their original evidence numbers.
+for current in "$REPO_DIR/README.md" "$REPO_DIR/GOALS.md" \
+  "$REPO_DIR/MODULE_MATRIX.md" "$REPO_DIR/docs-v2/docs/linux-port.htm"; do
+  if ! grep -q '1170/1170' "$current"; then
+    echo "FAIL: current document has no 1170/1170 total: $current"
+    fail=1
+  fi
+  if grep -qE '1143/1143|1145/1145' "$current"; then
+    echo "FAIL: stale total in current document: $current"
+    fail=1
+  fi
+done
+
+# The IME status must agree with the implemented API and explicit remaining
+# desktop boundaries.
+grep -q 'Status: \*\*implemented with explicit desktop boundaries\*\*' \
+  "$REPO_DIR/docs/IME-Integration.md" \
+  || { echo 'FAIL: IME document still claims not implemented'; fail=1; }
 
 echo "verify_report_numbers: x11=$x11 wayland=$wayland xwayland=$xw"
 [ "$fail" = 0 ]
