@@ -91,8 +91,8 @@ if [ "$XWAYLAND" = 1 ]; then
   if grep -q "Failed to start Xwayland" /tmp/sway.log; then
     echo "SKIP: XWayland suites (sway could not start Xwayland: /tmp/.X11-unix not writable)"
     echo "=============================="
-    echo "WAYLAND DOC-CHECK PASS=0 FAIL=0 (XWayland skipped)"
-    exit 0
+    echo "WAYLAND DOC-CHECK PASS=0 FAIL=1 (XWayland unavailable)"
+    exit 1
   fi
   # The XWayland display must be reachable through a socket sway created.
   # Ignore WSLg's X0: XWayland uses the next free number (usually :0 when
@@ -116,8 +116,8 @@ if [ "$XWAYLAND" = 1 ]; then
     echo "--- /tmp/.X11-unix ---"
     ls -la /tmp/.X11-unix/ 2>/dev/null || true
     echo "=============================="
-    echo "WAYLAND DOC-CHECK PASS=0 FAIL=0 (XWayland skipped)"
-    exit 0
+    echo "WAYLAND DOC-CHECK PASS=0 FAIL=1 (XWayland unavailable)"
+    exit 1
   fi
 fi
 
