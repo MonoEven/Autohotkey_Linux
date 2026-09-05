@@ -150,7 +150,6 @@ static unsigned char sAuthorityId[16];
 static unsigned long long sGeneration;
 static unsigned long long sEventSeq;
 static unsigned long long sNextClientId;
-static unsigned long long sNextDeviceId = 1;
 static unsigned long long sDevIds[MAX_DEVICES];
 /* M2 backend health/generation snapshot. */
 static int sProtocolOnly;
@@ -1989,6 +1988,62 @@ static int is_self_device(int fd)
 
 static void prune_removed_devices(void);
 
+static unsigned long long stable_device_id(int fd, const char *path)
+{
+	char identity[1024];
+	identity[0] = '\0';
+	char resolved_path[PATH_MAX] = { 0 };
+	const char *canonical = realpath(path, resolved_path);
+	const char *link_dirs[] = { "/dev/input/by-id", "/dev/input/by-path" };
+	char stable_link[PATH_MAX] = { 0 };
+	for (size_t d = 0; d < sizeof(link_dirs) / sizeof(link_dirs[0]) && !stable_link[0]; ++d)
+	{
+		DIR *dir = opendir(link_dirs[d]);
+		if (!dir)
+			continue;
+		struct dirent *ent;
+		while ((ent = readdir(dir)) != NULL)
+		{
+			if (ent->d_name[0] == '.')
+				continue;
+			char link_path[PATH_MAX], link_target[PATH_MAX];
+			snprintf(link_path, sizeof(link_path), "%s/%s", link_dirs[d], ent->d_name);
+			ssize_t n = readlink(link_path, link_target, sizeof(link_target) - 1);
+			if (n < 0)
+				continue;
+			link_target[n] = '\0';
+			char resolved_link[PATH_MAX] = { 0 };
+			if (realpath(link_path, resolved_link)
+				&& canonical && !strcmp(resolved_link, canonical))
+			{
+				snprintf(stable_link, sizeof(stable_link), "%s/%s",
+					link_dirs[d], ent->d_name);
+				break;
+			}
+		}
+		closedir(dir);
+	}
+	struct input_id id;
+	memset(&id, 0, sizeof(id));
+	char uniq[128] = { 0 };
+	char phys[128] = { 0 };
+	char name[UINPUT_MAX_NAME_SIZE] = { 0 };
+	(void)ioctl(fd, EVIOCGID, &id);
+	(void)ioctl(fd, EVIOCGUNIQ(sizeof(uniq) - 1), uniq);
+	(void)ioctl(fd, EVIOCGPHYS(sizeof(phys) - 1), phys);
+	(void)ioctl(fd, EVIOCGNAME(sizeof(name) - 1), name);
+	snprintf(identity, sizeof(identity), "%s|%s|%s|%s|%u:%u:%u:%u|%s",
+		stable_link, uniq, phys, name, id.bustype, id.vendor, id.product,
+		id.version, canonical ? canonical : path);
+	unsigned long long hash = 1469598103934665603ULL;
+	for (const unsigned char *p = (const unsigned char *)identity; *p; ++p)
+	{
+		hash ^= *p;
+		hash *= 1099511628211ULL;
+	}
+	return hash ? hash : 1ULL;
+}
+
 static void scan_devices(void)
 {
 	if (sPanicked)
@@ -2105,7 +2160,7 @@ static void scan_devices(void)
 				else
 				{
 					sAnyGrabbed = 1;
-					sDevIds[slot] = sNextDeviceId++;
+					sDevIds[slot] = stable_device_id(fd, path);
 					logmsg("grabbed %s", path);
 					broadcast_device_added(sDevIds[slot], ent->d_name);
 				}
