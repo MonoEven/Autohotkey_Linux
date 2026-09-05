@@ -25,6 +25,7 @@
 #include "../../keyboard_mouse.h"
 #include "../../application.h"
 #include "core_keymodel_linux.h"
+#include "core_dbus_call_linux.h"
 #include <dbus/dbus.h>
 #include <cstring>
 #include <cstdlib>
@@ -89,7 +90,7 @@ bool SendNoReply(DBusMessage *aMsg)
 {
 	if (!sConn) return false;
 	DBusError err; dbus_error_init(&err);
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(sConn, aMsg, 20000, &err);
+	DBusMessage *rep = LinuxDbusPendingReply(sConn, aMsg, 20000, &err);
 	dbus_message_unref(aMsg);
 	if (!rep)
 	{
@@ -382,7 +383,7 @@ void SendCreateSession()
 	AppendTokens(&it, "session_handle_token", "ahk_gs1",
 		"handle_token", "ahk_gh1", "app_id", "org.autohotkey.linux");
 	DBusError err; dbus_error_init(&err);
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(sConn, msg, 20000, &err);
+	DBusMessage *rep = LinuxDbusPendingReply(sConn, msg, 20000, &err);
 	dbus_message_unref(msg);
 	if (!rep)
 	{

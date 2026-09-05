@@ -135,6 +135,7 @@ add_executable(ahk_core
     input_backend_libei.cpp
     core_clipboard_linux.cpp
     core_dllcall_linux.cpp
+    core_dbus_call_linux.cpp
     core_com_dbus_linux.cpp
     core_com_bif_linux.cpp
     core_sound_linux.cpp

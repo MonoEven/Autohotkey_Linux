@@ -17,6 +17,7 @@
 #include "../../script.h"
 #include "../../globaldata.h"
 #include "core_tray_linux.h"
+#include "core_dbus_call_linux.h"
 #include <dbus/dbus.h>
 #include <gtk/gtk.h>
 #include <unistd.h>
@@ -78,7 +79,7 @@ bool LinuxTrayNotify(const wchar_t *aTitle, const wchar_t *aText)
 		dbus_message_iter_open_container(&it, DBUS_TYPE_ARRAY, "{sv}", &dict);
 		dbus_message_iter_close_container(&it, &dict);
 		dbus_message_iter_append_basic(&it, DBUS_TYPE_INT32, &timeout);
-		DBusMessage *rep = dbus_connection_send_with_reply_and_block(c, msg, 5000, &err);
+		DBusMessage *rep = LinuxDbusPendingReply(c, msg, 5000, &err);
 		dbus_message_unref(msg);
 		if (rep)
 		{

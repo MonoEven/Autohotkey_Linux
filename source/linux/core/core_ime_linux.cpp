@@ -18,6 +18,7 @@
 #include <string>
 #include <mutex>
 #include <atomic>
+#include "core_dbus_call_linux.h"
 
 namespace
 {
@@ -73,7 +74,7 @@ bool NameHasOwner(const char *aName)
 		return false;
 	}
 	dbus_message_append_args(message, DBUS_TYPE_STRING, &aName, DBUS_TYPE_INVALID);
-	DBusMessage *reply = dbus_connection_send_with_reply_and_block(connection, message, 1000, &err);
+	DBusMessage *reply = LinuxDbusPendingReply(connection, message, 1000, &err);
 	dbus_message_unref(message);
 	dbus_bool_t owner = FALSE;
 	if (reply)
@@ -242,7 +243,7 @@ std::string QueryIbusEngine(DBusConnection *aConnection)
 	const char *property = "GlobalEngine";
 	dbus_message_append_args(message, DBUS_TYPE_STRING, &iface,
 		DBUS_TYPE_STRING, &property, DBUS_TYPE_INVALID);
-	DBusMessage *reply = dbus_connection_send_with_reply_and_block(aConnection, message, 1000, nullptr);
+	DBusMessage *reply = LinuxDbusPendingReply(aConnection, message, 1000, nullptr);
 	dbus_message_unref(message);
 	std::string engine;
 	if (reply)
@@ -261,7 +262,7 @@ std::string QueryFcitxEngine(DBusConnection *aConnection)
 		"/controller", "org.fcitx.Fcitx.Controller1", "CurrentInputMethod");
 	if (!message)
 		return std::string();
-	DBusMessage *reply = dbus_connection_send_with_reply_and_block(aConnection, message, 1000, nullptr);
+	DBusMessage *reply = LinuxDbusPendingReply(aConnection, message, 1000, nullptr);
 	dbus_message_unref(message);
 	std::string engine;
 	if (reply)

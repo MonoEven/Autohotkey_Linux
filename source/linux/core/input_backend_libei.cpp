@@ -4,6 +4,7 @@
 #include "input_backend.h"
 #include "input_event.h"
 #include "core_wayland_linux.h"
+#include "core_dbus_call_linux.h"
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -204,7 +205,7 @@ unsigned PortalVersion()
 	const char *prop = "version";
 	dbus_message_append_args(msg, DBUS_TYPE_STRING, &iface,
 		DBUS_TYPE_STRING, &prop, DBUS_TYPE_INVALID);
-	DBusMessage *reply = dbus_connection_send_with_reply_and_block(bus, msg,
+	DBusMessage *reply = LinuxDbusPendingReply(bus, msg,
 		1500, &error);
 	dbus_message_unref(msg);
 	unsigned version = 0;

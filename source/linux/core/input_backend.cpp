@@ -23,6 +23,7 @@
 #include "core_clipboard_linux.h"
 #include "core_tray_linux.h"
 #include "core_ime_linux.h"
+#include "core_dbus_call_linux.h"
 #include "../../script.h"
 #include "../../globaldata.h"
 #include "../../script_func_impl.h"
@@ -72,7 +73,7 @@ bool SessionBusGetStringProp(const char *aOwner, const char *aPath,
 	dbus_message_iter_init_append(msg, &it);
 	dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &aIface);
 	dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &aProp);
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(c, msg, 3000, &err);
+	DBusMessage *rep = LinuxDbusPendingReply(c, msg, 3000, &err);
 	dbus_message_unref(msg);
 	bool ok = false;
 	if (rep)
@@ -809,7 +810,7 @@ unsigned LinuxPortalGlobalShortcutsVersion()
 		dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &iface);
 		const char *prop = "version";
 		dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &prop);
-		DBusMessage *rep = dbus_connection_send_with_reply_and_block(c, msg, 3000, &err);
+		DBusMessage *rep = LinuxDbusPendingReply(c, msg, 3000, &err);
 		dbus_message_unref(msg);
 		if (rep)
 		{

@@ -34,6 +34,7 @@
 #include "input_backend.h"
 #include "../../hotkey.h"
 #include "core_keymodel_linux.h"
+#include "core_dbus_call_linux.h"
 #include <dbus/dbus.h>
 #include <cstring>
 #include <cstdlib>
@@ -138,7 +139,7 @@ void CacheBrokerUniqueName()
 	dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &name);
 	DBusError err;
 	dbus_error_init(&err);
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(
+	DBusMessage *rep = LinuxDbusPendingReply(
 		sConn, msg, 1000, &err);
 	dbus_message_unref(msg);
 	if (!rep)
@@ -250,7 +251,7 @@ bool CallBool(const char *aMethod, DBusMessage *aMsg)
 		return false;
 	DBusError err;
 	dbus_error_init(&err);
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(
+	DBusMessage *rep = LinuxDbusPendingReply(
 		sConn, aMsg, GS_CALL_TIMEOUT_MS, &err);
 	dbus_message_unref(aMsg);
 	if (!rep)
@@ -323,7 +324,7 @@ bool SendRegisterMany(const std::vector<std::string> &aIds
 	{ dbus_message_unref(msg); return false; }
 	DBusError err;
 	dbus_error_init(&err);
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(
+	DBusMessage *rep = LinuxDbusPendingReply(
 		sConn, msg, GS_CALL_TIMEOUT_MS, &err);
 	// Note: dbus_message_unref(msg) happens after the call (the API refs it
 	// internally; we drop our own reference below).
@@ -424,9 +425,9 @@ void SendClearOwner()
 	DBusMessage *msg = dbus_message_new_method_call(GS_BUS_NAME, GS_OBJ_PATH,
 		GS_IFACE, "ClearOwner");
 	if (!msg) return;
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(
+	DBusMessage *rep = LinuxDbusPendingReply(
 		sConn, msg, GS_CALL_TIMEOUT_MS, nullptr);
-	dbus_message_unref(msg); // send_with_reply_and_block refs internally; we own ours.
+	dbus_message_unref(msg); // The helper keeps caller ownership unchanged.
 	if (rep)
 		dbus_message_unref(rep);
 }
@@ -581,7 +582,7 @@ bool LinuxGnomeShellAvailable()
 	dbus_message_iter_init_append(msg, &it);
 	const char *name = GS_BUS_NAME;
 	dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &name);
-	DBusMessage *rep = dbus_connection_send_with_reply_and_block(c, msg, 1000, nullptr);
+	DBusMessage *rep = LinuxDbusPendingReply(c, msg, 1000, nullptr);
 	dbus_connection_unref(c);
 	if (!rep)
 		return false;
