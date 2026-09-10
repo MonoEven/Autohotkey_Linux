@@ -217,3 +217,19 @@ if(AHK_ENABLE_LIBEI AND LIBPORTAL_FOUND)
   target_compile_definitions(ahk_core PRIVATE
     "AHK_LIBPORTAL_VERSION=\"${LIBPORTAL_VERSION}\"")
 endif()
+
+# Release version stamped into the runtime itself.  tools/linux/VERSION is the
+# single source of truth shared with the packaging scripts, the launcher and
+# the AUR/Flatpak pins; reading it here removes the previous drift where
+# ahk_core could not name its own release, and gives --version, --pack-info and
+# the packed-runtime manifest (Audit47 §13.2) one consistent string.
+set(AHK_VERSION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../../../tools/linux/VERSION")
+if(EXISTS "${AHK_VERSION_FILE}")
+  file(READ "${AHK_VERSION_FILE}" AHK_LINUX_RELEASE_VERSION)
+  string(STRIP "${AHK_LINUX_RELEASE_VERSION}" AHK_LINUX_RELEASE_VERSION)
+else()
+  set(AHK_LINUX_RELEASE_VERSION "unknown")
+endif()
+target_compile_definitions(ahk_core PRIVATE
+  "AHK_LINUX_RELEASE_VERSION=\"${AHK_LINUX_RELEASE_VERSION}\"")
+message(STATUS "AutoHotkey Linux release version: ${AHK_LINUX_RELEASE_VERSION}")

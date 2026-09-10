@@ -1,7 +1,7 @@
 # AutoHotkey v2 Linux port — current goals
 
 Baseline: AutoHotkey v2.0.26 · branch: `linux-port` · release:
-`v2.0.26-linux.22` · project status: **technology preview**.
+`v2.0.26-linux.23` · project status: **technology preview**.
 
 This file is the current engineering status, not a chronological diary.
 Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
@@ -43,6 +43,24 @@ Release history is in `docs-v2/docs/ChangeLog.htm`; test evidence is in
 
 - deb, RPM, tarball, AppImage, AUR PKGBUILD and Flatpak manifest.
 - `ahk_core --pack`, `A_IsCompiled` and embedded FileInstall resources.
+- linux.23: the broker releases `EVIOCGRAB` through an independent forked lease
+  process (visible as `ahk-inp-lease`) instead of relying only on the
+  in-process `SIGALRM` handler, which cannot run while the broker is stopped or
+  wedged; a device whose lease cannot be armed is refused rather than held
+  unsupervised. Verified with an independent grab probe (released 1358 ms after
+  `SIGSTOP`; released on `SIGKILL` with no lease left behind).
+- linux.23: packed executables embed a capability manifest naming the runtime
+  release and capabilities they actually contain, `--pack` probes its template
+  and reports capability loss instead of discovering it after deployment, and a
+  packed binary forwards its arguments to the embedded script (`A_Args`,
+  `--`, `/script PATH`) with `A_IsCompiled` = 1 for its whole process lifetime.
+- linux.23 cross-version evidence: an install-level matrix
+  (linux.21 -> linux.22 -> rollback -> uninstall -> fresh install) and a
+  wire-level runtime x daemon matrix against the real published linux.19
+  binaries (v1-only broker), each gated in CI.
+- linux.23 publication gate: the packaging job depends on the packed-binary
+  container acceptance job, so `package` success means every release gate for
+  that ref passed.
 - Audit47 closures: local evdev raw replay/SYN_DROPPED/watchdog fail-open;
   per-device remap replacement and shared synthetic held-key ownership;
   strict required-suppression capability rejection; rich paste restore;

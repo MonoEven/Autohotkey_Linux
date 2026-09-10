@@ -151,6 +151,15 @@ jobs:
         if: matrix.build == 'core'
         run: bash tests/oracle/run_inputd_replay_failure_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd"
 
+      # Audit47 I01: the in-process SIGALRM watchdog cannot run while the broker
+      # is SIGSTOPped or wedged, so each grabbed device now has an independent
+      # forked lease process.  Proven with an independent grab probe.
+      - name: Inputd independent grab lease oracle (Audit47 I01)
+        if: matrix.build == 'core'
+        run: |
+          bash tests/oracle/check_inputd_lease_source.sh
+          bash tests/oracle/run_inputd_lease_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd"
+
       - name: Inputd protocol v2 oracle (check0901 P0-3)
         if: matrix.build == 'core'
         run: bash tests/oracle/run_inputd_v2_protocol_oracle.sh "$BUILD_DIR/source/linux/inputd/ahk-inputd"
@@ -337,6 +346,18 @@ jobs:
         run: |
           bash tests/oracle/check_pack_failure_source.sh
           bash tests/oracle/run_pack_failure_oracle.sh "$BUILD_DIR/source/linux/core/ahk_core"
+
+      # Audit47 §13.2: a libei-enabled runtime cannot be copied into a
+      # standalone ELF, so --pack embeds the feature-off template.  Prove the
+      # capability difference is announced at pack time and declared inside the
+      # produced executable instead of surfacing as a late runtime failure.
+      - name: Packed-runtime capability oracle (Audit47 §13.2)
+        if: matrix.build == 'core'
+        run: |
+          bash tests/oracle/check_pack_capability_source.sh
+          bash tests/oracle/run_pack_capability_oracle.sh \
+            "$BUILD_DIR/source/linux/core/ahk_core" \
+            "${AHK_PACK_RUNTIME:-build-pack-runtime/source/linux/core/ahk_core}"
 
       - name: Distribution and X11 policy source guards (Audit47 I06/I11)
         if: matrix.build == 'core'
@@ -551,7 +572,11 @@ jobs:
 
   package:
     runs-on: ubuntu-24.04
-    needs: [build-and-test, tsan-input]
+    # Audit47 §22: publication must not depend on a subset of the acceptance
+    # lanes.  The packed-binary acceptance job proves the artifacts work in a
+    # bare container, so a green package job now means every release gate that
+    # exists for this ref has passed -- not just the two that were listed.
+    needs: [build-and-test, tsan-input, pack-container-acceptance]
     permissions:
       contents: read
       id-token: write
@@ -728,6 +753,39 @@ jobs:
         run: |
           VER=$(ls dist/autohotkey-linux-*-amd64.deb | sed -n 's/.*linux-\([0-9.]*-linux\.[0-9]*\)-amd64.deb/\1/p' | head -1)
           bash tools/linux/verify-packages.sh "$VER"
+
+      # Audit47 I11: verify-packages.sh only proves a SAME-version reinstall.
+      # This step fetches the real published previous release (verified against
+      # its CKSUMS.txt) and proves the cross-version path users actually take:
+      # install N-1 -> upgrade to N while a script keeps running -> downgrade to
+      # N-1 -> uninstall -> fresh install of N.
+      - name: Cross-version upgrade/downgrade matrix (Audit47 I11)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER=$(tr -d '\r\n' < tools/linux/VERSION)
+          PREV=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName 2>/dev/null | sed 's/^v//')
+          if [ -z "$PREV" ] || [ "$PREV" = "$VER" ]; then
+            PREV=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 20 \
+              --json tagName -q '.[].tagName' | sed 's/^v//' | grep -v "^$VER\$" | head -1)
+          fi
+          test -n "$PREV" || { echo 'no published previous release to test against' >&2; exit 1; }
+          echo "matrix: previous=$PREV current=$VER"
+          bash tools/linux/fetch-release-assets.sh "$PREV" /tmp/ahk-prev-assets
+          bash tests/oracle/run_upgrade_matrix_oracle.sh /tmp/ahk-prev-assets dist
+
+      # Audit47 I04/I11: install-level continuity says nothing about wire-level
+      # interoperability.  Pair the REAL linux.19 binaries (predating protocol
+      # v2) with the build under test: v1-only daemon, v1 fallback, no silent
+      # suppression downgrade, and a live runtime surviving a daemon swap.
+      - name: Cross-version runtime x daemon matrix (Audit47 I04/I11)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash tests/oracle/run_runtime_daemon_matrix_oracle.sh \
+            /tmp/ahk-old19 \
+            "$PWD/build-core/source/linux/inputd/ahk-inputd" \
+            "$PWD/build-core/source/linux/core/ahk_core"
 
       # Current GitHub guidance uses actions/attest@v4. Public repositories
       # receive a Sigstore Public Good signature + transparency-log entry

@@ -100,29 +100,61 @@ int main(int argc, char** argv)
 
 	// The script path comes from the command line, or from the packed
 	// payload when no script argument was given (check_detail0821 §5-M6 / R4).
+	//
+	// A packed executable is "compiled" for the whole process lifetime (the
+	// upstream Ahk2Exe semantics), not only when it happens to run its own
+	// embedded payload: A_IsCompiled stays 1 and the embedded FileInstall
+	// resources are served even when a different script is named on the
+	// command line.  Detecting it once here also lets --diag and the packed
+	// capability manifest answer for that same binary.
+	g_LinuxPacked = LinuxIsPacked();
 	const char *run_path = nullptr;
 	char packed_tmp[80] = "";
-	if (argc < 2)
+	// int packed_args_start: when a packed executable runs its own embedded
+	// payload, every command-line word is a script parameter (A_Args) rather
+	// than a script path, matching upstream Ahk2Exe.  The explicit
+	// "/script <path>" override keeps the escape hatch for running a
+	// different script with the same interpreter.
+	int packed_args_start = 0;
+	auto extract_packed_script = [&]() -> const char * {
+		char sbuf[4 << 20];
+		size_t slen = LinuxExtractPackedScript(sbuf, sizeof(sbuf));
+		if (slen == 0)
+			return nullptr;
+		snprintf(packed_tmp, sizeof(packed_tmp), "/tmp/ahk_packed_%ld.ahk", (long)getpid());
+		FILE *f = fopen(packed_tmp, "wb");
+		if (!f)
+			return nullptr;
+		fwrite(sbuf, 1, slen, f);
+		fclose(f);
+		return packed_tmp;
+	};
+	// Words that begin with '-' stay reserved for this binary's own switches
+	// (--version/--diag/--pack-info/--parity/--help), so a packed executable
+	// can still be diagnosed; "--" forces the remaining words to be A_Args.
+	bool packed_forward_args = argc >= 2 && g_LinuxPacked && !restart_mode
+		&& argv[1][0] != '-' && strcmp(argv[1], "/script") != 0;
+	bool packed_after_separator = argc >= 3 && g_LinuxPacked && !restart_mode
+		&& !strcmp(argv[1], "--");
+	if (packed_forward_args || packed_after_separator)
+	{
+		// Packed payload + user arguments: no script path was given.
+		run_path = extract_packed_script();
+		if (!run_path)
+		{
+			std::fprintf(stderr, "AutoHotkey Linux: packed payload missing or corrupt.\n");
+			return 1;
+		}
+		packed_args_start = packed_after_separator ? 2 : 1;
+	}
+	else if (argc < 2)
 	{
 		// A packed binary (ahk_core --pack outfile script.ahk) runs with no
 		// script argument: extract the embedded script to a temp file and
 		// load it.
 		if (LinuxIsPacked())
 		{
-			char sbuf[4 << 20];
-			size_t slen = LinuxExtractPackedScript(sbuf, sizeof(sbuf));
-			if (slen > 0)
-			{
-				snprintf(packed_tmp, sizeof(packed_tmp), "/tmp/ahk_packed_%ld.ahk", (long)getpid());
-				FILE *f = fopen(packed_tmp, "wb");
-				if (f)
-				{
-					fwrite(sbuf, 1, slen, f);
-					fclose(f);
-					g_LinuxPacked = true;
-					run_path = packed_tmp;
-				}
-			}
+			run_path = extract_packed_script();
 			if (!run_path)
 			{
 				std::fprintf(stderr, "AutoHotkey Linux: packed payload missing or corrupt.\n");
@@ -135,6 +167,11 @@ int main(int argc, char** argv)
 			return 1;
 		}
 	}
+	else if (argc >= 3 && g_LinuxPacked && !restart_mode && !strcmp(argv[1], "/script"))
+	{
+		script_arg = 2; // Explicit override: run another script with this binary.
+		run_path = argv[script_arg];
+	}
 	else
 		run_path = argv[script_arg];
 
@@ -142,7 +179,22 @@ int main(int argc, char** argv)
 	// --version either, but installers and users expect one here).
 	if (argc > 1 && (!strcmp(argv[1], "--version") || !strcmp(argv[1], "-v")))
 	{
+#ifdef AHK_LINUX_RELEASE_VERSION
+		std::printf("AutoHotkey v2.0.26 Linux port v%s (X11/Wayland)\n",
+			AHK_LINUX_RELEASE_VERSION);
+#else
 		std::printf("AutoHotkey v2.0.26 Linux port (X11/Wayland)\n");
+#endif
+		return 0;
+	}
+	// Capability facts of THIS binary, in the same key=value format a packed
+	// executable embeds (Audit47 §13.2).  ahk_core --pack probes its template
+	// with this switch, so a capability difference is detected at pack time.
+	if (argc > 1 && !strcmp(argv[1], "--pack-info"))
+	{
+		LinuxPackRuntimeInfo self = LinuxPackSelfInfo();
+		std::string info = LinuxPackManifestText(self, self);
+		std::fputs(info.c_str(), stdout);
 		return 0;
 	}
 	if (argc > 1 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h")))
@@ -150,6 +202,10 @@ int main(int argc, char** argv)
 		std::printf("AutoHotkey Linux (v2 port)\n"
 			"Usage: ahk_core script.ahk [args...]\n"
 			"  --version, -v      print the version and exit\n"
+			"  --pack-info        print this runtime's release and optional-capability facts\n"
+			"  --pack OUT SCRIPT  build a standalone executable embedding SCRIPT\n"
+			"Packed executables pass their arguments to the embedded script "
+			"(A_Args); '/script PATH' runs another script with the same binary.\n"
 #ifdef CONFIG_DEBUGGER
 			"  --debug host:port script.ahk [args...]  connect to a DBGp IDE and break before auto-exec\n"
 #endif
@@ -244,8 +300,10 @@ int main(int argc, char** argv)
 
 	// A_Args: the command-line parameters after the script path (mirrors
 	// _tWinMain in AutoHotkey.cpp).  In /restart mode the reload protocol
-	// arguments are consumed here and must not leak into A_Args.
-	int args_start = restart_mode ? argc : script_arg + 1;
+	// arguments are consumed here and must not leak into A_Args.  A packed
+	// executable that runs its own payload passes every word through instead.
+	int args_start = restart_mode ? argc
+		: (packed_args_start ? packed_args_start : script_arg + 1);
 	if (Var *var = g_script.FindOrAddVar(_T("A_Args"), 6, VAR_DECLARE_GLOBAL))
 	{
 		TCHAR *wide_args[256];

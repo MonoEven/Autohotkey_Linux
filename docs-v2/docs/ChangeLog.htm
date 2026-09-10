@@ -16,6 +16,63 @@
 
 <h2 id="linux">Linux port changes</h2>
 
+<h2 id="linux.23">v2.0.26-linux.23</h2>
+<p><b>Packed-runtime capability manifest, packed argument contract, and the
+cross-version upgrade matrix (Audit47 I11 / §13.2).</b></p>
+<ul>
+  <li><b>Independent broker grab lease (Audit47 I01).</b> <code>ahk-inputd</code>
+    relied on an in-process <code>SIGALRM</code> handler to release
+    <code>EVIOCGRAB</code> when its loop stalled — a handler that cannot run
+    while the process is <code>SIGSTOP</code>ped or wedged inside a syscall, so
+    a live-but-stopped broker kept every keyboard grabbed. Each grabbed device
+    now also has a forked lease process (visible as
+    <code>ahk-inp-lease</code>) holding a duplicate device fd, which releases
+    the grab unless the main loop heartbeats within 1.5&nbsp;s; losing
+    supervision also fails open, and a device whose lease cannot be armed is
+    refused with an explicit message instead of being held unsupervised. The
+    <code>SIGALRM</code> watchdog remains as a second layer.</li>
+  <li><b>Cross-version runtime&nbsp;&times;&nbsp;daemon matrix (Audit47
+    I04/I11).</b> New <code>tests/oracle/run_runtime_daemon_matrix_oracle.sh</code>
+    pairs the real published <code>linux.19</code> binaries (whose broker
+    predates protocol v2) with the build under test: it proves the old broker is
+    v1-only, the new one negotiates v2, all four runtime&nbsp;&times;&nbsp;daemon
+    pairings work, a runtime never reports a healthy/granted suppression lane
+    against a broker that cannot grant it, and a live runtime survives its
+    broker being swapped to a different release without changing PID.</li>
+  <li><b>Packed-capability manifest.</b> <code>--pack</code> now probes the
+    template it embeds (<code>--pack-info</code>) instead of assuming it
+    matches, prints an explicit notice when this runtime has a capability the
+    template lacks (today: consented libei/EIS injection), and embeds a
+    machine-readable manifest naming the release and capabilities that are
+    actually inside the produced executable. <code>--version</code>,
+    <code>--pack-info</code> and <code>--diag</code> report it, so a
+    capability difference is visible before deployment rather than as a late
+    runtime failure. A template that cannot declare its capabilities is an
+    explicit error, never a guess.</li>
+  <li><b>Packed argument contract.</b> A packed executable now forwards its
+    command-line words to the embedded script (<code>A_Args</code>) instead of
+    treating the first word as a replacement script path; <code>--</code>
+    forces forwarding and <code>/script PATH</code> keeps the override. Its own
+    switches (<code>--version</code>/<code>--diag</code>/<code>--pack-info</code>)
+    still win, and <code>A_IsCompiled</code> is now 1 for the whole packed
+    process lifetime rather than only when the embedded payload happens to be
+    the script being executed.</li>
+  <li><b>Runtime self-identification.</b> <code>ahk_core --version</code> and
+    <code>--diag</code> name the port release (read from
+    <code>tools/linux/VERSION</code> at configure time), removing the previous
+    drift where only the launcher knew which release was installed.</li>
+  <li><b>Cross-version upgrade matrix.</b> New
+    <code>tests/oracle/run_upgrade_matrix_oracle.sh</code> proves install
+    N-1 &rarr; upgrade to N (while a script is running) &rarr; downgrade to N-1
+    &rarr; uninstall &rarr; fresh install of N, including prefix hygiene and
+    the launcher's stamped release. <code>tools/linux/fetch-release-assets.sh</code>
+    fetches and checksum-verifies the real published N-1 assets for CI.</li>
+  <li><b>Publication gate.</b> The packaging job now depends on the
+    packed-binary container acceptance job, so a green <code>package</code> run
+    means every release gate for that ref passed instead of a two-job
+    subset.</li>
+</ul>
+
 <h2 id="linux.22">v2.0.26-linux.22</h2>
 <p><b>AutoHotkey Linux Audit47 closure and release qualification.</b></p>
 <ul>

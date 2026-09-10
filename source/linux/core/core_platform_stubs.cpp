@@ -20,6 +20,7 @@
 #include "input_backend_libei.h"
 #include "input_event.h"
 #include "core_clipboard_linux.h"
+#include "core_pack_linux.h"
 #include "../gui/script_gui_linux.h"
 #include <X11/Xlib.h>
 #include <csignal>
@@ -41,7 +42,35 @@ extern "C" int LinuxRunDiagnostic()
 	const char *session = getenv("XDG_SESSION_TYPE");
 
 	std::printf("=== AutoHotkey Linux diagnostic ===\n");
+#ifdef AHK_LINUX_RELEASE_VERSION
+	std::printf("version     : v2.0.26 Linux port v%s\n", AHK_LINUX_RELEASE_VERSION);
+#else
 	std::printf("version     : v2.0.26 Linux port (linux-port)\n");
+#endif
+	// A packed executable is not this release's interactive runtime: report
+	// the manifest so a capability difference is visible in one --diag call.
+	if (LinuxIsPacked())
+	{
+		std::string manifest;
+		if (LinuxPackReadManifest(manifest))
+		{
+			std::printf("packed      : yes (embedded runtime declared below)\n");
+			std::string line;
+			size_t pos = 0;
+			while (pos < manifest.size())
+			{
+				size_t end = manifest.find('\n', pos);
+				if (end == std::string::npos)
+					end = manifest.size();
+				line = manifest.substr(pos, end - pos);
+				if (!line.empty())
+					std::printf("packed-%s\n", line.c_str());
+				pos = end + 1;
+			}
+		}
+		else
+			std::printf("packed      : yes (no manifest; built by an older release)\n");
+	}
 	std::printf("session     : %s%s%s\n"
 		, session ? session : "-",
 		desktop ? "; desktop=" : "",

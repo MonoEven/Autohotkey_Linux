@@ -258,7 +258,16 @@ and 20 for the D-Bus COM layer). The port has two display backends:</p>
      FileInstall resource failures abort before output replacement; footer lengths
      use checked arithmetic and successful packs finalize through an atomic rename.
      The packed executable uses the feature-off template and does not inherit
-     interactive libei capability.
+     interactive libei capability: <code>--pack</code> probes that template with
+     <code>--pack-info</code> instead of assuming it matches, prints an explicit
+     notice when a capability is lost, and embeds a manifest naming the release
+     and capabilities actually inside the executable
+     (<code>--version</code>/<code>--pack-info</code>/<code>--diag</code>
+     report it; <code>HotkeyBackendGet().libei_build_enabled</code> answers the
+     same for scripts). A packed executable forwards its arguments to the
+     embedded script (<code>A_Args</code>, with <code>--</code> to force it and
+     <code>/script PATH</code> as the override), and
+     <code>A_IsCompiled</code> is 1 for the whole packed process lifetime.
     Generic tar/AppImage/RPM payloads privately carry their matched optional
     libei/liboeffis SONAMEs; Debian packages use build-version-floored runtime
     dependencies.
@@ -414,7 +423,7 @@ alongside the <code>.tar.gz</code> and <code>.deb</code>, so
 downgrade</i> (rollback) to any published release.  Releases before linux.15
 were removed when the new installer line shipped; their source remains on
 the <code>v2.0.26-linux.*</code> git tags.  The latest release is
-<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.22</a>.
+<a href="https://github.com/MonoEven/Autohotkey_Linux/releases/latest">v2.0.26-linux.23</a>.
 Highlights of this release:</p>
 <ul>
   <li><b><code>Hotkey()</code> works on Wayland</b>: the X-only guard is
@@ -478,6 +487,14 @@ Highlights of this release:</p>
       Run states; the core CI runs an X11 interaction oracle that verifies lesson
       selection, filtering, practice pass, exit code 0 and output creation.</li>
     <li><b>Input safety and lifecycle hardening</b>: the in-process evdev
+     fallback and the broker share one rule — a grabbed keyboard is never held
+     without an independent way to let go. The broker arms a forked lease
+     process per grabbed device (<code>ahk-inp-lease</code>) that owns a
+     duplicate device fd and releases <code>EVIOCGRAB</code> unless the main
+     loop heartbeats within 1.5&nbsp;s; the in-process <code>SIGALRM</code>
+     watchdog remains as a second layer, and a device whose lease cannot be
+     armed is refused with an explicit message instead of being held
+     unsupervised. The in-process evdev
      fallback filters keyboard-only devices, rejects composite pointer nodes, preflights uinput and releases
      all local grabs on replay failure. The broker applies one capability policy
      to v1/v2, drops and reopens a device after <code>SYN_DROPPED</code>, keeps

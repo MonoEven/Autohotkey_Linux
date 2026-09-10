@@ -14,6 +14,13 @@
  *     Hotstring/InputHook/hotkey matchers work without stealing events;
  *   - client disconnect (crash/kill) instantly removes its rules (fail-open);
  *   - SIGALRM watchdog: if the main loop is stuck >2s all grabs are released;
+ *   - independent grab lease (Audit47 I01): each grabbed device also has a
+ *     forked lease process holding a duplicate of the device fd, which
+ *     releases EVIOCGRAB unless the main loop heartbeats within 1.5s.  The
+ *     in-process SIGALRM handler cannot run while this process is SIGSTOPped
+ *     or wedged inside a syscall, so the lease -- not the handler -- is what
+ *     guarantees fail-open for a live-but-stopped holder.  A device whose
+ *     lease cannot be armed is refused rather than held unsupervised;
  *   - Backspace->Escape->Enter remains the physical panic escape.
  *
  * Protocol v2 (check0901 P0-3, milestone M3) shares the same socket: frames
@@ -45,6 +52,9 @@
 #include <stdarg.h>
 #include <fcntl.h>
 #include <dirent.h>
+#include <sys/wait.h>
+#include <poll.h>
+#include <sys/prctl.h>
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>
@@ -228,6 +238,145 @@ static int sVerbose = 0;
 static volatile sig_atomic_t sQuit = 0;
 static volatile sig_atomic_t sWatchdogFired = 0;
 
+/* ---- independent grab lease (Audit47 I01 / §21 item 1) --------------------
+ * The SIGALRM watchdog above lives in this process: a handler only runs when
+ * the process is scheduled, so a SIGSTOPped or syscall-wedged broker keeps
+ * EVIOCGRAB on every keyboard and the desktop stops receiving input.  Each
+ * grabbed device therefore gets an independent lease process that owns a
+ * duplicate of the device fd and releases the grab unless the main loop keeps
+ * heartbeating.  If a lease cannot be established the device is left
+ * ungrabbed (explicitly reported) instead of being held without supervision. */
+#define INPUTD_LEASE_TIMEOUT_MS 1500
+static void release_all_grabs(void); /* defined in the panic-escape section */
+struct device_lease
+{
+	pid_t pid;
+	int wfd;
+};
+static struct device_lease sLeases[MAX_DEVICES];
+static int sLeaseUnavailable = 0;
+static long sLeaseTestFailAfter = 0; /* AHK_INPUTD_TEST_LEASE_FAIL_AFTER */
+
+static void lease_child_close_others(int keep_a, int keep_b)
+{
+	DIR *d = opendir("/proc/self/fd");
+	if (!d)
+		return;
+	int dfd = dirfd(d);
+	struct dirent *e;
+	while ((e = readdir(d)))
+	{
+		int fd = atoi(e->d_name);
+		if (fd <= 2 || fd == dfd || fd == keep_a || fd == keep_b)
+			continue;
+		close(fd);
+	}
+	closedir(d);
+}
+
+static void lease_child(int read_fd, int dev_fd)
+{
+	char beat;
+	for (;;)
+	{
+		struct pollfd p = { read_fd, POLLIN, 0 };
+		int rc = poll(&p, 1, INPUTD_LEASE_TIMEOUT_MS);
+		if (rc < 0)
+		{
+			if (errno == EINTR)
+				continue;
+			break;
+		}
+		if (rc == 0 || (p.revents & (POLLHUP | POLLERR | POLLNVAL)))
+			break;
+		if (read(read_fd, &beat, 1) <= 0)
+			break;
+	}
+	/* Fail open: the owner is gone, stopped or wedged. */
+	ioctl(dev_fd, EVIOCGRAB, 0);
+	_exit(0);
+}
+
+static int lease_arm(int slot, int dev_fd)
+{
+	if (slot < 0 || slot >= MAX_DEVICES)
+		return -1;
+	if (sLeaseTestFailAfter > 0)
+	{
+		--sLeaseTestFailAfter;
+		errno = EAGAIN;
+		return -1;
+	}
+	int fds[2];
+	if (pipe(fds) != 0)
+		return -1;
+	int flags = fcntl(fds[1], F_GETFL, 0);
+	if (flags >= 0)
+		fcntl(fds[1], F_SETFL, flags | O_NONBLOCK);
+	pid_t pid = fork();
+	if (pid < 0)
+	{
+		close(fds[0]);
+		close(fds[1]);
+		return -1;
+	}
+	if (pid == 0)
+	{
+		close(fds[1]);
+		/* Operators (and the lease oracle) must be able to tell a lease
+		 * process apart from the broker itself in ps/pgrep. */
+		prctl(PR_SET_NAME, "ahk-inp-lease", 0, 0, 0);
+		lease_child_close_others(fds[0], dev_fd);
+		lease_child(fds[0], dev_fd);
+		_exit(0);
+	}
+	close(fds[0]);
+	sLeases[slot].pid = pid;
+	sLeases[slot].wfd = fds[1];
+	return 0;
+}
+
+static void lease_stop(int slot)
+{
+	if (slot < 0 || slot >= MAX_DEVICES)
+		return;
+	if (sLeases[slot].wfd >= 0)
+	{
+		close(sLeases[slot].wfd);
+		sLeases[slot].wfd = -1;
+	}
+	if (sLeases[slot].pid > 0)
+	{
+		int status = 0;
+		if (waitpid(sLeases[slot].pid, &status, WNOHANG) == 0)
+		{
+			kill(sLeases[slot].pid, SIGTERM);
+			waitpid(sLeases[slot].pid, &status, 0);
+		}
+		sLeases[slot].pid = -1;
+	}
+}
+
+/* Heartbeat every armed lease.  A failed write means this broker no longer has
+ * independent supervision, so it must stop holding grabs (fail open). */
+static void lease_heartbeat(void)
+{
+	const char beat = 'h';
+	for (int i = 0; i < sDevCount; ++i)
+	{
+		if (sLeases[i].wfd < 0)
+			continue;
+		ssize_t n = write(sLeases[i].wfd, &beat, 1);
+		if (n == 1 || errno == EAGAIN || errno == EWOULDBLOCK)
+			continue;
+		fprintf(stderr, "[inputd] grab lease %d lost; releasing every grab "
+			"(fail-open)\n", i);
+		sLeaseUnavailable = 1;
+		release_all_grabs();
+		return;
+	}
+}
+
 static long long now_ms(void)
 {
 	struct timespec ts;
@@ -263,6 +412,10 @@ static void logmsg(const char *fmt, ...)
 
 static void release_all_grabs(void)
 {
+	/* Stop the lease processes first: the grabs are released below, and a
+	 * surviving lease would otherwise keep its duplicated device fd. */
+	for (int i = 0; i < MAX_DEVICES; ++i)
+		lease_stop(i);
 	for (int i = 0; i < sDevCount; ++i)
 		if (sDevFds[i] >= 0)
 			ioctl(sDevFds[i], EVIOCGRAB, 0);
@@ -2206,10 +2359,31 @@ static void scan_devices(void)
 				}
 				else
 				{
-					sAnyGrabbed = 1;
-					sDevIds[slot] = stable_device_id(fd, path);
-					logmsg("grabbed %s", path);
-					broadcast_device_added(sDevIds[slot], ent->d_name);
+					/* A grabbed keyboard is never held without independent
+					 * supervision (Audit47 I01): refuse the grab outright if
+					 * the lease process cannot be armed, and say so. */
+					if (lease_arm(slot, fd) != 0)
+					{
+						int lease_errno = errno;
+						sLeaseUnavailable = 1;
+						ioctl(fd, EVIOCGRAB, 0);
+						held_deferred = 1;
+						fprintf(stderr, "[inputd] %s: independent grab lease "
+							"unavailable (%s); refusing suppression, "
+							"listen-only\n", path, strerror(lease_errno));
+						close(fd);
+						sDevFds[slot] = -1;
+						sGrabbedNames[slot][0] = '\0';
+						sDevIds[slot] = 0;
+						broadcast_backend_health();
+					}
+					else
+					{
+						sAnyGrabbed = 1;
+						sDevIds[slot] = stable_device_id(fd, path);
+						logmsg("grabbed %s", path);
+						broadcast_device_added(sDevIds[slot], ent->d_name);
+					}
 				}
 			}
 			else
@@ -2253,11 +2427,13 @@ static void prune_removed_devices(void)
 			memcpy(sPhysicalSuppressed[write_index],
 				sPhysicalSuppressed[read_index],
 				sizeof(sPhysicalSuppressed[write_index]));
+			sLeases[write_index] = sLeases[read_index];
 		}
 		++write_index;
 	}
 	for (int i = write_index; i < sDevCount; ++i)
 	{
+		lease_stop(i);
 		sDevFds[i] = -1;
 		sGrabbedNames[i][0] = '\0';
 		sDevIds[i] = 0;
@@ -2353,6 +2529,12 @@ int main(int argc, char **argv)
 {
 	const char *socket_path = NULL;
 	int protocol_only = 0;
+	/* An unarmed lease slot must never look like a live pipe fd (0 is stdin). */
+	for (int i = 0; i < MAX_DEVICES; ++i)
+	{
+		sLeases[i].pid = -1;
+		sLeases[i].wfd = -1;
+	}
 	mode_t manual_socket_mode = 0600;
 	char activated_path[sizeof(((struct sockaddr_un *)0)->sun_path)] = { 0 };
 	int activated_fd = adopt_activated_socket(activated_path, sizeof(activated_path));
@@ -2521,6 +2703,19 @@ int main(int argc, char **argv)
 		fprintf(stderr, "[inputd] test hook: replay will fail after %ld batch(es)\n"
 			, sReplayFailAfter);
 	}
+	const char *lease_fail_text = getenv("AHK_INPUTD_TEST_LEASE_FAIL_AFTER");
+	if (lease_fail_text && *lease_fail_text)
+	{
+		char *end = NULL;
+		sLeaseTestFailAfter = strtol(lease_fail_text, &end, 10);
+		if (!end || *end || sLeaseTestFailAfter < 1)
+		{
+			fprintf(stderr, "[inputd] invalid AHK_INPUTD_TEST_LEASE_FAIL_AFTER\n");
+			return 2;
+		}
+		fprintf(stderr, "[inputd] test hook: grab lease will be refused for the "
+			"next %ld device(s)\n", sLeaseTestFailAfter);
+	}
 
 	sProtocolOnly = protocol_only;
 	sHeldStateReconciled = protocol_only ? 1 : 0;
@@ -2585,6 +2780,10 @@ int main(int argc, char **argv)
 		int pr = ppoll(pfds, (nfds_t)n, &timeout, NULL);
 		/* watchdog heartbeat: returning to this point proves liveness */
 		alarm(2);
+		/* Independent leases: a stopped or wedged broker cannot run the
+		 * SIGALRM handler above, so the lease processes own the fail-open
+		 * release for grabbed keyboards. */
+		lease_heartbeat();
 		if (sWatchdogFired)
 		{
 			sWatchdogFired = 0;

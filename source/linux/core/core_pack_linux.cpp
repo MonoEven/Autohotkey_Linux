@@ -216,6 +216,39 @@ bool LinuxPackExecutable(const char *aOut, const char *aScript)
 		}
 		resources.push_back(std::move(resource));
 	}
+	// Capability manifest (Audit47 §13.2): record the runtime that produced
+	// this executable and the template it embeds, so a capability difference
+	// is visible here instead of only at some later run time.  The template is
+	// probed rather than assumed: a template that cannot report its
+	// capabilities is an explicit error, never a guess.
+	LinuxPackRuntimeInfo packer = LinuxPackSelfInfo();
+	LinuxPackRuntimeInfo tmpl = packer;
+	if (strcmp(runtime_path, "/proc/self/exe") != 0)
+	{
+		std::string probe_error;
+		if (!LinuxPackProbeRuntime(runtime_path, tmpl, probe_error))
+		{
+			fprintf(stderr, "AutoHotkey Linux: cannot determine the capabilities of "
+				"the pack template '%s': %s\n", runtime_path, probe_error.c_str());
+			return false;
+		}
+	}
+	if (tmpl.port_version != packer.port_version)
+		fprintf(stderr, "AutoHotkey Linux: pack template '%s' is release %s while this "
+			"runtime is %s; the packed executable embeds the template's release.\n",
+			runtime_path, tmpl.port_version.c_str(), packer.port_version.c_str());
+	if (packer.libei && !tmpl.libei)
+		fprintf(stderr, "AutoHotkey Linux: this runtime was built with consented "
+			"libei/EIS injection but the pack template was not, so the packed "
+			"executable will report libei as unavailable (check "
+			"HotkeyBackendGet().libei_build_enabled, or use --pack-info).\n");
+	{
+		std::string manifest = LinuxPackManifestText(packer, tmpl);
+		PackedResource meta;
+		meta.name = AHK_PACK_MANIFEST_NAME;
+		meta.data.assign(manifest.begin(), manifest.end());
+		resources.push_back(std::move(meta));
+	}
 	// Build the resources blob: (name\0 size:8 data)*.
 	std::vector<unsigned char> res;
 	for (const auto &resource : resources)
@@ -353,4 +386,136 @@ bool LinuxPackGetResource(const char *aName, std::vector<unsigned char> &aOut)
 done:
 	close(fd);
 	return found;
+}
+
+// --- packed-runtime capability manifest (Audit47 §13.2) --------------------
+
+LinuxPackRuntimeInfo LinuxPackSelfInfo()
+{
+	LinuxPackRuntimeInfo info;
+#ifdef AHK_LINUX_RELEASE_VERSION
+	info.port_version = AHK_LINUX_RELEASE_VERSION;
+#else
+	info.port_version = "unknown";
+#endif
+#ifdef HAVE_LIBEI
+	info.libei = true;
+#endif
+#ifdef AHK_LIBPORTAL_VERSION
+	info.portal = true;
+#endif
+	return info;
+}
+
+std::string LinuxPackManifestText(const LinuxPackRuntimeInfo &aPacker,
+	const LinuxPackRuntimeInfo &aTemplate)
+{
+	// Line-based key=value: readable by scripts, --diag and shell oracles
+	// without pulling a JSON parser into the runtime.
+	std::string out;
+	auto line = [&out](const char *aKey, const std::string &aValue) {
+		out += aKey;
+		out += '=';
+		out += aValue;
+		out += '\n';
+	};
+	auto flag = [&line](const char *aKey, bool aValue) {
+		line(aKey, aValue ? "1" : "0");
+	};
+	line("schema", "1");
+	line("port_version", aTemplate.port_version);
+	flag("libei", aTemplate.libei);
+	flag("portal", aTemplate.portal);
+	line("packer_port_version", aPacker.port_version);
+	flag("packer_libei", aPacker.libei);
+	flag("packer_portal", aPacker.portal);
+	return out;
+}
+
+static bool ManifestValue(const std::string &aText, const char *aKey, std::string &aOut)
+{
+	const std::string prefix = std::string(aKey) + "=";
+	size_t pos = 0;
+	while (pos <= aText.size())
+	{
+		size_t end = aText.find('\n', pos);
+		if (end == std::string::npos)
+			end = aText.size();
+		if (aText.compare(pos, prefix.size(), prefix) == 0)
+		{
+			aOut = aText.substr(pos + prefix.size(), end - pos - prefix.size());
+			return true;
+		}
+		if (end == aText.size())
+			break;
+		pos = end + 1;
+	}
+	return false;
+}
+
+bool LinuxPackParseManifest(const std::string &aText, LinuxPackRuntimeInfo &aOut)
+{
+	std::string value;
+	if (!ManifestValue(aText, "schema", value) || value != "1")
+		return false;
+	if (!ManifestValue(aText, "port_version", aOut.port_version))
+		return false;
+	if (!ManifestValue(aText, "libei", value))
+		return false;
+	aOut.libei = (value == "1");
+	if (!ManifestValue(aText, "portal", value))
+		return false;
+	aOut.portal = (value == "1");
+	return true;
+}
+
+bool LinuxPackProbeRuntime(const char *aExe, LinuxPackRuntimeInfo &aOut, std::string &aErr)
+{
+	if (!aExe || !*aExe)
+	{
+		aErr = "empty template path";
+		return false;
+	}
+	// popen() runs the template through a shell, so a path containing a quote
+	// (or any character that would change the command) is refused instead of
+	// being quoted cleverly.
+	if (strpbrk(aExe, "\"'`$;&|<>()*?\\\n"))
+	{
+		aErr = "template path contains shell metacharacters";
+		return false;
+	}
+	std::string cmd = std::string("\"") + aExe + "\" --pack-info 2>/dev/null";
+	FILE *pipe = popen(cmd.c_str(), "r");
+	if (!pipe)
+	{
+		aErr = "cannot execute the template (popen failed)";
+		return false;
+	}
+	std::string text;
+	char buf[512];
+	size_t n;
+	while ((n = fread(buf, 1, sizeof(buf), pipe)) > 0)
+		text.append(buf, n);
+	int rc = pclose(pipe);
+	if (rc != 0)
+	{
+		aErr = "template exited non-zero from --pack-info";
+		return false;
+	}
+	if (!LinuxPackParseManifest(text, aOut))
+	{
+		aErr = "template --pack-info did not report schema=1 with port_version/libei/portal "
+			"(an older runtime cannot declare its capabilities)";
+		return false;
+	}
+	return true;
+}
+
+bool LinuxPackReadManifest(std::string &aOut)
+{
+	std::vector<unsigned char> data;
+	if (!LinuxPackGetResource(AHK_PACK_MANIFEST_NAME, data) || data.empty())
+		return false;
+	aOut.assign(data.begin(), data.end());
+	return true;
 }
