@@ -46,9 +46,17 @@ command -v cc >/dev/null 2>&1 || skip cc-missing
 OLD_DIR="${1:-${AHK_MATRIX_OLD19_DIR:-/tmp/ahk-old19}}"
 case "$OLD_DIR" in /*) ;; *) OLD_DIR="$ROOT/$OLD_DIR" ;; esac
 OLD_TAR="$OLD_DIR/autohotkey-linux-$OLD_VER-amd64.tar.gz"
-if [ ! -f "$OLD_TAR" ]; then
+OLD_CKSUMS="$OLD_DIR/CKSUMS.txt"
+if [ -f "$OLD_TAR" ] && [ -f "$OLD_CKSUMS" ]; then
+  # A cached archive must still be the published one: hashing it and recording
+  # the value is not the same as checking it against the release manifest.
+  expected=$(awk -v n="$(basename "$OLD_TAR")" '$2 == n { print $1 }' "$OLD_CKSUMS" | head -1)
+  actual=$(sha256sum "$OLD_TAR" | awk '{ print $1 }')
+  [ -n "$expected" ] && [ "$expected" = "$actual" ] \
+    || skip "cached-$OLD_VER-tarball-checksum-mismatch"
+else
   bash "$ROOT/tools/linux/fetch-release-assets.sh" "$OLD_VER" "$OLD_DIR" >/dev/null 2>&1 \
-    || skip "cannot-fetch-$OLD_VER"
+    || skip "cannot-fetch-verified-$OLD_VER"
 fi
 [ -f "$OLD_TAR" ] || skip "missing-old-tarball=$OLD_TAR"
 
@@ -248,7 +256,9 @@ sudo -n rm -f "$NEW_SOCK" "$NEW_SOCK.lock"
 OLDSWAP=$(start_daemon swapped-daemon "$OLD_INPUTD" "$NEW_SOCK")
 sleep 2.0
 expect live_runtime_survived_swap 1 "$([ -n "$LIVE_PID" ] && kill -0 "$LIVE_PID" 2>/dev/null && echo 1 || echo 0)"
-grep -q "client" "$WORK/swapped-daemon.log" \
+# Merely appearing in the replacement's log is not proof of service: require an
+# accepted subscription, not a connection that may have been rejected later.
+grep -Eq 'subscribed [0-9]+ rule' "$WORK/swapped-daemon.log" \
   && expect swapped_daemon_served_the_live_runtime 1 1 \
   || expect swapped_daemon_served_the_live_runtime 1 0
 

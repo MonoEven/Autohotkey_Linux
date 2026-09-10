@@ -34,7 +34,11 @@ command -v cc >/dev/null 2>&1 || { echo "INPUTD_LEASE_SKIP cc-missing"; exit 2; 
 WORK=/tmp/inputd-lease
 rm -rf "$WORK"; mkdir -p "$WORK"
 PASS=0; FAIL=0; FAILURES=""
-LEASE_DEADLINE_BUDGET_MS=4000
+# The lease deadline is 1500 ms; the budget allows only scheduling tolerance, so
+# a regressed 3000 ms lease cannot pass a test that claims the 1500 ms feature.
+LEASE_DEADLINE_MS=1500
+LEASE_SCHED_TOLERANCE_MS=800
+LEASE_DEADLINE_BUDGET_MS=$((LEASE_DEADLINE_MS + LEASE_SCHED_TOLERANCE_MS))
 
 expect() { # name expected actual
   if [ "$2" = "$3" ]; then
@@ -164,6 +168,9 @@ stop_daemon
 NODE2=$(make_fixture lease2)
 start_daemon lease2 "$NODE2"
 expect lease2_probe_reports_held HELD "$(grab_state "$NODE2")"
+# Establish that supervision really was armed here too: without this, the
+# SIGKILL assertion could be satisfied by ordinary final-fd closure.
+expect lease2_process_armed 1 "$(lease_count)"
 sudo -n kill -KILL "$DAEMON_PID"
 DAEMON_PID=""
 state=""
@@ -201,7 +208,7 @@ stop_daemon
 # ---- summary ---------------------------------------------------------------
 
 cat >"$OUT/inputd-lease-summary.json" <<EOF
-{"schema":1,"result":"$([ "$FAIL" = 0 ] && echo pass || echo fail)","pass":$PASS,"fail":$FAIL,"failures":"$(echo "$FAILURES" | sed 's/^ //')","lease_timeout_ms":1500,"release_budget_ms":$LEASE_DEADLINE_BUDGET_MS,"stopped_release_ms":$elapsed_ms,"held_probe":true,"stopped_fail_open":true,"no_regrab_after_continue":true,"killed_fail_open":true,"refusal_reported":true,"protocol_only_no_lease":true}
+{"schema":1,"result":"$([ "$FAIL" = 0 ] && echo pass || echo fail)","pass":$PASS,"fail":$FAIL,"failures":"$(echo "$FAILURES" | sed 's/^ //')","lease_timeout_ms":$LEASE_DEADLINE_MS,"sched_tolerance_ms":$LEASE_SCHED_TOLERANCE_MS,"release_budget_ms":$LEASE_DEADLINE_BUDGET_MS,"stopped_release_ms":$elapsed_ms,"held_probe":true,"lease_armed_before_stop":true,"stopped_fail_open":true,"no_regrab_after_continue":true,"lease_armed_before_kill":true,"killed_fail_open":true,"refusal_reported":true,"protocol_only_no_lease":true}
 EOF
 
 cleanup

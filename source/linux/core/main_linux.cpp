@@ -134,7 +134,9 @@ int main(int argc, char** argv)
 	// can still be diagnosed; "--" forces the remaining words to be A_Args.
 	bool packed_forward_args = argc >= 2 && g_LinuxPacked && !restart_mode
 		&& argv[1][0] != '-' && strcmp(argv[1], "/script") != 0;
-	bool packed_after_separator = argc >= 3 && g_LinuxPacked && !restart_mode
+	// "prog --" forwards zero arguments; requiring argc >= 3 would treat the
+	// separator itself as a script path.
+	bool packed_after_separator = argc >= 2 && g_LinuxPacked && !restart_mode
 		&& !strcmp(argv[1], "--");
 	if (packed_forward_args || packed_after_separator)
 	{
@@ -192,9 +194,18 @@ int main(int argc, char** argv)
 	// with this switch, so a capability difference is detected at pack time.
 	if (argc > 1 && !strcmp(argv[1], "--pack-info"))
 	{
-		LinuxPackRuntimeInfo self = LinuxPackSelfInfo();
-		std::string info = LinuxPackManifestText(self, self);
-		std::fputs(info.c_str(), stdout);
+		// In a packed executable the embedded manifest is the authoritative
+		// record (it names the actual packer), so report it verbatim instead of
+		// synthesizing packer_* from the template facts.
+		std::string embedded;
+		if (g_LinuxPacked && LinuxPackReadManifest(embedded) && !embedded.empty())
+			std::fputs(embedded.c_str(), stdout);
+		else
+		{
+			LinuxPackRuntimeInfo self = LinuxPackSelfInfo();
+			std::string info = LinuxPackManifestText(self, self);
+			std::fputs(info.c_str(), stdout);
+		}
 		return 0;
 	}
 	if (argc > 1 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h")))

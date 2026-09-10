@@ -127,6 +127,7 @@ static void LinuxCollectFileInstallSources(const std::vector<unsigned char> &aSc
 bool LinuxPackExecutable(const char *aOut, const char *aScript)
 {
 	const char *runtime_path = "/proc/self/exe";
+	bool using_self = true;
 #ifdef HAVE_LIBEI
 	// A DT_NEEDED libei runtime cannot be copied into a truly standalone ELF:
 	// the dynamic loader resolves dependencies before embedded resources can be
@@ -135,7 +136,10 @@ bool LinuxPackExecutable(const char *aOut, const char *aScript)
 	char sibling[PATH_MAX] = { 0 };
 	const char *configured = getenv("AHK_PACK_RUNTIME");
 	if (configured && *configured)
+	{
 		runtime_path = configured;
+		using_self = false;
+	}
 	else
 	{
 		ssize_t n = readlink("/proc/self/exe", sibling, sizeof(sibling) - 1);
@@ -155,8 +159,21 @@ bool LinuxPackExecutable(const char *aOut, const char *aScript)
 			return false;
 		}
 		runtime_path = sibling;
+		using_self = false;
 	}
 #endif
+	// Canonicalize once and use that single absolute path for BOTH reading the
+	// embedded bytes and probing capabilities: a bare name resolved by open()
+	// against the working directory while the probe searched PATH could describe
+	// one binary and embed another.
+	char canonical[PATH_MAX];
+	if (!realpath(runtime_path, canonical))
+	{
+		fprintf(stderr, "AutoHotkey Linux: cannot resolve pack runtime '%s': %s.\n",
+			runtime_path, strerror(errno));
+		return false;
+	}
+	runtime_path = canonical;
 	int src = open(runtime_path, O_RDONLY);
 	if (src < 0)
 	{
@@ -187,6 +204,19 @@ bool LinuxPackExecutable(const char *aOut, const char *aScript)
 	// Collect + read the FileInstall resources as synchronized name/data tuples.
 	std::vector<std::string> sources;
 	LinuxCollectFileInstallSources(script, sources);
+	// The reserved metadata entry shares the resource namespace with FileInstall
+	// sources, and lookup returns the first match, so a script that literally
+	// names that path would shadow the manifest.  Refuse instead of silently
+	// producing an executable whose manifest cannot be read back.
+	for (const auto &s : sources)
+	{
+		if (s == AHK_PACK_MANIFEST_NAME)
+		{
+			fprintf(stderr, "AutoHotkey Linux: '%s' is a reserved pack resource "
+				"name; rename the FileInstall source.\n", s.c_str());
+			return false;
+		}
+	}
 	struct PackedResource
 	{
 		std::string name;
@@ -223,7 +253,7 @@ bool LinuxPackExecutable(const char *aOut, const char *aScript)
 	// capabilities is an explicit error, never a guess.
 	LinuxPackRuntimeInfo packer = LinuxPackSelfInfo();
 	LinuxPackRuntimeInfo tmpl = packer;
-	if (strcmp(runtime_path, "/proc/self/exe") != 0)
+	if (!using_self)
 	{
 		std::string probe_error;
 		if (!LinuxPackProbeRuntime(runtime_path, tmpl, probe_error))
@@ -257,6 +287,16 @@ bool LinuxPackExecutable(const char *aOut, const char *aScript)
 		res.push_back(0);
 		AppendU64(res, resource.data.size());
 		res.insert(res.end(), resource.data.begin(), resource.data.end());
+	}
+	// The reader rejects a footer whose script+resources exceed this bound, so
+	// the writer must refuse first rather than exiting zero with an executable
+	// that can never run.
+	const uint64_t payload_bytes = (uint64_t)script.size() + (uint64_t)res.size();
+	if (payload_bytes > (64u << 20))
+	{
+		fprintf(stderr, "AutoHotkey Linux: packed payload would be %llu bytes, above "
+			"the 64 MiB reader bound; refusing.\n", (unsigned long long)payload_bytes);
+		return false;
 	}
 	std::string temp_path = std::string(aOut) + ".tmp." + std::to_string((long long)getpid());
 	int out = open(temp_path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0755);

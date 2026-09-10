@@ -247,7 +247,11 @@ static volatile sig_atomic_t sWatchdogFired = 0;
  * heartbeating.  If a lease cannot be established the device is left
  * ungrabbed (explicitly reported) instead of being held without supervision. */
 #define INPUTD_LEASE_TIMEOUT_MS 1500
-static void release_all_grabs(void); /* defined in the panic-escape section */
+/* Defined further down (panic-escape / health sections); the lease code runs
+ * before them in file order. */
+static void release_all_grabs(void);
+static void broadcast_backend_health(void);
+static long long now_ms(void);
 struct device_lease
 {
 	pid_t pid;
@@ -260,18 +264,45 @@ static long sLeaseTestFailAfter = 0; /* AHK_INPUTD_TEST_LEASE_FAIL_AFTER */
 static void lease_child_close_others(int keep_a, int keep_b)
 {
 	DIR *d = opendir("/proc/self/fd");
-	if (!d)
-		return;
-	int dfd = dirfd(d);
-	struct dirent *e;
-	while ((e = readdir(d)))
+	if (d)
 	{
-		int fd = atoi(e->d_name);
-		if (fd <= 2 || fd == dfd || fd == keep_a || fd == keep_b)
-			continue;
-		close(fd);
+		int dfd = dirfd(d);
+		struct dirent *e;
+		while ((e = readdir(d)))
+		{
+			int fd = atoi(e->d_name);
+			if (fd <= 2 || fd == dfd || fd == keep_a || fd == keep_b)
+				continue;
+			close(fd);
+		}
+		closedir(d);
 	}
-	closedir(d);
+	/* Descriptors 0-2 are not automatically harmless: with stdin closed the
+	 * listening socket or the singleton lock can occupy them, and the lease
+	 * would then keep the broker's socket alive after the broker died.  They
+	 * are closed unconditionally (the lease needs no stdio). */
+	for (int fd = 0; fd <= 2; ++fd)
+		if (fd != keep_a && fd != keep_b)
+			close(fd);
+}
+
+/* A lease must never block a fail-open transition: a SIGSTOPped child cannot
+ * act on SIGTERM, so the reap is bounded and escalates to SIGKILL. */
+static void lease_reap_bounded(pid_t aPid)
+{
+	int status = 0;
+	if (waitpid(aPid, &status, WNOHANG) == aPid)
+		return;
+	kill(aPid, SIGKILL);
+	for (int i = 0; i < 100; ++i)
+	{
+		if (waitpid(aPid, &status, WNOHANG) == aPid)
+			return;
+		usleep(2000);
+	}
+	/* Uninterruptible sleep: keep going.  Releasing the grab matters more
+	 * than reaping the child. */
+	(void)waitpid(aPid, &status, WNOHANG);
 }
 
 static void lease_child(int read_fd, int dev_fd)
@@ -323,6 +354,12 @@ static int lease_arm(int slot, int dev_fd)
 	if (pid == 0)
 	{
 		close(fds[1]);
+		/* The broker installed handlers for SIGTERM/SIGINT/SIGALRM; a lease
+		 * must not inherit them (its loop ignores sQuit, so SIGTERM would be
+		 * swallowed and only SIGKILL could end it). */
+		signal(SIGTERM, SIG_DFL);
+		signal(SIGINT, SIG_DFL);
+		signal(SIGALRM, SIG_DFL);
 		/* Operators (and the lease oracle) must be able to tell a lease
 		 * process apart from the broker itself in ps/pgrep. */
 		prctl(PR_SET_NAME, "ahk-inp-lease", 0, 0, 0);
@@ -347,33 +384,60 @@ static void lease_stop(int slot)
 	}
 	if (sLeases[slot].pid > 0)
 	{
-		int status = 0;
-		if (waitpid(sLeases[slot].pid, &status, WNOHANG) == 0)
-		{
-			kill(sLeases[slot].pid, SIGTERM);
-			waitpid(sLeases[slot].pid, &status, 0);
-		}
+		lease_reap_bounded(sLeases[slot].pid);
 		sLeases[slot].pid = -1;
 	}
 }
+
+/* Consecutive non-draining heartbeats (a stopped child fills the pipe) mean the
+ * lease is no longer watching, so supervision is lost even though the write end
+ * still exists and every write returns EAGAIN. */
+static long long sLeaseStallSince = 0;
 
 /* Heartbeat every armed lease.  A failed write means this broker no longer has
  * independent supervision, so it must stop holding grabs (fail open). */
 static void lease_heartbeat(void)
 {
 	const char beat = 'h';
+	bool stalled = false;
 	for (int i = 0; i < sDevCount; ++i)
 	{
 		if (sLeases[i].wfd < 0)
 			continue;
 		ssize_t n = write(sLeases[i].wfd, &beat, 1);
-		if (n == 1 || errno == EAGAIN || errno == EWOULDBLOCK)
+		if (n == 1)
 			continue;
+		if (errno == EAGAIN || errno == EWOULDBLOCK)
+		{
+			stalled = true;
+			continue;
+		}
 		fprintf(stderr, "[inputd] grab lease %d lost; releasing every grab "
 			"(fail-open)\n", i);
 		sLeaseUnavailable = 1;
 		release_all_grabs();
+		broadcast_backend_health();
 		return;
+	}
+	if (!stalled)
+	{
+		sLeaseStallSince = 0;
+		return;
+	}
+	long long now = now_ms();
+	if (!sLeaseStallSince)
+	{
+		sLeaseStallSince = now;
+		return;
+	}
+	if (now - sLeaseStallSince > 2 * INPUTD_LEASE_TIMEOUT_MS)
+	{
+		fprintf(stderr, "[inputd] grab lease stopped draining for %lldms; "
+			"releasing every grab (fail-open)\n", now - sLeaseStallSince);
+		sLeaseStallSince = 0;
+		sLeaseUnavailable = 1;
+		release_all_grabs();
+		broadcast_backend_health();
 	}
 }
 
@@ -731,7 +795,11 @@ static void send_hello_ack_v2(struct client *c, unsigned int caps_granted
 	st_le32(payload + 34, caps_granted);
 	st_le32(payload + 38, caps_denied);
 	st_le64(payload + 42, sEventSeq);
-	st_le16(payload + 50, sReplayDead ? INPUTD_V2_ACK_FLAG_DEGRADED : 0);
+	/* Lost replay OR lost independent grab supervision both mean the backend is
+	 * degraded; a client must never be told the lane is healthy when the broker
+	 * cannot actually hold a keyboard safely (Audit47 I01). */
+	st_le16(payload + 50,
+		(sReplayDead || sLeaseUnavailable) ? INPUTD_V2_ACK_FLAG_DEGRADED : 0);
 	send_frame_v2(c, INPUTD_V2_HELLO_ACK, 0, payload, sizeof(payload));
 }
 
@@ -822,6 +890,14 @@ static void send_backend_health(struct client *c)
 		permission = sReplayErrno == EACCES || sReplayErrno == EPERM
 			? INPUTD_V2_PERMISSION_DENIED : INPUTD_V2_PERMISSION_UNKNOWN;
 		reason = "replay unavailable; grabs released";
+	}
+	else if (sLeaseUnavailable)
+	{
+		/* Supervision of the grabs is gone: physical capture is not held, so
+		 * the broker must not advertise a healthy suppression lane. */
+		state = INPUTD_V2_HEALTH_DEGRADED;
+		permission = INPUTD_V2_PERMISSION_DENIED;
+		reason = "grab lease unavailable; grabs released";
 	}
 	else
 	{
@@ -2342,7 +2418,33 @@ static void scan_devices(void)
 			int slot = sDevCount++;
 			sDevFds[slot] = fd;
 			memcpy(sGrabbedNames[slot], ent->d_name, device_name_len + 1);
-			if (!sPanicked && !sReplayDead && ioctl(fd, EVIOCGRAB, 1) == 0 && !sPanicked)
+			/* Arm the independent lease BEFORE taking the grab.  Doing it the
+			 * other way round leaves a window in which the broker can be
+			 * SIGSTOPped (or wedged in the post-grab ioctl) while holding a
+			 * keyboard that nobody is watching (Audit47 I01). */
+			int lease_ok = 0;
+			if (!sPanicked && !sReplayDead)
+			{
+				if (lease_arm(slot, fd) == 0)
+					lease_ok = 1;
+				else
+				{
+					/* A keyboard is never held without independent
+					 * supervision: refuse the grab and say so. */
+					int lease_errno = errno;
+					sLeaseUnavailable = 1;
+					held_deferred = 1;
+					fprintf(stderr, "[inputd] %s: independent grab lease "
+						"unavailable (%s); refusing suppression, "
+						"listen-only\n", path, strerror(lease_errno));
+					close(fd);
+					sDevFds[slot] = -1;
+					sGrabbedNames[slot][0] = '\0';
+					sDevIds[slot] = 0;
+					broadcast_backend_health();
+				}
+			}
+			if (lease_ok && ioctl(fd, EVIOCGRAB, 1) == 0 && !sPanicked)
 			{
 				if (device_has_held_keys(fd) != 0)
 				{
@@ -2350,6 +2452,7 @@ static void scan_devices(void)
 					/* Down appeared in the check->grab window: fail open
 					 * immediately and retry on a later rescan. */
 					ioctl(fd, EVIOCGRAB, 0);
+					lease_stop(slot);
 					fprintf(stderr, "[inputd] %s: key down at grab boundary; "
 						"grab deferred (fail-open)\n", path);
 					close(fd);
@@ -2359,35 +2462,23 @@ static void scan_devices(void)
 				}
 				else
 				{
-					/* A grabbed keyboard is never held without independent
-					 * supervision (Audit47 I01): refuse the grab outright if
-					 * the lease process cannot be armed, and say so. */
-					if (lease_arm(slot, fd) != 0)
-					{
-						int lease_errno = errno;
-						sLeaseUnavailable = 1;
-						ioctl(fd, EVIOCGRAB, 0);
-						held_deferred = 1;
-						fprintf(stderr, "[inputd] %s: independent grab lease "
-							"unavailable (%s); refusing suppression, "
-							"listen-only\n", path, strerror(lease_errno));
-						close(fd);
-						sDevFds[slot] = -1;
-						sGrabbedNames[slot][0] = '\0';
-						sDevIds[slot] = 0;
-						broadcast_backend_health();
-					}
-					else
-					{
-						sAnyGrabbed = 1;
-						sDevIds[slot] = stable_device_id(fd, path);
-						logmsg("grabbed %s", path);
-						broadcast_device_added(sDevIds[slot], ent->d_name);
-					}
+					/* Lease armed and grab taken: this slot is live. */
+					sAnyGrabbed = 1;
+					sDevIds[slot] = stable_device_id(fd, path);
+					logmsg("grabbed %s", path);
+					broadcast_device_added(sDevIds[slot], ent->d_name);
 				}
 			}
 			else
 			{
+				/* The lease is armed but the grab failed (or the panic fired):
+				 * retire the lease with the slot so it cannot be mistaken for
+				 * supervision of a held keyboard. */
+				if (lease_ok)
+				{
+					lease_stop(slot);
+					lease_ok = 0;
+				}
 				if (!sPanicked && !sReplayDead)
 					fprintf(stderr, "[inputd] EVIOCGRAB %s: %s (running as root?)\n", path, strerror(errno));
 				close(fd); // EBADF is harmless if SIGALRM already closed it.
@@ -2412,7 +2503,12 @@ static void prune_removed_devices(void)
 	for (int read_index = 0; read_index < sDevCount; ++read_index)
 	{
 		if (sDevFds[read_index] < 0)
+		{
+			/* The device is gone: its lease must not outlive the slot, and it
+			 * must be released exactly once, here. */
+			lease_stop(read_index);
 			continue;
+		}
 		if (write_index != read_index)
 		{
 			sDevFds[write_index] = sDevFds[read_index];
@@ -2428,6 +2524,10 @@ static void prune_removed_devices(void)
 				sPhysicalSuppressed[read_index],
 				sizeof(sPhysicalSuppressed[write_index]));
 			sLeases[write_index] = sLeases[read_index];
+			/* Ownership moved: invalidate the source so the tail cleanup
+			 * below cannot stop the surviving device's lease. */
+			sLeases[read_index].pid = -1;
+			sLeases[read_index].wfd = -1;
 		}
 		++write_index;
 	}
@@ -2440,7 +2540,12 @@ static void prune_removed_devices(void)
 		clear_device_physical_state(i);
 	}
 	sDevCount = write_index;
-	sAnyGrabbed = sDevCount > 0;
+	/* A slot only exists while it has an armed lease, so this -- not the fd
+	 * count -- is the honest answer after a fail-open transition. */
+	sAnyGrabbed = 0;
+	for (int i = 0; i < sDevCount; ++i)
+		if (sLeases[i].pid > 0)
+			sAnyGrabbed = 1;
 }
 
 /* ---- systemd socket activation ------------------------------------------ */
