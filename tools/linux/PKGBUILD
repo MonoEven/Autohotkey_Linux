@@ -21,7 +21,9 @@ depends=('libx11' 'libxext' 'libxrandr' 'libxinerama' 'libxtst'
          'libxi' 'wayland' 'libxkbcommon' 'libxkbcommon-x11')
 makedepends=('cmake' 'ninja' 'gcc' 'wayland-protocols')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/MonoEven/Autohotkey_Linux/archive/refs/tags/v2.0.26-linux.23.tar.gz")
-sha256sums=('0d9acb22baf2ae221d1ffa09d32faca3ad6ecae13ebcd28fbed9b9cbde4b7f41')
+# SHA-256 of the published v2.0.26-linux.23 tag archive, verified after the tag
+# was pushed (a tag archive cannot contain the hash of itself, see above).
+sha256sums=('abb9e087e34ec957b9cda88752e5c0bb1ea11e5d1cf4dd106c50e7bfc557b27d')
 
 build() {
   cmake -S . -B build-core -G Ninja \
