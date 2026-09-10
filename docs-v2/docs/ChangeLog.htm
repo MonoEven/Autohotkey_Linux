@@ -71,6 +71,21 @@ cross-version upgrade matrix (Audit47 I11 / §13.2).</b></p>
     packed-binary container acceptance job, so a green <code>package</code> run
     means every release gate for that ref passed instead of a two-job
     subset.</li>
+  <li><b>Review-driven hardening.</b> An independent adversarial review of the
+    lease work found real defects in its first cut, fixed here before release:
+    lease ownership is transferred rather than copied when device slots
+    compact, a removed device's lease is stopped exactly once, lease teardown
+    uses a bounded reap with a <code>SIGKILL</code> fallback so a stopped lease
+    cannot block a fail-open transition, a lease that stops draining counts as
+    lost supervision (persistent <code>EAGAIN</code> is not "healthy") and
+    reports degraded health, the lease is armed before <code>EVIOCGRAB</code>,
+    the lease child closes descriptors 0-2 and resets inherited signal
+    dispositions, <code>sAnyGrabbed</code> is derived from armed leases rather
+    than file-descriptor count, the pack template path is canonicalized, the
+    reserved manifest name is refused as a FileInstall source, the writer
+    enforces the reader's 64&nbsp;MiB bound, a lone <code>--</code> forwards
+    zero arguments, and <code>--pack-info</code> in a packed binary reports the
+    embedded manifest verbatim.</li>
 </ul>
 
 <h2 id="linux.22">v2.0.26-linux.22</h2>
